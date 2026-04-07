@@ -123,19 +123,39 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     const onReadOnlyClick = (e: MouseEvent) => {
       if (editor.isEditable) return;
       let target = e.target as HTMLElement;
-      while (target && target !== dom && target.tagName !== 'LABEL') {
-        target = target.parentElement as HTMLElement;
+      
+      let isCheckboxArea = false;
+      let current = target;
+      while (current && current !== dom) {
+        if (current.tagName === 'LABEL') {
+          isCheckboxArea = true;
+          break;
+        }
+        current = current.parentElement as HTMLElement;
       }
-      if (target && target.tagName === 'LABEL') {
-        const pos = editor.view.posAtDOM(target, 0);
-        if (typeof pos === 'number' && pos >= 0) {
-          const node = editor.state.doc.nodeAt(pos);
-          if (node && node.type.name === 'taskItem') {
-            e.preventDefault();
-            e.stopPropagation();
-            editor.setEditable(true);
-            editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { checked: !node.attrs.checked }));
-            editor.setEditable(false);
+      if (!isCheckboxArea) return;
+
+      let li = target;
+      while (li && li !== dom && li.tagName !== 'LI') {
+        li = li.parentElement as HTMLElement;
+      }
+
+      if (li && li.tagName === 'LI' && li.getAttribute('data-type') === 'taskItem') {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const pos = editor.view.posAtDOM(li, 0);
+        const $pos = editor.state.doc.resolve(pos);
+
+        for (let i = $pos.depth; i > 0; i--) {
+          const node = $pos.node(i);
+          if (node.type.name === 'taskItem') {
+            const nodePos = $pos.before(i);
+            const wasEditable = editor.isEditable;
+            if (!wasEditable) editor.setEditable(true);
+            editor.view.dispatch(editor.state.tr.setNodeMarkup(nodePos, undefined, { checked: !node.attrs.checked }));
+            if (!wasEditable) editor.setEditable(false);
+            break;
           }
         }
       }
@@ -358,6 +378,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     ul[data-type="taskList"] li[data-checked="true"] > div { text-decoration: line-through; color: #999; }
     input[type="checkbox"] { accent-color: #ffb6c1; }
     blockquote { border-left: 4px solid #ffb6c1; padding: 8px 16px; color: #666; margin: 16px 0; background: #fff0f5; border-radius: 0 8px 8px 0; }
+    button, select { display: none !important; }
   </style>
 </head>
 <body>
