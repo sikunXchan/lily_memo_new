@@ -16,7 +16,7 @@ import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
   Sparkles, Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
-  Undo, Redo
+  Undo, Redo, Image as ImageIcon, Loader2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -41,6 +41,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isMobileView, setIsMobileView] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // フォルダ一覧（移動機能用）
   const folders = useLiveQuery(() => db.folders.toArray());
@@ -140,7 +141,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   }, [noteId, editor]);
 
   const saveNote = async (content: string) => {
-    await db.notes.update(noteId, { content, updatedAt: Date.now() });
+    setIsSaving(true);
+    try {
+      await db.notes.update(noteId, { content, updatedAt: Date.now() });
+    } finally {
+      // 少し待ってから消すことで保存中という安心感を与える
+      setTimeout(() => setIsSaving(false), 800);
+    }
   };
 
   const updateTitle = async (title: string) => {
@@ -170,6 +177,23 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     if (!wasEditable) editor.setEditable(true);
     editor.commands.insertContent(content);
     if (!wasEditable) editor.setEditable(false);
+  };
+
+  const addNoteAsset = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file || !editor) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const url = reader.result as string;
+        editor.chain().focus().setImage({ src: url }).run();
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
   };
 
   const insertMermaid = () => {
@@ -315,7 +339,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   };
 
   const runAi = async () => {
-    if (!aiInput || !editor) return;
+    if (!editor) return;
+    if (!aiInput) {
+      // 入力がない場合はパネルを開いてフォーカスするだけにする
+      setIsAiPanelOpen(true);
+      return;
+    }
     const key = localStorage.getItem('gemini_api_key');
     if (!key) {
       alert('設定画面からGemini APIキーを入力してください。');
@@ -350,7 +379,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       setAiInput('');
       setIsAiPanelOpen(false);
     } catch (err: unknown) {
-      alert(`AIエラー: ${(err as Error).message}`);
+      console.error('AI Error:', err);
+      // alertは邪魔なので最小限に
     } finally {
       setIsAiLoading(false);
     }
@@ -365,18 +395,15 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           <button className="btn-back" onClick={onClose} title="戻る">
             <ArrowLeft size={24} />
           </button>
-          <div className="title-container">
-            <input
-              type="text"
-              className="title-input"
-              value={note?.title || ''}
-              onChange={(e) => updateTitle(e.target.value)}
-              placeholder="タイトル"
-              readOnly={!isEditMode}
-              tabIndex={isEditMode ? 0 : -1}
-              onFocus={() => setIsTitleFocused(true)}
-              onBlur={() => setIsTitleFocused(false)}
-            />
+          <div className="title-container header-status">
+            {isSaving ? (
+              <div className="saving-indicator">
+                <Loader2 size={14} className="animate-spin" />
+                <span>保存中...</span>
+              </div>
+            ) : (
+              <span className="saved-text">保存済み</span>
+            )}
           </div>
         </div>
         <div className="editor-toolbar">
@@ -467,16 +494,15 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               <div className="divider" />
             </>
           )}
-          {/* 図・グラフは閲覧モードでも挿入可能（キーボードなし） */}
-          <button onClick={insertMermaid} title="図（Mermaid）を挿入 ※キーボード不要">
-            <GitBranch size={18} />
-          </button>
-          <button onClick={insertChart} title="グラフを挿入 ※キーボード不要">
-            <BarChart3 size={18} />
+          <button onClick={addNoteAsset} title="画像を挿入">
+            <ImageIcon size={18} />
           </button>
           <div className="divider" />
           <button
-            onClick={() => setIsAiPanelOpen(!isAiPanelOpen)}
+            onClick={() => {
+                if (!isAiPanelOpen) setIsAiPanelOpen(true);
+                else runAi(); // すでに開いている場合は実行
+            }}
             className={isAiPanelOpen ? 'active' : ''}
             title="AIアシスタント"
             style={{ color: '#7c4dff' }}
@@ -485,14 +511,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           </button>
         </div>}
 
-        {isMobileView && !isEditMode && (
-          <div className="read-mode-banner">
-            <Eye size={13} />
-            <span>閲覧モード — 右上の鉛筆ボタンで文字編集</span>
-          </div>
-        )}
-
-        <EditorContent editor={editor} />
+        <div className="editor-scroller">
+            <input
+              type="text"
+              className="content-title-input"
+              value={note?.title || ''}
+              onChange={(e) => updateTitle(e.target.value)}
+              placeholder="タイトルを入力..."
+              readOnly={!isEditMode}
+              onFocus={() => setIsTitleFocused(true)}
+              onBlur={() => setIsTitleFocused(false)}
+            />
+            <EditorContent editor={editor} />
+        </div>
       </div>
 
       {/* AIアシスタントパネル: ツールバーの下に固定表示 */}
@@ -644,6 +675,30 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           border-bottom-color: var(--primary);
         }
 
+        .header-status {
+            font-size: 0.75rem;
+            color: #999;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .saving-indicator {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: var(--primary);
+        }
+
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
         .editor-toolbar {
           display: flex;
           gap: 6px;
@@ -671,10 +726,38 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         /* ===== Content Wrapper ===== */
         .editor-content-wrapper {
           flex: 1;
-          padding: 24px 40px;
+          display: flex;
+          flex-direction: column;
+          padding: 0;
           overflow-y: auto;
           -webkit-overflow-scrolling: touch;
           overscroll-behavior: contain;
+        }
+
+        .editor-scroller {
+          flex: 1;
+          padding: 0 40px 100px;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .content-title-input {
+          font-size: 2.2rem;
+          font-weight: 800;
+          border: none;
+          background: transparent;
+          color: var(--foreground);
+          width: 100%;
+          margin: 40px auto 20px;
+          max-width: 860px;
+          padding: 0;
+          outline: none;
+        }
+
+        .bg-ruled .content-title-input {
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 8px;
+            margin-top: 56px; /* ルールド背景に合わせる */
         }
 
         @media (max-width: 768px) {
@@ -682,21 +765,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         /* ===== Tiptap Toolbar ===== */
-        .tiptap-toolbar {
-          position: sticky;
-          top: 0;
-          z-index: 10;
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 4px;
-          margin-bottom: 16px;
-          padding: 6px 10px;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          background: var(--accent);
-          max-width: fit-content;
-        }
 
         [data-theme='dark'] .tiptap-toolbar { background: var(--muted); }
 
@@ -745,7 +813,30 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           max-width: 860px;
           margin: 0 auto;
           color: var(--foreground);
-          padding-bottom: 40vh; /* キーボード被り防止のための余白 */
+          padding-bottom: 30vh; /* キーボード被り防止のための余白 */
+        }
+
+        .tiptap-toolbar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 4px;
+          margin: 12px 40px;
+          padding: 6px 10px;
+          border-radius: 12px;
+          border: 1px solid var(--border);
+          background: var(--accent);
+          max-width: fit-content;
+        }
+
+        @media (max-width: 768px) {
+          .editor-scroller { padding: 0 16px 100px; }
+          .content-title-input { font-size: 1.6rem; margin-top: 24px; }
+          .tiptap-toolbar { margin: 4px 12px; }
+          .editor-content-wrapper { padding: 0; }
         }
 
         .ProseMirror p.is-editor-empty:first-child::before {

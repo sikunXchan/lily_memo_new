@@ -13,10 +13,12 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('memos');
   const [isMobile, setIsMobile] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     checkMobile();
+    setMounted(true);
     window.addEventListener('resize', checkMobile);
     
     const handleFocus = (e: FocusEvent) => {
@@ -37,8 +39,10 @@ export default function Home() {
       window.removeEventListener('resize', checkMobile);
       window.removeEventListener('focusin', handleFocus);
       window.removeEventListener('focusout', handleBlur);
-    };
+    }
   }, []);
+
+  if (!mounted) return null;
 
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''}`}>

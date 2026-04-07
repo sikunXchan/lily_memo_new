@@ -113,16 +113,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           </div>
         </section>
 
-        <section className="settings-section">
-          <div className="section-title">
-            <Palette size={20} />
-            <h3>アピアランス</h3>
-          </div>
-          <div className="section-content">
-            <p className="desc">カラーテーマや背景スタイルの設定（開発中）</p>
-          </div>
-        </section>
-
         <button className="btn-danger" onClick={async () => {
           if (confirm('すべてのデータを消去しますか？')) {
             await db.folders.clear();
