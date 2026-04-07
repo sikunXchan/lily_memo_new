@@ -31,12 +31,28 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
   }, [attrs.content, editing]);
 
   return (
-    <NodeViewWrapper className="mermaid-wrapper">
+    <NodeViewWrapper 
+       className="mermaid-wrapper"
+       style={{ width: attrs.width || '100%' }}
+    >
       <div className="mermaid-header" contentEditable={false}>
           <span className="mermaid-label">Mermaid 図</span>
-          <button className="btn-edit" onClick={() => setEditing(!editing)}>
-            {editing ? 'プレビュー表示' : 'コードを編集'}
-          </button>
+          <div className="mermaid-header-actions">
+            <select
+              value={attrs.width || '100%'}
+              onChange={(e) => updateAttributes({ width: e.target.value })}
+              className="size-select"
+              title="図のサイズを変更"
+            >
+              <option value="25%">25%</option>
+              <option value="50%">50%</option>
+              <option value="75%">75%</option>
+              <option value="100%">100%</option>
+            </select>
+            <button className="btn-edit" onClick={() => setEditing(!editing)}>
+              {editing ? 'プレビュー表示' : 'コードを編集'}
+            </button>
+          </div>
       </div>
 
       {editing ? (
@@ -57,11 +73,12 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
 
       <style jsx>{`
         .mermaid-wrapper {
-          margin: 1.5rem 0;
+          margin: 1.5rem auto;
           background: var(--accent);
           border: 1px solid var(--border);
           border-radius: 12px;
           overflow: hidden;
+          transition: width 0.3s ease;
         }
         .mermaid-header {
           padding: 8px 12px;
@@ -78,12 +95,29 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
+        .mermaid-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .size-select {
+          padding: 2px 6px;
+          border-radius: 6px;
+          border: 1px solid var(--border);
+          background: var(--background);
+          color: var(--foreground);
+          font-size: 0.75rem;
+          outline: none;
+          cursor: pointer;
+        }
         .btn-edit {
           padding: 4px 12px;
           background: var(--primary);
           color: white;
           border-radius: 6px;
           font-size: 0.8rem;
+          border: none;
+          cursor: pointer;
         }
         .mermaid-editor {
           width: 100%;

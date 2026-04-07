@@ -12,6 +12,7 @@ export const MermaidExtension = Node.create({
   addAttributes() {
     return {
       content: { default: '' },
+      width: { default: '100%' },
     };
   },
   parseHTML() {
@@ -36,6 +37,7 @@ export const ChartExtension = Node.create({
       code: { default: null },
       fileData: { default: null },
       fileName: { default: null },
+      width: { default: '100%' },
     };
   },
   parseHTML() {

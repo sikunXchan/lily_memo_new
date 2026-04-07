@@ -323,9 +323,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     // Mermaidノード → <pre class="mermaid">
     doc.querySelectorAll('div[data-type="mermaid"]').forEach(el => {
       const content = el.getAttribute('content') || '';
+      const width = el.getAttribute('width') || '100%';
       const pre = doc.createElement('pre');
       pre.className = 'mermaid';
       pre.textContent = content;
+      pre.style.width = width;
+      pre.style.margin = '16px auto';
       el.replaceWith(pre);
     });
 
@@ -334,10 +337,17 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       const codeAttr = el.getAttribute('code');
       const fileDataAttr = el.getAttribute('filedata') || 'null';
       
+      const width = el.getAttribute('width') || '100%';
+      
       const id = `chart-${chartIndex++}`;
+      const wrapper = doc.createElement('div');
+      wrapper.style.width = width;
+      wrapper.style.margin = '24px auto';
+      
       const canvas = doc.createElement('canvas');
       canvas.id = id;
-      el.replaceWith(canvas);
+      wrapper.appendChild(canvas);
+      el.replaceWith(wrapper);
 
       if (codeAttr) {
         chartScripts.push(`

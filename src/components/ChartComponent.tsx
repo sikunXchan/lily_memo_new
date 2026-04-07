@@ -150,13 +150,27 @@ return {
   };
 
   return (
-    <NodeViewWrapper className="chart-wrapper">
+    <NodeViewWrapper 
+       className="chart-wrapper" 
+       style={{ width: attrs.width || '100%' }}
+    >
       <div className="chart-header" contentEditable={false}>
           <div className="header-info">
              <span className="title-text">📊 JS Chart</span>
              {fileName && <span className="file-badge"><FileSpreadsheet size={12}/> {fileName}</span>}
           </div>
           <div className="chart-header-actions">
+            <select
+              value={attrs.width || '100%'}
+              onChange={(e) => updateAttributes({ width: e.target.value })}
+              className="size-select"
+              title="グラフサイズの変更"
+            >
+              <option value="25%">25%</option>
+              <option value="50%">50%</option>
+              <option value="75%">75%</option>
+              <option value="100%">100%</option>
+            </select>
             {!editing && (
               <button className="btn-export" onClick={exportAsPng} title="PNG画像として保存">
                 <Download size={14} /> PNG
@@ -229,11 +243,12 @@ return {
 
       <style jsx>{`
         .chart-wrapper {
-          margin: 1.5rem 0;
+          margin: 1.5rem auto;
           background: var(--background);
           border: 1px solid var(--border);
           border-radius: 12px;
           overflow: hidden;
+          transition: width 0.3s ease;
         }
         .chart-header {
           padding: 8px 16px;
@@ -268,6 +283,16 @@ return {
           display: flex;
           align-items: center;
           gap: 6px;
+        }
+        .size-select {
+          padding: 2px 6px;
+          border-radius: 6px;
+          border: 1px solid var(--border);
+          background: var(--background);
+          color: var(--foreground);
+          font-size: 0.75rem;
+          outline: none;
+          cursor: pointer;
         }
         .btn-export {
           display: flex;
