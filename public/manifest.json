@@ -1,0 +1,23 @@
+{
+  "name": "Lily Memo",
+  "short_name": "LilyMemo",
+  "description": "A cute and simple memo app with syntax highlighting and file management.",
+  "theme_color": "#ffb6c1",
+  "background_color": "#fff0f5",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
