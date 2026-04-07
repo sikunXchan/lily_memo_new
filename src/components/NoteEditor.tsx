@@ -494,6 +494,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               <div className="divider" />
             </>
           )}
+          {/* 図・グラフ・画像は閲覧モードでも挿入可能 */}
+          <button onClick={insertMermaid} title="図（Mermaid）を挿入 ※キーボード不要">
+            <GitBranch size={18} />
+          </button>
+          <button onClick={insertChart} title="グラフを挿入 ※キーボード不要">
+            <BarChart3 size={18} />
+          </button>
           <button onClick={addNoteAsset} title="画像を挿入">
             <ImageIcon size={18} />
           </button>

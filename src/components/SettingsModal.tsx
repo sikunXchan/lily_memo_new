@@ -112,17 +112,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             </div>
           </div>
         </section>
-
-        <button className="btn-danger" onClick={async () => {
-          if (confirm('すべてのデータを消去しますか？')) {
-            await db.folders.clear();
-            await db.notes.clear();
-            window.location.reload();
-          }
-        }}>
-          <Trash2 size={18} />
-          データベースを完全にリセット
-        </button>
       </div>
 
       <style jsx>{`
