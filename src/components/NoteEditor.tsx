@@ -10,18 +10,17 @@ import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
-  Sparkles, Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
+  Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
 import { MermaidExtension, ChartExtension } from '@/lib/extensions';
-import { callGemini, AI_SYSTEM_PROMPT } from '@/lib/gemini';
 
 const lowlight = createLowlight(common);
 
@@ -33,15 +32,13 @@ interface NoteEditorProps {
 export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [bgType, setBgType] = useState<'plain' | 'grid' | 'ruled'>('plain');
-  const [aiInput, setAiInput] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
   // スマホはデフォルト閲覧モード（テキストエリアをタップしてもキーボードが開かない）
   const [isEditMode, setIsEditMode] = useState(true);
   const [isMobileView, setIsMobileView] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // フォルダ一覧（移動機能用）
   const folders = useLiveQuery(() => db.folders.toArray());
@@ -140,14 +137,16 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     loadNote();
   }, [noteId, editor]);
 
-  const saveNote = async (content: string) => {
+  const saveNote = (content: string) => {
     setIsSaving(true);
-    try {
-      await db.notes.update(noteId, { content, updatedAt: Date.now() });
-    } finally {
-      // 少し待ってから消すことで保存中という安心感を与える
-      setTimeout(() => setIsSaving(false), 800);
-    }
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await db.notes.update(noteId, { content, updatedAt: Date.now() });
+      } finally {
+        setIsSaving(false);
+      }
+    }, 800);
   };
 
   const updateTitle = async (title: string) => {
@@ -338,53 +337,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   };
 
-  const runAi = async () => {
-    if (!editor) return;
-    if (!aiInput) {
-      // 入力がない場合はパネルを開いてフォーカスするだけにする
-      setIsAiPanelOpen(true);
-      return;
-    }
-    const key = localStorage.getItem('gemini_api_key');
-    if (!key) {
-      alert('設定画面からGemini APIキーを入力してください。');
-      return;
-    }
 
-    setIsAiLoading(true);
-    try {
-      const context = editor.getText();
-      const prompt = `${AI_SYSTEM_PROMPT}\n\n現在のノート内容:\n${context}\n\nユーザーの指示: ${aiInput}`;
-      const response = await callGemini(prompt, key);
-
-      const mermaidMatch = response.match(/```mermaid([\s\S]*?)```/);
-      const chartMatch = response.match(/```chart([\s\S]*?)```/);
-      const textOnly = response.replace(/```(mermaid|chart)[\s\S]*?```/g, '').trim();
-
-      if (textOnly) {
-        editor.chain().focus().insertContent(`<p>${textOnly}</p>`).run();
-      }
-      if (mermaidMatch) {
-        insertWithoutFocus({ type: 'mermaid', attrs: { content: mermaidMatch[1].trim() } });
-      }
-      if (chartMatch) {
-        try {
-          const config = JSON.parse(chartMatch[1].trim());
-          insertWithoutFocus({ type: 'chart', attrs: { ...config } });
-        } catch (e) {
-          console.error('Chart JSON parse error', e);
-        }
-      }
-
-      setAiInput('');
-      setIsAiPanelOpen(false);
-    } catch (err: unknown) {
-      console.error('AI Error:', err);
-      // alertは邪魔なので最小限に
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
 
   if (!editor) return null;
 
@@ -413,7 +366,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               className={`toolbar-btn edit-mode-btn ${isEditMode ? 'edit-active' : ''}`}
               onClick={() => {
                 setIsEditMode(!isEditMode);
-                if (!isEditMode) setIsAiPanelOpen(false);
               }}
               title={isEditMode ? '閲覧モードへ' : '文字編集モードへ'}
             >
@@ -504,18 +456,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           <button onClick={addNoteAsset} title="画像を挿入">
             <ImageIcon size={18} />
           </button>
-          <div className="divider" />
-          <button
-            onClick={() => {
-                if (!isAiPanelOpen) setIsAiPanelOpen(true);
-                else runAi(); // すでに開いている場合は実行
-            }}
-            className={isAiPanelOpen ? 'active' : ''}
-            title="AIアシスタント"
-            style={{ color: '#7c4dff' }}
-          >
-            <Sparkles size={18} />
-          </button>
         </div>}
 
         <div className="editor-scroller">
@@ -533,35 +473,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         </div>
       </div>
 
-      {/* AIアシスタントパネル: ツールバーの下に固定表示 */}
-      {isAiPanelOpen && (
-        <div className="ai-assistant-bar slide-up">
-          <div className="ai-input-wrapper">
-            <Sparkles size={18} className="ai-icon" />
-            <input
-              type="text"
-              placeholder="AIに指示（グラフにして、図解して...）"
-              value={aiInput}
-              onChange={(e) => setAiInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && runAi()}
-              className="ai-input"
-              autoFocus
-            />
-          </div>
-          <div className="ai-actions">
-            <button
-              className={`btn-ai-run ${isAiLoading ? 'loading' : ''}`}
-              onClick={runAi}
-              disabled={isAiLoading || !aiInput}
-            >
-              {isAiLoading ? '生成中...' : '実行'}
-            </button>
-            <button className="btn-close-ai" onClick={() => setIsAiPanelOpen(false)} title="閉じる">
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* フォルダ移動ピッカー */}
       {showFolderPicker && (

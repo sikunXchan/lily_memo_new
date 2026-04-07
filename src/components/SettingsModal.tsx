@@ -1,6 +1,6 @@
 'use client';
 
-import { X, Download, Upload, Key, Palette, Trash2 } from 'lucide-react';
+import { X, Download, Upload, Palette, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/db';
 
@@ -9,22 +9,13 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
-  const [aiKey, setAiKey] = useState('');
   const [isPersisted, setIsPersisted] = useState(false);
 
   useEffect(() => {
-    const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) setAiKey(savedKey);
-
     if (navigator.storage && navigator.storage.persisted) {
       navigator.storage.persisted().then(setIsPersisted);
     }
   }, []);
-
-  const saveAiKey = (key: string) => {
-    setAiKey(key);
-    localStorage.setItem('gemini_api_key', key);
-  };
 
   const downloadBackup = async () => {
     const folders = await db.folders.toArray();
@@ -90,25 +81,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                 復元ファイルをアップロード
                 <input type="file" hidden onChange={uploadBackup} accept=".json" />
               </label>
-            </div>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <div className="section-title">
-            <Key size={20} />
-            <h3>AI 連携設定</h3>
-          </div>
-          <div className="section-content">
-            <p className="desc">Gemini APIキーを入力して、文章の校正や相談機能を利用できます。</p>
-            <div className="input-group">
-              <input 
-                type="password" 
-                placeholder="API Key を入力" 
-                value={aiKey}
-                onChange={(e) => saveAiKey(e.target.value)}
-                className="settings-input"
-              />
             </div>
           </div>
         </section>
