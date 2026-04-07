@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import NoteEditor from '@/components/NoteEditor';
 import SettingsModal from '@/components/SettingsModal';
-import { Book, Search, Sparkles, Settings as SettingsIcon } from 'lucide-react';
+import { Book, Settings as SettingsIcon } from 'lucide-react';
 
-type TabType = 'memos' | 'ai' | 'settings';
+type TabType = 'memos' | 'settings';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -69,13 +69,6 @@ export default function Home() {
                     onToggleMobile={() => {}}
                 />
             )}
-            {activeTab === 'ai' && (
-                <div className="view-placeholder">
-                   <Sparkles size={48} />
-                   <h2>AI 分析・相談</h2>
-                   <p>ノートの内容に基づいた高度な分析・図解作成（開発中）</p>
-                </div>
-            )}
             {activeTab === 'settings' && (
                 <SettingsModal onClose={() => setActiveTab('memos')} />
             )}
@@ -98,10 +91,6 @@ export default function Home() {
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
             <span>メモ</span>
-          </button>
-          <button className={`nav-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => { setActiveTab('ai'); setActiveNoteId(undefined); }}>
-            <Sparkles size={24} />
-            <span>AI分析</span>
           </button>
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setActiveNoteId(undefined); }}>
             <SettingsIcon size={24} />
@@ -131,20 +120,6 @@ export default function Home() {
           flex: 1;
           display: flex;
           flex-direction: column;
-        }
-
-        .view-placeholder {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 16px;
-          color: var(--primary);
-        }
-
-        .view-placeholder p {
-          color: #999;
         }
 
         .empty-state {

@@ -1,7 +1,7 @@
 'use client';
 
 import { NodeViewWrapper } from '@tiptap/react';
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Bar, Scatter, Line, Pie } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -17,7 +17,7 @@ import {
 } from 'chart.js';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
-import { Upload, Plus, Trash2, Edit3, Save } from 'lucide-react';
+import { Upload, Plus, Trash2, Edit3, Save, Download, FileSpreadsheet } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -33,6 +33,7 @@ ChartJS.register(
 
 export default function ChartComponent({ node: { attrs }, updateAttributes }: any) {
   const [editing, setEditing] = useState(false);
+  const chartRef = useRef<ChartJS>(null);
   const data = attrs.data || { labels: ['A', 'B', 'C'], datasets: [{ label: 'Data', data: [10, 20, 15], backgroundColor: 'rgba(255, 182, 193, 0.6)' }] };
   const type = attrs.type || 'bar';
 
@@ -99,13 +100,38 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
       updateAttributes({ data: newData });
   };
 
+  // PNG画像としてエクスポート（PCでも使用可能）
+  const exportAsPng = () => {
+    if (!chartRef.current) return;
+    const url = (chartRef.current as any).canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.download = 'chart.png';
+    a.href = url;
+    a.click();
+  };
+
+  // CSVとしてエクスポート
+  const exportAsCsv = () => {
+    const rows = data.labels.map((label: string, i: number) =>
+      `"${label}",${data.datasets[0].data[i] ?? ''}`
+    );
+    const csv = `\uFEFF項目名,値\n${rows.join('\n')}`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.download = 'chart-data.csv';
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const ChartChild = type === 'bar' ? Bar : type === 'line' ? Line : type === 'pie' ? Pie : Scatter;
 
   return (
     <NodeViewWrapper className="chart-wrapper">
       <div className="chart-header" contentEditable={false}>
-          <select 
-            value={type} 
+          <select
+            value={type}
             onChange={e => updateAttributes({ type: e.target.value })}
             className="type-select"
           >
@@ -114,10 +140,20 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
             <option value="pie">パイチャート</option>
             <option value="scatter">散布図</option>
           </select>
-          <button className="btn-edit" onClick={() => setEditing(!editing)}>
-            {editing ? <Save size={16} /> : <Edit3 size={16} />}
-            {editing ? '保存' : 'データを編集'}
-          </button>
+          <div className="chart-header-actions">
+            <button className="btn-export" onClick={exportAsPng} title="PNG画像として保存（PCでも使用可）">
+              <Download size={14} />
+              PNG
+            </button>
+            <button className="btn-export" onClick={exportAsCsv} title="CSVデータとして保存">
+              <FileSpreadsheet size={14} />
+              CSV
+            </button>
+            <button className="btn-edit" onClick={() => setEditing(!editing)}>
+              {editing ? <Save size={16} /> : <Edit3 size={16} />}
+              {editing ? '保存' : '編集'}
+            </button>
+          </div>
       </div>
 
       {editing ? (
@@ -155,12 +191,13 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
         </div>
       ) : (
         <div className="chart-render" contentEditable={false}>
-            <ChartChild 
-                data={data} 
-                options={{ 
+            <ChartChild
+                ref={chartRef as any}
+                data={data}
+                options={{
                     responsive: true,
-                    plugins: { legend: { position: 'top' as const } }
-                }} 
+                    plugins: { legend: { position: 'top' as const } },
+                }}
             />
         </div>
       )}
@@ -187,6 +224,27 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
           border: 1px solid var(--border);
           border-radius: 6px;
           padding: 4px 8px;
+        }
+        .chart-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .btn-export {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          background: var(--accent);
+          color: var(--foreground);
+          border: 1px solid var(--border);
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 0.78rem;
+          font-weight: 600;
+          white-space: nowrap;
+        }
+        .btn-export:hover {
+          background: var(--border);
         }
         .btn-edit {
           display: flex;

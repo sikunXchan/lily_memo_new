@@ -14,7 +14,7 @@ import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
-  Sparkles, Share2, GitBranch, X
+  Sparkles, Share2, GitBranch, X, Pencil, Eye
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -34,6 +34,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [aiInput, setAiInput] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
+  // スマホはデフォルト閲覧モード（キーボードが意図せず開かない）
+  const [isEditMode, setIsEditMode] = useState(true);
+  const [isMobileView, setIsMobileView] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -79,6 +82,23 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       }
     },
   });
+
+  // スマホ検出 → 初期閲覧モード設定
+  useEffect(() => {
+    const mobile = window.innerWidth <= 768;
+    setIsMobileView(mobile);
+    if (mobile) setIsEditMode(false);
+  }, []);
+
+  // 編集モード切替でエディタのeditableを制御
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(isEditMode);
+    // 閲覧モード終了時は編集エリアにフォーカス
+    if (isEditMode) {
+      setTimeout(() => editor.commands.focus('end'), 50);
+    }
+  }, [editor, isEditMode]);
 
   // チェックボックスタップ時にキーボードを開かない（iOS PWA対応）
   useEffect(() => {
@@ -256,28 +276,59 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               value={note?.title || ''}
               onChange={(e) => updateTitle(e.target.value)}
               placeholder="タイトル"
+              readOnly={!isEditMode}
+              tabIndex={isEditMode ? 0 : -1}
             />
           </div>
         </div>
         <div className="editor-toolbar">
-          <button className="toolbar-btn" onClick={shareNote} title="共有/保存">
-            <Share2 size={20} />
-          </button>
-          <button
-            className="toolbar-btn"
-            onClick={() => setBgType(bgType === 'plain' ? 'grid' : bgType === 'grid' ? 'ruled' : 'plain')}
-            title="背景切替"
-          >
-            <LayoutGrid size={20} />
-          </button>
-          <button className="toolbar-btn delete" onClick={deleteNote} title="削除">
-            <Trash2 size={20} />
-          </button>
+          {/* スマホ: 閲覧/編集モード切替ボタン */}
+          {isMobileView && (
+            <button
+              className={`toolbar-btn edit-mode-btn ${isEditMode ? 'edit-active' : ''}`}
+              onClick={() => {
+                setIsEditMode(!isEditMode);
+                if (isAiPanelOpen) setIsAiPanelOpen(false);
+              }}
+              title={isEditMode ? '閲覧モードへ' : '編集モードへ'}
+            >
+              {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
+            </button>
+          )}
+          {isEditMode && (
+            <>
+              <button className="toolbar-btn" onClick={shareNote} title="共有/保存">
+                <Share2 size={20} />
+              </button>
+              <button
+                className="toolbar-btn"
+                onClick={() => setBgType(bgType === 'plain' ? 'grid' : bgType === 'grid' ? 'ruled' : 'plain')}
+                title="背景切替"
+              >
+                <LayoutGrid size={20} />
+              </button>
+              <button className="toolbar-btn delete" onClick={deleteNote} title="削除">
+                <Trash2 size={20} />
+              </button>
+            </>
+          )}
+          {!isEditMode && (
+            <button className="toolbar-btn" onClick={shareNote} title="共有/保存">
+              <Share2 size={20} />
+            </button>
+          )}
         </div>
       </header>
 
       <div className="editor-content-wrapper">
-        <div className="tiptap-toolbar glass">
+        {/* 閲覧モード時のインジケーター（スマホのみ） */}
+        {isMobileView && !isEditMode && (
+          <div className="read-mode-banner">
+            <Eye size={14} />
+            <span>閲覧モード — 右上の鉛筆ボタンで編集できます</span>
+          </div>
+        )}
+        {isEditMode && <div className="tiptap-toolbar glass">
           <button
             type="button"
             onClick={() => editor.chain().focus().toggleBold().run()}
@@ -315,19 +366,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             <BarChart3 size={18} />
           </button>
           <div className="divider" />
-          <button 
-            onClick={() => setIsAiPanelOpen(!isAiPanelOpen)} 
+          <button
+            onClick={() => setIsAiPanelOpen(!isAiPanelOpen)}
             className={isAiPanelOpen ? 'active' : ''}
             title="AIアシスタント"
             style={{ color: '#7c4dff' }}
           >
             <Sparkles size={18} />
           </button>
-        </div>
+        </div>}
         <EditorContent editor={editor} />
       </div>
 
-      {isAiPanelOpen && (
+      {isEditMode && isAiPanelOpen && (
         <div className="ai-assistant-bar glass slide-up">
           <div className="ai-input-wrapper">
             <Sparkles size={20} className="ai-icon" />
@@ -486,6 +537,36 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         [data-theme='dark'] .toolbar-btn.delete {
           background: rgba(255, 77, 77, 0.15);
+        }
+
+        /* 編集モード切替ボタン */
+        .toolbar-btn.edit-mode-btn {
+          background: var(--muted);
+          color: var(--foreground);
+        }
+        .toolbar-btn.edit-mode-btn.edit-active {
+          background: var(--primary);
+          color: white;
+        }
+
+        /* 閲覧モードバナー */
+        .read-mode-banner {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 12px;
+          padding: 6px 12px;
+          background: var(--muted);
+          border-radius: 8px;
+          font-size: 0.78rem;
+          color: #888;
+        }
+
+        /* 閲覧モード時エディタのカーソル */
+        .ProseMirror[contenteditable="false"] {
+          cursor: default;
+          user-select: text;
+          -webkit-user-select: text;
         }
 
         /* ===== Content Wrapper ===== */
