@@ -32,6 +32,7 @@
     "chart.js": "^4.5.1",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
+    "html2pdf.js": "^0.14.0",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.7.0",
     "mermaid": "^11.14.0",

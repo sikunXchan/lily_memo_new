@@ -24,6 +24,48 @@ import { MermaidExtension, ChartExtension } from '@/lib/extensions';
 
 const lowlight = createLowlight(common);
 
+const CustomTaskItem = TaskItem.extend({
+  addNodeView() {
+    return ({ node, HTMLAttributes, getPos, editor }) => {
+      const listItem = document.createElement('li');
+      const checkboxWrapper = document.createElement('label');
+      const checkboxStyler = document.createElement('span');
+      const checkbox = document.createElement('input');
+      const content = document.createElement('div');
+
+      checkboxWrapper.appendChild(checkbox);
+      checkboxWrapper.appendChild(checkboxStyler);
+      listItem.appendChild(checkboxWrapper);
+      listItem.appendChild(content);
+
+      Object.entries(HTMLAttributes).forEach(([key, value]) => {
+        listItem.setAttribute(key, value as string);
+      });
+
+      checkbox.type = 'checkbox';
+      checkbox.checked = node.attrs.checked;
+
+      checkbox.addEventListener('change', () => {
+        if (typeof getPos === 'function') {
+          editor.view.dispatch(editor.state.tr.setNodeMarkup(getPos(), undefined, {
+            checked: checkbox.checked,
+          }));
+        }
+      });
+
+      return {
+        dom: listItem,
+        contentDOM: content,
+        update: updatedNode => {
+          if (updatedNode.type !== this.type) return false;
+          checkbox.checked = updatedNode.attrs.checked;
+          return true;
+        },
+      };
+    };
+  },
+});
+
 interface NoteEditorProps {
   noteId: number;
   onClose?: () => void;
@@ -66,12 +108,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       MermaidExtension,
       ChartExtension,
       TaskList,
-      TaskItem.configure({ nested: true }),
+      CustomTaskItem.configure({ nested: true }),
       ImageExtension,
       Link,
       Placeholder.configure({ placeholder: 'アイデアを書き留めましょう...' }),
     ],
     content: '',
+    immediatelyRender: false,
     onUpdate: ({ editor }) => {
       if (noteId) saveNote(editor.getHTML());
     },
@@ -119,53 +162,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     dom.addEventListener('touchstart', onTouchStart, { passive: false });
     dom.addEventListener('touchend', onTouchEnd, { passive: false });
 
-    // 閲覧モード時のチェックボックスタップ対応
-    const onReadOnlyClick = (e: MouseEvent) => {
-      if (editor.isEditable) return;
-      let target = e.target as HTMLElement;
-      
-      let isCheckboxArea = false;
-      let current = target;
-      while (current && current !== dom) {
-        if (current.tagName === 'LABEL') {
-          isCheckboxArea = true;
-          break;
-        }
-        current = current.parentElement as HTMLElement;
-      }
-      if (!isCheckboxArea) return;
-
-      let li = target;
-      while (li && li !== dom && li.tagName !== 'LI') {
-        li = li.parentElement as HTMLElement;
-      }
-
-      if (li && li.tagName === 'LI' && li.getAttribute('data-type') === 'taskItem') {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const pos = editor.view.posAtDOM(li, 0);
-        const $pos = editor.state.doc.resolve(pos);
-
-        for (let i = $pos.depth; i > 0; i--) {
-          const node = $pos.node(i);
-          if (node.type.name === 'taskItem') {
-            const nodePos = $pos.before(i);
-            const wasEditable = editor.isEditable;
-            if (!wasEditable) editor.setEditable(true);
-            editor.view.dispatch(editor.state.tr.setNodeMarkup(nodePos, undefined, { checked: !node.attrs.checked }));
-            if (!wasEditable) editor.setEditable(false);
-            break;
-          }
-        }
-      }
-    };
-    dom.addEventListener('click', onReadOnlyClick, { capture: true });
-
     return () => {
       dom.removeEventListener('touchstart', onTouchStart);
       dom.removeEventListener('touchend', onTouchEnd);
-      dom.removeEventListener('click', onReadOnlyClick, { capture: true });
     };
   }, [editor]);
 
@@ -425,9 +424,33 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       URL.revokeObjectURL(url);
     }
   };
-  const printPdf = () => {
-    window.print();
+  const downloadPdf = async () => {
+    const element = editor?.view.dom;
+    if (!element) return;
+    
+    // UIの一時隠ぺい用クラス追加
+    document.body.classList.add('pdf-exporting');
+    
+    try {
+      // @ts-ignore
+      const html2pdf = (await import('html2pdf.js')).default;
+      const opt = {
+        margin:       15,
+        filename:     `${note?.title || 'Lily_Memo'}.pdf`,
+        image:        { type: 'jpeg' as const, quality: 1 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+      };
+      
+      await html2pdf().from(element).set(opt).save();
+    } catch (e) {
+      console.error('PDF Download failed', e);
+      alert('PDFの生成に失敗しました。');
+    } finally {
+      document.body.classList.remove('pdf-exporting');
+    }
   };
+
   if (!editor) return null;
 
   return (
@@ -449,22 +472,20 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           </div>
         </div>
         <div className="editor-toolbar">
-          {/* スマホ: 閲覧/編集切替ボタン */}
-          {isMobileView && (
-            <button
-              className={`toolbar-btn edit-mode-btn ${isEditMode ? 'edit-active' : ''}`}
-              onClick={() => {
-                setIsEditMode(!isEditMode);
-              }}
-              title={isEditMode ? '閲覧モードへ' : '文字編集モードへ'}
-            >
-              {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
-            </button>
-          )}
+          {/* 閲覧/編集切替ボタン (スマホ・PC共通) */}
+          <button
+            className={`toolbar-btn edit-mode-btn ${isEditMode ? 'edit-active' : ''}`}
+            onClick={() => {
+              setIsEditMode(!isEditMode);
+            }}
+            title={isEditMode ? '閲覧モードへ' : '文字編集モードへ'}
+          >
+            {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
+          </button>
           <button className="toolbar-btn" onClick={handleSync} title="PCなどと同期">
             <Cloud size={20} />
           </button>
-          <button className="toolbar-btn" onClick={printPdf} title="PDFとして出力・印刷">
+          <button className="toolbar-btn" onClick={downloadPdf} title="PDFとしてダウンロード">
             <Printer size={20} />
           </button>
           <button className="toolbar-btn" onClick={shareNote} title="HTMLで共有（図・グラフ含む）">
@@ -1061,6 +1082,14 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .fp-check {
           color: var(--primary);
           flex-shrink: 0;
+        }
+
+        :global(body.pdf-exporting button),
+        :global(body.pdf-exporting select),
+        :global(body.pdf-exporting .tiptap-toolbar),
+        :global(body.pdf-exporting .btn-back),
+        :global(body.pdf-exporting .editor-toolbar) {
+          display: none !important;
         }
       `}</style>
     </div>
