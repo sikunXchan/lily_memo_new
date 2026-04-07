@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   title: "Lily Memo",
   description: "A cute and simple memo app",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

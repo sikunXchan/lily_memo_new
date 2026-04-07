@@ -14,7 +14,7 @@ import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
-  Sparkles, Share2, GitBranch
+  Sparkles, Share2, GitBranch, X
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -33,6 +33,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [bgType, setBgType] = useState<'plain' | 'grid' | 'ruled'>('plain');
   const [aiInput, setAiInput] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -229,7 +230,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
       }
 
+
       setAiInput('');
+      setIsAiPanelOpen(false); // 成功時にパネルを閉じる
     } catch (err: unknown) {
       alert(`AIエラー: ${(err as Error).message}`);
     } finally {
@@ -246,13 +249,15 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           <button className="btn-back" onClick={onClose} title="戻る">
             <ArrowLeft size={24} />
           </button>
-          <input
-            type="text"
-            className="title-input"
-            value={note?.title || ''}
-            onChange={(e) => updateTitle(e.target.value)}
-            placeholder="タイトル"
-          />
+          <div className="title-container">
+            <input
+              type="text"
+              className="title-input"
+              value={note?.title || ''}
+              onChange={(e) => updateTitle(e.target.value)}
+              placeholder="タイトル"
+            />
+          </div>
         </div>
         <div className="editor-toolbar">
           <button className="toolbar-btn" onClick={shareNote} title="共有/保存">
@@ -274,6 +279,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       <div className="editor-content-wrapper">
         <div className="tiptap-toolbar glass">
           <button
+            type="button"
             onClick={() => editor.chain().focus().toggleBold().run()}
             className={editor.isActive('bold') ? 'active' : ''}
             title="太字"
@@ -308,30 +314,47 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           <button onClick={insertChart} title="グラフを挿入">
             <BarChart3 size={18} />
           </button>
+          <div className="divider" />
+          <button 
+            onClick={() => setIsAiPanelOpen(!isAiPanelOpen)} 
+            className={isAiPanelOpen ? 'active' : ''}
+            title="AIアシスタント"
+            style={{ color: '#7c4dff' }}
+          >
+            <Sparkles size={18} />
+          </button>
         </div>
         <EditorContent editor={editor} />
       </div>
 
-      <div className="ai-assistant-bar glass">
-        <div className="ai-input-wrapper">
-          <Sparkles size={20} className="ai-icon" />
-          <input
-            type="text"
-            placeholder="AIに指示（図解して、グラフにして...）"
-            value={aiInput}
-            onChange={(e) => setAiInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && runAi()}
-            className="ai-input"
-          />
+      {isAiPanelOpen && (
+        <div className="ai-assistant-bar glass slide-up">
+          <div className="ai-input-wrapper">
+            <Sparkles size={20} className="ai-icon" />
+            <input
+              type="text"
+              placeholder="AIに指示（図解して、グラフにして...）"
+              value={aiInput}
+              onChange={(e) => setAiInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && runAi()}
+              className="ai-input"
+              autoFocus
+            />
+          </div>
+          <div className="ai-actions">
+            <button
+              className={`btn-ai-run ${isAiLoading ? 'loading' : ''}`}
+              onClick={runAi}
+              disabled={isAiLoading || !aiInput}
+            >
+              {isAiLoading ? '生成中...' : '実行'}
+            </button>
+            <button className="btn-close-ai" onClick={() => setIsAiPanelOpen(false)}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
-        <button
-          className={`btn-ai-run ${isAiLoading ? 'loading' : ''}`}
-          onClick={runAi}
-          disabled={isAiLoading || !aiInput}
-        >
-          {isAiLoading ? '生成中...' : '実行'}
-        </button>
-      </div>
+      )}
 
       <style jsx global>{`
         /* ===== Editor Container ===== */
@@ -408,15 +431,29 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           flex-shrink: 0;
         }
 
+        .title-container {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          min-width: 0;
+          padding: 4px 8px;
+        }
+
         .title-input {
           font-size: 1.5rem;
           font-weight: 700;
           border: none;
-          padding: 0;
+          padding: 4px 0;
           width: 100%;
           min-width: 0;
           color: var(--foreground);
           background: transparent;
+          border-bottom: 2px solid transparent;
+          transition: border-color 0.2s;
+        }
+
+        .title-input:focus {
+          border-bottom-color: var(--primary);
         }
 
         .editor-toolbar {
@@ -665,6 +702,32 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .btn-ai-run:disabled {
           opacity: 0.5;
           filter: grayscale(1);
+        }
+
+        .ai-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .btn-close-ai {
+          background: var(--muted);
+          color: var(--foreground);
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+        }
+
+        .slide-up {
+          animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
       `}</style>
     </div>

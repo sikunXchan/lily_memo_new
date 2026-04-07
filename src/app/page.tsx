@@ -12,16 +12,32 @@ export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<TabType>('memos');
   const [isMobile, setIsMobile] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     
+    const handleFocus = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        setIsInputFocused(true);
+      }
+    };
+    const handleBlur = () => setIsInputFocused(false);
+    
+    window.addEventListener('focusin', handleFocus);
+    window.addEventListener('focusout', handleBlur);
+
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist();
     }
-    return () => window.removeEventListener('resize', checkMobile);
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('focusin', handleFocus);
+      window.removeEventListener('focusout', handleBlur);
+    };
   }, []);
 
   return (
@@ -77,7 +93,7 @@ export default function Home() {
         )}
       </main>
 
-      {isMobile && (
+      {isMobile && !isInputFocused && (
         <nav className="bottom-nav">
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
