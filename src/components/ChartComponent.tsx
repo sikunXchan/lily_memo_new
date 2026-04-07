@@ -1,8 +1,8 @@
 'use client';
 
 import { NodeViewWrapper } from '@tiptap/react';
-import React, { useState, useRef } from 'react';
-import { Bar, Scatter, Line, Pie } from 'react-chartjs-2';
+import React, { useState, useRef, useMemo } from 'react';
+import { Chart as RChart } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,10 +14,11 @@ import {
   Title,
   Tooltip,
   Legend,
+  Filler
 } from 'chart.js';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
-import { Upload, Plus, Trash2, Edit3, Save, Download, FileSpreadsheet } from 'lucide-react';
+import { Upload, Edit3, Save, Download, Play, FileSpreadsheet } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -28,14 +29,56 @@ ChartJS.register(
   ArcElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 );
+
+const defaultCode = `// Chart.jsの設定オブジェクトを返してください。
+// 読み込んだCSV/Excelデータは変数 "fileData" に配列として格納されます。
+// 例として、最初の行をラベルとし、それ以降の行をデータセットとして扱うことができます。
+
+const labels = fileData ? fileData.slice(1).map(row => row[0]) : ['1月', '2月', '3月'];
+const dataValues = fileData ? fileData.slice(1).map(row => Number(row[1])) : [10, 20, 15];
+
+return {
+  type: 'bar', // 'line', 'bar', 'pie', 'scatter'
+  data: {
+    labels: labels,
+    datasets: [{
+      label: fileData && fileData[0] ? fileData[0][1] || 'Dataset 1' : 'データ',
+      data: dataValues,
+      backgroundColor: 'rgba(255, 182, 193, 0.6)',
+      borderColor: 'rgba(255, 182, 193, 1)',
+      borderWidth: 1
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'top' } }
+  }
+};`;
 
 export default function ChartComponent({ node: { attrs }, updateAttributes }: any) {
   const [editing, setEditing] = useState(false);
   const chartRef = useRef<ChartJS>(null);
-  const data = attrs.data || { labels: ['A', 'B', 'C'], datasets: [{ label: 'Data', data: [10, 20, 15], backgroundColor: 'rgba(255, 182, 193, 0.6)' }] };
-  const type = attrs.type || 'bar';
+
+  const code = attrs.code ?? defaultCode;
+  const fileData = attrs.fileData || null;
+  const fileName = attrs.fileName || '';
+  
+  const [localCode, setLocalCode] = useState(code);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // 実際の設定オブジェクトを生成
+  const computedConfig = useMemo(() => {
+    try {
+      const func = new Function('fileData', code);
+      const res = func(fileData);
+      return { config: res, error: null };
+    } catch (e: any) {
+      return { config: null, error: e.message };
+    }
+  }, [code, fileData]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -44,14 +87,9 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
     if (file.name.endsWith('.csv')) {
       Papa.parse(file, {
         complete: (results) => {
-          const rows = results.data as string[][];
-          const labels = rows.map(r => r[0]);
-          const values = rows.map(r => parseFloat(r[1]));
           updateAttributes({ 
-            data: { 
-              labels, 
-              datasets: [{ label: file.name, data: values, backgroundColor: 'rgba(255, 182, 193, 0.6)' }] 
-            } 
+            fileData: results.data,
+            fileName: file.name 
           });
         }
       });
@@ -59,99 +97,68 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
       const reader = new FileReader();
       reader.onload = (event) => {
         const bstr = event.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-        const labels = rows.map(r => r[0]);
-        const values = rows.map(r => parseFloat(r[1]));
-        updateAttributes({ 
-            data: { 
-              labels, 
-              datasets: [{ label: file.name, data: values, backgroundColor: 'rgba(255, 182, 193, 0.6)' }] 
-            } 
+        try {
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsname = wb.SheetNames[0];
+          const ws = wb.Sheets[wsname];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+          updateAttributes({ 
+            fileData: rows,
+            fileName: file.name 
           });
+        } catch (err: any) {
+             alert('ファイルの読み込みに失敗しました。');
+        }
       };
       reader.readAsBinaryString(file);
     }
   };
 
-  const updateTableData = (rowIndex: number, value: any, isLabel = false) => {
-      const newData = { ...data };
-      if (isLabel) {
-        newData.labels[rowIndex] = value;
-      } else {
-        newData.datasets[0].data[rowIndex] = parseFloat(value) || 0;
-      }
-      updateAttributes({ data: newData });
+  const handleSaveCode = () => {
+    try {
+      // 構文チェック
+      new Function('fileData', localCode);
+      updateAttributes({ code: localCode });
+      setErrorMsg('');
+      setEditing(false); // 保存時に編集モードを閉じる
+    } catch (e: any) {
+      setErrorMsg(e.message);
+    }
   };
 
-  const addRow = () => {
-      const newData = { ...data };
-      newData.labels.push(`New ${newData.labels.length + 1}`);
-      newData.datasets[0].data.push(0);
-      updateAttributes({ data: newData });
-  };
-
-  const deleteRow = (index: number) => {
-      const newData = { ...data };
-      newData.labels.splice(index, 1);
-      newData.datasets[0].data.splice(index, 1);
-      updateAttributes({ data: newData });
-  };
-
-  // PNG画像としてエクスポート（PCでも使用可能）
+  // PNGとしてエクスポート
   const exportAsPng = () => {
     if (!chartRef.current) return;
     const url = (chartRef.current as any).canvas.toDataURL('image/png');
     const a = document.createElement('a');
-    a.download = 'chart.png';
+    a.download = `${fileName || 'chart'}.png`;
     a.href = url;
     a.click();
   };
-
-  // CSVとしてエクスポート
-  const exportAsCsv = () => {
-    const rows = data.labels.map((label: string, i: number) =>
-      `"${label}",${data.datasets[0].data[i] ?? ''}`
-    );
-    const csv = `\uFEFF項目名,値\n${rows.join('\n')}`;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.download = 'chart-data.csv';
-    a.href = url;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const ChartChild = type === 'bar' ? Bar : type === 'line' ? Line : type === 'pie' ? Pie : Scatter;
 
   return (
     <NodeViewWrapper className="chart-wrapper">
       <div className="chart-header" contentEditable={false}>
-          <select
-            value={type}
-            onChange={e => updateAttributes({ type: e.target.value })}
-            className="type-select"
-          >
-            <option value="bar">棒グラフ</option>
-            <option value="line">折れ線グラフ</option>
-            <option value="pie">パイチャート</option>
-            <option value="scatter">散布図</option>
-          </select>
+          <div className="header-info">
+             <span className="title-text">📊 JS Chart</span>
+             {fileName && <span className="file-badge"><FileSpreadsheet size={12}/> {fileName}</span>}
+          </div>
           <div className="chart-header-actions">
-            <button className="btn-export" onClick={exportAsPng} title="PNG画像として保存（PCでも使用可）">
-              <Download size={14} />
-              PNG
-            </button>
-            <button className="btn-export" onClick={exportAsCsv} title="CSVデータとして保存">
-              <FileSpreadsheet size={14} />
-              CSV
-            </button>
-            <button className="btn-edit" onClick={() => setEditing(!editing)}>
+            {!editing && (
+              <button className="btn-export" onClick={exportAsPng} title="PNG画像として保存">
+                <Download size={14} /> PNG
+              </button>
+            )}
+            <button className="btn-edit" onClick={() => {
+                if (editing) {
+                    handleSaveCode();
+                } else {
+                    setLocalCode(attrs.code || defaultCode);
+                    setEditing(true);
+                }
+            }}>
               {editing ? <Save size={16} /> : <Edit3 size={16} />}
-              {editing ? '保存' : '編集'}
+              {editing ? '完了' : 'コード編集'}
             </button>
           </div>
       </div>
@@ -160,45 +167,40 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
         <div className="chart-editor" contentEditable={false}>
             <div className="upload-section">
                 <label className="btn-upload">
-                    <Upload size={18} />
-                    Excel/CSVを読み込む
+                    <Upload size={16} />
+                    CSV / Excelを読み込む
                     <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={handleFileUpload} />
                 </label>
             </div>
-            <table className="data-table">
-                <thead>
-                    <tr>
-                        <th>項目名</th>
-                        <th>値</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.labels.map((label: string, i: number) => (
-                        <tr key={i}>
-                            <td><input value={label} onChange={e => updateTableData(i, e.target.value, true)} /></td>
-                            <td><input type="number" value={data.datasets[0].data[i]} onChange={e => updateTableData(i, e.target.value)} /></td>
-                            <td><button className="btn-delete" onClick={() => deleteRow(i)}><Trash2 size={14} /></button></td>
-                        </tr>
-                    ))}
-                    <tr>
-                        <td colSpan={3}>
-                            <button className="btn-add-row" onClick={addRow}><Plus size={14} /> 行を追加</button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+            
+            <div className="code-editor-wrapper">
+               <textarea 
+                 value={localCode}
+                 onChange={e => setLocalCode(e.target.value)}
+                 className="code-textarea"
+                 spellCheck={false}
+               />
+               <button className="btn-run" onClick={handleSaveCode}><Play size={14}/> 適用</button>
+            </div>
+            
+            {errorMsg && <div className="error-message">Error: {errorMsg}</div>}
         </div>
       ) : (
         <div className="chart-render" contentEditable={false}>
-            <ChartChild
-                ref={chartRef as any}
-                data={data}
-                options={{
-                    responsive: true,
-                    plugins: { legend: { position: 'top' as const } },
-                }}
-            />
+            {computedConfig.error ? (
+                <div className="error-message">
+                  コードの実行エラー: {computedConfig.error}
+                </div>
+            ) : computedConfig.config ? (
+                <RChart
+                    type={computedConfig.config.type || 'bar'}
+                    ref={chartRef as any}
+                    data={computedConfig.config.data}
+                    options={computedConfig.config.options}
+                />
+            ) : (
+                <div className="placeholder">設定がありません。</div>
+            )}
         </div>
       )}
 
@@ -218,12 +220,26 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
           justify-content: space-between;
           align-items: center;
         }
-        .type-select {
-          background: var(--background);
+        .header-info {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .title-text {
+          font-weight: 700;
+          font-size: 0.9rem;
           color: var(--foreground);
-          border: 1px solid var(--border);
-          border-radius: 6px;
-          padding: 4px 8px;
+        }
+        .file-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          background: var(--primary);
+          color: white;
+          padding: 2px 8px;
+          border-radius: 12px;
+          font-size: 0.75rem;
+          font-weight: 600;
         }
         .chart-header-actions {
           display: flex;
@@ -242,6 +258,7 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
           font-size: 0.78rem;
           font-weight: 600;
           white-space: nowrap;
+          cursor: pointer;
         }
         .btn-export:hover {
           background: var(--border);
@@ -255,66 +272,80 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
           padding: 4px 12px;
           border-radius: 8px;
           font-size: 0.85rem;
+          cursor: pointer;
+          border: none;
         }
         .chart-editor {
           padding: 20px;
           background: var(--background);
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
         }
         .upload-section {
-          margin-bottom: 16px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
         }
         .btn-upload {
           display: inline-flex;
           align-items: center;
-          gap: 8px;
-          padding: 8px 16px;
+          gap: 6px;
+          padding: 6px 16px;
           background: var(--accent);
           color: var(--foreground);
           border: 1px solid var(--border);
-          border-radius: 8px;
+          border-radius: 6px;
           cursor: pointer;
-          font-size: 0.9rem;
-        }
-        .data-table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 0.9rem;
-        }
-        .data-table th {
-          padding: 8px;
-          border: 1px solid var(--border);
-          background: var(--muted);
-          color: var(--foreground);
+          font-size: 0.85rem;
           font-weight: 600;
         }
-        .data-table td {
-          padding: 4px 8px;
+        .code-editor-wrapper {
+          position: relative;
+          width: 100%;
+        }
+        .code-textarea {
+          width: 100%;
+          min-height: 250px;
+          background: #1e1e1e;
+          color: #d4d4d4;
+          font-family: 'Fira Code', 'Consolas', monospace;
+          font-size: 0.9rem;
           border: 1px solid var(--border);
-          background: var(--background);
-        }
-        .data-table input {
-          width: 100%;
-          border: none;
-          padding: 4px;
-          background: transparent;
-          color: var(--foreground);
+          border-radius: 8px;
+          padding: 16px;
           outline: none;
+          line-height: 1.5;
+          resize: vertical;
         }
-        .btn-delete {
-          color: #ff4d4d;
-          background: transparent;
+        .btn-run {
+           position: absolute;
+           bottom: 16px;
+           right: 24px;
+           display: flex;
+           align-items: center;
+           gap: 4px;
+           background: var(--primary);
+           color: white;
+           border: none;
+           padding: 6px 16px;
+           border-radius: 6px;
+           font-size: 0.85rem;
+           font-weight: 600;
+           cursor: pointer;
         }
-        .btn-add-row {
-          width: 100%;
-          padding: 6px;
-          background: var(--accent);
-          color: var(--foreground);
+        .error-message {
+          color: #cc0000;
+          background: #ffe6e6;
+          padding: 12px;
           border-radius: 6px;
+          font-family: monospace;
           font-size: 0.85rem;
+          word-break: break-all;
         }
         .chart-render {
           padding: 24px;
-          max-height: 400px;
+          max-height: 500px;
           display: flex;
           justify-content: center;
           background: var(--background);

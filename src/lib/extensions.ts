@@ -33,6 +33,9 @@ export const ChartExtension = Node.create({
     return {
       data: { default: null },
       type: { default: 'bar' },
+      code: { default: null },
+      fileData: { default: null },
+      fileName: { default: null },
     };
   },
   parseHTML() {

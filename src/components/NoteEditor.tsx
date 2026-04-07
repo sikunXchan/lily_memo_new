@@ -331,19 +331,38 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
     // Chartノード → <canvas> + Chart.js初期化スクリプト
     doc.querySelectorAll('div[data-type="chart"]').forEach(el => {
-      const chartType = el.getAttribute('type') || 'bar';
-      const dataAttr = el.getAttribute('data');
-      if (!dataAttr) { el.remove(); return; }
-      let chartData: unknown;
-      try { chartData = JSON.parse(dataAttr); } catch { el.remove(); return; }
-
+      const codeAttr = el.getAttribute('code');
+      const fileDataAttr = el.getAttribute('filedata') || 'null';
+      
       const id = `chart-${chartIndex++}`;
       const canvas = doc.createElement('canvas');
       canvas.id = id;
       el.replaceWith(canvas);
-      chartScripts.push(
-        `new Chart(document.getElementById('${id}'), { type: '${chartType}', data: ${JSON.stringify(chartData)}, options: { responsive: true, plugins: { legend: { position: 'top' } } } });`
-      );
+
+      if (codeAttr) {
+        chartScripts.push(`
+          (function() {
+            try {
+              const fileData = ${fileDataAttr};
+              const func = new Function('fileData', ${JSON.stringify(codeAttr)});
+              const config = func(fileData);
+              if (config) {
+                 new Chart(document.getElementById('${id}'), config);
+              }
+            } catch(e) {
+              console.error('Chart Eval Error:', e);
+            }
+          })();
+        `);
+      } else {
+        const chartType = el.getAttribute('type') || 'bar';
+        const dataAttr = el.getAttribute('data');
+        if (dataAttr) {
+          chartScripts.push(
+            `new Chart(document.getElementById('${id}'), { type: '${chartType}', data: ${dataAttr}, options: { responsive: true, plugins: { legend: { position: 'top' } } } });`
+          );
+        }
+      }
     });
 
     // チェックボックスを無効化（見た目のみ）
