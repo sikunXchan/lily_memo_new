@@ -47,9 +47,12 @@ const CustomTaskItem = TaskItem.extend({
 
       checkbox.addEventListener('change', () => {
         if (typeof getPos === 'function') {
-          editor.view.dispatch(editor.state.tr.setNodeMarkup(getPos(), undefined, {
-            checked: checkbox.checked,
-          }));
+          const pos = getPos();
+          if (typeof pos === 'number') {
+            editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, {
+              checked: checkbox.checked,
+            }));
+          }
         }
       });
 
