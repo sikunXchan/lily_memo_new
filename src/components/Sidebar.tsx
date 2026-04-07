@@ -206,35 +206,14 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
             border-right: 1px solid var(--border);
             flex-shrink: 0;
             z-index: 100;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          }
-          .mobile-toggle {
-            display: none;
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 200;
-            background: var(--primary);
-            color: white;
-            padding: 8px;
-            border-radius: 12px;
-            box-shadow: var(--shadow);
+            transition: all 0.3s;
           }
           @media (max-width: 768px) {
-            .mobile-toggle {
-              display: block;
-            }
             .sidebar {
-              position: fixed;
-              left: 0;
-              top: 0;
-              transform: translateX(-100%);
-              background: var(--background);
-              width: 80%;
-              max-width: 320px;
-            }
-            .sidebar.open {
-              transform: translateX(0);
+              width: 100%;
+              height: 100%;
+              border-right: none;
+              padding: 16px;
             }
           }
           .sidebar-header {

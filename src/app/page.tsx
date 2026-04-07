@@ -6,7 +6,7 @@ import NoteEditor from '@/components/NoteEditor';
 import SettingsModal from '@/components/SettingsModal';
 import { Book, Search, Sparkles, Settings as SettingsIcon } from 'lucide-react';
 
-type TabType = 'memos' | 'search' | 'ai' | 'settings';
+type TabType = 'memos' | 'ai' | 'settings';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -14,19 +14,13 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    // Check for mobile
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
-
-    // Request persistent storage (iOS/Safari)
+    
     if (navigator.storage && navigator.storage.persist) {
-      navigator.storage.persist().then(persistent => {
-        if (persistent) console.log('Storage will not be cleared except by explicit user action.');
-        else console.log('Storage may be cleared under storage pressure.');
-      });
+      navigator.storage.persist();
     }
-
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
@@ -50,39 +44,32 @@ export default function Home() {
           />
         ) : (
           <div className="tab-content">
-            {activeTab === 'memos' && isMobile && (
+            {activeTab === 'memos' && (
                 <Sidebar 
                     activeNoteId={activeNoteId} 
                     onSelectNote={setActiveNoteId} 
                     onOpenSettings={() => setActiveTab('settings')}
-                    isMobileOpen={true}
+                    isMobileOpen={isMobile}
                     onToggleMobile={() => {}}
                 />
-            )}
-            {activeTab === 'search' && (
-                <div className="view-placeholder">
-                   <Search size={48} />
-                   <h2>検索機能</h2>
-                   <p>サイドバーの検索機能がここに統合されます（開発中）</p>
-                </div>
             )}
             {activeTab === 'ai' && (
                 <div className="view-placeholder">
                    <Sparkles size={48} />
-                   <h2>AI チャット</h2>
-                   <p>Geminiとシームレスに対話できるチャット画面（開発中）</p>
+                   <h2>AI 分析・相談</h2>
+                   <p>ノートの内容に基づいた高度な分析・図解作成（開発中）</p>
                 </div>
             )}
             {activeTab === 'settings' && (
-                <SettingsModal onClose={() => { if(!isMobile) setActiveTab('memos'); }} />
+                <SettingsModal onClose={() => setActiveTab('memos')} />
             )}
             
             {!isMobile && activeTab === 'memos' && (
                 <div className="empty-state">
                     <div className="empty-content">
-                    <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
-                    <h2>メモを開くか、新しく作成してください</h2>
-                    <p>左のサイドバーから整理を始めましょう ✨</p>
+                        <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
+                        <h2>メモを開くか、新しく作成してください</h2>
+                        <p>左のサイドバーから整理を始めましょう ✨</p>
                     </div>
                 </div>
             )}
@@ -95,10 +82,6 @@ export default function Home() {
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
             <span>メモ</span>
-          </button>
-          <button className={`nav-item ${activeTab === 'search' ? 'active' : ''}`} onClick={() => { setActiveTab('search'); setActiveNoteId(undefined); }}>
-            <Search size={24} />
-            <span>検索</span>
           </button>
           <button className={`nav-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => { setActiveTab('ai'); setActiveNoteId(undefined); }}>
             <Sparkles size={24} />

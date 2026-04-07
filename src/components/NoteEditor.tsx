@@ -20,6 +20,7 @@ import {
 import CodeBlockComponent from './CodeBlockComponent';
 
 import { MermaidExtension, ChartExtension } from '@/lib/extensions';
+import { callGemini, AI_SYSTEM_PROMPT } from '@/lib/gemini';
 
 const lowlight = createLowlight(common);
 
@@ -31,6 +32,9 @@ interface NoteEditorProps {
 export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [bgType, setBgType] = useState<'plain' | 'grid' | 'ruled'>('plain');
+
+  const [aiInput, setAiInput] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -103,7 +107,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     if (!note || !editor) return;
     const title = note.title || 'Untitled';
     const text = editor.getText();
-    const blob = new Blob([editor.getHTML()], { type: 'text/markdown' }); // Simplified to HTML for now, or use turndown for MD
+    const blob = new Blob([editor.getHTML()], { type: 'text/markdown' });
     const file = new File([blob], `${title}.md`, { type: 'text/markdown' });
 
     if (navigator.share) {
@@ -121,22 +125,54 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   };
 
-  const insertMermaid = () => {
-    editor?.chain().focus().insertContent({ type: 'mermaid', attrs: { content: 'graph TD\n  A[Start] --> B[Process]' } }).run();
-  };
-
-  const insertChart = () => {
-    editor?.chain().focus().insertContent({ type: 'chart' }).run();
-  };
-
-  const polishWithAI = async () => {
+  const runAi = async () => {
+    if (!aiInput || !editor) return;
     const key = localStorage.getItem('gemini_api_key');
     if (!key) {
-        alert('設定画面からGemini APIキーを入力してください。');
-        return;
+      alert('設定画面からGemini APIキーを入力してください。');
+      return;
     }
-    // Placeholder for AI feature (implementation in a separate turn)
-    alert('AI機能は現在準備中ですが、設定のキーは読み込み可能です。');
+
+    setIsAiLoading(true);
+    try {
+      const context = editor.getText();
+      const prompt = `${AI_SYSTEM_PROMPT}\n\n現在のノート内容:\n${context}\n\nユーザーの指示: ${aiInput}`;
+      const response = await callGemini(prompt, key);
+
+      // Parse blocks
+      const mermaidMatch = response.match(/```mermaid([\s\S]*?)```/);
+      const chartMatch = response.match(/```chart([\s\S]*?)```/);
+      const textOnly = response.replace(/```(mermaid|chart)[\s\S]*?```/g, '').trim();
+
+      if (textOnly) {
+        editor.chain().focus().insertContent(`<p>${textOnly}</p>`).run();
+      }
+
+      if (mermaidMatch) {
+         editor.chain().focus().insertContent({ 
+           type: 'mermaid', 
+           attrs: { content: mermaidMatch[1].trim() } 
+         }).run();
+      }
+
+      if (chartMatch) {
+        try {
+          const config = JSON.parse(chartMatch[1].trim());
+          editor.chain().focus().insertContent({ 
+            type: 'chart', 
+            attrs: { config } 
+          }).run();
+        } catch (e) {
+          console.error('Chart JSON parse error', e);
+        }
+      }
+
+      setAiInput('');
+    } catch (err: any) {
+      alert(`AIエラー: ${err.message}`);
+    } finally {
+      setIsAiLoading(false);
+    }
   };
 
   if (!editor) return null;
@@ -163,21 +199,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           <button className="toolbar-btn" onClick={() => setBgType(bgType === 'plain' ? 'grid' : bgType === 'grid' ? 'ruled' : 'plain')} title="背景切替">
             <LayoutGrid size={20} />
           </button>
-          <button className="toolbar-btn" onClick={() => editor.chain().focus().toggleTaskList().run()} title="TODOリスト">
-            <CheckSquare size={20} />
-          </button>
-          <button className="toolbar-btn" onClick={insertMermaid} title="UML(Mermaid)">
-            <Binary size={20} />
-          </button>
-          <button className="toolbar-btn" onClick={insertChart} title="グラフ">
-            <BarChart3 size={20} />
-          </button>
-          <button className="toolbar-btn" onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コード">
-            <Type size={20} />
-          </button>
-          <button className="toolbar-btn special" onClick={polishWithAI} title="AI校正(Beta)">
-            <Sparkles size={20} />
-          </button>
           <button className="toolbar-btn delete" onClick={deleteNote} title="削除">
             <Trash2 size={20} />
           </button>
@@ -185,10 +206,140 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       </header>
 
       <div className="editor-content-wrapper">
+        <div className="tiptap-toolbar glass">
+          <button onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'active' : ''}><Type size={18} /></button>
+          <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}>H2</button>
+          <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={18} /></button>
+          <div className="divider" />
+          <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={editor.isActive('codeBlock') ? 'active' : ''}><Binary size={18} /></button>
+        </div>
         <EditorContent editor={editor} />
       </div>
 
+      <div className="ai-assistant-bar glass">
+        <div className="ai-input-wrapper">
+          <Sparkles size={20} className="ai-icon" />
+          <input 
+            type="text" 
+            placeholder="AIに指示（図解して、グラフにして...）" 
+            value={aiInput}
+            onChange={(e) => setAiInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && runAi()}
+            className="ai-input"
+          />
+        </div>
+        <button 
+          className={`btn-ai-run ${isAiLoading ? 'loading' : ''}`} 
+          onClick={runAi}
+          disabled={isAiLoading || !aiInput}
+        >
+          {isAiLoading ? '生成中...' : '実行'}
+        </button>
+      </div>
+
       <style jsx global>{`
+        .ai-assistant-bar {
+          position: absolute;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 90%;
+          max-width: 600px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px 20px;
+          background: rgba(255, 255, 255, 0.85);
+          backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 182, 193, 0.2);
+          border-radius: 20px;
+          box-shadow: 0 10px 30px rgba(255, 182, 193, 0.15);
+          z-index: 100;
+        }
+
+        .ai-input-wrapper {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .ai-icon {
+          color: #7c4dff;
+          animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 0.8; }
+          50% { transform: scale(1.1); opacity: 1; }
+          100% { transform: scale(1); opacity: 0.8; }
+        }
+
+        .ai-input {
+          flex: 1;
+          background: transparent;
+          border: none;
+          outline: none;
+          font-size: 0.95rem;
+          color: var(--foreground);
+        }
+
+        .btn-ai-run {
+          background: var(--primary);
+          color: white;
+          padding: 8px 20px;
+          border-radius: 12px;
+          font-weight: 600;
+          font-size: 0.9rem;
+          transition: all 0.2s;
+        }
+
+        .btn-ai-run:disabled {
+          opacity: 0.5;
+          filter: grayscale(1);
+        }
+
+        /* Tippap Toolbar */
+        .tiptap-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 24px;
+          padding: 8px;
+          border-radius: 12px;
+          border: 1px solid var(--accent);
+          background: rgba(255, 255, 255, 0.5);
+          max-width: fit-content;
+        }
+
+        .tiptap-toolbar button {
+          width: 36px;
+          height: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          color: #666;
+          border-radius: 8px;
+          font-weight: 700;
+        }
+
+        .tiptap-toolbar button:hover {
+          background: var(--accent);
+          color: var(--primary);
+        }
+
+        .tiptap-toolbar button.active {
+          background: var(--primary);
+          color: white;
+        }
+
+        .divider {
+          width: 1px;
+          height: 20px;
+          background: var(--accent);
+          margin: 0 4px;
+        }
         .editor-container {
           flex: 1;
           display: flex;

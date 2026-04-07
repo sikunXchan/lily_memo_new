@@ -63,119 +63,103 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content glass" onClick={e => e.stopPropagation()}>
-        <header className="modal-header">
-          <h2>設定</h2>
-          <button className="btn-close" onClick={onClose}><X size={24} /></button>
-        </header>
+    <div className="settings-view">
+      <header className="settings-header">
+        <h2>設定</h2>
+      </header>
 
-        <div className="settings-sections">
-          <section className="settings-section">
-            <div className="section-title">
-              <Download size={20} />
-              <h3>バックアップと復元</h3>
+      <div className="settings-sections">
+        <section className="settings-section">
+          <div className="section-title">
+            <Download size={20} />
+            <h3>バックアップと復元</h3>
+          </div>
+          <div className="section-content">
+            <div className="status-badge">
+              <div className={`dot ${isPersisted ? 'persisted' : ''}`} />
+              <span>ストレージ永続化: {isPersisted ? '有効（安全）' : '標準'}</span>
             </div>
-            <div className="section-content">
-              <div className="status-badge">
-                <div className={`dot ${isPersisted ? 'persisted' : ''}`} />
-                <span>ストレージ永続化: {isPersisted ? '有効（安全）' : '標準'}</span>
-              </div>
-              <p className="desc">iOSのSafariでは「共有」ボタンからメモを個別ファイルとして保存することをお勧めします。</p>
-              <div className="action-group">
-                <button className="btn-action" onClick={downloadBackup}>
-                  <Download size={18} />
-                  バックアップをダウンロード
-                </button>
-                <label className="btn-action outline">
-                  <Upload size={18} />
-                  復元ファイルをアップロード
-                  <input type="file" hidden onChange={uploadBackup} accept=".json" />
-                </label>
-              </div>
+            <p className="desc">iOSのSafariでは「共有」ボタンからメモを個別ファイルとして保存することをお勧めします。</p>
+            <div className="action-group">
+              <button className="btn-action" onClick={downloadBackup}>
+                <Download size={18} />
+                バックアップをダウンロード
+              </button>
+              <label className="btn-action outline">
+                <Upload size={18} />
+                復元ファイルをアップロード
+                <input type="file" hidden onChange={uploadBackup} accept=".json" />
+              </label>
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section className="settings-section">
-            <div className="section-title">
-              <Key size={20} />
-              <h3>AI 連携設定</h3>
+        <section className="settings-section">
+          <div className="section-title">
+            <Key size={20} />
+            <h3>AI 連携設定</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">Gemini APIキーを入力して、文章の校正や相談機能を利用できます。</p>
+            <div className="input-group">
+              <input 
+                type="password" 
+                placeholder="API Key を入力" 
+                value={aiKey}
+                onChange={(e) => saveAiKey(e.target.value)}
+                className="settings-input"
+              />
             </div>
-            <div className="section-content">
-              <p className="desc">Gemini APIキーを入力して、文章の校正や相談機能を利用できます。</p>
-              <div className="input-group">
-                <input 
-                  type="password" 
-                  placeholder="API Key を入力" 
-                  value={aiKey}
-                  onChange={(e) => saveAiKey(e.target.value)}
-                  className="settings-input"
-                />
-              </div>
-            </div>
-          </section>
+          </div>
+        </section>
 
-          <section className="settings-section">
-            <div className="section-title">
-              <Palette size={20} />
-              <h3>アピアランス</h3>
-            </div>
-            <div className="section-content">
-              <p className="desc">カラーテーマや背景スタイルの設定（開発中）</p>
-            </div>
-          </section>
+        <section className="settings-section">
+          <div className="section-title">
+            <Palette size={20} />
+            <h3>アピアランス</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">カラーテーマや背景スタイルの設定（開発中）</p>
+          </div>
+        </section>
 
-          <button className="btn-danger" onClick={() => confirm('すべてのデータを消去しますか？') && db.delete().then(() => window.location.reload())}>
-            <Trash2 size={18} />
-            データベースを完全にリセット
-          </button>
-        </div>
+        <button className="btn-danger" onClick={() => confirm('すべてのデータを消去しますか？') && db.delete().then(() => window.location.reload())}>
+          <Trash2 size={18} />
+          データベースを完全にリセット
+        </button>
       </div>
 
       <style jsx>{`
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0,0,0,0.4);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          backdrop-filter: blur(4px);
-        }
-        .modal-content {
-          width: 90%;
-          max-width: 500px;
-          background: var(--background);
-          border-radius: var(--radius);
+        .settings-view {
           padding: 32px;
-          max-height: 85vh;
+          height: 100%;
           overflow-y: auto;
+          background: var(--background);
         }
-        .modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 32px;
+        .settings-header {
+          margin-bottom: 40px;
         }
-        .btn-close {
-          background: transparent;
-          color: var(--foreground);
+        .settings-header h2 {
+          font-size: 1.8rem;
+          color: var(--primary);
         }
         .settings-sections {
+          max-width: 600px;
           display: flex;
           flex-direction: column;
           gap: 40px;
+        }
+        .settings-section {
+          background: rgba(255, 255, 255, 0.5);
+          padding: 24px;
+          border-radius: 16px;
         }
         .section-title {
           display: flex;
           align-items: center;
           gap: 12px;
           color: var(--primary);
-          margin-bottom: 16px;
+          margin-bottom: 20px;
         }
         .section-title h3 {
           margin: 0;
@@ -203,7 +187,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         .desc {
           font-size: 0.85rem;
           color: #888;
-          margin-bottom: 16px;
+          margin-bottom: 20px;
         }
         .action-group {
           display: flex;
@@ -229,8 +213,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         }
         .settings-input {
           width: 100%;
-          padding: 12px;
-          background: var(--accent);
+          padding: 14px;
+          background: white;
           border: 1px solid var(--border);
           border-radius: 12px;
         }
@@ -240,11 +224,23 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          padding: 12px;
+          padding: 14px;
           background: #fff0f0;
           color: #ff4d4d;
           border-radius: 12px;
           font-weight: 600;
+        }
+        
+        @media (max-width: 768px) {
+          .settings-view {
+            padding: 24px 16px;
+          }
+          .settings-header h2 {
+            font-size: 1.5rem;
+          }
+          .settings-section {
+            padding: 16px;
+          }
         }
       `}</style>
     </div>
