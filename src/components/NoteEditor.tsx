@@ -15,7 +15,8 @@ import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
-  Sparkles, Share2, GitBranch, X, Pencil, Eye, FolderInput, Check
+  Sparkles, Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
+  Undo, Redo
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -421,6 +422,21 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           {isEditMode && (
             <>
               <button
+                onClick={() => editor.chain().focus().undo().run()}
+                disabled={!editor.can().undo()}
+                title="元に戻す"
+              >
+                <Undo size={18} />
+              </button>
+              <button
+                onClick={() => editor.chain().focus().redo().run()}
+                disabled={!editor.can().redo()}
+                title="やり直し"
+              >
+                <Redo size={18} />
+              </button>
+              <div className="divider" />
+              <button
                 onClick={() => editor.chain().focus().toggleBold().run()}
                 className={editor.isActive('bold') ? 'active' : ''}
                 title="太字"
@@ -667,6 +683,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         /* ===== Tiptap Toolbar ===== */
         .tiptap-toolbar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
           display: flex;
           flex-wrap: wrap;
           align-items: center;
@@ -726,6 +745,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           max-width: 860px;
           margin: 0 auto;
           color: var(--foreground);
+          padding-bottom: 40vh; /* キーボード被り防止のための余白 */
         }
 
         .ProseMirror p.is-editor-empty:first-child::before {
