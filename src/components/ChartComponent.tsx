@@ -167,21 +167,23 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
 
       <style jsx>{`
         .chart-wrapper {
-          margin: 2rem 0;
-          background: #fff;
-          border: 1px solid #eee;
+          margin: 1.5rem 0;
+          background: var(--background);
+          border: 1px solid var(--border);
           border-radius: 12px;
           overflow: hidden;
         }
         .chart-header {
           padding: 8px 16px;
-          background: #f8f8f8;
+          background: var(--muted);
+          border-bottom: 1px solid var(--border);
           display: flex;
           justify-content: space-between;
           align-items: center;
         }
         .type-select {
-          background: transparent;
+          background: var(--background);
+          color: var(--foreground);
           border: 1px solid var(--border);
           border-radius: 6px;
           padding: 4px 8px;
@@ -194,34 +196,51 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
           color: white;
           padding: 4px 12px;
           border-radius: 8px;
+          font-size: 0.85rem;
         }
         .chart-editor {
-          padding: 24px;
+          padding: 20px;
+          background: var(--background);
         }
         .upload-section {
-          margin-bottom: 20px;
+          margin-bottom: 16px;
         }
         .btn-upload {
           display: inline-flex;
           align-items: center;
           gap: 8px;
-          padding: 10px 16px;
-          background: #f0f0f0;
+          padding: 8px 16px;
+          background: var(--accent);
+          color: var(--foreground);
+          border: 1px solid var(--border);
           border-radius: 8px;
           cursor: pointer;
+          font-size: 0.9rem;
         }
         .data-table {
           width: 100%;
           border-collapse: collapse;
+          font-size: 0.9rem;
         }
-        .data-table th, .data-table td {
+        .data-table th {
           padding: 8px;
-          border: 1px solid #eee;
+          border: 1px solid var(--border);
+          background: var(--muted);
+          color: var(--foreground);
+          font-weight: 600;
+        }
+        .data-table td {
+          padding: 4px 8px;
+          border: 1px solid var(--border);
+          background: var(--background);
         }
         .data-table input {
           width: 100%;
           border: none;
           padding: 4px;
+          background: transparent;
+          color: var(--foreground);
+          outline: none;
         }
         .btn-delete {
           color: #ff4d4d;
@@ -229,15 +248,18 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
         }
         .btn-add-row {
           width: 100%;
-          padding: 4px;
-          background: #f8f8f8;
-          color: #888;
+          padding: 6px;
+          background: var(--accent);
+          color: var(--foreground);
+          border-radius: 6px;
+          font-size: 0.85rem;
         }
         .chart-render {
-          padding: 32px;
+          padding: 24px;
           max-height: 400px;
           display: flex;
           justify-content: center;
+          background: var(--background);
         }
       `}</style>
     </NodeViewWrapper>

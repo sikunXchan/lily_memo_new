@@ -100,6 +100,25 @@ input:focus, textarea:focus {
 }
 
 [data-theme='dark'] .glass {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(30, 30, 30, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Dark mode: ensure all text is readable */
+[data-theme='dark'] input,
+[data-theme='dark'] textarea,
+[data-theme='dark'] select {
+  background: var(--muted);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+[data-theme='dark'] input::placeholder,
+[data-theme='dark'] textarea::placeholder {
+  color: #777;
+}
+
+/* iOS safe area for body */
+body {
+  padding-top: env(safe-area-inset-top);
 }

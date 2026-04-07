@@ -317,9 +317,10 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
             display: flex;
             gap: 8px;
             padding: 8px;
-            background: white;
+            background: var(--background);
+            border: 1px solid var(--border);
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             margin: 4px 0 12px 24px;
           }
           .color-dot {
@@ -379,6 +380,12 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
           }
           .btn-settings:hover {
             background: var(--border);
+          }
+          /* モバイルではタブナビゲーションで設定に遷移するため、サイドバーの設定ボタンは非表示 */
+          @media (max-width: 768px) {
+            .sidebar-footer {
+              display: none;
+            }
           }
         `}</style>
       </aside>

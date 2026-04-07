@@ -44,12 +44,12 @@ export default function Home() {
           />
         ) : (
           <div className="tab-content">
-            {activeTab === 'memos' && (
-                <Sidebar 
-                    activeNoteId={activeNoteId} 
-                    onSelectNote={setActiveNoteId} 
+            {isMobile && activeTab === 'memos' && (
+                <Sidebar
+                    activeNoteId={activeNoteId}
+                    onSelectNote={setActiveNoteId}
                     onOpenSettings={() => setActiveTab('settings')}
-                    isMobileOpen={isMobile}
+                    isMobileOpen={true}
                     onToggleMobile={() => {}}
                 />
             )}
@@ -98,6 +98,7 @@ export default function Home() {
         .app-container {
           display: flex;
           height: 100vh;
+          height: 100dvh;
           background: var(--background);
           overflow: hidden;
           position: relative;
@@ -151,13 +152,17 @@ export default function Home() {
           bottom: 0;
           left: 0;
           right: 0;
-          height: 70px;
-          background: rgba(255, 255, 255, 0.85);
+          height: calc(60px + env(safe-area-inset-bottom));
+          background: rgba(255, 255, 255, 0.9);
           backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
           display: flex;
           border-top: 1px solid var(--border);
           padding-bottom: env(safe-area-inset-bottom);
           z-index: 1000;
+        }
+        :global([data-theme='dark']) .bottom-nav {
+          background: rgba(26, 26, 26, 0.92);
         }
 
         .nav-item {
@@ -183,7 +188,7 @@ export default function Home() {
 
         @media (max-width: 768px) {
           .main-view {
-            padding-bottom: 70px;
+            padding-bottom: calc(60px + env(safe-area-inset-bottom));
           }
           .empty-state {
             display: none;

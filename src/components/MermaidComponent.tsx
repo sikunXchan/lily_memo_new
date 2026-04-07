@@ -33,6 +33,7 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
   return (
     <NodeViewWrapper className="mermaid-wrapper">
       <div className="mermaid-header" contentEditable={false}>
+          <span className="mermaid-label">Mermaid 図</span>
           <button className="btn-edit" onClick={() => setEditing(!editing)}>
             {editing ? 'プレビュー表示' : 'コードを編集'}
           </button>
@@ -56,39 +57,52 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
 
       <style jsx>{`
         .mermaid-wrapper {
-          margin: 2rem 0;
-          background: #fdfdfd;
-          border: 1px solid #eee;
+          margin: 1.5rem 0;
+          background: var(--accent);
+          border: 1px solid var(--border);
           border-radius: 12px;
           overflow: hidden;
         }
         .mermaid-header {
-          padding: 8px;
-          background: #f8f8f8;
-          border-bottom: 1px solid #eee;
-          text-align: right;
+          padding: 8px 12px;
+          background: var(--muted);
+          border-bottom: 1px solid var(--border);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .mermaid-label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: var(--primary);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
         }
         .btn-edit {
           padding: 4px 12px;
           background: var(--primary);
           color: white;
           border-radius: 6px;
+          font-size: 0.8rem;
         }
         .mermaid-editor {
           width: 100%;
-          min-height: 200px;
+          min-height: 160px;
           padding: 16px;
-          font-family: inherit;
+          font-family: monospace;
+          font-size: 0.9rem;
           border: none;
           outline: none;
-          background: #2d2d2d;
-          color: #eee;
+          background: #1e1e1e;
+          color: #d4d4d4;
+          resize: vertical;
         }
         .mermaid-render {
-          padding: 32px;
+          padding: 24px;
           display: flex;
           justify-content: center;
           align-items: center;
+          background: var(--background);
         }
         .mermaid-render :global(svg) {
           max-width: 100%;
