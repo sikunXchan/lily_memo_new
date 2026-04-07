@@ -86,7 +86,7 @@ export default function Home() {
         )}
       </main>
 
-      {isMobile && !isInputFocused && (
+      {isMobile && !isInputFocused && !activeNoteId && (
         <nav className="bottom-nav">
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />

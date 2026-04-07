@@ -34,28 +34,23 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [aiInput, setAiInput] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
-  // スマホはデフォルト閲覧モード（キーボードが意図せず開かない）
+  // スマホはデフォルト閲覧モード（テキストエリアをタップしてもキーボードが開かない）
   const [isEditMode, setIsEditMode] = useState(true);
   const [isMobileView, setIsMobileView] = useState(false);
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        codeBlock: false,
-      }),
-      CodeBlockLowlight.configure({
-        lowlight,
-      }).extend({
+      StarterKit.configure({ codeBlock: false }),
+      CodeBlockLowlight.configure({ lowlight }).extend({
         addAttributes() {
           return {
             ...this.parent?.(),
             theme: {
               default: 'dark',
               parseHTML: (element: HTMLElement) => element.getAttribute('data-theme') || 'dark',
-              renderHTML: (attributes: Record<string, string>) => {
-                if (!attributes.theme) return {};
-                return { 'data-theme': attributes.theme };
-              },
+              renderHTML: (attributes: Record<string, string>) => ({
+                'data-theme': attributes.theme || 'dark',
+              }),
             },
           };
         },
@@ -66,64 +61,53 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       MermaidExtension,
       ChartExtension,
       TaskList,
-      TaskItem.configure({
-        nested: true,
-      }),
+      TaskItem.configure({ nested: true }),
       ImageExtension,
       Link,
-      Placeholder.configure({
-        placeholder: 'アイデアを書き留めましょう...',
-      }),
+      Placeholder.configure({ placeholder: 'アイデアを書き留めましょう...' }),
     ],
     content: '',
     onUpdate: ({ editor }) => {
-      if (noteId) {
-        saveNote(editor.getHTML());
-      }
+      if (noteId) saveNote(editor.getHTML());
     },
   });
 
-  // スマホ検出 → 初期閲覧モード設定
+  // スマホ検出 → 初期閲覧モード
   useEffect(() => {
     const mobile = window.innerWidth <= 768;
     setIsMobileView(mobile);
     if (mobile) setIsEditMode(false);
   }, []);
 
-  // 編集モード切替でエディタのeditableを制御
+  // 編集モード↔閲覧モード切替でエディタのeditableを制御
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(isEditMode);
-    // 閲覧モード終了時は編集エリアにフォーカス
     if (isEditMode) {
       setTimeout(() => editor.commands.focus('end'), 50);
     }
   }, [editor, isEditMode]);
 
-  // チェックボックスタップ時にキーボードを開かない（iOS PWA対応）
+  // チェックボックスタップ時のキーボード抑制（iOS対応）
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;
-
-    let touchedCheckbox = false;
+    let pendingCheckbox = false;
 
     const onTouchStart = (e: TouchEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' && target.getAttribute('type') === 'checkbox') {
         e.preventDefault();
-        touchedCheckbox = true;
+        pendingCheckbox = true;
       }
     };
-
     const onTouchEnd = (e: TouchEvent) => {
-      if (!touchedCheckbox) return;
-      touchedCheckbox = false;
+      if (!pendingCheckbox) return;
+      pendingCheckbox = false;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' && target.getAttribute('type') === 'checkbox') {
         e.preventDefault();
-        // Tiptapのクリックハンドラを起動（フォーカスなし）
-        const click = new MouseEvent('click', { bubbles: true, cancelable: true });
-        target.dispatchEvent(click);
+        target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       }
     };
 
@@ -149,18 +133,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   }, [noteId, editor]);
 
   const saveNote = async (content: string) => {
-    await db.notes.update(noteId, {
-      content,
-      updatedAt: Date.now(),
-    });
+    await db.notes.update(noteId, { content, updatedAt: Date.now() });
   };
 
   const updateTitle = async (title: string) => {
     setNote(prev => prev ? { ...prev, title } : null);
-    await db.notes.update(noteId, {
-      title,
-      updatedAt: Date.now(),
-    });
+    await db.notes.update(noteId, { title, updatedAt: Date.now() });
   };
 
   const deleteNote = async () => {
@@ -170,32 +148,25 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   };
 
-  const shareNote = async () => {
-    if (!note || !editor) return;
-    const title = note.title || 'Untitled';
-    const blob = new Blob([editor.getHTML()], { type: 'text/markdown' });
-    const file = new File([blob], `${title}.md`, { type: 'text/markdown' });
-
-    if (navigator.share) {
-      try {
-        await navigator.share({ title, text: `Check out my note: ${title}`, files: [file] });
-      } catch (err) {
-        console.error('Share failed:', err);
-      }
-    } else {
-      alert('共有機能はこのブラウザではサポートされていません。設定からバックアップを利用してください。');
-    }
+  // 図/グラフ挿入: .focus()を呼ばない → キーボードが開かない
+  // 閲覧モード中は一時的にeditableにしてinsert後に戻す
+  const insertWithoutFocus = (content: object) => {
+    if (!editor) return;
+    const wasEditable = editor.isEditable;
+    if (!wasEditable) editor.setEditable(true);
+    editor.commands.insertContent(content);
+    if (!wasEditable) editor.setEditable(false);
   };
 
   const insertMermaid = () => {
-    editor?.chain().focus().insertContent({
+    insertWithoutFocus({
       type: 'mermaid',
       attrs: { content: 'graph TD\n  A[開始] --> B[処理]\n  B --> C[終了]' },
-    }).run();
+    });
   };
 
   const insertChart = () => {
-    editor?.chain().focus().insertContent({
+    insertWithoutFocus({
       type: 'chart',
       attrs: {
         type: 'bar',
@@ -208,7 +179,125 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           }],
         },
       },
-    }).run();
+    });
+  };
+
+  // 共有用HTML生成: Mermaid/Chart.jsをCDN経由で描画する自己完結型HTML
+  const generateShareableHtml = (): string | null => {
+    if (!note || !editor) return null;
+
+    const rawHtml = editor.getHTML();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<html><body>${rawHtml}</body></html>`, 'text/html');
+
+    let chartIndex = 0;
+    const chartScripts: string[] = [];
+
+    // Mermaidノード → <pre class="mermaid">
+    doc.querySelectorAll('div[data-type="mermaid"]').forEach(el => {
+      const content = el.getAttribute('content') || '';
+      const pre = doc.createElement('pre');
+      pre.className = 'mermaid';
+      pre.textContent = content;
+      el.replaceWith(pre);
+    });
+
+    // Chartノード → <canvas> + Chart.js初期化スクリプト
+    doc.querySelectorAll('div[data-type="chart"]').forEach(el => {
+      const chartType = el.getAttribute('type') || 'bar';
+      const dataAttr = el.getAttribute('data');
+      if (!dataAttr) { el.remove(); return; }
+      let chartData: unknown;
+      try { chartData = JSON.parse(dataAttr); } catch { el.remove(); return; }
+
+      const id = `chart-${chartIndex++}`;
+      const canvas = doc.createElement('canvas');
+      canvas.id = id;
+      el.replaceWith(canvas);
+      chartScripts.push(
+        `new Chart(document.getElementById('${id}'), { type: '${chartType}', data: ${JSON.stringify(chartData)}, options: { responsive: true, plugins: { legend: { position: 'top' } } } });`
+      );
+    });
+
+    // チェックボックスを無効化（見た目のみ）
+    doc.querySelectorAll('input[type="checkbox"]').forEach(el => {
+      el.setAttribute('disabled', '');
+    });
+
+    const body = doc.body.innerHTML;
+    const title = note.title || 'Lily Memo';
+
+    return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; line-height: 1.8; color: #333; background: #fffafa; }
+    h1.note-title { font-size: 2rem; font-weight: 700; border-bottom: 3px solid #ffb6c1; padding-bottom: 12px; margin-bottom: 32px; }
+    h2, h3 { font-weight: 700; margin: 24px 0 12px; }
+    p { margin: 10px 0; }
+    ul, ol { padding-left: 24px; margin: 10px 0; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; margin: 16px 0; font-family: monospace; font-size: 0.9rem; }
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+    pre code { background: none; padding: 0; }
+    img { max-width: 100%; border-radius: 8px; margin: 16px 0; }
+    canvas { max-width: 100%; margin: 24px auto; display: block; }
+    pre.mermaid { background: transparent; color: inherit; text-align: center; margin: 24px 0; }
+    ul[data-type="taskList"] { list-style: none; padding: 0; }
+    ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0; }
+    ul[data-type="taskList"] li[data-checked="true"] > div { text-decoration: line-through; color: #999; }
+    input[type="checkbox"] { accent-color: #ffb6c1; }
+    blockquote { border-left: 4px solid #ffb6c1; padding: 8px 16px; color: #666; margin: 16px 0; background: #fff0f5; border-radius: 0 8px 8px 0; }
+  </style>
+</head>
+<body>
+  <h1 class="note-title">${title}</h1>
+  ${body}
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+    window.addEventListener('load', function() {
+      ${chartScripts.join('\n      ')}
+    });
+  <\/script>
+</body>
+</html>`;
+  };
+
+  const shareNote = async () => {
+    if (!note || !editor) return;
+    const title = note.title || 'Untitled';
+    const html = generateShareableHtml();
+    if (!html) return;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const file = new File([blob], `${title}.html`, { type: 'text/html' });
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, files: [file] });
+      } catch (err) {
+        console.error('Share failed:', err);
+        // fallback: download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.download = `${title}.html`;
+        a.href = url;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.download = `${title}.html`;
+      a.href = url;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const runAi = async () => {
@@ -233,26 +322,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         editor.chain().focus().insertContent(`<p>${textOnly}</p>`).run();
       }
       if (mermaidMatch) {
-        editor.chain().focus().insertContent({
-          type: 'mermaid',
-          attrs: { content: mermaidMatch[1].trim() },
-        }).run();
+        insertWithoutFocus({ type: 'mermaid', attrs: { content: mermaidMatch[1].trim() } });
       }
       if (chartMatch) {
         try {
           const config = JSON.parse(chartMatch[1].trim());
-          editor.chain().focus().insertContent({
-            type: 'chart',
-            attrs: { ...config },
-          }).run();
+          insertWithoutFocus({ type: 'chart', attrs: { ...config } });
         } catch (e) {
           console.error('Chart JSON parse error', e);
         }
       }
 
-
       setAiInput('');
-      setIsAiPanelOpen(false); // 成功時にパネルを閉じる
+      setIsAiPanelOpen(false);
     } catch (err: unknown) {
       alert(`AIエラー: ${(err as Error).message}`);
     } finally {
@@ -282,24 +364,24 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           </div>
         </div>
         <div className="editor-toolbar">
-          {/* スマホ: 閲覧/編集モード切替ボタン */}
+          {/* スマホ: 閲覧/編集切替ボタン */}
           {isMobileView && (
             <button
               className={`toolbar-btn edit-mode-btn ${isEditMode ? 'edit-active' : ''}`}
               onClick={() => {
                 setIsEditMode(!isEditMode);
-                if (isAiPanelOpen) setIsAiPanelOpen(false);
+                if (!isEditMode) setIsAiPanelOpen(false);
               }}
-              title={isEditMode ? '閲覧モードへ' : '編集モードへ'}
+              title={isEditMode ? '閲覧モードへ' : '文字編集モードへ'}
             >
               {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
             </button>
           )}
+          <button className="toolbar-btn" onClick={shareNote} title="HTMLで共有（図・グラフ含む）">
+            <Share2 size={20} />
+          </button>
           {isEditMode && (
             <>
-              <button className="toolbar-btn" onClick={shareNote} title="共有/保存">
-                <Share2 size={20} />
-              </button>
               <button
                 className="toolbar-btn"
                 onClick={() => setBgType(bgType === 'plain' ? 'grid' : bgType === 'grid' ? 'ruled' : 'plain')}
@@ -312,57 +394,50 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               </button>
             </>
           )}
-          {!isEditMode && (
-            <button className="toolbar-btn" onClick={shareNote} title="共有/保存">
-              <Share2 size={20} />
-            </button>
-          )}
         </div>
       </header>
 
       <div className="editor-content-wrapper">
-        {/* 閲覧モード時のインジケーター（スマホのみ） */}
-        {isMobileView && !isEditMode && (
-          <div className="read-mode-banner">
-            <Eye size={14} />
-            <span>閲覧モード — 右上の鉛筆ボタンで編集できます</span>
-          </div>
-        )}
-        {isEditMode && <div className="tiptap-toolbar glass">
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            className={editor.isActive('bold') ? 'active' : ''}
-            title="太字"
-          >
-            <Type size={18} />
-          </button>
-          <button
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}
-            title="見出し"
-          >
-            H2
-          </button>
-          <button
-            onClick={() => editor.chain().focus().toggleTaskList().run()}
-            className={editor.isActive('taskList') ? 'active' : ''}
-            title="チェックリスト"
-          >
-            <CheckSquare size={18} />
-          </button>
-          <div className="divider" />
-          <button
-            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-            className={editor.isActive('codeBlock') ? 'active' : ''}
-            title="コードブロック"
-          >
-            <Binary size={18} />
-          </button>
-          <button onClick={insertMermaid} title="図（Mermaid）を挿入">
+        {/* ツールバー: 図/グラフ/AIは常に表示、テキスト編集系は編集モードのみ */}
+        <div className="tiptap-toolbar glass">
+          {isEditMode && (
+            <>
+              <button
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                className={editor.isActive('bold') ? 'active' : ''}
+                title="太字"
+              >
+                <Type size={18} />
+              </button>
+              <button
+                onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}
+                title="見出し"
+              >
+                H2
+              </button>
+              <button
+                onClick={() => editor.chain().focus().toggleTaskList().run()}
+                className={editor.isActive('taskList') ? 'active' : ''}
+                title="チェックリスト"
+              >
+                <CheckSquare size={18} />
+              </button>
+              <button
+                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                className={editor.isActive('codeBlock') ? 'active' : ''}
+                title="コードブロック"
+              >
+                <Binary size={18} />
+              </button>
+              <div className="divider" />
+            </>
+          )}
+          {/* 図・グラフは閲覧モードでも挿入可能（キーボードなし） */}
+          <button onClick={insertMermaid} title="図（Mermaid）を挿入 ※キーボード不要">
             <GitBranch size={18} />
           </button>
-          <button onClick={insertChart} title="グラフを挿入">
+          <button onClick={insertChart} title="グラフを挿入 ※キーボード不要">
             <BarChart3 size={18} />
           </button>
           <div className="divider" />
@@ -374,17 +449,26 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           >
             <Sparkles size={18} />
           </button>
-        </div>}
+        </div>
+
+        {isMobileView && !isEditMode && (
+          <div className="read-mode-banner">
+            <Eye size={13} />
+            <span>閲覧モード — 右上の鉛筆ボタンで文字編集</span>
+          </div>
+        )}
+
         <EditorContent editor={editor} />
       </div>
 
-      {isEditMode && isAiPanelOpen && (
-        <div className="ai-assistant-bar glass slide-up">
+      {/* AIアシスタントパネル: ツールバーの下に固定表示 */}
+      {isAiPanelOpen && (
+        <div className="ai-assistant-bar slide-up">
           <div className="ai-input-wrapper">
-            <Sparkles size={20} className="ai-icon" />
+            <Sparkles size={18} className="ai-icon" />
             <input
               type="text"
-              placeholder="AIに指示（図解して、グラフにして...）"
+              placeholder="AIに指示（グラフにして、図解して...）"
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && runAi()}
@@ -400,8 +484,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             >
               {isAiLoading ? '生成中...' : '実行'}
             </button>
-            <button className="btn-close-ai" onClick={() => setIsAiPanelOpen(false)}>
-              <X size={18} />
+            <button className="btn-close-ai" onClick={() => setIsAiPanelOpen(false)} title="閉じる">
+              <X size={16} />
             </button>
           </div>
         </div>
@@ -426,24 +510,17 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           .editor-container {
             border-radius: 0;
             position: fixed;
-            top: 0;
-            left: 0;
+            top: 0; left: 0;
             width: 100%;
             height: 100vh;
             height: 100dvh;
-            z-index: 150;
+            z-index: 1001; /* ボトムナビ(1000)より上 */
           }
           .editor-header {
-            padding: 12px 16px !important;
-          }
-          .header-left {
-            gap: 8px !important;
+            padding: 12px 14px !important;
           }
           .title-input {
-            font-size: 1.2rem !important;
-          }
-          .editor-toolbar {
-            gap: 6px !important;
+            font-size: 1.1rem !important;
           }
         }
 
@@ -456,21 +533,16 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
+          gap: 8px;
           border-bottom: 1px solid var(--border);
           background: var(--background);
           flex-shrink: 0;
         }
 
-        [data-theme='dark'] .editor-header {
-          background: var(--background);
-          border-bottom-color: var(--border);
-        }
-
         .header-left {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 8px;
           flex: 1;
           min-width: 0;
         }
@@ -484,17 +556,14 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         .title-container {
           flex: 1;
-          display: flex;
-          align-items: center;
           min-width: 0;
-          padding: 4px 8px;
         }
 
         .title-input {
-          font-size: 1.5rem;
+          font-size: 1.4rem;
           font-weight: 700;
           border: none;
-          padding: 4px 0;
+          padding: 2px 0;
           width: 100%;
           min-width: 0;
           color: var(--foreground);
@@ -504,18 +573,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         .title-input:focus {
+          outline: none;
           border-bottom-color: var(--primary);
         }
 
         .editor-toolbar {
           display: flex;
-          gap: 8px;
+          gap: 6px;
           flex-shrink: 0;
         }
 
         .toolbar-btn {
-          width: 40px;
-          height: 40px;
+          width: 38px;
+          height: 38px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -525,28 +595,62 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           flex-shrink: 0;
         }
 
-        .toolbar-btn:hover {
-          background: var(--primary);
-          color: white;
+        .toolbar-btn:hover { background: var(--primary); color: white; }
+        .toolbar-btn.delete { background: #fff0f0; color: #ff4d4d; }
+        [data-theme='dark'] .toolbar-btn.delete { background: rgba(255,77,77,0.15); }
+        .toolbar-btn.edit-mode-btn { background: var(--muted); color: var(--foreground); }
+        .toolbar-btn.edit-mode-btn.edit-active { background: var(--primary); color: white; }
+
+        /* ===== Content Wrapper ===== */
+        .editor-content-wrapper {
+          flex: 1;
+          padding: 24px 40px;
+          overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
         }
 
-        .toolbar-btn.delete {
-          background: #fff0f0;
-          color: #ff4d4d;
+        @media (max-width: 768px) {
+          .editor-content-wrapper { padding: 14px; }
         }
 
-        [data-theme='dark'] .toolbar-btn.delete {
-          background: rgba(255, 77, 77, 0.15);
+        /* ===== Tiptap Toolbar ===== */
+        .tiptap-toolbar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 4px;
+          margin-bottom: 16px;
+          padding: 6px 10px;
+          border-radius: 12px;
+          border: 1px solid var(--border);
+          background: var(--accent);
+          max-width: fit-content;
         }
 
-        /* 編集モード切替ボタン */
-        .toolbar-btn.edit-mode-btn {
-          background: var(--muted);
+        [data-theme='dark'] .tiptap-toolbar { background: var(--muted); }
+
+        .tiptap-toolbar button {
+          width: 34px;
+          height: 34px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
           color: var(--foreground);
+          border-radius: 8px;
+          font-weight: 700;
+          font-size: 0.82rem;
         }
-        .toolbar-btn.edit-mode-btn.edit-active {
-          background: var(--primary);
-          color: white;
+
+        .tiptap-toolbar button:hover { background: var(--primary); color: white; }
+        .tiptap-toolbar button.active { background: var(--primary); color: white; }
+
+        .divider {
+          width: 1px;
+          height: 18px;
+          background: var(--border);
+          margin: 0 2px;
         }
 
         /* 閲覧モードバナー */
@@ -555,82 +659,11 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           align-items: center;
           gap: 6px;
           margin-bottom: 12px;
-          padding: 6px 12px;
+          padding: 5px 10px;
           background: var(--muted);
           border-radius: 8px;
-          font-size: 0.78rem;
+          font-size: 0.75rem;
           color: #888;
-        }
-
-        /* 閲覧モード時エディタのカーソル */
-        .ProseMirror[contenteditable="false"] {
-          cursor: default;
-          user-select: text;
-          -webkit-user-select: text;
-        }
-
-        /* ===== Content Wrapper ===== */
-        .editor-content-wrapper {
-          flex: 1;
-          padding: 32px 40px;
-          overflow-y: auto;
-          -webkit-overflow-scrolling: touch;
-          overscroll-behavior: contain;
-        }
-
-        @media (max-width: 768px) {
-          .editor-content-wrapper {
-            padding: 16px;
-          }
-        }
-
-        /* ===== Tiptap Toolbar ===== */
-        .tiptap-toolbar {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 6px;
-          margin-bottom: 20px;
-          padding: 8px 12px;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          background: var(--accent);
-          max-width: fit-content;
-        }
-
-        [data-theme='dark'] .tiptap-toolbar {
-          background: var(--muted);
-          border-color: var(--border);
-        }
-
-        .tiptap-toolbar button {
-          width: 36px;
-          height: 36px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: transparent;
-          color: var(--foreground);
-          border-radius: 8px;
-          font-weight: 700;
-          font-size: 0.85rem;
-        }
-
-        .tiptap-toolbar button:hover {
-          background: var(--primary);
-          color: white;
-        }
-
-        .tiptap-toolbar button.active {
-          background: var(--primary);
-          color: white;
-        }
-
-        .divider {
-          width: 1px;
-          height: 20px;
-          background: var(--border);
-          margin: 0 2px;
         }
 
         /* ===== ProseMirror ===== */
@@ -652,11 +685,15 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           pointer-events: none;
         }
 
-        /* ===== Task List ===== */
-        ul[data-type="taskList"] {
-          list-style: none;
-          padding: 0;
+        /* 閲覧モード時: カーソルをデフォルトに（テキスト選択は可能） */
+        .ProseMirror[contenteditable="false"] {
+          cursor: default;
+          user-select: text;
+          -webkit-user-select: text;
         }
+
+        /* ===== Task List ===== */
+        ul[data-type="taskList"] { list-style: none; padding: 0; }
         ul[data-type="taskList"] li {
           display: flex;
           align-items: flex-start;
@@ -688,33 +725,21 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .hljs-keyword { color: #d73a49; font-weight: bold; }
         .hljs-string { color: #22863a; }
         .hljs-number { color: #005cc5; }
-        .hljs-function { color: #6f42c1; }
-        .hljs-title { color: #6f42c1; }
+        .hljs-function, .hljs-title { color: #6f42c1; }
         .hljs-params { color: var(--foreground); }
         .hljs-built_in { color: #e36209; }
-
         [data-theme='dark'] .hljs-string { color: #4ec994; }
         [data-theme='dark'] .hljs-number { color: #79b8ff; }
-        [data-theme='dark'] .hljs-params { color: #e1e4e8; }
-
-        /* ===== Image ===== */
-        img {
-          max-width: 100%;
-          height: auto;
-          border-radius: 12px;
-          margin: 16px 0;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
 
         /* ===== Background Patterns ===== */
         .bg-grid {
           background-image:
-            linear-gradient(rgba(255, 182, 193, 0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255, 182, 193, 0.1) 1px, transparent 1px);
+            linear-gradient(rgba(255,182,193,0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,182,193,0.1) 1px, transparent 1px);
           background-size: 20px 20px;
         }
         .bg-ruled {
-          background-image: linear-gradient(transparent 27px, rgba(255, 182, 193, 0.2) 28px);
+          background-image: linear-gradient(transparent 27px, rgba(255,182,193,0.2) 28px);
           background-size: 100% 28px;
         }
 
@@ -723,19 +748,16 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           display: flex;
           align-items: center;
           gap: 10px;
-          margin: 8px 16px;
+          margin: 0 12px 12px;
           margin-bottom: calc(12px + env(safe-area-inset-bottom));
-          padding: 10px 16px;
+          padding: 10px 14px;
           background: var(--accent);
           border: 1px solid var(--border);
-          border-radius: 16px;
+          border-radius: 14px;
           flex-shrink: 0;
         }
 
-        [data-theme='dark'] .ai-assistant-bar {
-          background: var(--muted);
-          border-color: var(--border);
-        }
+        [data-theme='dark'] .ai-assistant-bar { background: var(--muted); }
 
         .ai-input-wrapper {
           flex: 1;
@@ -752,9 +774,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @keyframes pulse {
-          0% { transform: scale(1); opacity: 0.8; }
+          0%, 100% { transform: scale(1); opacity: 0.8; }
           50% { transform: scale(1.1); opacity: 1; }
-          100% { transform: scale(1); opacity: 0.8; }
         }
 
         .ai-input {
@@ -766,49 +787,51 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           font-size: 0.9rem;
           color: var(--foreground);
           padding: 0;
-          border-radius: 0;
-        }
-
-        .btn-ai-run {
-          background: var(--primary);
-          color: white;
-          padding: 7px 16px;
-          border-radius: 10px;
-          font-weight: 600;
-          font-size: 0.85rem;
-          white-space: nowrap;
-          flex-shrink: 0;
-        }
-
-        .btn-ai-run:disabled {
-          opacity: 0.5;
-          filter: grayscale(1);
         }
 
         .ai-actions {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
+          flex-shrink: 0;
         }
+
+        .btn-ai-run {
+          background: var(--primary);
+          color: white;
+          padding: 6px 14px;
+          border-radius: 10px;
+          font-weight: 600;
+          font-size: 0.85rem;
+          white-space: nowrap;
+        }
+
+        .btn-ai-run:disabled { opacity: 0.5; filter: grayscale(1); }
 
         .btn-close-ai {
           background: var(--muted);
           color: var(--foreground);
-          width: 32px;
-          height: 32px;
+          width: 30px;
+          height: 30px;
           display: flex;
           align-items: center;
           justify-content: center;
           border-radius: 50%;
         }
 
-        .slide-up {
-          animation: slideUp 0.3s ease-out;
-        }
+        .slide-up { animation: slideUp 0.25s ease-out; }
 
         @keyframes slideUp {
-          from { transform: translateY(20px); opacity: 0; }
+          from { transform: translateY(12px); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
+        }
+
+        img {
+          max-width: 100%;
+          height: auto;
+          border-radius: 12px;
+          margin: 16px 0;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
       `}</style>
     </div>
