@@ -16,6 +16,7 @@ export interface Note {
   color?: string;
   createdAt: number;
   updatedAt: number;
+  syncCode?: string;
 }
 
 export interface ImageAsset {
@@ -36,6 +37,9 @@ export class LilyDatabase extends Dexie {
       folders: '++id, name, parentId, color, createdAt',
       notes: '++id, title, folderId, color, createdAt, updatedAt',
       images: '++id, noteId, type'
+    });
+    this.version(2).stores({
+      notes: '++id, title, folderId, color, createdAt, updatedAt, syncCode'
     });
   }
 }

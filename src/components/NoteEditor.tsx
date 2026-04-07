@@ -16,7 +16,7 @@ import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
   Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
-  Undo, Redo, Image as ImageIcon, Loader2, Printer
+  Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -183,6 +183,48 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     if (confirm('このメモを削除してもよろしいですか？')) {
       await db.notes.delete(noteId);
       onClose?.();
+    }
+  };
+
+  const handleSync = async () => {
+    let code = note?.syncCode;
+    if (!code) {
+      if (!confirm('このメモをクラウドと同期させますか？ 新しい同期コードを発行します。')) return;
+      code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      await db.notes.update(noteId, { syncCode: code });
+      setNote(prev => prev ? { ...prev, syncCode: code } : null);
+    }
+    
+    const choice = prompt(`【同期コード: ${code}】\n同期アクションを選んでください:\n1: クラウドへPush（この端末のデータを保存）\n2: クラウドからPull（PCなどで編集した内容を取得）`, '1');
+    if (choice === '1') {
+      try {
+        await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'push', code, payload: { title: note?.title, content: editor?.getHTML() } })
+        });
+        alert('クラウドに保存しました！別の端末（PC等）のリストでこのコード番号で取得できます。');
+      } catch {
+        alert('同期エラーが発生しました。');
+      }
+    } else if (choice === '2') {
+      try {
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'pull', code })
+        });
+        const json = await res.json();
+        if (json.success && json.data) {
+          editor?.commands.setContent(json.data.content);
+          updateTitle(json.data.title || '');
+          alert('クラウドから復元しました！');
+        } else {
+          alert('同期データが見つかりません。先に別の端末からPushしてください。');
+        }
+      } catch {
+        alert('同期エラーが発生しました。');
+      }
     }
   };
 
@@ -398,6 +440,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
             </button>
           )}
+          <button className="toolbar-btn" onClick={handleSync} title="PCなどと同期">
+            <Cloud size={20} />
+          </button>
           <button className="toolbar-btn" onClick={printPdf} title="PDFとして出力・印刷">
             <Printer size={20} />
           </button>
@@ -841,6 +886,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           cursor: pointer;
           touch-action: manipulation;
         }
+        ul[data-type="taskList"] input[type="checkbox"]:disabled {
+          pointer-events: none; /* Let clicks pass through to the label */
+        }
         ul[data-type="taskList"] li[data-checked="true"] > div {
           text-decoration: line-through;
           color: #999;
@@ -896,6 +944,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           .ProseMirror {
             padding-bottom: 0 !important;
             color: #000 !important;
+          }
+          button, select {
+            display: none !important;
           }
         }
 

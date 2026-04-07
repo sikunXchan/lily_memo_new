@@ -2,7 +2,7 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Folder, type Note } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, Menu, X } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, Menu, X, CloudDownload } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 
@@ -90,6 +90,47 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
     if (window.innerWidth <= 768) onToggleMobile();
   };
 
+  const fetchFromCloud = async () => {
+    const code = prompt('PC等の端末で表示された同期コードを入力してください:');
+    if (!code) return;
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pull', code: code.toUpperCase() })
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        // 同じsyncCodeを持つノートが既にあるかチェック
+        const existing = await db.notes.where('syncCode').equals(code.toUpperCase()).first();
+        let noteId;
+        if (existing) {
+          await db.notes.update(existing.id!, {
+            title: json.data.title,
+            content: json.data.content,
+            updatedAt: Date.now()
+          });
+          noteId = existing.id;
+        } else {
+          noteId = await db.notes.add({
+            title: json.data.title,
+            content: json.data.content,
+            syncCode: code.toUpperCase(),
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          });
+        }
+        onSelectNote(noteId as number);
+        if (window.innerWidth <= 768) onToggleMobile();
+        alert('クラウドからメモを取得・更新しました！');
+      } else {
+        alert('同期データが見つかりません。コードを確認するか、元の端末で先にPushしてください。');
+      }
+    } catch {
+      alert('エラーが発生しました。');
+    }
+  };
+
   return (
     <>
       <aside className="sidebar glass">
@@ -116,6 +157,9 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
           <button className="btn-add" onClick={() => addNote()}>
             <Plus size={18} />
             <span>新しいメモ</span>
+          </button>
+          <button className="btn-icon" onClick={fetchFromCloud} title="同期コードから取得">
+            <CloudDownload size={18} />
           </button>
           <button className="btn-icon" onClick={addFolder} title="フォルダ作成">
             <FolderPlus size={18} />
