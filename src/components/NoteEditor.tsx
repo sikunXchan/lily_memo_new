@@ -16,7 +16,7 @@ import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
   Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
-  Undo, Redo, Image as ImageIcon, Loader2
+  Undo, Redo, Image as ImageIcon, Loader2, Printer
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -118,9 +118,34 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
     dom.addEventListener('touchstart', onTouchStart, { passive: false });
     dom.addEventListener('touchend', onTouchEnd, { passive: false });
+
+    // 閲覧モード時のチェックボックスタップ対応
+    const onReadOnlyClick = (e: MouseEvent) => {
+      if (editor.isEditable) return;
+      let target = e.target as HTMLElement;
+      while (target && target !== dom && target.tagName !== 'LABEL') {
+        target = target.parentElement as HTMLElement;
+      }
+      if (target && target.tagName === 'LABEL') {
+        const pos = editor.view.posAtDOM(target, 0);
+        if (typeof pos === 'number' && pos >= 0) {
+          const node = editor.state.doc.nodeAt(pos);
+          if (node && node.type.name === 'taskItem') {
+            e.preventDefault();
+            e.stopPropagation();
+            editor.setEditable(true);
+            editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { checked: !node.attrs.checked }));
+            editor.setEditable(false);
+          }
+        }
+      }
+    };
+    dom.addEventListener('click', onReadOnlyClick, { capture: true });
+
     return () => {
       dom.removeEventListener('touchstart', onTouchStart);
       dom.removeEventListener('touchend', onTouchEnd);
+      dom.removeEventListener('click', onReadOnlyClick, { capture: true });
     };
   }, [editor]);
 
@@ -168,13 +193,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     setShowFolderPicker(false);
   };
 
-  // 図/グラフ挿入: .focus()を呼ばない → キーボードが開かない
-  // 閲覧モード中は一時的にeditableにしてinsert後に戻す
+  // 図/グラフ挿入: 選択範囲を消さずにキャレットの最後に挿入する
   const insertWithoutFocus = (content: object) => {
     if (!editor) return;
     const wasEditable = editor.isEditable;
     if (!wasEditable) editor.setEditable(true);
-    editor.commands.insertContent(content);
+    const { to } = editor.state.selection;
+    editor.chain().insertContentAt(to, content).run();
     if (!wasEditable) editor.setEditable(false);
   };
 
@@ -185,10 +210,11 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file || !editor) return;
+      const { to } = editor.state.selection;
       const reader = new FileReader();
       reader.onload = () => {
         const url = reader.result as string;
-        editor.chain().focus().setImage({ src: url }).run();
+        editor.chain().insertContentAt(to, { type: 'image', attrs: { src: url } }).run();
       };
       reader.readAsDataURL(file);
     };
@@ -336,9 +362,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       URL.revokeObjectURL(url);
     }
   };
-
-
-
+  const printPdf = () => {
+    window.print();
+  };
   if (!editor) return null;
 
   return (
@@ -372,6 +398,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
             </button>
           )}
+          <button className="toolbar-btn" onClick={printPdf} title="PDFとして出力・印刷">
+            <Printer size={20} />
+          </button>
           <button className="toolbar-btn" onClick={shareNote} title="HTMLで共有（図・グラフ含む）">
             <Share2 size={20} />
           </button>
@@ -683,7 +712,23 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         /* ===== Tiptap Toolbar ===== */
-
+        .tiptap-toolbar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 4px;
+          margin-bottom: 16px;
+          padding: 6px 10px;
+          border-radius: 12px;
+          border: 1px solid var(--border);
+          background: var(--accent);
+          max-width: fit-content;
+          align-self: flex-start; /* flex child sticky fix */
+        }
+        
         [data-theme='dark'] .tiptap-toolbar { background: var(--muted); }
 
         .tiptap-toolbar button {
@@ -748,6 +793,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           border: 1px solid var(--border);
           background: var(--accent);
           max-width: fit-content;
+          align-self: flex-start; /* flex child sticky fix */
         }
 
         @media (max-width: 768px) {
@@ -823,95 +869,44 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           background-size: 100% 28px;
         }
 
-        /* ===== AI Assistant Bar ===== */
-        .ai-assistant-bar {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin: 0 12px 12px;
-          margin-bottom: calc(12px + env(safe-area-inset-bottom));
-          padding: 10px 14px;
-          background: var(--accent);
-          border: 1px solid var(--border);
-          border-radius: 14px;
-          flex-shrink: 0;
+        /* ===== Print Optimization (PDF Export) ===== */
+        @media print {
+          .editor-header, .tiptap-toolbar, .folder-picker-overlay, .read-mode-banner { 
+            display: none !important; 
+          }
+          .editor-container { 
+            box-shadow: none !important; 
+            border: none !important; 
+            height: auto !important; 
+            position: static !important; 
+            overflow: visible !important; 
+            background: #fff !important;
+          }
+          .editor-content-wrapper, .editor-scroller { 
+            padding: 0 !important; 
+            overflow: visible !important; 
+            height: auto !important; 
+          }
+          .content-title-input { 
+            margin: 0 !important; 
+            padding-top: 0 !important;
+            border: none !important; 
+            color: #000 !important;
+          }
+          .ProseMirror {
+            padding-bottom: 0 !important;
+            color: #000 !important;
+          }
         }
 
-        [data-theme='dark'] .ai-assistant-bar { background: var(--muted); }
-
-        .ai-input-wrapper {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          min-width: 0;
-        }
-
-        .ai-icon {
-          color: #7c4dff;
-          animation: pulse 2s infinite;
-          flex-shrink: 0;
-        }
-
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); opacity: 0.8; }
-          50% { transform: scale(1.1); opacity: 1; }
-        }
-
-        .ai-input {
-          flex: 1;
-          min-width: 0;
-          background: transparent;
-          border: none;
-          outline: none;
-          font-size: 0.9rem;
-          color: var(--foreground);
-          padding: 0;
-        }
-
-        .ai-actions {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          flex-shrink: 0;
-        }
-
-        .btn-ai-run {
-          background: var(--primary);
-          color: white;
-          padding: 6px 14px;
-          border-radius: 10px;
-          font-weight: 600;
-          font-size: 0.85rem;
-          white-space: nowrap;
-        }
-
-        .btn-ai-run:disabled { opacity: 0.5; filter: grayscale(1); }
-
-        .btn-close-ai {
-          background: var(--muted);
-          color: var(--foreground);
-          width: 30px;
-          height: 30px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 50%;
-        }
-
-        .slide-up { animation: slideUp 0.25s ease-out; }
-
-        @keyframes slideUp {
-          from { transform: translateY(12px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-
-        img {
+        .ProseMirror img {
           max-width: 100%;
-          height: auto;
+          max-height: 50vh;
+          object-fit: contain;
           border-radius: 12px;
           margin: 16px 0;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          display: block;
         }
 
         /* ===== Folder Picker ===== */
