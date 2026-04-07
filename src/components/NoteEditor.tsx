@@ -1,37 +1,57 @@
 'use client';
 
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import ImageExtension from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
 import { useEffect, useState } from 'react';
 import { db, type Note } from '@/lib/db';
-import { Save, Trash2, Image as ImageIcon, Type, Palette } from 'lucide-react';
+import { 
+  ArrowLeft, Trash2, Image as ImageIcon, Type, 
+  CheckSquare, BarChart3, Binary, LayoutGrid, 
+  HelpCircle, Sparkles 
+} from 'lucide-react';
+import CodeBlockComponent from './CodeBlockComponent';
+import { MermaidExtension, ChartExtension } from '@/lib/extensions';
 
 const lowlight = createLowlight(common);
 
 interface NoteEditorProps {
   noteId: number;
+  onClose?: () => void;
 }
 
-export default function NoteEditor({ noteId }: NoteEditorProps) {
+export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
+  const [bgType, setBgType] = useState<'plain' | 'grid' | 'ruled'>('plain');
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        codeBlock: false, // Disable default code block
+        codeBlock: false,
       }),
       CodeBlockLowlight.configure({
         lowlight,
+      }).extend({
+        addNodeView() {
+          return ReactNodeViewRenderer(CodeBlockComponent);
+        },
+      }),
+      MermaidExtension,
+      ChartExtension,
+      TaskList,
+      TaskItem.configure({
+        nested: true,
       }),
       ImageExtension,
       Link,
       Placeholder.configure({
-        placeholder: 'ここに入力してください...',
+        placeholder: 'アイデアを書き留めましょう...',
       }),
     ],
     content: '',
@@ -73,35 +93,63 @@ export default function NoteEditor({ noteId }: NoteEditorProps) {
   const deleteNote = async () => {
     if (confirm('このメモを削除してもよろしいですか？')) {
       await db.notes.delete(noteId);
-      window.location.reload(); // Simple way to reset state
+      onClose?.();
     }
   };
 
-  const addImage = () => {
-    const url = prompt('画像のURLを入力してください');
-    if (url && editor) {
-      editor.chain().focus().setImage({ src: url }).run();
+  const insertMermaid = () => {
+    editor?.chain().focus().insertContent({ type: 'mermaid', attrs: { content: 'graph TD\n  A[Start] --> B[Process]' } }).run();
+  };
+
+  const insertChart = () => {
+    editor?.chain().focus().insertContent({ type: 'chart' }).run();
+  };
+
+  const polishWithAI = async () => {
+    const key = localStorage.getItem('gemini_api_key');
+    if (!key) {
+        alert('設定画面からGemini APIキーを入力してください。');
+        return;
     }
+    // Placeholder for AI feature (implementation in a separate turn)
+    alert('AI機能は現在準備中ですが、設定のキーは読み込み可能です。');
   };
 
   if (!editor) return null;
 
   return (
-    <div className="editor-container">
+    <div className={`editor-container bg-${bgType}`}>
       <header className="editor-header">
-        <input 
-          type="text" 
-          className="title-input" 
-          value={note?.title || ''} 
-          onChange={(e) => updateTitle(e.target.value)}
-          placeholder="タイトル"
-        />
-        <div className="editor-toolbar">
-          <button className="toolbar-btn" onClick={addImage} title="画像を追加">
-            <ImageIcon size={20} />
+        <div className="header-left">
+          <button className="btn-back" onClick={onClose} title="戻る">
+            <ArrowLeft size={24} />
           </button>
-          <button className="toolbar-btn" onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コードブロック">
+          <input 
+            type="text" 
+            className="title-input" 
+            value={note?.title || ''} 
+            onChange={(e) => updateTitle(e.target.value)}
+            placeholder="タイトル"
+          />
+        </div>
+        <div className="editor-toolbar">
+          <button className="toolbar-btn" onClick={() => setBgType(bgType === 'plain' ? 'grid' : bgType === 'grid' ? 'ruled' : 'plain')} title="背景切替">
+            <LayoutGrid size={20} />
+          </button>
+          <button className="toolbar-btn" onClick={() => editor.chain().focus().toggleTaskList().run()} title="TODOリスト">
+            <CheckSquare size={20} />
+          </button>
+          <button className="toolbar-btn" onClick={insertMermaid} title="UML(Mermaid)">
+            <Binary size={20} />
+          </button>
+          <button className="toolbar-btn" onClick={insertChart} title="グラフ">
+            <BarChart3 size={20} />
+          </button>
+          <button className="toolbar-btn" onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コード">
             <Type size={20} />
+          </button>
+          <button className="toolbar-btn special" onClick={polishWithAI} title="AI校正(Beta)">
+            <Sparkles size={20} />
           </button>
           <button className="toolbar-btn delete" onClick={deleteNote} title="削除">
             <Trash2 size={20} />
@@ -123,6 +171,40 @@ export default function NoteEditor({ noteId }: NoteEditorProps) {
           border-radius: var(--radius) 0 0 var(--radius);
           box-shadow: -4px 0 20px rgba(0,0,0,0.05);
           overflow: hidden;
+          transition: background 0.3s;
+        }
+
+        @media (max-width: 768px) {
+          .editor-container {
+            border-radius: 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 150;
+          }
+           .editor-header {
+             padding: 12px 16px !important;
+             flex-direction: column;
+             gap: 12px;
+           }
+           .editor-toolbar {
+             width: 100%;
+             overflow-x: auto;
+             padding-bottom: 4px;
+           }
+        }
+
+        /* Background Patterns */
+        .bg-grid {
+          background-image: 
+            linear-gradient(rgba(255, 182, 193, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 182, 193, 0.1) 1px, transparent 1px);
+          background-size: 20px 20px;
+        }
+        .bg-ruled {
+          background-image: linear-gradient(transparent 19px, #ffe4e1 20px);
+          background-size: 100% 20px;
         }
 
         .editor-header {
@@ -131,31 +213,48 @@ export default function NoteEditor({ noteId }: NoteEditorProps) {
           align-items: center;
           justify-content: space-between;
           border-bottom: 2px solid var(--accent);
+          background: rgba(255, 255, 255, 0.8);
+          backdrop-filter: blur(8px);
+        }
+
+        .header-left {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          flex: 1;
+        }
+
+        .btn-back {
+          background: transparent;
+          color: var(--primary);
+          padding: 8px;
         }
 
         .title-input {
-          font-size: 2rem;
+          font-size: 1.8rem;
           font-weight: 700;
           border: none;
           padding: 0;
           width: 100%;
           color: var(--foreground);
+          background: transparent;
         }
 
         .editor-toolbar {
           display: flex;
-          gap: 12px;
+          gap: 8px;
         }
 
         .toolbar-btn {
-          width: 44px;
-          height: 44px;
+          width: 40px;
+          height: 40px;
           display: flex;
           align-items: center;
           justify-content: center;
           background: var(--accent);
           color: var(--primary);
-          border-radius: 12px;
+          border-radius: 10px;
+          flex-shrink: 0;
         }
 
         .toolbar-btn:hover {
@@ -163,8 +262,14 @@ export default function NoteEditor({ noteId }: NoteEditorProps) {
           color: white;
         }
 
-        .toolbar-btn.delete:hover {
-          background: #ff6b6b;
+        .toolbar-btn.special {
+          background: #f0f0ff;
+          color: #7c4dff;
+        }
+
+        .toolbar-btn.delete {
+          background: #fff0f0;
+          color: #ff4d4d;
         }
 
         .editor-content-wrapper {
@@ -178,29 +283,41 @@ export default function NoteEditor({ noteId }: NoteEditorProps) {
           outline: none;
           font-size: 1.1rem;
           line-height: 1.7;
+          max-width: 900px;
+          margin: 0 auto;
         }
 
-        .ProseMirror p.is-editor-empty:first-child::before {
-          content: attr(data-placeholder);
-          float: left;
-          color: #adb5bd;
-          pointer-events: none;
-          height: 0;
+        /* Task List Styling */
+        ul[data-type="taskList"] {
+          list-style: none;
+          padding: 0;
+        }
+        ul[data-type="taskList"] li {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          margin-bottom: 8px;
+        }
+        ul[data-type="taskList"] input[type="checkbox"] {
+          width: 20px;
+          height: 20px;
+          margin-top: 4px;
+          accent-color: var(--primary);
+        }
+        ul[data-type="taskList"] li[data-checked="true"] {
+          text-decoration: line-through;
+          color: #999;
         }
 
-        pre {
-          background: #2d2d2d;
-          border-radius: 12px;
-          padding: 20px;
-          color: #f8f8f2;
-          font-family: 'JetBrains Mono', 'Fira Code', monospace;
-          margin: 20px 0;
-        }
-
-        code {
-          background: none;
-          color: inherit;
-        }
+        /* Syntax Highlighting Vibrant Colors */
+        .hljs-comment { color: #8e908c; font-style: italic; }
+        .hljs-keyword { color: #d73a49; font-weight: bold; }
+        .hljs-string { color: #22863a; }
+        .hljs-number { color: #005cc5; }
+        .hljs-function { color: #6f42c1; }
+        .hljs-title { color: #6f42c1; }
+        .hljs-params { color: #24292e; }
+        .hljs-built_in { color: #e36209; }
 
         img {
           max-width: 100%;
@@ -209,13 +326,6 @@ export default function NoteEditor({ noteId }: NoteEditorProps) {
           margin: 20px 0;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
-
-        /* Syntax Highlighting (Monokai-like) */
-        .hljs-comment, .hljs-quote { color: #75715e; }
-        .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-name { color: #f92672; }
-        .hljs-attribute, .hljs-meta { color: #66d9ef; }
-        .hljs-string, .hljs-type, .hljs-addition { color: #a6e22e; }
-        .hljs-number, .hljs-symbol, .hljs-bullet { color: #ae81ff; }
       `}</style>
     </div>
   );
