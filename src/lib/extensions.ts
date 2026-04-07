@@ -1,7 +1,9 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
-import MermaidComponent from '@/components/MermaidComponent';
-import ChartComponent from '@/components/ChartComponent';
+import dynamic from 'next/dynamic';
+
+const MermaidComponent = dynamic(() => import('@/components/MermaidComponent'), { ssr: false });
+const ChartComponent = dynamic(() => import('@/components/ChartComponent'), { ssr: false });
 
 export const MermaidExtension = Node.create({
   name: 'mermaid',

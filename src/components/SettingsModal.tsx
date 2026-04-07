@@ -10,10 +10,15 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [aiKey, setAiKey] = useState('');
+  const [isPersisted, setIsPersisted] = useState(false);
 
   useEffect(() => {
     const savedKey = localStorage.getItem('gemini_api_key');
     if (savedKey) setAiKey(savedKey);
+
+    if (navigator.storage && navigator.storage.persisted) {
+      navigator.storage.persisted().then(setIsPersisted);
+    }
   }, []);
 
   const saveAiKey = (key: string) => {
@@ -72,7 +77,11 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               <h3>バックアップと復元</h3>
             </div>
             <div className="section-content">
-              <p className="desc">メモとフォルダのデータをJSON形式で保存・読み込みできます。</p>
+              <div className="status-badge">
+                <div className={`dot ${isPersisted ? 'persisted' : ''}`} />
+                <span>ストレージ永続化: {isPersisted ? '有効（安全）' : '標準'}</span>
+              </div>
+              <p className="desc">iOSのSafariでは「共有」ボタンからメモを個別ファイルとして保存することをお勧めします。</p>
               <div className="action-group">
                 <button className="btn-action" onClick={downloadBackup}>
                   <Download size={18} />
@@ -171,6 +180,25 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         .section-title h3 {
           margin: 0;
           font-size: 1.1rem;
+        }
+        .status-badge {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #666;
+        }
+        .dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #ccc;
+        }
+        .dot.persisted {
+          background: #22863a;
+          box-shadow: 0 0 8px rgba(34, 134, 58, 0.4);
         }
         .desc {
           font-size: 0.85rem;

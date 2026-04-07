@@ -92,11 +92,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
 
   return (
     <>
-      <button className="mobile-toggle" onClick={onToggleMobile}>
-        {isMobileOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
-
-      <aside className={`sidebar glass ${isMobileOpen ? 'open' : ''}`}>
+      <aside className="sidebar glass">
         <div className="sidebar-header">
           <Image src="/logo.png" alt="Lily Memo Logo" width={40} height={40} className="logo-img" />
           <h1 className="title">Lily Memo</h1>

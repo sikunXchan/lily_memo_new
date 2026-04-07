@@ -10,13 +10,15 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { db, type Note } from '@/lib/db';
 import { 
   ArrowLeft, Trash2, Image as ImageIcon, Type, 
   CheckSquare, BarChart3, Binary, LayoutGrid, 
-  HelpCircle, Sparkles 
+  HelpCircle, Sparkles, Share2 
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
+
 import { MermaidExtension, ChartExtension } from '@/lib/extensions';
 
 const lowlight = createLowlight(common);
@@ -97,6 +99,28 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   };
 
+  const shareNote = async () => {
+    if (!note || !editor) return;
+    const title = note.title || 'Untitled';
+    const text = editor.getText();
+    const blob = new Blob([editor.getHTML()], { type: 'text/markdown' }); // Simplified to HTML for now, or use turndown for MD
+    const file = new File([blob], `${title}.md`, { type: 'text/markdown' });
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title,
+          text: `Check out my note: ${title}`,
+          files: [file],
+        });
+      } catch (err) {
+        console.error('Share failed:', err);
+      }
+    } else {
+        alert('共有機能はこのブラウザではサポートされていません。設定からバックアップを利用してください。');
+    }
+  };
+
   const insertMermaid = () => {
     editor?.chain().focus().insertContent({ type: 'mermaid', attrs: { content: 'graph TD\n  A[Start] --> B[Process]' } }).run();
   };
@@ -133,6 +157,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           />
         </div>
         <div className="editor-toolbar">
+          <button className="toolbar-btn" onClick={shareNote} title="共有/保存">
+            <Share2 size={20} />
+          </button>
           <button className="toolbar-btn" onClick={() => setBgType(bgType === 'plain' ? 'grid' : bgType === 'grid' ? 'ruled' : 'plain')} title="背景切替">
             <LayoutGrid size={20} />
           </button>
@@ -208,13 +235,16 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         .editor-header {
+          position: sticky;
+          top: 0;
+          z-index: 100;
           padding: 24px 40px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           border-bottom: 2px solid var(--accent);
-          background: rgba(255, 255, 255, 0.8);
-          backdrop-filter: blur(8px);
+          background: rgba(255, 255, 255, 0.9);
+          backdrop-filter: blur(20px);
         }
 
         .header-left {
