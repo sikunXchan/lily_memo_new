@@ -123,7 +123,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           </div>
         </section>
 
-        <button className="btn-danger" onClick={() => confirm('すべてのデータを消去しますか？') && db.delete().then(() => window.location.reload())}>
+        <button className="btn-danger" onClick={async () => {
+          if (confirm('すべてのデータを消去しますか？')) {
+            await db.folders.clear();
+            await db.notes.clear();
+            window.location.reload();
+          }
+        }}>
           <Trash2 size={18} />
           データベースを完全にリセット
         </button>
@@ -150,7 +156,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           gap: 40px;
         }
         .settings-section {
-          background: rgba(255, 255, 255, 0.5);
+          background: var(--accent);
+          border: 1px solid var(--border);
           padding: 24px;
           border-radius: 16px;
         }
@@ -214,7 +221,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         .settings-input {
           width: 100%;
           padding: 14px;
-          background: white;
+          background: var(--background);
+          color: var(--foreground);
           border: 1px solid var(--border);
           border-radius: 12px;
         }
@@ -225,7 +233,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           justify-content: center;
           gap: 8px;
           padding: 14px;
-          background: #fff0f0;
+          background: rgba(255, 77, 77, 0.1);
           color: #ff4d4d;
           border-radius: 12px;
           font-weight: 600;

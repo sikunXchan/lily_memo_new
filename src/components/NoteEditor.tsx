@@ -1,6 +1,7 @@
 'use client';
 
 import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import ImageExtension from '@tiptap/extension-image';
@@ -14,7 +15,7 @@ import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
-  Sparkles, Share2, GitBranch, X, Pencil, Eye
+  Sparkles, Share2, GitBranch, X, Pencil, Eye, FolderInput, Check
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -37,6 +38,11 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   // スマホはデフォルト閲覧モード（テキストエリアをタップしてもキーボードが開かない）
   const [isEditMode, setIsEditMode] = useState(true);
   const [isMobileView, setIsMobileView] = useState(false);
+  const [isTitleFocused, setIsTitleFocused] = useState(false);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+
+  // フォルダ一覧（移動機能用）
+  const folders = useLiveQuery(() => db.folders.toArray());
 
   const editor = useEditor({
     extensions: [
@@ -146,6 +152,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       await db.notes.delete(noteId);
       onClose?.();
     }
+  };
+
+  // フォルダ移動
+  const moveToFolder = async (folderId: number | undefined) => {
+    await db.notes.update(noteId, { folderId, updatedAt: Date.now() });
+    setNote(prev => prev ? { ...prev, folderId } : null);
+    setShowFolderPicker(false);
   };
 
   // 図/グラフ挿入: .focus()を呼ばない → キーボードが開かない
@@ -360,6 +373,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               placeholder="タイトル"
               readOnly={!isEditMode}
               tabIndex={isEditMode ? 0 : -1}
+              onFocus={() => setIsTitleFocused(true)}
+              onBlur={() => setIsTitleFocused(false)}
             />
           </div>
         </div>
@@ -380,6 +395,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           <button className="toolbar-btn" onClick={shareNote} title="HTMLで共有（図・グラフ含む）">
             <Share2 size={20} />
           </button>
+          <button className="toolbar-btn" onClick={() => setShowFolderPicker(true)} title="フォルダに移動">
+            <FolderInput size={20} />
+          </button>
           {isEditMode && (
             <>
               <button
@@ -398,8 +416,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       </header>
 
       <div className="editor-content-wrapper">
-        {/* ツールバー: 図/グラフ/AIは常に表示、テキスト編集系は編集モードのみ */}
-        <div className="tiptap-toolbar glass">
+        {/* ツールバー: タイトル編集中は非表示、図/グラフ/AIは常に表示、テキスト編集系は編集モードのみ */}
+        {!isTitleFocused && <div className="tiptap-toolbar glass">
           {isEditMode && (
             <>
               <button
@@ -449,7 +467,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           >
             <Sparkles size={18} />
           </button>
-        </div>
+        </div>}
 
         {isMobileView && !isEditMode && (
           <div className="read-mode-banner">
@@ -487,6 +505,39 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             <button className="btn-close-ai" onClick={() => setIsAiPanelOpen(false)} title="閉じる">
               <X size={16} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* フォルダ移動ピッカー */}
+      {showFolderPicker && (
+        <div className="folder-picker-overlay" onClick={() => setShowFolderPicker(false)}>
+          <div className="folder-picker-sheet" onClick={e => e.stopPropagation()}>
+            <div className="folder-picker-header">
+              <span>フォルダに移動</span>
+              <button onClick={() => setShowFolderPicker(false)}><X size={18} /></button>
+            </div>
+            <div className="folder-picker-list">
+              <button
+                className={`folder-picker-item ${!note?.folderId ? 'fp-selected' : ''}`}
+                onClick={() => moveToFolder(undefined)}
+              >
+                <div className="fp-dot" style={{ background: '#ccc' }} />
+                <span>フォルダなし</span>
+                {!note?.folderId && <Check size={15} className="fp-check" />}
+              </button>
+              {folders?.map(folder => (
+                <button
+                  key={folder.id}
+                  className={`folder-picker-item ${note?.folderId === folder.id ? 'fp-selected' : ''}`}
+                  onClick={() => moveToFolder(folder.id!)}
+                >
+                  <div className="fp-dot" style={{ background: `var(${folder.color || '--folder-pink'})` }} />
+                  <span>{folder.name}</span>
+                  {note?.folderId === folder.id && <Check size={15} className="fp-check" />}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -832,6 +883,88 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           border-radius: 12px;
           margin: 16px 0;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        /* ===== Folder Picker ===== */
+        .folder-picker-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.4);
+          z-index: 2000;
+          display: flex;
+          align-items: flex-end;
+        }
+
+        .folder-picker-sheet {
+          width: 100%;
+          max-width: 480px;
+          margin: 0 auto;
+          background: var(--background);
+          border-radius: 20px 20px 0 0;
+          padding: 8px 0 calc(16px + env(safe-area-inset-bottom));
+          animation: slideUp 0.22s ease-out;
+        }
+
+        .folder-picker-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 20px 12px;
+          border-bottom: 1px solid var(--border);
+          font-weight: 700;
+          color: var(--foreground);
+        }
+
+        .folder-picker-header button {
+          background: transparent;
+          color: var(--foreground);
+          opacity: 0.6;
+          padding: 4px;
+        }
+
+        .folder-picker-list {
+          display: flex;
+          flex-direction: column;
+          padding: 8px 0;
+        }
+
+        .folder-picker-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 20px;
+          background: transparent;
+          color: var(--foreground);
+          text-align: left;
+          font-size: 1rem;
+          width: 100%;
+          transition: background 0.15s;
+        }
+
+        .folder-picker-item:hover,
+        .folder-picker-item:active {
+          background: var(--accent);
+        }
+
+        .folder-picker-item.fp-selected {
+          color: var(--primary);
+          font-weight: 600;
+        }
+
+        .fp-dot {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
+        .folder-picker-item span {
+          flex: 1;
+        }
+
+        .fp-check {
+          color: var(--primary);
+          flex-shrink: 0;
         }
       `}</style>
     </div>

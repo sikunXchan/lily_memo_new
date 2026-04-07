@@ -304,9 +304,16 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
             display: flex;
             gap: 4px;
             opacity: 0;
+            transition: opacity 0.15s;
           }
           .folder-item:hover .folder-item-actions {
             opacity: 1;
+          }
+          /* タッチデバイスではホバーが使えないため常時表示 */
+          @media (hover: none) {
+            .folder-item-actions {
+              opacity: 1;
+            }
           }
           .btn-inline {
             background: transparent;

@@ -1,7 +1,7 @@
 'use client';
 
 import { NodeViewContent, NodeViewWrapper } from '@tiptap/react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, CSSProperties } from 'react';
 
 const LANGUAGES = [
   'javascript', 'typescript', 'python', 'rust', 'cpp', 'c', 'java', 'go',
@@ -9,15 +9,12 @@ const LANGUAGES = [
 ];
 
 export default function CodeBlockComponent({ node: { attrs }, updateAttributes }: any) {
-  // ローカルstateで管理することでTiptapのre-render待ちなく即座にUIが切り替わる
+  // インラインスタイルで管理: styled-jsxはTiptap NodeViewRenderer内で正しく動作しないため
   const [theme, setTheme] = useState<'dark' | 'light'>(attrs.theme || 'dark');
 
-  // 保存済みコンテンツを読み込んだときにattrsと同期
   useEffect(() => {
-    const incoming = attrs.theme || 'dark';
-    if (incoming !== theme) {
-      setTheme(incoming as 'dark' | 'light');
-    }
+    const incoming = (attrs.theme as 'dark' | 'light') || 'dark';
+    if (incoming !== theme) setTheme(incoming);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attrs.theme]);
 
@@ -27,106 +24,92 @@ export default function CodeBlockComponent({ node: { attrs }, updateAttributes }
     updateAttributes({ theme: next });
   };
 
+  const isDark = theme === 'dark';
+
+  const wrapperStyle: CSSProperties = {
+    position: 'relative',
+    margin: '1.5rem 0',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    background: isDark ? '#1e1e1e' : '#f6f8fa',
+    border: isDark ? '1px solid #333' : '1px solid #d0d7de',
+    boxShadow: isDark ? '0 4px 12px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.06)',
+    transition: 'background 0.25s, border 0.25s',
+  };
+
+  const headerStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 14px',
+    background: isDark ? 'rgba(255,255,255,0.06)' : '#eaeef2',
+    borderBottom: isDark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #d0d7de',
+  };
+
+  const selectStyle: CSSProperties = {
+    background: isDark ? 'rgba(255,255,255,0.1)' : '#d0d7de',
+    color: isDark ? '#ccc' : '#444',
+    border: 'none',
+    fontSize: '0.75rem',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    outline: 'none',
+    cursor: 'pointer',
+  };
+
+  const toggleBtnStyle: CSSProperties = {
+    background: 'transparent',
+    border: 'none',
+    fontSize: '1rem',
+    padding: '0 4px',
+    cursor: 'pointer',
+    opacity: 0.8,
+    lineHeight: 1,
+    transition: 'opacity 0.2s',
+  };
+
+  const langLabelStyle: CSSProperties = {
+    fontSize: '0.68rem',
+    textTransform: 'uppercase',
+    color: isDark ? '#666' : '#8c959f',
+    fontWeight: 700,
+    letterSpacing: '1px',
+  };
+
+  const preStyle: CSSProperties = {
+    margin: 0,
+    padding: '1rem 1.25rem',
+    overflowX: 'auto',
+    fontFamily: "'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+    fontSize: '0.88rem',
+    lineHeight: '1.6',
+    color: isDark ? '#d4d4d4' : '#1f2328',
+    background: 'transparent',
+  };
+
   return (
-    <NodeViewWrapper className={`code-block-wrapper ${theme}-theme`}>
-      <div className="code-block-header" contentEditable={false}>
-        <div className="header-controls">
+    <NodeViewWrapper style={wrapperStyle}>
+      <div style={headerStyle} contentEditable={false}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <select
             value={attrs.language || 'auto'}
-            onChange={event => updateAttributes({ language: event.target.value })}
-            className="lang-select"
+            onChange={e => updateAttributes({ language: e.target.value })}
+            style={selectStyle}
           >
             <option value="auto">auto</option>
             {LANGUAGES.map(lang => (
               <option key={lang} value={lang}>{lang}</option>
             ))}
           </select>
-          <button className="btn-theme-toggle" onClick={toggleTheme} title="背景色切替">
-            {theme === 'dark' ? '☀️' : '🌙'}
+          <button style={toggleBtnStyle} onClick={toggleTheme} title={isDark ? 'ライトテーマに切替' : 'ダークテーマに切替'}>
+            {isDark ? '☀️' : '🌙'}
           </button>
         </div>
-        <span className="lang-label">{attrs.language || 'code'}</span>
+        <span style={langLabelStyle}>{attrs.language || 'code'}</span>
       </div>
-      <pre className="code-content">
+      <pre style={preStyle}>
         <NodeViewContent as="div" />
       </pre>
-
-      <style jsx>{`
-        .code-block-wrapper {
-          position: relative;
-          margin: 1.5rem 0;
-          background: #1e1e1e;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          transition: background 0.25s, border 0.25s;
-        }
-        .light-theme {
-          background: #f8f8f8;
-          border: 1px solid #e0e0e0;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-        }
-        .code-block-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 8px 14px;
-          background: rgba(255,255,255,0.05);
-          border-bottom: 1px solid rgba(255,255,255,0.08);
-        }
-        .light-theme .code-block-header {
-          background: #efefef;
-          border-bottom: 1px solid #ddd;
-        }
-        .header-controls {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        .lang-select {
-          background: rgba(255,255,255,0.1);
-          color: #ccc;
-          border: none;
-          font-size: 0.75rem;
-          padding: 2px 8px;
-          border-radius: 4px;
-          outline: none;
-          cursor: pointer;
-        }
-        .light-theme .lang-select {
-          background: #ddd;
-          color: #444;
-        }
-        .btn-theme-toggle {
-          background: transparent;
-          font-size: 1rem;
-          padding: 0;
-          opacity: 0.8;
-          transition: opacity 0.2s, transform 0.2s;
-          line-height: 1;
-        }
-        .btn-theme-toggle:hover { opacity: 1; transform: scale(1.1); }
-        .lang-label {
-          font-size: 0.68rem;
-          text-transform: uppercase;
-          color: #666;
-          font-weight: 700;
-          letter-spacing: 1px;
-        }
-        .light-theme .lang-label { color: #999; }
-        .code-content {
-          margin: 0;
-          padding: 1rem 1.25rem;
-          overflow-x: auto;
-          font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-          font-size: 0.9rem;
-          line-height: 1.6;
-          color: #d4d4d4;
-        }
-        .light-theme :global(.code-content) {
-          color: #333;
-        }
-      `}</style>
     </NodeViewWrapper>
   );
 }

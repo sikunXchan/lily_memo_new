@@ -44,7 +44,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja" className={`${outfit.variable} ${mPlusRounded.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {/* テーマをReact hydration前に適用してFOUC防止 */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('theme');if(t)document.body.setAttribute('data-theme',t);}catch(e){}` }} />
+        {children}
+      </body>
     </html>
   );
 }
