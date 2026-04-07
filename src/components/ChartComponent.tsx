@@ -206,11 +206,15 @@ return {
                 </div>
             ) : computedConfig.config ? (
                 (() => {
-                    const chartType = computedConfig.config.type || 'bar';
+                    const chartConfig = computedConfig.config;
+                    if (!chartConfig.data || !Array.isArray(chartConfig.data.datasets)) {
+                        return <div className="error-message">グラフデータの形式が不正です（datasets配列が見つかりません）。</div>;
+                    }
+                    const chartType = chartConfig.type || 'bar';
                     const props = {
                         ref: chartRef as any,
-                        data: computedConfig.config.data,
-                        options: computedConfig.config.options
+                        data: chartConfig.data,
+                        options: chartConfig.options
                     };
                     return chartType === 'line' ? <Line {...props} /> :
                            chartType === 'pie' ? <Pie {...props} /> :
