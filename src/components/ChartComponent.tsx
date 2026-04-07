@@ -2,7 +2,7 @@
 
 import { NodeViewWrapper } from '@tiptap/react';
 import React, { useState, useRef, useMemo } from 'react';
-import { Chart as RChart } from 'react-chartjs-2';
+import { Bar, Line, Pie, Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -62,7 +62,20 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
   const [editing, setEditing] = useState(false);
   const chartRef = useRef<ChartJS>(null);
 
-  const code = attrs.code ?? defaultCode;
+  const getInitialCode = () => {
+    if (attrs.code) return attrs.code;
+    if (attrs.data && Object.keys(attrs.data).length > 0) {
+      return `// 過去のグラフデータからの復元コード
+return {
+  type: '${attrs.type || 'bar'}',
+  data: ${JSON.stringify(attrs.data, null, 2)},
+  options: { responsive: true, plugins: { legend: { position: 'top' } } }
+};`;
+    }
+    return defaultCode;
+  };
+
+  const code = attrs.code || getInitialCode();
   const fileData = attrs.fileData || null;
   const fileName = attrs.fileName || '';
   
@@ -153,7 +166,7 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
                 if (editing) {
                     handleSaveCode();
                 } else {
-                    setLocalCode(attrs.code || defaultCode);
+                    setLocalCode(attrs.code || getInitialCode());
                     setEditing(true);
                 }
             }}>
@@ -192,12 +205,18 @@ export default function ChartComponent({ node: { attrs }, updateAttributes }: an
                   コードの実行エラー: {computedConfig.error}
                 </div>
             ) : computedConfig.config ? (
-                <RChart
-                    type={computedConfig.config.type || 'bar'}
-                    ref={chartRef as any}
-                    data={computedConfig.config.data}
-                    options={computedConfig.config.options}
-                />
+                (() => {
+                    const chartType = computedConfig.config.type || 'bar';
+                    const props = {
+                        ref: chartRef as any,
+                        data: computedConfig.config.data,
+                        options: computedConfig.config.options
+                    };
+                    return chartType === 'line' ? <Line {...props} /> :
+                           chartType === 'pie' ? <Pie {...props} /> :
+                           chartType === 'scatter' ? <Scatter {...props} /> :
+                           <Bar {...props} />;
+                })()
             ) : (
                 <div className="placeholder">設定がありません。</div>
             )}
