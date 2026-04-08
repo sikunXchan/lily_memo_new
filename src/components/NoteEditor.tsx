@@ -195,18 +195,23 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       if (mobileToolbarRef.current) {
         // キーボードが表示されている時のみ吸い付かせる
         const isKeyboardVisible = viewport.height < window.innerHeight;
+        // transformではなくbottomを直接書き換えることで、レイアウト上の「隙間」をなくす
         if (isKeyboardVisible) {
            const offset = window.innerHeight - viewport.height - viewport.offsetTop;
-           mobileToolbarRef.current.style.transform = `translateY(-${Math.max(0, offset)}px)`;
+           mobileToolbarRef.current.style.bottom = `${Math.max(0, offset)}px`;
+           mobileToolbarRef.current.style.transform = 'none';
         } else {
-           mobileToolbarRef.current.style.transform = 'translateY(0)';
+           mobileToolbarRef.current.style.bottom = '0px';
+           mobileToolbarRef.current.style.transform = 'none';
         }
       }
       
-      // スクロール領域のパディング調整 (キーボード高さに合わせて一度だけ変更)
+      // スクロール領域のパディング調整
+      // ツールバーとキーボードに隠れないよう、一番下に余白を確保
       if (scrollerRef.current) {
         const keyboardHeight = window.innerHeight - viewport.height;
-        scrollerRef.current.style.paddingBottom = `${keyboardHeight + 200}px`;
+        const toolbarHeight = mobileToolbarRef.current?.offsetHeight || 0;
+        scrollerRef.current.style.paddingBottom = `${keyboardHeight + toolbarHeight + 80}px`;
       }
     };
 
@@ -688,7 +693,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           z-index: 1000;
           padding: 16px;
           pointer-events: none; /* Allow clicks to pass to editor if not on buttons */
-          will-change: transform;
         }
 
         .header-floating-top {
@@ -765,11 +769,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           bottom: 0;
           left: 0;
           right: 0;
-          background: var(--background);
+          background: var(--background); /* 不透明にして裏の文字を隠す */
           border-top: 1px solid var(--border);
           padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
           z-index: 1000;
-          will-change: transform;
         }
 
         [data-theme='dark'] .mobile-keyboard-toolbar {
