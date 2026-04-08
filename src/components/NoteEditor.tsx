@@ -243,14 +243,28 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     };
 
     const vv = window.visualViewport;
+    const updateHeaderPos = () => {
+      if (!headerRef.current || !vv) return;
+      // ビジュアルビューポートのオフセットに合わせてヘッダーを移動
+      const offset = vv.offsetTop;
+      headerRef.current.style.transform = `translateY(${Math.max(0, offset)}px)`;
+    };
+
     const listeners: [EventTarget | undefined | null, string, any][] = [
       [vv, 'resize', handleVVResize],
-      [vv, 'scroll', () => updateControls('vv-scroll')],
+      [vv, 'scroll', () => {
+        updateControls('vv-scroll');
+        updateHeaderPos();
+      }],
       [window, 'orientationchange', () => updateControls('orientation')],
       [document, 'focusin', () => updateControls('focus')],
       [document, 'focusout', () => updateControls('focus')],
       [document, 'selectionchange', handleSelectionChange]
     ];
+
+    if (vv) {
+      vv.addEventListener('resize', updateHeaderPos);
+    }
 
     // エディタ本体のDOMにinputイベントを張る
     const editorDom = editor?.view.dom;
@@ -590,57 +604,54 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       // クローンを作成して、PDF用のスタイルを適用する
       const contentClone = element.cloneNode(true) as HTMLElement;
       
-      // クローンのスタイル調整: タイトル含め、PDFとして美しいレイアウトを強制
-      // 全てのインライン・動的スタイルを完全にリセット
+      // クローンのスタイル調整: 画面表示用の動的スタイル（特にpaddingTop）を完全に除去
       contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; width: 100% !important; background: #ffffff !important; color: #000 !important;';
       
-      // 個別にレイアウトを強制
       contentClone.style.display = 'block';
       contentClone.style.height = 'auto';
       contentClone.style.overflow = 'visible';
 
-      // タイトル入力欄をテキストに置き換え（マージンによる空白を排除）
+      // タイトル入力欄の置き換え
       const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
       if (titleInput) {
         const titleDiv = document.createElement('h1');
         titleDiv.textContent = titleInput.value || 'Untitled';
-        titleDiv.style.cssText = 'font-size: 28pt; font-weight: 800; margin: 0 0 20pt 0; padding: 0 0 10pt 0; border-bottom: 2pt solid #ffb6c1; color: #000; width: 100%;';
+        titleDiv.style.cssText = 'font-size: 24pt; font-weight: 800; margin: 0 0 15pt 0; padding: 0 0 10pt 0; border-bottom: 2pt solid #ffb6c1; color: #000; display: block;';
         titleInput.replaceWith(titleDiv);
       }
 
-      // 不要なバナーやボタンを徹底的に削除
+      // 不要要素を削除（ボタン等）
       contentClone.querySelectorAll('button, .read-mode-banner, .folder-picker-overlay').forEach(el => (el as HTMLElement).remove());
       
-      // ProseMirror本体の余白リセット
-      const proseMirror = contentClone.querySelector('.ProseMirror') as HTMLElement;
-      if (proseMirror) {
-        proseMirror.style.cssText = 'padding: 0 !important; margin: 0 !important; width: 100% !important; color: #000 !important;';
-      }
-
-      // PDF出力領域全体のパディング（20mm）を親要素に持たせるためのラップ
-      const wrapper = document.createElement('div');
-      wrapper.style.padding = '20mm';
-      wrapper.style.background = '#ffffff';
-      wrapper.appendChild(contentClone);
+      // エディタ内のスタイル調整。svgやcanvasがページを跨がないように強制
+      const style = document.createElement('style');
+      style.innerHTML = `
+        .ProseMirror { padding: 0 !important; margin: 0 !important; }
+        .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li { 
+          page-break-inside: avoid !important; 
+          break-inside: avoid !important; 
+          margin-bottom: 12pt !important;
+        }
+        svg { max-width: 100% !important; height: auto !important; }
+      `;
+      contentClone.appendChild(style);
 
       const opt = {
-        margin:       0,
+        margin:       15, // 15mmの標準余白
         filename:     `${note?.title || 'Lily_Memo'}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 1 },
+        image:        { type: 'jpeg' as const, quality: 0.98 },
         html2canvas:  { 
           scale: 2, 
           useCORS: true,
-          logging: false,
-          letterRendering: true,
           scrollY: 0,
           scrollX: 0,
           windowWidth: 800
         },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-        pagebreak:    { mode: ['css', 'legacy'], avoid: ['h1', 'h2', 'h3', 'li', 'pre', 'img', '.mermaid-wrapper', '.chart-wrapper'] }
+        pagebreak:    { mode: ['css', 'legacy'] }
       };
       
-      await html2pdf().from(wrapper).set(opt).save();
+      await html2pdf().from(contentClone).set(opt).save();
     } catch (e) {
       console.error('PDF Download failed', e);
       alert('PDFの生成に失敗しました。');
