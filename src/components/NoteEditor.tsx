@@ -288,45 +288,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     return () => observer.disconnect();
   }, []);
 
-  // ヘッダーのスクロール応答型制御（スクロールコンテナに直接リスナーを登録）
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    const header = headerRef.current;
-    if (!scroller || !header) return;
-
-    let lastScrollTop = 0;
-    let isHeaderHidden = false;
-    const SCROLL_DELTA = 10;
-    const SCROLL_THRESHOLD = 100;
-
-    const handleScroll = () => {
-      const currentScrollTop = scroller.scrollTop;
-      const diff = currentScrollTop - lastScrollTop;
-
-      if (currentScrollTop <= 50) {
-        if (isHeaderHidden) {
-          header.classList.remove('header-hidden');
-          isHeaderHidden = false;
-        }
-      } else if (Math.abs(diff) > SCROLL_DELTA) {
-        if (diff > 0 && currentScrollTop > SCROLL_THRESHOLD) {
-          if (!isHeaderHidden) {
-            header.classList.add('header-hidden');
-            isHeaderHidden = true;
-          }
-        } else if (diff < 0) {
-          if (isHeaderHidden) {
-            header.classList.remove('header-hidden');
-            isHeaderHidden = false;
-          }
-        }
-        lastScrollTop = currentScrollTop;
-      }
-    };
-
-    scroller.addEventListener('scroll', handleScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', handleScroll);
-  }, []);
 
   useEffect(() => {
     async function loadNote() {
@@ -674,9 +635,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             </div>
           )}
 
-          {/* 右固定: 共有・インポート・削除・モード切替 */}
+          {/* 右固定: 共有・PDF・インポート・削除・モード切替 */}
           <div className="header-right">
             <button className="btn-tool" onClick={shareNote} title="共有"><Share2 size={18} /></button>
+            <button className="btn-tool" onClick={downloadPdf} title="PDFダウンロード"><Printer size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="インポート"><FolderInput size={18} /></button>
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
             <button
@@ -776,25 +738,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           z-index: 2000;
           background: var(--background);
           border-bottom: 1px solid var(--border);
-          transition: transform 0.2s ease-in-out;
-          transform: translateY(0);
         }
 
         [data-theme='dark'] .editor-header {
           background: rgba(30,30,30,0.97);
         }
 
-        .editor-header.header-hidden {
-          transform: translateY(-100%);
-        }
-
         .header-bar {
           display: flex;
           align-items: center;
           width: 100%;
-          height: 52px;
-          padding: 0 6px;
-          gap: 2px;
+          height: 60px;
+          padding: 0 8px;
+          gap: 4px;
           overflow: hidden;
         }
 
@@ -836,9 +792,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         .btn-tool {
-          width: 38px;
-          height: 38px;
-          border-radius: 8px;
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
           display: flex;
           align-items: center;
           justify-content: center;
