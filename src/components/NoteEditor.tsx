@@ -175,7 +175,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     };
   }, [editor]);
 
-  // --- Google Docs Style Viewport & Scroll Control ---
+  // --- Google Docs Style Viewport, Scroll & Cursor Tracking ---
   useEffect(() => {
     if (!isMobileView) return;
 
@@ -184,46 +184,78 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     let lastBottomOffset = -1;
     let isHeaderHidden = false;
 
-    // 定数定義 (ヘッダーの高さ等)
-    const SCROLL_THRESHOLD = 100; // この値を超えたら隠し始める
-    const SCROLL_DELTA = 10;     // 最低限これだけスクロールしたら反応する
+    // 定数定義
+    const SCROLL_THRESHOLD = 100;
+    const SCROLL_DELTA = 10;
 
-    const updateControls = () => {
+    // カーソル追従スクロールのメインロジック
+    const adjustScrollForCursor = () => {
+      if (!isEditMode || !scrollerRef.current) return;
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+
+      // カーソルが「見えない」座標（高さ0など）の場合はスキップ
+      if (rect.height === 0) return;
+
+      const scroller = scrollerRef.current;
+      const header = headerRef.current;
+      const toolbar = mobileToolbarRef.current;
+      const vv = window.visualViewport;
+      if (!vv) return;
+
+      // 見える領域の定義
+      const safeTop = header ? header.getBoundingClientRect().bottom + 10 : 80;
+      const safeBottom = toolbar 
+        ? vv.height - (toolbar.offsetHeight || 60) - 10 
+        : vv.height - 80;
+
+      // 判定とスクロール実行
+      if (rect.top < safeTop) {
+        // 上に隠れた場合
+        const scrollAmount = safeTop - rect.top + 40; // 少し余裕を持って戻す
+        scroller.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+      } else if (rect.bottom > safeBottom) {
+        // 下（またはキーボードの裏）に隠れた場合
+        const scrollAmount = rect.bottom - safeBottom + 40;
+        scroller.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+      }
+    };
+
+    const updateControls = (source?: string) => {
       // 1. 下の編集ツールバーの位置制御 (VisualViewport API)
       const vv = window.visualViewport;
       if (vv && mobileToolbarRef.current) {
-        // キーボード高さを正確に取得するための計算式
         const layoutHeight = document.documentElement.clientHeight;
         const visualBottom = vv.offsetTop + vv.height;
         const bottomOffset = Math.max(0, layoutHeight - visualBottom);
 
-        // キャッシュチェックして位置を更新 (非表示中でも位置だけは正しく保つ)
         if (bottomOffset !== lastBottomOffset) {
           lastBottomOffset = bottomOffset;
           mobileToolbarRef.current.style.bottom = `${bottomOffset}px`;
         }
       }
 
-      // 2. 上のヘッダーのスクロール応答制御
-      if (headerRef.current) {
+      // 2. 上のヘッダーのスクロール応答制御 (通常のブラウズ時)
+      if (headerRef.current && source === 'window-scroll') {
         const currentScrollY = window.scrollY;
         const diff = currentScrollY - lastScrollY;
 
         if (currentScrollY <= 50) {
-          // ページ最上部付近は常に表示
           if (isHeaderHidden) {
             headerRef.current.classList.remove('header-hidden');
             isHeaderHidden = false;
           }
         } else if (Math.abs(diff) > SCROLL_DELTA) {
           if (diff > 0 && currentScrollY > SCROLL_THRESHOLD) {
-            // 下スクロール: 隠す
             if (!isHeaderHidden) {
               headerRef.current.classList.add('header-hidden');
               isHeaderHidden = true;
             }
           } else if (diff < 0) {
-            // 上スクロール: 表示
             if (isHeaderHidden) {
               headerRef.current.classList.remove('header-hidden');
               isHeaderHidden = false;
@@ -232,38 +264,67 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           lastScrollY = currentScrollY;
         }
       }
+
+      // 3. カーソル追従 (入力時や選択変更時)
+      if (source === 'selection' || source === 'input' || source === 'vv-resize') {
+        adjustScrollForCursor();
+      }
     };
 
-    const onEventTrigger = () => {
+    const handleWindowScroll = () => {
       if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(updateControls);
+      rafId = requestAnimationFrame(() => updateControls('window-scroll'));
     };
 
-    // リスナー設定
+    const handleSelectionChange = () => {
+      // 選択変更時は少し待ってから判定（描画更新を待つ）
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => updateControls('selection'));
+    };
+
+    const handleInput = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => updateControls('input'));
+    };
+
+    const handleVVResize = () => {
+      // iOS Safariのキーボード安定待ち
+      setTimeout(() => {
+        updateControls('vv-resize');
+      }, 100);
+    };
+
     const vv = window.visualViewport;
     const listeners: [EventTarget | undefined | null, string, any][] = [
-      [vv, 'resize', onEventTrigger],
-      [vv, 'scroll', onEventTrigger],
-      [window, 'scroll', onEventTrigger],
-      [window, 'orientationchange', onEventTrigger],
-      [document, 'focusin', onEventTrigger],
-      [document, 'focusout', onEventTrigger]
+      [vv, 'resize', handleVVResize],
+      [vv, 'scroll', () => updateControls('vv-scroll')],
+      [window, 'scroll', handleWindowScroll],
+      [window, 'orientationchange', () => updateControls('orientation')],
+      [document, 'focusin', () => updateControls('focus')],
+      [document, 'focusout', () => updateControls('focus')],
+      [document, 'selectionchange', handleSelectionChange]
     ];
+
+    // エディタ本体のDOMにinputイベントを張る
+    const editorDom = editor?.view.dom;
+    if (editorDom) {
+      editorDom.addEventListener('input', handleInput);
+    }
 
     listeners.forEach(([target, event, cb]) => {
       target?.addEventListener(event, cb);
     });
 
-    // 初期化実行
-    onEventTrigger();
-
     return () => {
       listeners.forEach(([target, event, cb]) => {
         target?.removeEventListener(event, cb);
       });
+      if (editorDom) {
+        editorDom.removeEventListener('input', handleInput);
+      }
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [isMobileView, isEditMode]);
+  }, [isMobileView, isEditMode, editor]);
 
   useEffect(() => {
     async function loadNote() {
