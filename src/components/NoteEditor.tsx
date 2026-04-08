@@ -118,6 +118,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     ],
     content: '',
     immediatelyRender: false,
+    editorProps: {
+      scrollThreshold: 0,
+      scrollMargin: 0,
+    },
     onUpdate: ({ editor }) => {
       if (noteId) saveNote(editor.getHTML());
     },
@@ -803,7 +807,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         .editor-scroller {
           flex: 1;
-          padding: 0 40px 100px;
+          padding: 0 40px 50vh;
           display: flex;
           flex-direction: column;
         }
@@ -892,9 +896,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           font-size: 1.05rem;
           line-height: 1.8;
           max-width: 860px;
+          width: 100%;
           margin: 0 auto;
           color: var(--foreground);
-          padding-bottom: 30vh; /* キーボード被り防止のための余白 */
         }
 
         .tiptap-toolbar {
@@ -915,7 +919,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @media (max-width: 768px) {
-          .editor-scroller { padding: 0 16px 100px; }
+          .editor-scroller { padding: 0 16px 50vh; }
           .content-title-input { font-size: 1.6rem; margin-top: 24px; }
           .tiptap-toolbar { margin: 4px 12px 12px; }
           .editor-content-wrapper { padding: 0; }
