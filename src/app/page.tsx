@@ -183,7 +183,7 @@ export default function Home() {
 
         @media (max-width: 768px) {
           .main-view {
-            padding-bottom: calc(60px + env(safe-area-inset-bottom));
+            padding-bottom: 0;
           }
           .empty-state {
             display: none;

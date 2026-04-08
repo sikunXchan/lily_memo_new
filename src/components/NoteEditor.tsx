@@ -559,7 +559,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             />
             <EditorContent editor={editor} />
             {/* キーボード分の余白を強制確保 */}
-            <div className="keyboard-spacer" style={{ height: '300px' }} />
+            <div className="keyboard-spacer" style={{ height: '200px' }} />
         </div>
       </div>
 
