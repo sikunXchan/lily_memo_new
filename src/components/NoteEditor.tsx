@@ -559,24 +559,103 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 </html>`;
   };
 
+  const generatePdfBlob = async (): Promise<Blob | null> => {
+    const element = scrollerInnerRef.current;
+    if (!element) return null;
+    
+    document.body.classList.add('pdf-exporting');
+    
+    try {
+      // @ts-ignore
+      const html2pdf = (await import('html2pdf.js')).default;
+      const contentClone = element.cloneNode(true) as HTMLElement;
+      
+      // クローンのスタイル調整: A4の横幅(794px)に合わせた固定レイアウトを強制
+      contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; border: none !important; width: 794px !important; background: #ffffff !important; color: #000000 !important; font-size: 11pt !important;';
+      
+      contentClone.style.display = 'block';
+      contentClone.style.height = 'auto';
+      contentClone.style.overflow = 'visible';
+
+      const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
+      if (titleInput) {
+        const titleDiv = document.createElement('h1');
+        titleDiv.textContent = titleInput.value || 'Untitled';
+        titleDiv.style.cssText = 'font-size: 26pt; font-weight: 800; margin: 0 0 25pt 0; padding: 0 0 10pt 0; border-bottom: 2pt solid #ffb6c1; color: #000; display: block; width: 100%;';
+        titleInput.replaceWith(titleDiv);
+      }
+
+      contentClone.querySelectorAll('button, .read-mode-banner, .folder-picker-overlay, .status-badge').forEach(el => (el as HTMLElement).remove());
+      
+      const style = document.createElement('style');
+      style.innerHTML = `
+        .ProseMirror { padding: 0 !important; margin: 0 !important; width: 100% !important; min-height: auto !important; }
+        .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li, blockquote, p { 
+          page-break-inside: avoid !important; 
+          break-inside: avoid !important; 
+          margin-bottom: 14pt !important;
+          display: block !important;
+          position: relative !important;
+        }
+        pre { background: #f5f5f5 !important; color: #000 !important; border: 1px solid #ddd !important; white-space: pre-wrap !important; word-break: break-all !important; padding: 10px !important; }
+        code { font-family: monospace !important; }
+        svg { max-width: 100% !important; height: auto !important; }
+        p { line-height: 1.7 !important; orphans: 3; widows: 3; }
+      `;
+      contentClone.appendChild(style);
+
+      const opt = {
+        margin:       [15, 15, 15, 15] as [number, number, number, number],
+        filename:     `${note?.title || 'Lily_Memo'}.pdf`,
+        image:        { type: 'jpeg' as const, quality: 1.0 },
+        html2canvas:  { 
+          scale: 3, // 高解像度
+          useCORS: true,
+          letterRendering: true,
+          width: 794,
+          windowWidth: 794
+        },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
+        pagebreak:    { mode: ['css', 'legacy'] }
+      };
+      
+      // output('blob') で Blobを取得
+      return await html2pdf().from(contentClone).set(opt).output('blob');
+    } catch (e) {
+      console.error('PDF Generation failed', e);
+      return null;
+    } finally {
+      document.body.classList.remove('pdf-exporting');
+    }
+  };
+
   const shareNote = async () => {
     if (!note || !editor) return;
+    setIsSaving(true); // 生成中インジケータ代わり
+    
+    const blob = await generatePdfBlob();
+    setIsSaving(false);
+    
+    if (!blob) {
+      alert('PDFの生成に失敗しました。');
+      return;
+    }
+
     const title = note.title || 'Untitled';
-    const html = generateShareableHtml();
-    if (!html) return;
+    const file = new File([blob], `${title}.pdf`, { type: 'application/pdf' });
 
-    const blob = new Blob([html], { type: 'text/html' });
-    const file = new File([blob], `${title}.html`, { type: 'text/html' });
-
-    if (navigator.share) {
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
-        await navigator.share({ title, files: [file] });
+        await navigator.share({
+          files: [file],
+          title: title,
+          text: 'Lily Memo から共有されたPDFファイルです。'
+        });
       } catch (err) {
         console.error('Share failed:', err);
-        // fallback: download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.download = `${title}.html`;
+        a.download = `${title}.pdf`;
         a.href = url;
         a.click();
         URL.revokeObjectURL(url);
@@ -584,83 +663,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     } else {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.download = `${title}.html`;
+      a.download = `${title}.pdf`;
       a.href = url;
       a.click();
       URL.revokeObjectURL(url);
-    }
-  };
-  const downloadPdf = async () => {
-    const element = scrollerInnerRef.current;
-    if (!element) return;
-    
-    // UIの一時隠ぺい用クラス追加
-    document.body.classList.add('pdf-exporting');
-    
-    try {
-      // @ts-ignore
-      const html2pdf = (await import('html2pdf.js')).default;
-      
-      // クローンを作成して、PDF用のスタイルを適用する
-      const contentClone = element.cloneNode(true) as HTMLElement;
-      
-      // クローンのスタイル調整: 画面表示用の動的スタイルを完全に除去
-      contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; border: none !important; width: 100% !important; background: #ffffff !important; color: #000 !important;';
-      
-      contentClone.style.display = 'block';
-      contentClone.style.height = 'auto';
-      contentClone.style.overflow = 'visible';
-
-      // タイトル入力欄の置き換え
-      const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
-      if (titleInput) {
-        const titleDiv = document.createElement('h1');
-        titleDiv.textContent = titleInput.value || 'Untitled';
-        titleDiv.style.cssText = 'font-size: 24pt; font-weight: 800; margin: 0 0 20pt 0; padding: 0 0 10pt 0; border-bottom: 2pt solid #ffb6c1; color: #000; display: block;';
-        titleInput.replaceWith(titleDiv);
-      }
-
-      // 不要要素を削除
-      contentClone.querySelectorAll('button, .read-mode-banner, .folder-picker-overlay, .status-badge').forEach(el => (el as HTMLElement).remove());
-      
-      // 改ページ制御のためのスタイル注入
-      const style = document.createElement('style');
-      style.innerHTML = `
-        .ProseMirror { padding: 0 !important; margin: 0 !important; width: 100% !important; }
-        /* 図解、コード、項目がページ境界で切れるのを防ぐ */
-        .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li, blockquote { 
-          page-break-inside: avoid !important; 
-          break-inside: avoid !important; 
-          margin-bottom: 15pt !important;
-          display: block !important;
-          position: relative !important;
-        }
-        svg { max-width: 100% !important; height: auto !important; }
-        p { margin-bottom: 10pt !important; line-height: 1.6 !important; }
-      `;
-      contentClone.appendChild(style);
-
-      const opt = {
-        margin:       15,
-        filename:     `${note?.title || 'Lily_Memo'}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { 
-          scale: 2, 
-          useCORS: true,
-          scrollY: 0,
-          scrollX: 0,
-          windowWidth: 1000 // 少し広めの幅でレンダリングすることで安定させる
-        },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-        pagebreak:    { mode: ['css', 'legacy'], avoid: ['.mermaid', '.chart-wrapper', 'pre', 'img', 'h1', 'h2', 'h3'] }
-      };
-      
-      await html2pdf().from(contentClone).set(opt).save();
-    } catch (e) {
-      console.error('PDF Download failed', e);
-      alert('PDFの生成に失敗しました。');
-    } finally {
-      document.body.classList.remove('pdf-exporting');
     }
   };
 
@@ -713,8 +719,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             )}
 
             {/* 常時表示アクション */}
-            <button className="btn-tool" onClick={shareNote} title="HTMLを共有"><Share2 size={18} /></button>
-            <button className="btn-tool" onClick={downloadPdf} title="PDF保存"><Printer size={18} /></button>
+            {/* 共有ボタン（ここからPDFを生成・共有） */}
+            <button className="btn-tool" onClick={shareNote} title="PDFを共有"><Share2 size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
             
