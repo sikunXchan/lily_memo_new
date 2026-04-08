@@ -181,10 +181,17 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       const viewport = window.visualViewport;
       if (!viewport || !mobileToolbarRef.current) return;
       
-      // キーボードが表示されている場合、viewport.heightが変化する
-      // ツールバーをviewportの底（実質のキーボード上端）に吸い付かせる
-      const offset = window.innerHeight - viewport.height - viewport.offsetTop;
-      mobileToolbarRef.current.style.bottom = `${Math.max(0, offset)}px`;
+      const isKeyboardVisible = viewport.height < window.innerHeight;
+      
+      if (isKeyboardVisible) {
+        // キーボードが表示されている時
+        const offset = window.innerHeight - viewport.height - viewport.offsetTop;
+        mobileToolbarRef.current.style.bottom = `${offset}px`;
+        mobileToolbarRef.current.style.position = 'fixed';
+      } else {
+        // キーボードが閉じている時
+        mobileToolbarRef.current.style.bottom = '0px';
+      }
     };
 
     window.visualViewport?.addEventListener('resize', onViewportChange);
@@ -551,6 +558,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               readOnly={!isEditMode}
             />
             <EditorContent editor={editor} />
+            {/* キーボード分の余白を強制確保 */}
+            <div className="keyboard-spacer" style={{ height: '300px' }} />
         </div>
       </div>
 
