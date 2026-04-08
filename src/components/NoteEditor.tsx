@@ -543,68 +543,69 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         </div>
       </header>
 
+      {/* ツールバー: タイトル編集中は非表示、図/グラフ/AIは常に表示、テキスト編集系は編集モードのみ */}
+      {!isTitleFocused && <div className="tiptap-toolbar glass">
+        {isEditMode && (
+          <>
+            <button
+              onClick={() => editor.chain().focus().undo().run()}
+              disabled={!editor.can().undo()}
+              title="元に戻す"
+            >
+              <Undo size={18} />
+            </button>
+            <button
+              onClick={() => editor.chain().focus().redo().run()}
+              disabled={!editor.can().redo()}
+              title="やり直し"
+            >
+              <Redo size={18} />
+            </button>
+            <div className="divider" />
+            <button
+              onClick={() => editor.chain().focus().toggleBold().run()}
+              className={editor.isActive('bold') ? 'active' : ''}
+              title="太字"
+            >
+              <Type size={18} />
+            </button>
+            <button
+              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+              className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}
+              title="見出し"
+            >
+              H2
+            </button>
+            <button
+              onClick={() => editor.chain().focus().toggleTaskList().run()}
+              className={editor.isActive('taskList') ? 'active' : ''}
+              title="チェックリスト"
+            >
+              <CheckSquare size={18} />
+            </button>
+            <button
+              onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+              className={editor.isActive('codeBlock') ? 'active' : ''}
+              title="コードブロック"
+            >
+              <Binary size={18} />
+            </button>
+            <div className="divider" />
+          </>
+        )}
+        {/* 図・グラフ・画像は閲覧モードでも挿入可能 */}
+        <button onClick={insertMermaid} title="図（Mermaid）を挿入 ※キーボード不要">
+          <GitBranch size={18} />
+        </button>
+        <button onClick={insertChart} title="グラフを挿入 ※キーボード不要">
+          <BarChart3 size={18} />
+        </button>
+        <button onClick={addNoteAsset} title="画像を挿入">
+          <ImageIcon size={18} />
+        </button>
+      </div>}
+
       <div className="editor-content-wrapper">
-        {/* ツールバー: タイトル編集中は非表示、図/グラフ/AIは常に表示、テキスト編集系は編集モードのみ */}
-        {!isTitleFocused && <div className="tiptap-toolbar glass">
-          {isEditMode && (
-            <>
-              <button
-                onClick={() => editor.chain().focus().undo().run()}
-                disabled={!editor.can().undo()}
-                title="元に戻す"
-              >
-                <Undo size={18} />
-              </button>
-              <button
-                onClick={() => editor.chain().focus().redo().run()}
-                disabled={!editor.can().redo()}
-                title="やり直し"
-              >
-                <Redo size={18} />
-              </button>
-              <div className="divider" />
-              <button
-                onClick={() => editor.chain().focus().toggleBold().run()}
-                className={editor.isActive('bold') ? 'active' : ''}
-                title="太字"
-              >
-                <Type size={18} />
-              </button>
-              <button
-                onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}
-                title="見出し"
-              >
-                H2
-              </button>
-              <button
-                onClick={() => editor.chain().focus().toggleTaskList().run()}
-                className={editor.isActive('taskList') ? 'active' : ''}
-                title="チェックリスト"
-              >
-                <CheckSquare size={18} />
-              </button>
-              <button
-                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-                className={editor.isActive('codeBlock') ? 'active' : ''}
-                title="コードブロック"
-              >
-                <Binary size={18} />
-              </button>
-              <div className="divider" />
-            </>
-          )}
-          {/* 図・グラフ・画像は閲覧モードでも挿入可能 */}
-          <button onClick={insertMermaid} title="図（Mermaid）を挿入 ※キーボード不要">
-            <GitBranch size={18} />
-          </button>
-          <button onClick={insertChart} title="グラフを挿入 ※キーボード不要">
-            <BarChart3 size={18} />
-          </button>
-          <button onClick={addNoteAsset} title="画像を挿入">
-            <ImageIcon size={18} />
-          </button>
-        </div>}
 
         <div className="editor-scroller">
             <input
@@ -832,20 +833,18 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         /* ===== Tiptap Toolbar ===== */
         .tiptap-toolbar {
-          position: sticky;
-          top: 0;
-          z-index: 10;
           display: flex;
           flex-wrap: wrap;
           align-items: center;
           gap: 4px;
-          margin-bottom: 16px;
+          margin: 0 40px 16px;
           padding: 6px 10px;
           border-radius: 12px;
           border: 1px solid var(--border);
           background: var(--accent);
           max-width: fit-content;
-          align-self: flex-start; /* flex child sticky fix */
+          flex-shrink: 0;
+          z-index: 10;
         }
         
         [data-theme='dark'] .tiptap-toolbar { background: var(--muted); }
@@ -918,7 +917,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         @media (max-width: 768px) {
           .editor-scroller { padding: 0 16px 100px; }
           .content-title-input { font-size: 1.6rem; margin-top: 24px; }
-          .tiptap-toolbar { margin: 4px 12px; }
+          .tiptap-toolbar { margin: 4px 12px 12px; }
           .editor-content-wrapper { padding: 0; }
         }
 
@@ -1022,6 +1021,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           button, select {
             display: none !important;
           }
+        }
+
+        :global(.pdf-exporting p),
+        :global(.pdf-exporting h1),
+        :global(.pdf-exporting h2),
+        :global(.pdf-exporting h3),
+        :global(.pdf-exporting li),
+        :global(.pdf-exporting .mermaid-wrapper),
+        :global(.pdf-exporting .chart-wrapper),
+        :global(.pdf-exporting img),
+        :global(.pdf-exporting pre) {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
         }
 
         .ProseMirror img {
