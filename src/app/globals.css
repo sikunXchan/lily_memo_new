@@ -45,6 +45,7 @@ body {
   width: 100%;
   overscroll-behavior-y: none;
 }
+
 html {
   overflow: hidden;
   height: 100%;

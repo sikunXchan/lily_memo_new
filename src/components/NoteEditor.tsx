@@ -138,9 +138,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(isEditMode);
-    if (isEditMode) {
-      setTimeout(() => editor.commands.focus('end'), 50);
-    }
   }, [editor, isEditMode]);
 
   // チェックボックスタップ時のキーボード抑制（iOS対応）
@@ -802,18 +799,18 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           padding: 0;
           overflow-y: auto;
           -webkit-overflow-scrolling: touch;
-          overscroll-behavior: contain;
+          overscroll-behavior-y: contain;
         }
 
         .editor-scroller {
           flex: 1;
-          padding: 0 40px 50vh;
+          padding: 0 40px 24px;
           display: flex;
           flex-direction: column;
         }
 
         .content-title-input {
-          font-size: 2.2rem;
+          font-size: 1.8rem;
           font-weight: 800;
           border: none;
           background: transparent;
@@ -838,6 +835,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         /* ===== Tiptap Toolbar ===== */
         .tiptap-toolbar {
           display: flex;
+          position: sticky;
+          top: 0; /* sticky against the native scroll top! */
+          z-index: 100;
           flex-wrap: wrap;
           align-items: center;
           gap: 4px;
@@ -893,8 +893,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .ProseMirror {
           min-height: 200px;
           outline: none;
-          font-size: 1.05rem;
-          line-height: 1.8;
+          font-size: 0.95rem;
+          line-height: 1.6;
           max-width: 860px;
           width: 100%;
           margin: 0 auto;
@@ -919,8 +919,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @media (max-width: 768px) {
-          .editor-scroller { padding: 0 16px 50vh; }
-          .content-title-input { font-size: 1.6rem; margin-top: 24px; }
+          .editor-scroller { padding: 0 16px 32px; }
+          .content-title-input { font-size: 1.4rem; margin-top: 16px; }
           .tiptap-toolbar { margin: 4px 12px 12px; }
           .editor-content-wrapper { padding: 0; }
         }
