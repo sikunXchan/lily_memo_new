@@ -591,7 +591,11 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       const contentClone = element.cloneNode(true) as HTMLElement;
       
       // クローンのスタイル調整: タイトル含め、PDFとして美しいレイアウトを強制
-      contentClone.style.padding = '15mm 20mm';
+      // 既存のインラインスタイル（特にJSで設定されたpaddingTop）をクリアする
+      contentClone.style.cssText = ''; 
+      
+      contentClone.style.padding = '20mm !important';
+      contentClone.style.margin = '0 !important';
       contentClone.style.width = '100%';
       contentClone.style.maxWidth = 'none';
       contentClone.style.background = '#ffffff';
@@ -599,6 +603,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       contentClone.style.height = 'auto';
       contentClone.style.minHeight = 'auto';
       contentClone.style.overflow = 'visible';
+      contentClone.style.display = 'block';
 
       // タイトル入力欄をテキストに置き換える（inputだとPDFでうまく出ない場合がある）
       const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
@@ -652,6 +657,18 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   };
 
+  const downloadHtml = () => {
+     const html = generateShareableHtml();
+     if (!html) return;
+     const blob = new Blob([html], { type: 'text/html' });
+     const url = URL.createObjectURL(blob);
+     const a = document.createElement('a');
+     a.download = `${note?.title || 'Lily_Memo'}.html`;
+     a.href = url;
+     a.click();
+     URL.revokeObjectURL(url);
+  };
+
   if (!editor) return null;
 
   return (
@@ -669,55 +686,37 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             </div>
           </div>
 
-          {/* 中央横スクロール: 編集ツール（編集モードのみ表示） */}
-          {isEditMode && (
-            <div className="header-scroll-area">
-              <button className="btn-tool" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="戻る"><Undo size={18} /></button>
-              <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="進む"><Redo size={18} /></button>
-              <div className="header-divider" />
-              <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="大見出し"><Type size={18} /></button>
-              <button className={`btn-tool ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title="箇条書き"><LayoutGrid size={18} /></button>
-              <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title="タスク"><CheckSquare size={18} /></button>
-              <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コード"><Binary size={18} /></button>
-              <div className="header-divider" />
-              <button className="btn-tool" onClick={addNoteAsset} title="画像"><ImageIcon size={18} /></button>
-              <button className="btn-tool" onClick={insertMermaid} title="図解"><GitBranch size={18} /></button>
-              <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
-            </div>
-          )}
+          {/* 中央〜右: 全てのツールを一つの横スクロールエリアに統合 */}
+          <div className="header-main-scroll main-toolbar">
+            {isEditMode && (
+              <>
+                <button className="btn-tool" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="戻る"><Undo size={18} /></button>
+                <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="進む"><Redo size={18} /></button>
+                <div className="header-divider" />
+                <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="大見出し"><Type size={18} /></button>
+                <button className={`btn-tool ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title="箇条書き"><LayoutGrid size={18} /></button>
+                <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title="タスク"><CheckSquare size={18} /></button>
+                <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コード"><Binary size={18} /></button>
+                <div className="header-divider" />
+                <button className="btn-tool" onClick={addNoteAsset} title="画像"><ImageIcon size={18} /></button>
+                <button className="btn-tool" onClick={insertMermaid} title="図解"><GitBranch size={18} /></button>
+                <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
+                <div className="header-divider" />
+              </>
+            )}
 
-          {/* 右固定: 共有・PDF・インポート・削除・モード切替 */}
-          <div className="header-right">
-            <div className="tool-group">
-              <button className="btn-tool" onClick={shareNote} title="共有"><Share2 size={18} /></button>
-              <button className="btn-tool" onClick={downloadPdf} title="PDFダウンロード"><Printer size={18} /></button>
-            </div>
+            {/* 常時表示アクション */}
+            <button className="btn-tool" onClick={shareNote} title="HTMLを共有"><Share2 size={18} /></button>
+            <button className="btn-tool" onClick={downloadPdf} title="PDF保存"><Printer size={18} /></button>
+            <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
+            <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
             
-            <div className="tool-group management-tools">
-              <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
-              <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
-            </div>
-
-            <div className="tool-group mobile-only">
-              <button className="btn-tool" onClick={() => setShowMoreMenu(!showMoreMenu)} title="メニュー"><MoreVertical size={18} /></button>
-              {showMoreMenu && (
-                <div className="more-dropdown glass" onClick={() => setShowMoreMenu(false)}>
-                  <button className="more-item" onClick={() => setShowFolderPicker(true)}>
-                    <FolderInput size={16} /> <span>フォルダ移動</span>
-                  </button>
-                  <button className="more-item btn-tool-delete" onClick={deleteNote}>
-                    <Trash2 size={16} /> <span>ゴミ箱に移動</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
             <div className="header-divider" />
 
             <button
               className={`btn-tool btn-tool-mode ${isEditMode ? 'active' : ''}`}
               onClick={() => setIsEditMode(!isEditMode)}
-              title={isEditMode ? '閲覧モード' : '編集モード'}
+              title={isEditMode ? '閲覧モードへ' : '編集モードへ'}
             >
               {isEditMode ? (
                 <div className="mode-active-indicator">
@@ -805,62 +804,22 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             height: 100dvh;
             z-index: 1001;
           }
-          .title-input {
-            font-size: 1.1rem !important;
-          }
         }
 
-        /* ===== Header System ===== */
-        .editor-header {
-          position: fixed;
-          top: 0; left: 0; right: 0;
-          z-index: 2000;
-          background: var(--background);
-          border-bottom: 1px solid var(--border);
+        .main-toolbar {
+          padding-right: 12px;
         }
 
-        [data-theme='dark'] .editor-header {
-          background: rgba(30,30,30,0.97);
-        }
-
-        .header-bar {
-          display: flex;
-          align-items: center;
-          width: 100%;
-          height: 60px;
-          padding: 0 8px;
-          gap: 4px;
-          overflow: hidden;
-        }
-
-        .header-left {
-          display: flex;
-          align-items: center;
-          gap: 2px;
-          flex-shrink: 0;
-        }
-
-        .header-scroll-area {
+        .header-main-scroll {
           flex: 1;
           display: flex;
           align-items: center;
-          gap: 2px;
+          gap: 4px;
           overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-          min-width: 0;
           scrollbar-width: none;
+          -webkit-overflow-scrolling: touch;
         }
-
-        .header-scroll-area::-webkit-scrollbar {
-          display: none;
-        }
-
-        .header-right {
-          display: flex;
-          align-items: center;
-          gap: 2px;
-          flex-shrink: 0;
-        }
+        .header-main-scroll::-webkit-scrollbar { display: none; }
 
         .header-divider {
           width: 1px;
@@ -870,79 +829,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           flex-shrink: 0;
         }
 
-        .btn-tool {
-          width: 44px;
-          height: 44px;
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: transparent;
-          color: var(--foreground);
-          transition: background 0.15s, color 0.15s;
-          flex-shrink: 0;
-        }
-
         .tool-group {
           display: flex;
           align-items: center;
-          background: var(--accent);
-          padding: 2px;
-          border-radius: 12px;
           gap: 2px;
-        }
-
-        @media (max-width: 600px) {
-          .management-tools {
-            display: none;
-          }
-        }
-
-        .mobile-only {
-          display: none;
-        }
-
-        @media (max-width: 600px) {
-          .mobile-only {
-            display: flex;
-            position: relative;
-          }
-        }
-
-        .more-dropdown {
-          position: absolute;
-          top: 100%;
-          right: 0;
-          margin-top: 8px;
-          min-width: 160px;
-          border-radius: 12px;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-          padding: 8px;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          z-index: 3000;
-        }
-
-        .more-item {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 12px;
-          border-radius: 8px;
-          font-size: 0.9rem;
-          background: transparent;
-          color: var(--foreground);
-          transition: background 0.2s;
-          white-space: nowrap;
-        }
-
-        .more-item:hover {
-          background: var(--accent);
-        }
-
-        .more-item.btn-tool-delete {
-          color: #ef4444;
         }
 
         .mode-active-indicator {
@@ -962,6 +852,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           0% { transform: scale(1); }
           50% { transform: scale(1.05); }
           100% { transform: scale(1); }
+        }
+
+        .btn-tool {
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          color: var(--foreground);
+          transition: background 0.15s, color 0.15s;
+          flex-shrink: 0;
         }
 
         .btn-tool:hover {
@@ -987,8 +890,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         .btn-tool.btn-tool-mode.active {
-          background: #ffc107;
-          color: white;
+          background: none;
+          padding: 0;
         }
 
         .status-badge {
@@ -1017,7 +920,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         .editor-scroller {
           min-height: 100%;
-          padding: 80px 40px 120px; /* padding-top はJSで動的に上書きされる */
+          padding: 80px 40px 120px; 
           display: flex;
           flex-direction: column;
         }
@@ -1038,66 +941,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .bg-ruled .content-title-input {
             border-bottom: 2px solid var(--primary);
             padding-bottom: 8px;
-            margin-top: 56px; /* ルールド背景に合わせる */
+            margin-top: 56px; 
         }
 
         @media (max-width: 768px) {
-          .editor-content-wrapper { padding: 14px; }
-        }
-
-        /* ===== Tiptap Toolbar ===== */
-        .tiptap-toolbar {
-          position: sticky;
-          top: 0;
-          z-index: 100;
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 4px;
-          margin: 0;
-          padding: 8px 16px;
-          border-bottom: 1px solid var(--border);
-          background: var(--background);
-          width: 100%;
-          flex-shrink: 0;
-        }
-        
-        [data-theme='dark'] .tiptap-toolbar { background: var(--muted); }
-
-        .tiptap-toolbar button {
-          width: 34px;
-          height: 34px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: transparent;
-          color: var(--foreground);
-          border-radius: 8px;
-          font-weight: 700;
-          font-size: 0.82rem;
-        }
-
-        .tiptap-toolbar button:hover { background: var(--primary); color: white; }
-        .tiptap-toolbar button.active { background: var(--primary); color: white; }
-
-        .divider {
-          width: 1px;
-          height: 18px;
-          background: var(--border);
-          margin: 0 2px;
-        }
-
-        /* 閲覧モードバナー */
-        .read-mode-banner {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          margin-bottom: 12px;
-          padding: 5px 10px;
-          background: var(--muted);
-          border-radius: 8px;
-          font-size: 0.75rem;
-          color: #888;
+          .editor-scroller { padding: 70px 12px 40px; }
+          .content-title-input { font-size: 1.3rem; margin-top: 8px; }
+          .editor-content-wrapper { padding: 0; }
         }
 
         /* ===== ProseMirror ===== */
@@ -1110,28 +960,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           width: 100%;
           margin: 0 auto;
           color: var(--foreground);
-          overflow-x: hidden;
-        }
-
-        @media (max-width: 768px) {
-          .editor-scroller { padding: 70px 12px 40px; } /* padding-top はJSで動的に上書きされる */
-          .content-title-input { font-size: 1.3rem; margin-top: 8px; }
-          .editor-content-wrapper { padding: 0; }
-        }
-
-        .ProseMirror p.is-editor-empty:first-child::before {
-          color: #aaa;
-          content: attr(data-placeholder);
-          float: left;
-          height: 0;
-          pointer-events: none;
-        }
-
-        /* 閲覧モード時: カーソルをデフォルトに（テキスト選択は可能） */
-        .ProseMirror[contenteditable="false"] {
-          cursor: default;
-          user-select: text;
-          -webkit-user-select: text;
         }
 
         /* ===== Task List ===== */
@@ -1142,23 +970,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           gap: 10px;
           margin-bottom: 6px;
         }
-        ul[data-type="taskList"] li > label {
-          display: flex;
-          align-items: center;
-          padding-top: 3px;
-          flex-shrink: 0;
-          cursor: pointer;
-          -webkit-tap-highlight-color: transparent;
-        }
         ul[data-type="taskList"] input[type="checkbox"] {
           width: 20px;
           height: 20px;
           accent-color: var(--primary);
-          cursor: pointer;
-          touch-action: manipulation;
-        }
-        ul[data-type="taskList"] input[type="checkbox"]:disabled {
-          pointer-events: none; /* Let clicks pass through to the label */
         }
         ul[data-type="taskList"] li[data-checked="true"] > div {
           text-decoration: line-through;
@@ -1169,12 +984,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .hljs-comment { color: #8e908c; font-style: italic; }
         .hljs-keyword { color: #d73a49; font-weight: bold; }
         .hljs-string { color: #22863a; }
-        .hljs-number { color: #005cc5; }
-        .hljs-function, .hljs-title { color: #6f42c1; }
-        .hljs-params { color: var(--foreground); }
-        .hljs-built_in { color: #e36209; }
-        [data-theme='dark'] .hljs-string { color: #4ec994; }
-        [data-theme='dark'] .hljs-number { color: #79b8ff; }
 
         /* ===== Background Patterns ===== */
         .bg-grid {
@@ -1188,46 +997,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           background-size: 100% 28px;
         }
 
-        /* ===== Print Optimization (PDF Export) ===== */
-        @media print {
-          .editor-header, .tiptap-toolbar, .folder-picker-overlay, .read-mode-banner { 
-            display: none !important; 
-          }
-          .editor-container { 
-            box-shadow: none !important; 
-            border: none !important; 
-            height: auto !important; 
-            position: static !important; 
-            overflow: visible !important; 
-            background: #fff !important;
-          }
-          .editor-content-wrapper, .editor-scroller { 
-            padding: 0 !important; 
-            overflow: visible !important; 
-            height: auto !important; 
-          }
-          .content-title-input { 
-            margin: 0 !important; 
-            padding-top: 0 !important;
-            border: none !important; 
-            color: #000 !important;
-          }
-          .ProseMirror {
-            padding-bottom: 0 !important;
-            color: #000 !important;
-          }
-          button, select {
-            display: none !important;
-          }
-        }
-
+        /* ===== Print Optimization ===== */
         :global(.pdf-exporting p),
         :global(.pdf-exporting h1),
         :global(.pdf-exporting h2),
         :global(.pdf-exporting h3),
         :global(.pdf-exporting li),
-        :global(.pdf-exporting .mermaid-wrapper),
-        :global(.pdf-exporting .chart-wrapper),
         :global(.pdf-exporting img),
         :global(.pdf-exporting pre) {
             page-break-inside: avoid !important;
@@ -1236,11 +1011,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         .ProseMirror img {
           max-width: 100%;
-          max-height: 50vh;
-          object-fit: contain;
           border-radius: 12px;
           margin: 16px 0;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
           display: block;
         }
 
@@ -1327,11 +1099,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         :global(body.pdf-exporting button),
-        :global(body.pdf-exporting select),
-        :global(body.pdf-exporting .tiptap-toolbar),
-        :global(body.pdf-exporting .btn-back),
-        :global(body.pdf-exporting .editor-toolbar) {
+        :global(body.pdf-exporting select) {
           display: none !important;
+        }
+
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
         }
       `}</style>
     </div>
