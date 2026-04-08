@@ -16,7 +16,8 @@ import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
   Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
-  Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud
+  Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud,
+  MoreVertical, Download, PlusSquare
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -83,6 +84,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isMobileView, setIsMobileView] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -575,7 +577,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   };
   const downloadPdf = async () => {
-    const element = editor?.view.dom;
+    const element = scrollerInnerRef.current;
     if (!element) return;
     
     // UIの一時隠ぺい用クラス追加
@@ -584,15 +586,64 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     try {
       // @ts-ignore
       const html2pdf = (await import('html2pdf.js')).default;
+      
+      // クローンを作成して、PDF用のスタイルを適用する
+      const contentClone = element.cloneNode(true) as HTMLElement;
+      
+      // クローンのスタイル調整: タイトル含め、PDFとして美しいレイアウトを強制
+      contentClone.style.padding = '15mm 20mm';
+      contentClone.style.width = '100%';
+      contentClone.style.maxWidth = 'none';
+      contentClone.style.background = '#ffffff';
+      contentClone.style.color = '#333333';
+      contentClone.style.height = 'auto';
+      contentClone.style.minHeight = 'auto';
+      contentClone.style.overflow = 'visible';
+
+      // タイトル入力欄をテキストに置き換える（inputだとPDFでうまく出ない場合がある）
+      const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
+      if (titleInput) {
+        const titleDiv = document.createElement('h1');
+        titleDiv.textContent = titleInput.value || 'Untitled';
+        titleDiv.style.fontSize = '32px';
+        titleDiv.style.fontWeight = '800';
+        titleDiv.style.marginBottom = '30px';
+        titleDiv.style.paddingBottom = '15px';
+        titleDiv.style.borderBottom = '4px solid #ffb6c1';
+        titleDiv.style.color = '#000';
+        titleInput.replaceWith(titleDiv);
+      }
+
+      // 不要なボタンやスクロールインジケータを強制非表示
+      contentClone.querySelectorAll('button, .read-mode-banner').forEach(el => (el as HTMLElement).style.display = 'none');
+      
+      // EditorContent のスタイル調整（ProseMirror）
+      const proseMirror = contentClone.querySelector('.ProseMirror') as HTMLElement;
+      if (proseMirror) {
+        proseMirror.style.padding = '0';
+        proseMirror.style.margin = '0';
+        proseMirror.style.width = '100%';
+        proseMirror.style.maxWidth = 'none';
+      }
+
       const opt = {
-        margin:       15,
+        margin:       0,
         filename:     `${note?.title || 'Lily_Memo'}.pdf`,
         image:        { type: 'jpeg' as const, quality: 1 },
-        html2canvas:  { scale: 2, useCORS: true },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+        html2canvas:  { 
+          scale: 2, 
+          useCORS: true,
+          logging: false,
+          letterRendering: true,
+          scrollY: 0,
+          scrollX: 0,
+          windowWidth: 800
+        },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
+        pagebreak:    { mode: ['css', 'legacy'], avoid: ['p', 'h1', 'h2', 'h3', 'li', 'pre', 'img', '.mermaid-wrapper', '.chart-wrapper'] }
       };
       
-      await html2pdf().from(element).set(opt).save();
+      await html2pdf().from(contentClone).set(opt).save();
     } catch (e) {
       console.error('PDF Download failed', e);
       alert('PDFの生成に失敗しました。');
@@ -637,16 +688,44 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
           {/* 右固定: 共有・PDF・インポート・削除・モード切替 */}
           <div className="header-right">
-            <button className="btn-tool" onClick={shareNote} title="共有"><Share2 size={18} /></button>
-            <button className="btn-tool" onClick={downloadPdf} title="PDFダウンロード"><Printer size={18} /></button>
-            <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="インポート"><FolderInput size={18} /></button>
-            <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
+            <div className="tool-group">
+              <button className="btn-tool" onClick={shareNote} title="共有"><Share2 size={18} /></button>
+              <button className="btn-tool" onClick={downloadPdf} title="PDFダウンロード"><Printer size={18} /></button>
+            </div>
+            
+            <div className="tool-group management-tools">
+              <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
+              <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
+            </div>
+
+            <div className="tool-group mobile-only">
+              <button className="btn-tool" onClick={() => setShowMoreMenu(!showMoreMenu)} title="メニュー"><MoreVertical size={18} /></button>
+              {showMoreMenu && (
+                <div className="more-dropdown glass" onClick={() => setShowMoreMenu(false)}>
+                  <button className="more-item" onClick={() => setShowFolderPicker(true)}>
+                    <FolderInput size={16} /> <span>フォルダ移動</span>
+                  </button>
+                  <button className="more-item btn-tool-delete" onClick={deleteNote}>
+                    <Trash2 size={16} /> <span>ゴミ箱に移動</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="header-divider" />
+
             <button
               className={`btn-tool btn-tool-mode ${isEditMode ? 'active' : ''}`}
               onClick={() => setIsEditMode(!isEditMode)}
               title={isEditMode ? '閲覧モード' : '編集モード'}
             >
-              {isEditMode ? <Check size={20} strokeWidth={3} /> : <Pencil size={18} />}
+              {isEditMode ? (
+                <div className="mode-active-indicator">
+                  <Check size={20} strokeWidth={3} />
+                </div>
+              ) : (
+                <Pencil size={18} />
+              )}
             </button>
           </div>
         </div>
@@ -802,6 +881,87 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           color: var(--foreground);
           transition: background 0.15s, color 0.15s;
           flex-shrink: 0;
+        }
+
+        .tool-group {
+          display: flex;
+          align-items: center;
+          background: var(--accent);
+          padding: 2px;
+          border-radius: 12px;
+          gap: 2px;
+        }
+
+        @media (max-width: 600px) {
+          .management-tools {
+            display: none;
+          }
+        }
+
+        .mobile-only {
+          display: none;
+        }
+
+        @media (max-width: 600px) {
+          .mobile-only {
+            display: flex;
+            position: relative;
+          }
+        }
+
+        .more-dropdown {
+          position: absolute;
+          top: 100%;
+          right: 0;
+          margin-top: 8px;
+          min-width: 160px;
+          border-radius: 12px;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+          padding: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          z-index: 3000;
+        }
+
+        .more-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 12px;
+          border-radius: 8px;
+          font-size: 0.9rem;
+          background: transparent;
+          color: var(--foreground);
+          transition: background 0.2s;
+          white-space: nowrap;
+        }
+
+        .more-item:hover {
+          background: var(--accent);
+        }
+
+        .more-item.btn-tool-delete {
+          color: #ef4444;
+        }
+
+        .mode-active-indicator {
+          width: 36px;
+          height: 36px;
+          background: #ffc107;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          box-shadow: 0 0 10px rgba(255, 193, 7, 0.4);
+          animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+          100% { transform: scale(1); }
         }
 
         .btn-tool:hover {
