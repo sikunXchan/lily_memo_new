@@ -106,10 +106,9 @@ export default function Home() {
       <style jsx>{`
         .app-container {
           display: flex;
-          height: 100vh;
-          height: 100dvh;
+          min-height: 100vh;
+          min-height: 100dvh;
           background: var(--background);
-          overflow: hidden;
           position: relative;
         }
 

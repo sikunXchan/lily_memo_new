@@ -663,23 +663,22 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           flex: 1;
           display: flex;
           flex-direction: column;
-          height: 100vh;
-          height: 100dvh;
+          min-height: 100vh;
+          min-height: 100dvh;
           background: var(--background);
           border-radius: var(--radius) 0 0 var(--radius);
           box-shadow: -4px 0 20px rgba(0,0,0,0.05);
-          overflow: hidden;
           transition: background 0.3s;
         }
 
         @media (max-width: 768px) {
           .editor-container {
             border-radius: 0;
-            position: fixed;
+            position: absolute;
             top: 0; left: 0;
             width: 100%;
-            height: 100vh;
-            height: 100dvh;
+            min-height: 100vh;
+            min-height: 100dvh;
             z-index: 1001; /* ボトムナビ(1000)より上 */
           }
           .editor-header {
@@ -797,9 +796,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           display: flex;
           flex-direction: column;
           padding: 0;
-          overflow-y: auto;
-          -webkit-overflow-scrolling: touch;
-          overscroll-behavior-y: contain;
         }
 
         .editor-scroller {
@@ -836,8 +832,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .tiptap-toolbar {
           display: flex;
           position: sticky;
-          top: 0; /* sticky against the native scroll top! */
-          z-index: 100;
+          top: 72px;
+          z-index: 99;
           flex-wrap: wrap;
           align-items: center;
           gap: 4px;
@@ -921,7 +917,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         @media (max-width: 768px) {
           .editor-scroller { padding: 0 16px 32px; }
           .content-title-input { font-size: 1.4rem; margin-top: 16px; }
-          .tiptap-toolbar { margin: 4px 12px 12px; }
+          .tiptap-toolbar { margin: 4px 12px 12px; top: 62px; }
           .editor-content-wrapper { padding: 0; }
         }
 
