@@ -748,12 +748,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         /* ===== Content Layout Fix ===== */
         .editor-content-wrapper {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
           padding-top: 80px; /* Space for floating headers */
           padding-bottom: 80px; /* Space for keyboard toolbar */
+          overflow-y: auto; /* Restore Scroll */
+          overflow-x: hidden;
+          -webkit-overflow-scrolling: touch;
+          height: 100%;
         }
 
         .editor-scroller {
-          flex: 1;
+          min-height: 100%;
           padding: 0 40px 24px;
           display: flex;
           flex-direction: column;
