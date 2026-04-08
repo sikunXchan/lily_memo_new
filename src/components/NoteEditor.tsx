@@ -681,6 +681,20 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         </div>
       </header>
 
+      <div className="editor-content-wrapper" ref={scrollerRef}>
+        <div className="editor-scroller">
+            <input
+              type="text"
+              className="content-title-input"
+              value={note?.title || ''}
+              onChange={(e) => updateTitle(e.target.value)}
+              placeholder="タイトル..."
+              readOnly={!isEditMode}
+            />
+            <EditorContent editor={editor} />
+        </div>
+      </div>
+
 
       {/* フォルダ移動ピッカー */}
       {showFolderPicker && (
