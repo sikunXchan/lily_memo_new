@@ -667,8 +667,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           background: var(--background);
           border-radius: var(--radius) 0 0 var(--radius);
           box-shadow: -4px 0 20px rgba(0,0,0,0.05);
-          overflow: hidden;
+          overflow: hidden; /* 子要素でスクロールさせるため */
           transition: background 0.3s;
+          position: relative;
         }
 
         @media (max-width: 768px) {
@@ -689,11 +690,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           }
         }
 
-        /* ===== Header ===== */
+        /* ===== Header (Title/Back/Sync) ===== */
         .editor-header {
-          position: sticky;
-          top: 0;
-          z-index: 100;
+          position: relative; /* 固定はcontainer側ではなくここで制御 */
+          z-index: 110;
           padding: 16px 32px;
           display: flex;
           align-items: center;
@@ -790,16 +790,17 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .toolbar-btn.edit-mode-btn { background: var(--muted); color: var(--foreground); }
         .toolbar-btn.edit-mode-btn.edit-active { background: var(--primary); color: white; }
 
-        /* ===== Content Wrapper (THIS is the scroll container) ===== */
+        /* ===== Content Wrapper (Scroll Container) ===== */
         .editor-content-wrapper {
           flex: 1;
           display: flex;
           flex-direction: column;
           padding: 0;
-          overflow-y: auto;
+          overflow-y: auto; /* ここでスクロール */
           overflow-x: hidden;
           -webkit-overflow-scrolling: touch;
           overscroll-behavior: contain;
+          position: relative;
         }
 
         .editor-scroller {
