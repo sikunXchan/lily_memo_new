@@ -16,7 +16,7 @@ import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
   Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
-  Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud
+  Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud, Plus
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -83,9 +83,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isMobileView, setIsMobileView] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showInsertMenu, setShowInsertMenu] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
-  const mobileToolbarRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   // フォルダ一覧（移動機能用）
@@ -188,7 +188,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     const SCROLL_THRESHOLD = 100;
     const SCROLL_DELTA = 10;
 
-    // カーソル追従スクロールのメインロジック
     const adjustScrollForCursor = () => {
       if (!isEditMode || !scrollerRef.current) return;
 
@@ -203,15 +202,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
       const scroller = scrollerRef.current;
       const header = headerRef.current;
-      const toolbar = mobileToolbarRef.current;
       const vv = window.visualViewport;
       if (!vv) return;
 
-      // 見える領域の定義
+      // 見える領域の定義 (上がヘッダー、下はビジュアルビューポートの底)
       const safeTop = header ? header.getBoundingClientRect().bottom + 10 : 80;
-      const safeBottom = toolbar 
-        ? vv.height - (toolbar.offsetHeight || 60) - 10 
-        : vv.height - 80;
+      const safeBottom = vv.height - 10;
 
       // 判定とスクロール実行
       if (rect.top < safeTop) {
@@ -226,20 +222,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     };
 
     const updateControls = (source?: string) => {
-      // 1. 下の編集ツールバーの位置制御 (VisualViewport API)
-      const vv = window.visualViewport;
-      if (vv && mobileToolbarRef.current) {
-        const layoutHeight = document.documentElement.clientHeight;
-        const visualBottom = vv.offsetTop + vv.height;
-        const bottomOffset = Math.max(0, layoutHeight - visualBottom);
-
-        if (bottomOffset !== lastBottomOffset) {
-          lastBottomOffset = bottomOffset;
-          mobileToolbarRef.current.style.bottom = `${bottomOffset}px`;
-        }
-      }
-
-      // 2. 上のヘッダーのスクロール応答制御 (通常のブラウズ時)
+      // 1. 上のヘッダーのスクロール応答制御 (通常のブラウズ時)
       if (headerRef.current && source === 'window-scroll') {
         const currentScrollY = window.scrollY;
         const diff = currentScrollY - lastScrollY;
@@ -654,49 +637,49 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
               <span>{isSaving ? 'Saving' : 'Saved'}</span>
             </div>
+            
+            {isEditMode && (
+              <div className="insert-menu-container">
+                <button 
+                  className={`btn-circle btn-insert ${showInsertMenu ? 'active' : ''}`} 
+                  onClick={() => setShowInsertMenu(!showInsertMenu)}
+                  title="挿入"
+                >
+                  <Plus size={24} />
+                </button>
+                
+                {showInsertMenu && (
+                  <div className="insert-menu glass">
+                    <div className="insert-menu-grid">
+                      <button onClick={() => { editor.chain().focus().undo().run(); setShowInsertMenu(false); }} disabled={!editor.can().undo()} title="Undo"><Undo size={18} /><span>戻る</span></button>
+                      <button onClick={() => { editor.chain().focus().redo().run(); setShowInsertMenu(false); }} disabled={!editor.can().redo()} title="Redo"><Redo size={18} /><span>進む</span></button>
+                      <div className="h-divider" />
+                      <button onClick={() => { editor.chain().focus().toggleHeading({ level: 2 }).run(); setShowInsertMenu(false); }} className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}><Type size={18} /><span>大見出し</span></button>
+                      <button onClick={() => { editor.chain().focus().toggleBulletList().run(); setShowInsertMenu(false); }} className={editor.isActive('bulletList') ? 'active' : ''}><LayoutGrid size={18} /><span>箇条書き</span></button>
+                      <button onClick={() => { editor.chain().focus().toggleTaskList().run(); setShowInsertMenu(false); }} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={18} /><span>タスク</span></button>
+                      <button onClick={() => { editor.chain().focus().toggleCodeBlock().run(); setShowInsertMenu(false); }} className={editor.isActive('codeBlock') ? 'active' : ''}><Binary size={18} /><span>コード</span></button>
+                      <div className="h-divider" />
+                      <button onClick={() => { addNoteAsset(); setShowInsertMenu(false); }}><ImageIcon size={18} /><span>画像</span></button>
+                      <button onClick={() => { insertMermaid(); setShowInsertMenu(false); }}><GitBranch size={18} /><span>図解</span></button>
+                      <button onClick={() => { insertChart(); setShowInsertMenu(false); }}><BarChart3 size={18} /><span>グラフ</span></button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button className="btn-circle" onClick={shareNote} title="共有"><Share2 size={20} /></button>
             <button className="btn-circle" onClick={() => setShowFolderPicker(true)} title="フォルダ"><FolderInput size={20} /></button>
             <button className="btn-circle btn-delete" onClick={deleteNote} title="削除"><Trash2 size={20} /></button>
             <button 
               className={`btn-circle btn-save ${isEditMode ? 'active' : ''}`} 
-              onClick={() => setIsEditMode(!isEditMode)}
+              onClick={() => { setIsEditMode(!isEditMode); setShowInsertMenu(false); }}
             >
               {isEditMode ? <Check size={24} strokeWidth={3} /> : <Pencil size={20} />}
             </button>
           </div>
         </div>
       </header>
-
-      <div className="editor-content-wrapper" ref={scrollerRef}>
-        <div className="editor-scroller">
-            <input
-              type="text"
-              className="content-title-input"
-              value={note?.title || ''}
-              onChange={(e) => updateTitle(e.target.value)}
-              placeholder="タイトル..."
-              readOnly={!isEditMode}
-            />
-            <EditorContent editor={editor} />
-        </div>
-      </div>
-
-      {/* 下部：キーボードに吸い付く編集ツールバー (スマホ用) */}
-      <div className="mobile-keyboard-toolbar glass" ref={mobileToolbarRef}>
-        <div className="toolbar-scroll-x">
-            <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo size={20} /></button>
-            <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo size={20} /></button>
-            <div className="v-divider" />
-            <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}>あぁ</button>
-            <button onClick={() => editor.chain().focus().toggleBulletList().run()} className={editor.isActive('bulletList') ? 'active' : ''}>・≡</button>
-            <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={20} /></button>
-            <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={editor.isActive('codeBlock') ? 'active' : ''}><Binary size={20} /></button>
-            <div className="v-divider" />
-            <button onClick={addNoteAsset}><ImageIcon size={20} /></button>
-            <button onClick={insertMermaid}><GitBranch size={20} /></button>
-            <button onClick={insertChart}><BarChart3 size={20} /></button>
-        </div>
-      </div>
 
 
       {/* フォルダ移動ピッカー */}
@@ -875,46 +858,71 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @media (max-width: 768px) {
-          .editor-container[data-edit-mode="false"] .mobile-keyboard-toolbar {
-            visibility: hidden;
-            pointer-events: none;
+          .editor-header {
+            padding: 8px 12px !important;
+            background: var(--background);
+            border-bottom: 1px solid var(--border);
+          }
+          [data-theme='dark'] .editor-header {
+            background: rgba(30,30,30,0.95);
           }
         }
 
-        .toolbar-scroll-x {
+        .insert-menu-container {
+          position: relative;
+        }
+
+        .insert-menu {
+          position: absolute;
+          top: calc(100% + 12px);
+          right: 0;
+          width: 200px;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+          padding: 8px;
+          z-index: 3000;
+        }
+
+        .insert-menu-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .insert-menu-grid button {
           display: flex;
           align-items: center;
           gap: 12px;
-          overflow-x: auto;
-          scrollbar-width: none;
-          padding-bottom: 2px;
-        }
-        .toolbar-scroll-x::-webkit-scrollbar { display: none; }
-
-        .toolbar-scroll-x button {
-          flex-shrink: 0;
-          width: 42px;
-          height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          padding: 10px 14px;
+          border-radius: 10px;
           background: transparent;
           color: var(--foreground);
-          font-weight: 800;
-          font-size: 1.1rem;
-          border-radius: 8px;
+          font-size: 0.9rem;
+          font-weight: 500;
+          width: 100%;
+          text-align: left;
+          transition: background 0.2s;
         }
 
-        .toolbar-scroll-x button.active {
+        .insert-menu-grid button:hover {
           background: var(--accent);
-          color: var(--primary);
         }
 
-        .v-divider {
-          width: 1px;
-          height: 24px;
+        .insert-menu-grid button.active {
+          background: var(--primary);
+          color: white;
+        }
+
+        .insert-menu-grid button span {
+          flex: 1;
+        }
+
+        .h-divider {
+          height: 1px;
           background: var(--border);
-          flex-shrink: 0;
+          margin: 4px 8px;
         }
 
         /* ===== Content Layout Fix ===== */
@@ -1028,7 +1036,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @media (max-width: 768px) {
-          .editor-scroller { padding: 80px 12px 80px; } /* 上下ともに80px固定 */
+          .editor-scroller { padding: 80px 12px 24px; } /* 下部余白を削減 */
           .content-title-input { font-size: 1.3rem; margin-top: 8px; }
           .editor-content-wrapper { padding: 0; }
         }
