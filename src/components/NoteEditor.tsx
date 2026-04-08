@@ -604,8 +604,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       // クローンを作成して、PDF用のスタイルを適用する
       const contentClone = element.cloneNode(true) as HTMLElement;
       
-      // クローンのスタイル調整: 画面表示用の動的スタイル（特にpaddingTop）を完全に除去
-      contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; width: 100% !important; background: #ffffff !important; color: #000 !important;';
+      // クローンのスタイル調整: 画面表示用の動的スタイルを完全に除去
+      contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; border: none !important; width: 100% !important; background: #ffffff !important; color: #000 !important;';
       
       contentClone.style.display = 'block';
       contentClone.style.height = 'auto';
@@ -616,28 +616,32 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       if (titleInput) {
         const titleDiv = document.createElement('h1');
         titleDiv.textContent = titleInput.value || 'Untitled';
-        titleDiv.style.cssText = 'font-size: 24pt; font-weight: 800; margin: 0 0 15pt 0; padding: 0 0 10pt 0; border-bottom: 2pt solid #ffb6c1; color: #000; display: block;';
+        titleDiv.style.cssText = 'font-size: 24pt; font-weight: 800; margin: 0 0 20pt 0; padding: 0 0 10pt 0; border-bottom: 2pt solid #ffb6c1; color: #000; display: block;';
         titleInput.replaceWith(titleDiv);
       }
 
-      // 不要要素を削除（ボタン等）
-      contentClone.querySelectorAll('button, .read-mode-banner, .folder-picker-overlay').forEach(el => (el as HTMLElement).remove());
+      // 不要要素を削除
+      contentClone.querySelectorAll('button, .read-mode-banner, .folder-picker-overlay, .status-badge').forEach(el => (el as HTMLElement).remove());
       
-      // エディタ内のスタイル調整。svgやcanvasがページを跨がないように強制
+      // 改ページ制御のためのスタイル注入
       const style = document.createElement('style');
       style.innerHTML = `
-        .ProseMirror { padding: 0 !important; margin: 0 !important; }
-        .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li { 
+        .ProseMirror { padding: 0 !important; margin: 0 !important; width: 100% !important; }
+        /* 図解、コード、項目がページ境界で切れるのを防ぐ */
+        .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li, blockquote { 
           page-break-inside: avoid !important; 
           break-inside: avoid !important; 
-          margin-bottom: 12pt !important;
+          margin-bottom: 15pt !important;
+          display: block !important;
+          position: relative !important;
         }
         svg { max-width: 100% !important; height: auto !important; }
+        p { margin-bottom: 10pt !important; line-height: 1.6 !important; }
       `;
       contentClone.appendChild(style);
 
       const opt = {
-        margin:       15, // 15mmの標準余白
+        margin:       15,
         filename:     `${note?.title || 'Lily_Memo'}.pdf`,
         image:        { type: 'jpeg' as const, quality: 0.98 },
         html2canvas:  { 
@@ -645,10 +649,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           useCORS: true,
           scrollY: 0,
           scrollX: 0,
-          windowWidth: 800
+          windowWidth: 1000 // 少し広めの幅でレンダリングすることで安定させる
         },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-        pagebreak:    { mode: ['css', 'legacy'] }
+        pagebreak:    { mode: ['css', 'legacy'], avoid: ['.mermaid', '.chart-wrapper', 'pre', 'img', 'h1', 'h2', 'h3'] }
       };
       
       await html2pdf().from(contentClone).set(opt).save();
