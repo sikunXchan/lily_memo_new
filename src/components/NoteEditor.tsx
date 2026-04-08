@@ -185,29 +185,32 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     
     const updateLayout = () => {
       const viewport = window.visualViewport;
-      if (!viewport || !mobileToolbarRef.current) return;
+      if (!viewport) return;
 
-      const viewportBottom = viewport.offsetTop + viewport.height;
-      
-      // キーボードが表示されているかどうかの判定をより厳密に
-      const isKeyboardVisible = viewport.height < window.innerHeight * 0.9;
-      
-      if (isKeyboardVisible) {
-        // キーボードのすぐ上に直接配置 (topを使用)
-        // toolbar自体の高さを引いた位置に下端が来るようにする
-        const toolbarHeight = mobileToolbarRef.current.offsetHeight;
-        mobileToolbarRef.current.style.top = `${viewportBottom - toolbarHeight}px`;
-        mobileToolbarRef.current.style.bottom = 'auto';
-      } else {
-        // キーボードがない時は画面下端 (ただしPWAのsafe-areaを考慮)
-        mobileToolbarRef.current.style.top = 'auto';
-        mobileToolbarRef.current.style.bottom = '0px';
+      // ヘッダー固定 (上端に追従)
+      if (headerRef.current) {
+        headerRef.current.style.top = `${viewport.offsetTop}px`;
+      }
+
+      // 編集ツールバー固定 (下端に追従)
+      if (mobileToolbarRef.current) {
+        const viewportBottom = viewport.offsetTop + viewport.height;
+        const isKeyboardVisible = viewport.height < window.innerHeight * 0.95;
+
+        if (isKeyboardVisible) {
+          const toolbarHeight = mobileToolbarRef.current.offsetHeight || 44;
+          mobileToolbarRef.current.style.top = `${viewportBottom - toolbarHeight}px`;
+          mobileToolbarRef.current.style.bottom = 'auto';
+        } else {
+          mobileToolbarRef.current.style.top = 'auto';
+          mobileToolbarRef.current.style.bottom = '0px';
+        }
       }
       
       // スクロール領域のパディング調整
       if (scrollerRef.current) {
-        const keyboardHeight = window.innerHeight - viewport.height;
-        scrollerRef.current.style.paddingBottom = `${Math.max(100, keyboardHeight + 120)}px`;
+        const keyboardHeight = Math.max(0, window.innerHeight - viewport.height);
+        scrollerRef.current.style.paddingBottom = `${keyboardHeight + 150}px`;
       }
     };
 
@@ -687,7 +690,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .editor-header {
           position: fixed; /* Stick to screen, not scroller */
           top: 0; left: 0; right: 0;
-          z-index: 1000;
+          z-index: 2000; /* Ensure it stays on top */
           padding: 16px;
           pointer-events: none; /* Allow clicks to pass to editor if not on buttons */
         }
@@ -763,13 +766,17 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         /* ===== Mobile Keyboard Toolbar (Fixed at Bottom) ===== */
         .mobile-keyboard-toolbar {
           position: fixed;
-          top: 0; /* JSで動的に位置調整するため、ベースをtopにする */
+          top: 0; 
           left: 0;
           right: 0;
-          background: var(--background);
+          background: #fff; /* Solid White by default */
           border-top: 1px solid var(--border);
           padding: 8px 12px;
-          z-index: 1000;
+          z-index: 2000;
+        }
+
+        [data-theme='dark'] .mobile-keyboard-toolbar {
+          background: #1a1a1a;
         }
 
         [data-theme='dark'] .mobile-keyboard-toolbar {
