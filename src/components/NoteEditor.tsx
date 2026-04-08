@@ -444,7 +444,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
 
 
-  const downloadPdf = async () => {
+  const downloadImage = async () => {
     const element = scrollerInnerRef.current;
     if (!element) return;
     
@@ -452,18 +452,33 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     
     try {
       // @ts-ignore
-      const html2pdf = (await import('html2pdf.js')).default;
+      const html2canvas = (await import('html2canvas')).default;
       const contentClone = element.cloneNode(true) as HTMLElement;
       
-      // クローンのスタイルをリセット。動的paddingやmarginを完全にクリア。
+      // クローンのスタイルをリセット。
       contentClone.removeAttribute('style');
-      contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; width: 800px !important; background: #ffffff !important; color: #000 !important; font-family: sans-serif !important; height: auto !important; overflow: visible !important;';
+      contentClone.style.cssText = 'padding: 30px !important; margin: 0 !important; width: 800px !important; background: #ffffff !important; color: #000 !important; font-family: sans-serif !important; height: auto !important; overflow: visible !important; position: absolute; left: -9999px; top: 0;';
       
+      // canvas (Chart.js) の内容をコピー
+      const originalCanvases = element.querySelectorAll('canvas');
+      const cloneCanvases = contentClone.querySelectorAll('canvas');
+      originalCanvases.forEach((source, i) => {
+        const dest = cloneCanvases[i];
+        if (dest) {
+          const destCtx = (dest as HTMLCanvasElement).getContext('2d');
+          if (destCtx) {
+             (dest as HTMLCanvasElement).width = (source as HTMLCanvasElement).width;
+             (dest as HTMLCanvasElement).height = (source as HTMLCanvasElement).height;
+             destCtx.drawImage(source as HTMLCanvasElement, 0, 0);
+          }
+        }
+      });
+
       const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
       if (titleInput) {
         const titleDiv = document.createElement('h1');
         titleDiv.textContent = titleInput.value || 'Untitled';
-        titleDiv.style.cssText = 'font-size: 24pt; font-weight: 800; margin: 0 0 20pt 0; padding: 0 0 10pt 0; border-bottom: 2pt solid #ffb6c1; color: #000; display: block;';
+        titleDiv.style.cssText = 'font-size: 28pt; font-weight: 800; margin: 0 0 30pt 0; padding: 0 0 15pt 0; border-bottom: 3pt solid #ffb6c1; color: #000; display: block;';
         titleInput.replaceWith(titleDiv);
       }
 
@@ -473,43 +488,39 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       style.innerHTML = `
         * { box-sizing: border-box !important; }
         .ProseMirror { padding: 0 !important; margin: 0 !important; width: 100% !important; min-height: auto !important; }
-        /* 図解、コード、テキストが被らないように明示的なブロック配置と余白を強制 */
         .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li, blockquote { 
-          page-break-inside: avoid !important; 
-          break-inside: avoid !important; 
-          margin-bottom: 30pt !important;
-          margin-top: 20pt !important;
+          margin-bottom: 32pt !important;
+          margin-top: 24pt !important;
           display: block !important;
           position: relative !important;
           clear: both !important;
         }
         pre { background: #f8f8f8 !important; color: #000 !important; border: 1px solid #ddd !important; white-space: pre-wrap !important; word-break: break-all !important; padding: 12pt !important; border-radius: 4px !important; }
         svg, canvas { max-width: 100% !important; height: auto !important; display: block !important; margin: 0 auto !important; }
-        p { margin-bottom: 12pt !important; line-height: 1.6 !important; font-size: 11pt !important; margin-top: 0 !important; orphans: 3; widows: 3; }
-        ul, ol { margin-bottom: 12pt !important; }
+        p { margin-bottom: 14pt !important; line-height: 1.7 !important; font-size: 12pt !important; margin-top: 0 !important; }
+        ul, ol { margin-bottom: 14pt !important; }
       `;
       contentClone.appendChild(style);
+      document.body.appendChild(contentClone);
 
-      const opt = {
-        margin:       [15, 15, 15, 15] as [number, number, number, number],
-        filename:     `${note?.title || 'Lily_Memo'}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 1.0 },
-        html2canvas:  { 
-          scale: 2, 
-          useCORS: true,
-          scrollY: 0,
-          scrollX: 0,
-          windowWidth: 800,
-          logging: false
-        },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-        pagebreak:    { mode: ['css', 'legacy'], avoid: ['.mermaid', '.chart-wrapper', 'pre', 'img', 'h1', 'h2', 'h3', 'li'] }
-      };
-      
-      await html2pdf().from(contentClone).set(opt).save();
+      const canvas = await html2canvas(contentClone, {
+        scale: 2,
+        useCORS: true,
+        windowWidth: 800,
+        backgroundColor: '#ffffff',
+        logging: false
+      });
+
+      document.body.removeChild(contentClone);
+
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${note?.title || 'Lily_Memo'}.png`;
+      a.click();
     } catch (e) {
-      console.error('PDF Generation failed', e);
-      alert('PDFの生成に失敗しました。');
+      console.error('Image Generation failed', e);
+      alert('画像の生成に失敗しました。');
     } finally {
       document.body.classList.remove('pdf-exporting');
     }
@@ -558,7 +569,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             {/* 常時表示アクション */}
             {/* 共有ボタン */}
 
-            <button className="btn-tool" onClick={downloadPdf} title="PDF保存"><Printer size={18} /></button>
+            <button className="btn-tool" onClick={downloadImage} title="画像として保存"><Download size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
             
