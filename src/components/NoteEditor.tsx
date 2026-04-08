@@ -79,11 +79,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [bgType, setBgType] = useState<'plain' | 'grid' | 'ruled'>('plain');
   // スマホはデフォルト閲覧モード（テキストエリアをタップしてもキーボードが開かない）
   const [isEditMode, setIsEditMode] = useState(true);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [isMobileView, setIsMobileView] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
-  const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mobileToolbarRef = useRef<HTMLDivElement>(null);
 
   // フォルダ一覧（移動機能用）
   const folders = useLiveQuery(() => db.folders.toArray());
@@ -171,6 +172,32 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       dom.removeEventListener('touchend', onTouchEnd);
     };
   }, [editor]);
+
+  // キーボード位置への追従 (VisualViewport API)
+  useEffect(() => {
+    if (!isMobileView || !isEditMode) return;
+
+    const onViewportChange = () => {
+      const viewport = window.visualViewport;
+      if (!viewport || !mobileToolbarRef.current) return;
+      
+      // キーボードが表示されている場合、viewport.heightが変化する
+      // ツールバーをviewportの底（実質のキーボード上端）に吸い付かせる
+      const offset = window.innerHeight - viewport.height - viewport.offsetTop;
+      mobileToolbarRef.current.style.bottom = `${Math.max(0, offset)}px`;
+    };
+
+    window.visualViewport?.addEventListener('resize', onViewportChange);
+    window.visualViewport?.addEventListener('scroll', onViewportChange);
+    
+    // 初期実行
+    onViewportChange();
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', onViewportChange);
+      window.visualViewport?.removeEventListener('scroll', onViewportChange);
+    };
+  }, [isMobileView, isEditMode]);
 
   useEffect(() => {
     async function loadNote() {
@@ -529,7 +556,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
       {/* 下部：キーボードに吸い付く編集ツールバー (スマホ用) */}
       {isEditMode && (
-        <div className="mobile-keyboard-toolbar glass">
+        <div className="mobile-keyboard-toolbar glass" ref={mobileToolbarRef}>
           <div className="toolbar-scroll-x">
              <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo size={20} /></button>
              <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo size={20} /></button>
@@ -702,8 +729,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           background: rgba(255,255,255,0.85);
           backdrop-filter: blur(20px);
           border-top: 1px solid var(--border);
-          padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+          padding: 8px 12px; /* Bottom padding will be handled by dynamic JS */
           z-index: 1000;
+          will-change: bottom;
+          transition: bottom 0.1s ease-out; /* Smooth follow */
         }
 
         [data-theme='dark'] .mobile-keyboard-toolbar {
