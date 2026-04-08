@@ -591,45 +591,37 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       const contentClone = element.cloneNode(true) as HTMLElement;
       
       // クローンのスタイル調整: タイトル含め、PDFとして美しいレイアウトを強制
-      // 既存のインラインスタイル（特にJSで設定されたpaddingTop）をクリアする
-      contentClone.style.cssText = ''; 
+      // 全てのインライン・動的スタイルを完全にリセット
+      contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; width: 100% !important; background: #ffffff !important; color: #000 !important;';
       
-      contentClone.style.padding = '20mm !important';
-      contentClone.style.margin = '0 !important';
-      contentClone.style.width = '100%';
-      contentClone.style.maxWidth = 'none';
-      contentClone.style.background = '#ffffff';
-      contentClone.style.color = '#333333';
-      contentClone.style.height = 'auto';
-      contentClone.style.minHeight = 'auto';
-      contentClone.style.overflow = 'visible';
+      // 個別にレイアウトを強制
       contentClone.style.display = 'block';
+      contentClone.style.height = 'auto';
+      contentClone.style.overflow = 'visible';
 
-      // タイトル入力欄をテキストに置き換える（inputだとPDFでうまく出ない場合がある）
+      // タイトル入力欄をテキストに置き換え（マージンによる空白を排除）
       const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
       if (titleInput) {
         const titleDiv = document.createElement('h1');
         titleDiv.textContent = titleInput.value || 'Untitled';
-        titleDiv.style.fontSize = '32px';
-        titleDiv.style.fontWeight = '800';
-        titleDiv.style.marginBottom = '30px';
-        titleDiv.style.paddingBottom = '15px';
-        titleDiv.style.borderBottom = '4px solid #ffb6c1';
-        titleDiv.style.color = '#000';
+        titleDiv.style.cssText = 'font-size: 28pt; font-weight: 800; margin: 0 0 20pt 0; padding: 0 0 10pt 0; border-bottom: 2pt solid #ffb6c1; color: #000; width: 100%;';
         titleInput.replaceWith(titleDiv);
       }
 
-      // 不要なボタンやスクロールインジケータを強制非表示
-      contentClone.querySelectorAll('button, .read-mode-banner').forEach(el => (el as HTMLElement).style.display = 'none');
+      // 不要なバナーやボタンを徹底的に削除
+      contentClone.querySelectorAll('button, .read-mode-banner, .folder-picker-overlay').forEach(el => (el as HTMLElement).remove());
       
-      // EditorContent のスタイル調整（ProseMirror）
+      // ProseMirror本体の余白リセット
       const proseMirror = contentClone.querySelector('.ProseMirror') as HTMLElement;
       if (proseMirror) {
-        proseMirror.style.padding = '0';
-        proseMirror.style.margin = '0';
-        proseMirror.style.width = '100%';
-        proseMirror.style.maxWidth = 'none';
+        proseMirror.style.cssText = 'padding: 0 !important; margin: 0 !important; width: 100% !important; color: #000 !important;';
       }
+
+      // PDF出力領域全体のパディング（20mm）を親要素に持たせるためのラップ
+      const wrapper = document.createElement('div');
+      wrapper.style.padding = '20mm';
+      wrapper.style.background = '#ffffff';
+      wrapper.appendChild(contentClone);
 
       const opt = {
         margin:       0,
@@ -645,10 +637,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           windowWidth: 800
         },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-        pagebreak:    { mode: ['css', 'legacy'], avoid: ['p', 'h1', 'h2', 'h3', 'li', 'pre', 'img', '.mermaid-wrapper', '.chart-wrapper'] }
+        pagebreak:    { mode: ['css', 'legacy'], avoid: ['h1', 'h2', 'h3', 'li', 'pre', 'img', '.mermaid-wrapper', '.chart-wrapper'] }
       };
       
-      await html2pdf().from(contentClone).set(opt).save();
+      await html2pdf().from(wrapper).set(opt).save();
     } catch (e) {
       console.error('PDF Download failed', e);
       alert('PDFの生成に失敗しました。');
@@ -804,6 +796,39 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             height: 100dvh;
             z-index: 1001;
           }
+        }
+
+        /* ===== Header System ===== */
+        .editor-header {
+          position: fixed;
+          top: 0; left: 0; right: 0;
+          height: 60px;
+          background: var(--background);
+          border-bottom: 1px solid var(--border);
+          z-index: 2000;
+          display: flex;
+          align-items: center;
+          padding: 0 8px;
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+        }
+
+        [data-theme='dark'] .editor-header {
+          background: rgba(26, 26, 26, 0.9);
+        }
+
+        .header-bar {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          gap: 4px;
+        }
+
+        .header-left {
+          display: flex;
+          align-items: center;
+          flex-shrink: 0;
+          gap: 4px;
         }
 
         .main-toolbar {
