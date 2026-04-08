@@ -15,7 +15,7 @@ import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
-  Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
+  GitBranch, X, Pencil, Eye, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud,
   MoreVertical, Download, PlusSquare
 } from 'lucide-react';
@@ -442,121 +442,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     });
   };
 
-  // 共有用HTML生成: Mermaid/Chart.jsをCDN経由で描画する自己完結型HTML
-  const generateShareableHtml = (): string | null => {
-    if (!note || !editor) return null;
 
-    const rawHtml = editor.getHTML();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(`<html><body>${rawHtml}</body></html>`, 'text/html');
-
-    let chartIndex = 0;
-    const chartScripts: string[] = [];
-
-    // Mermaidノード → <pre class="mermaid">
-    doc.querySelectorAll('div[data-type="mermaid"]').forEach(el => {
-      const content = el.getAttribute('content') || '';
-      const width = el.getAttribute('width') || '100%';
-      const pre = doc.createElement('pre');
-      pre.className = 'mermaid';
-      pre.textContent = content;
-      pre.style.width = width;
-      pre.style.margin = '16px auto';
-      el.replaceWith(pre);
-    });
-
-    // Chartノード → <canvas> + Chart.js初期化スクリプト
-    doc.querySelectorAll('div[data-type="chart"]').forEach(el => {
-      const codeAttr = el.getAttribute('code');
-      const fileDataAttr = el.getAttribute('filedata') || 'null';
-      
-      const width = el.getAttribute('width') || '100%';
-      
-      const id = `chart-${chartIndex++}`;
-      const wrapper = doc.createElement('div');
-      wrapper.style.width = width;
-      wrapper.style.margin = '24px auto';
-      
-      const canvas = doc.createElement('canvas');
-      canvas.id = id;
-      wrapper.appendChild(canvas);
-      el.replaceWith(wrapper);
-
-      if (codeAttr) {
-        chartScripts.push(`
-          (function() {
-            try {
-              const fileData = ${fileDataAttr};
-              const func = new Function('fileData', ${JSON.stringify(codeAttr)});
-              const config = func(fileData);
-              if (config) {
-                 new Chart(document.getElementById('${id}'), config);
-              }
-            } catch(e) {
-              console.error('Chart Eval Error:', e);
-            }
-          })();
-        `);
-      } else {
-        const chartType = el.getAttribute('type') || 'bar';
-        const dataAttr = el.getAttribute('data');
-        if (dataAttr) {
-          chartScripts.push(
-            `new Chart(document.getElementById('${id}'), { type: '${chartType}', data: ${dataAttr}, options: { responsive: true, plugins: { legend: { position: 'top' } } } });`
-          );
-        }
-      }
-    });
-
-    // チェックボックスを無効化（見た目のみ）
-    doc.querySelectorAll('input[type="checkbox"]').forEach(el => {
-      el.setAttribute('disabled', '');
-    });
-
-    const body = doc.body.innerHTML;
-    const title = note.title || 'Lily Memo';
-
-    return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"><\/script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; line-height: 1.8; color: #333; background: #fffafa; }
-    h1.note-title { font-size: 2rem; font-weight: 700; border-bottom: 3px solid #ffb6c1; padding-bottom: 12px; margin-bottom: 32px; }
-    h2, h3 { font-weight: 700; margin: 24px 0 12px; }
-    p { margin: 10px 0; }
-    ul, ol { padding-left: 24px; margin: 10px 0; }
-    pre { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 8px; overflow-x: auto; margin: 16px 0; font-family: monospace; font-size: 0.9rem; }
-    code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
-    pre code { background: none; padding: 0; }
-    img { max-width: 100%; border-radius: 8px; margin: 16px 0; }
-    canvas { max-width: 100%; margin: 24px auto; display: block; }
-    pre.mermaid { background: transparent; color: inherit; text-align: center; margin: 24px 0; }
-    ul[data-type="taskList"] { list-style: none; padding: 0; }
-    ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0; }
-    ul[data-type="taskList"] li[data-checked="true"] > div { text-decoration: line-through; color: #999; }
-    input[type="checkbox"] { accent-color: #ffb6c1; }
-    blockquote { border-left: 4px solid #ffb6c1; padding: 8px 16px; color: #666; margin: 16px 0; background: #fff0f5; border-radius: 0 8px 8px 0; }
-    button, select { display: none !important; }
-  </style>
-</head>
-<body>
-  <h1 class="note-title">${title}</h1>
-  ${body}
-  <script>
-    mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
-    window.addEventListener('load', function() {
-      ${chartScripts.join('\n      ')}
-    });
-  <\/script>
-</body>
-</html>`;
-  };
 
   const downloadPdf = async () => {
     const element = scrollerInnerRef.current;
@@ -571,7 +457,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       
       // クローンのスタイルをリセット。動的paddingやmarginを完全にクリア。
       contentClone.removeAttribute('style');
-      contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; width: 800px !important; background: #ffffff !important; color: #000 !important; font-family: sans-serif !important;';
+      contentClone.style.cssText = 'padding: 0 !important; margin: 0 !important; width: 800px !important; background: #ffffff !important; color: #000 !important; font-family: sans-serif !important; height: auto !important; overflow: visible !important;';
       
       const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
       if (titleInput) {
@@ -585,25 +471,27 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       
       const style = document.createElement('style');
       style.innerHTML = `
+        * { box-sizing: border-box !important; }
         .ProseMirror { padding: 0 !important; margin: 0 !important; width: 100% !important; min-height: auto !important; }
         /* 図解、コード、テキストが被らないように明示的なブロック配置と余白を強制 */
         .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li, blockquote { 
           page-break-inside: avoid !important; 
           break-inside: avoid !important; 
-          margin-bottom: 25pt !important;
-          margin-top: 15pt !important;
+          margin-bottom: 30pt !important;
+          margin-top: 20pt !important;
           display: block !important;
           position: relative !important;
           clear: both !important;
         }
-        pre { background: #f8f8f8 !important; color: #000 !important; border: 1px solid #eee !important; white-space: pre-wrap !important; word-break: break-all !important; padding: 12px !important; border-radius: 4px !important; }
-        svg { max-width: 100% !important; height: auto !important; display: block !important; margin: 0 auto !important; }
-        p { margin-bottom: 12pt !important; line-height: 1.6 !important; font-size: 11pt !important; margin-top: 0 !important; }
+        pre { background: #f8f8f8 !important; color: #000 !important; border: 1px solid #ddd !important; white-space: pre-wrap !important; word-break: break-all !important; padding: 12pt !important; border-radius: 4px !important; }
+        svg, canvas { max-width: 100% !important; height: auto !important; display: block !important; margin: 0 auto !important; }
+        p { margin-bottom: 12pt !important; line-height: 1.6 !important; font-size: 11pt !important; margin-top: 0 !important; orphans: 3; widows: 3; }
+        ul, ol { margin-bottom: 12pt !important; }
       `;
       contentClone.appendChild(style);
 
       const opt = {
-        margin:       15,
+        margin:       [15, 15, 15, 15] as [number, number, number, number],
         filename:     `${note?.title || 'Lily_Memo'}.pdf`,
         image:        { type: 'jpeg' as const, quality: 1.0 },
         html2canvas:  { 
@@ -611,10 +499,11 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           useCORS: true,
           scrollY: 0,
           scrollX: 0,
-          windowWidth: 800
+          windowWidth: 800,
+          logging: false
         },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-        pagebreak:    { mode: ['css', 'legacy'], avoid: ['.mermaid', '.chart-wrapper', 'pre', 'img', 'h1', 'h2', 'h3'] }
+        pagebreak:    { mode: ['css', 'legacy'], avoid: ['.mermaid', '.chart-wrapper', 'pre', 'img', 'h1', 'h2', 'h3', 'li'] }
       };
       
       await html2pdf().from(contentClone).set(opt).save();
@@ -626,48 +515,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   };
 
-  const shareNote = async () => {
-    if (!note || !editor) return;
-    const title = note.title || 'Untitled';
-    const html = generateShareableHtml();
-    if (!html) return;
 
-    const blob = new Blob([html], { type: 'text/html' });
-    const file = new File([blob], `${title}.html`, { type: 'text/html' });
 
-    if (navigator.share) {
-      try {
-        await navigator.share({ title, files: [file] });
-      } catch (err) {
-        console.error('Share failed:', err);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.download = `${title}.html`;
-        a.href = url;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-    } else {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.download = `${title}.html`;
-      a.href = url;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  };
 
-  const downloadHtml = () => {
-     const html = generateShareableHtml();
-     if (!html) return;
-     const blob = new Blob([html], { type: 'text/html' });
-     const url = URL.createObjectURL(blob);
-     const a = document.createElement('a');
-     a.download = `${note?.title || 'Lily_Memo'}.html`;
-     a.href = url;
-     a.click();
-     URL.revokeObjectURL(url);
-  };
 
   if (!editor) return null;
 
@@ -707,7 +557,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
             {/* 常時表示アクション */}
             {/* 共有ボタン */}
-            <button className="btn-tool" onClick={shareNote} title="HTMLを共有"><Share2 size={18} /></button>
+
             <button className="btn-tool" onClick={downloadPdf} title="PDF保存"><Printer size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
