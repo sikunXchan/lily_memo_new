@@ -77,7 +77,6 @@ interface NoteEditorProps {
 
 export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
-  const [bgType, setBgType] = useState<'plain' | 'grid' | 'ruled'>('plain');
   // スマホはデフォルト閲覧モード（テキストエリアをタップしてもキーボードが開かない）
   const [isEditMode, setIsEditMode] = useState(true);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
@@ -593,14 +592,17 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li, blockquote, p { 
           page-break-inside: avoid !important; 
           break-inside: avoid !important; 
-          margin-bottom: 14pt !important;
+          margin-bottom: 20pt !important;
+          margin-top: 10pt !important;
           display: block !important;
           position: relative !important;
+          clear: both !important;
         }
-        pre { background: #f5f5f5 !important; color: #000 !important; border: 1px solid #ddd !important; white-space: pre-wrap !important; word-break: break-all !important; padding: 10px !important; }
+        pre { background: #f5f5f5 !important; color: #000 !important; border: 1px solid #ddd !important; white-space: pre-wrap !important; word-break: break-all !important; padding: 12px !important; }
         code { font-family: monospace !important; }
-        svg { max-width: 100% !important; height: auto !important; }
-        p { line-height: 1.7 !important; orphans: 3; widows: 3; }
+        svg { max-width: 100% !important; height: auto !important; max-height: 180mm !important; }
+        .mermaid svg { width: 100% !important; }
+        p { line-height: 1.8 !important; orphans: 3; widows: 3; margin-top: 12pt !important; }
       `;
       contentClone.appendChild(style);
 
@@ -685,7 +687,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   if (!editor) return null;
 
   return (
-    <div className={`editor-container bg-${bgType}`} data-edit-mode={isEditMode}>
+    <div className="editor-container" data-edit-mode={isEditMode}>
       <header className="editor-header" ref={headerRef}>
         <div className="header-bar">
           {/* 左固定: 戻る + 保存状態 */}
@@ -1031,17 +1033,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .hljs-keyword { color: #d73a49; font-weight: bold; }
         .hljs-string { color: #22863a; }
 
-        /* ===== Background Patterns ===== */
-        .bg-grid {
-          background-image:
-            linear-gradient(rgba(255,182,193,0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,182,193,0.1) 1px, transparent 1px);
-          background-size: 20px 20px;
-        }
-        .bg-ruled {
-          background-image: linear-gradient(transparent 27px, rgba(255,182,193,0.2) 28px);
-          background-size: 100% 28px;
-        }
+
 
         /* ===== Print Optimization ===== */
         :global(.pdf-exporting p),
