@@ -43,12 +43,22 @@ body {
   overflow: hidden;
   height: 100%;
   width: 100%;
+  position: fixed; /* Prevent body scroll entirely */
+  -webkit-user-select: none; /* Disable global selection */
+  user-select: none;
 }
 
 html {
   overflow: hidden;
   height: 100%;
   width: 100%;
+  position: fixed;
+}
+
+/* Allow selection only in editor */
+.ProseMirror, .content-title-input, textarea, input[type="text"] {
+  -webkit-user-select: text !important;
+  user-select: text !important;
 }
 
 h1, h2, h3, h4, h5, h6 {

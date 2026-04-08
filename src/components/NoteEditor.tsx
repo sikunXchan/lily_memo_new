@@ -489,124 +489,62 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   return (
     <div className={`editor-container bg-${bgType}`}>
       <header className="editor-header">
-        <div className="header-left">
-          <button className="btn-back" onClick={onClose} title="戻る">
-            <ArrowLeft size={24} />
-          </button>
-          <div className="title-container header-status">
-            {isSaving ? (
-              <div className="saving-indicator">
-                <Loader2 size={14} className="animate-spin" />
-                <span>保存中...</span>
+        <div className="header-top">
+          <div className="header-left">
+            <button className="btn-back" onClick={onClose} title="戻る">
+              <ArrowLeft size={24} />
+            </button>
+            <div className="title-container header-status">
+              {isSaving ? (
+                <div className="saving-indicator">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>保存中...</span>
+                </div>
+              ) : (
+                <span className="saved-text">保存済み</span>
+              )}
+            </div>
+          </div>
+          <div className="editor-toolbar">
+            {/* テキスト編集ツール (編集モード時のみ表示) */}
+            {isEditMode && !isTitleFocused && (
+              <div className="inline-text-tools">
+                <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="元に戻す"><Undo size={18} /></button>
+                <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="やり直し"><Redo size={18} /></button>
+                <div className="v-divider" />
+                <button onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'active' : ''}><Type size={18} /></button>
+                <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={18} /></button>
+                <div className="v-divider" />
               </div>
-            ) : (
-              <span className="saved-text">保存済み</span>
+            )}
+
+            {/* 図・グラフ・画像挿入 (常に表示) */}
+            <button onClick={insertMermaid} title="図"><GitBranch size={20} /></button>
+            <button onClick={insertChart} title="グラフ"><BarChart3 size={20} /></button>
+            <button onClick={addNoteAsset} title="画像"><ImageIcon size={20} /></button>
+            <button onClick={() => setShowFolderPicker(true)} title="フォルダ"><FolderInput size={20} /></button>
+
+            <div className="v-divider" />
+
+            {/* 編集切替 & その他 */}
+            <button
+              className={`toolbar-btn edit-mode-btn ${isEditMode ? 'edit-active' : ''}`}
+              onClick={() => setIsEditMode(!isEditMode)}
+              title={isEditMode ? '閲覧モードへ' : '編集モードへ'}
+            >
+              {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
+            </button>
+            
+            <button className="toolbar-btn" onClick={downloadPdf} title="PDF"><Printer size={20} /></button>
+            
+            {isEditMode && (
+              <button className="toolbar-btn delete" onClick={deleteNote} title="削除"><Trash2 size={20} /></button>
             )}
           </div>
-        </div>
-        <div className="editor-toolbar">
-          {/* 閲覧/編集切替ボタン (スマホ・PC共通) */}
-          <button
-            className={`toolbar-btn edit-mode-btn ${isEditMode ? 'edit-active' : ''}`}
-            onClick={() => {
-              setIsEditMode(!isEditMode);
-            }}
-            title={isEditMode ? '閲覧モードへ' : '文字編集モードへ'}
-          >
-            {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
-          </button>
-          <button className="toolbar-btn" onClick={handleSync} title="PCなどと同期">
-            <Cloud size={20} />
-          </button>
-          <button className="toolbar-btn" onClick={downloadPdf} title="PDFとしてダウンロード">
-            <Printer size={20} />
-          </button>
-          <button className="toolbar-btn" onClick={shareNote} title="HTMLで共有（図・グラフ含む）">
-            <Share2 size={20} />
-          </button>
-          <button className="toolbar-btn" onClick={() => setShowFolderPicker(true)} title="フォルダに移動">
-            <FolderInput size={20} />
-          </button>
-          {isEditMode && (
-            <>
-              <button
-                className="toolbar-btn"
-                onClick={() => setBgType(bgType === 'plain' ? 'grid' : bgType === 'grid' ? 'ruled' : 'plain')}
-                title="背景切替"
-              >
-                <LayoutGrid size={20} />
-              </button>
-              <button className="toolbar-btn delete" onClick={deleteNote} title="削除">
-                <Trash2 size={20} />
-              </button>
-            </>
-          )}
         </div>
       </header>
 
       <div className="editor-content-wrapper">
-        {/* ツールバー: タイトル編集中は非表示 */}
-        {!isTitleFocused && <div className="tiptap-toolbar glass">
-          {isEditMode && (
-            <>
-              <button
-                onClick={() => editor.chain().focus().undo().run()}
-                disabled={!editor.can().undo()}
-                title="元に戻す"
-              >
-                <Undo size={18} />
-              </button>
-              <button
-                onClick={() => editor.chain().focus().redo().run()}
-                disabled={!editor.can().redo()}
-                title="やり直し"
-              >
-                <Redo size={18} />
-              </button>
-              <div className="divider" />
-              <button
-                onClick={() => editor.chain().focus().toggleBold().run()}
-                className={editor.isActive('bold') ? 'active' : ''}
-                title="太字"
-              >
-                <Type size={18} />
-              </button>
-              <button
-                onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}
-                title="見出し"
-              >
-                H2
-              </button>
-              <button
-                onClick={() => editor.chain().focus().toggleTaskList().run()}
-                className={editor.isActive('taskList') ? 'active' : ''}
-                title="チェックリスト"
-              >
-                <CheckSquare size={18} />
-              </button>
-              <button
-                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-                className={editor.isActive('codeBlock') ? 'active' : ''}
-                title="コードブロック"
-              >
-                <Binary size={18} />
-              </button>
-              <div className="divider" />
-            </>
-          )}
-          {/* 図・グラフ・画像は閲覧モードでも挿入可能 */}
-          <button onClick={insertMermaid} title="図（Mermaid）を挿入 ※キーボード不要">
-            <GitBranch size={18} />
-          </button>
-          <button onClick={insertChart} title="グラフを挿入 ※キーボード不要">
-            <BarChart3 size={18} />
-          </button>
-          <button onClick={addNoteAsset} title="画像を挿入">
-            <ImageIcon size={18} />
-          </button>
-        </div>}
-
         <div className="editor-scroller">
             <input
               type="text"
@@ -690,26 +628,65 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           }
         }
 
-        /* ===== Header (Title/Back/Sync) ===== */
         .editor-header {
-          position: relative; /* 固定はcontainer側ではなくここで制御 */
-          z-index: 110;
-          padding: 16px 32px;
+          position: sticky;
+          top: 0;
+          z-index: 1000;
+          padding: 8px 16px;
           display: flex;
-          align-items: center;
-          justify-content: space-between;
+          flex-direction: column;
           gap: 8px;
           border-bottom: 1px solid var(--border);
           background: var(--background);
           flex-shrink: 0;
         }
 
+        .header-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          width: 100%;
+          gap: 12px;
+        }
+
         .header-left {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 4px;
+          flex: 0 0 auto;
+        }
+
+        .editor-toolbar {
+          display: flex;
+          align-items: center;
+          gap: 4px;
           flex: 1;
-          min-width: 0;
+          justify-content: flex-end;
+          overflow-x: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          padding: 2px 0;
+        }
+        .editor-toolbar::-webkit-scrollbar { display: none; }
+
+        .inline-text-tools {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+
+        .v-divider {
+          width: 1px;
+          height: 20px;
+          background: var(--border);
+          margin: 0 4px;
+          flex-shrink: 0;
+        }
+
+        .header-status {
+          font-size: 0.7rem;
+          color: #999;
+          white-space: nowrap;
         }
 
         .btn-back {
@@ -902,10 +879,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @media (max-width: 768px) {
-          .editor-scroller { padding: 0 14px 24px; }
-          .content-title-input { font-size: 1.4rem; margin-top: 12px; }
-          .tiptap-toolbar { padding: 6px 10px; }
-          .editor-content-wrapper { padding: 0; overflow-x: hidden; }
+          .editor-scroller { padding: 0 12px 24px; }
+          .content-title-input { font-size: 1.3rem; margin-top: 8px; }
+          .editor-content-wrapper { padding: 0; }
+          .editor-header { padding: 8px 12px; }
         }
 
         .ProseMirror p.is-editor-empty:first-child::before {
