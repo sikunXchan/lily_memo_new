@@ -185,33 +185,29 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     
     const updateLayout = () => {
       const viewport = window.visualViewport;
-      if (!viewport) return;
+      if (!viewport || !mobileToolbarRef.current) return;
 
-      // 変化がない場合はスキップ (レイアウト計算の抑制)
-      if (viewport.height === lastViewportHeight) return;
-      lastViewportHeight = viewport.height;
-
-      // 編集ツールバー固定 (Keyboard top)
-      if (mobileToolbarRef.current) {
-        // キーボードが表示されている時のみ吸い付かせる
-        const isKeyboardVisible = viewport.height < window.innerHeight;
-        // transformではなくbottomを直接書き換えることで、レイアウト上の「隙間」をなくす
-        if (isKeyboardVisible) {
-           const offset = window.innerHeight - viewport.height - viewport.offsetTop;
-           mobileToolbarRef.current.style.bottom = `${Math.max(0, offset)}px`;
-           mobileToolbarRef.current.style.transform = 'none';
-        } else {
-           mobileToolbarRef.current.style.bottom = '0px';
-           mobileToolbarRef.current.style.transform = 'none';
-        }
+      const viewportBottom = viewport.offsetTop + viewport.height;
+      
+      // キーボードが表示されているかどうかの判定をより厳密に
+      const isKeyboardVisible = viewport.height < window.innerHeight * 0.9;
+      
+      if (isKeyboardVisible) {
+        // キーボードのすぐ上に直接配置 (topを使用)
+        // toolbar自体の高さを引いた位置に下端が来るようにする
+        const toolbarHeight = mobileToolbarRef.current.offsetHeight;
+        mobileToolbarRef.current.style.top = `${viewportBottom - toolbarHeight}px`;
+        mobileToolbarRef.current.style.bottom = 'auto';
+      } else {
+        // キーボードがない時は画面下端 (ただしPWAのsafe-areaを考慮)
+        mobileToolbarRef.current.style.top = 'auto';
+        mobileToolbarRef.current.style.bottom = '0px';
       }
       
       // スクロール領域のパディング調整
-      // ツールバーとキーボードに隠れないよう、一番下に余白を確保
       if (scrollerRef.current) {
         const keyboardHeight = window.innerHeight - viewport.height;
-        const toolbarHeight = mobileToolbarRef.current?.offsetHeight || 0;
-        scrollerRef.current.style.paddingBottom = `${keyboardHeight + toolbarHeight + 80}px`;
+        scrollerRef.current.style.paddingBottom = `${Math.max(100, keyboardHeight + 120)}px`;
       }
     };
 
@@ -220,9 +216,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       rafId = requestAnimationFrame(updateLayout);
     };
 
-    // 網を絞る: スクロール系の高頻度イベントを除去し、高さが変わる瞬間だけに限定
+    // 網を再度広げる: offsetTopの変化を捉えるためにvisualViewportのscrollも監視対象に戻す
     const listeners = [
       [window.visualViewport, 'resize'],
+      [window.visualViewport, 'scroll'],
       [window, 'resize'],
       [window, 'orientationchange'],
       [document, 'focusin'],
@@ -766,12 +763,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         /* ===== Mobile Keyboard Toolbar (Fixed at Bottom) ===== */
         .mobile-keyboard-toolbar {
           position: fixed;
-          bottom: 0;
+          top: 0; /* JSで動的に位置調整するため、ベースをtopにする */
           left: 0;
           right: 0;
-          background: var(--background); /* 不透明にして裏の文字を隠す */
+          background: var(--background);
           border-top: 1px solid var(--border);
-          padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+          padding: 8px 12px;
           z-index: 1000;
         }
 
