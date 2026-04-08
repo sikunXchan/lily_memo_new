@@ -84,7 +84,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const mobileToolbarRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
 
   // フォルダ一覧（移動機能用）
   const folders = useLiveQuery(() => db.folders.toArray());
@@ -173,36 +175,64 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     };
   }, [editor]);
 
-  // キーボード位置への追従 (VisualViewport API)
+  // キーボード位置への追従 (VisualViewport API & Robust Event Tracking)
   useEffect(() => {
     if (!isMobileView || !isEditMode) return;
 
-    const onViewportChange = () => {
+    let rafId: number;
+    
+    const updateLayout = () => {
       const viewport = window.visualViewport;
-      if (!viewport || !mobileToolbarRef.current) return;
-      
-      const isKeyboardVisible = viewport.height < window.innerHeight;
-      
-      if (isKeyboardVisible) {
-        // キーボードが表示されている時
+      if (!viewport) return;
+
+      // ヘッダー固定 (Top)
+      // VisualViewportのoffsetTop(スクロール分)に合わせてTopを固定
+      if (headerRef.current) {
+        headerRef.current.style.transform = `translateY(${viewport.offsetTop}px)`;
+      }
+
+      // 編集ツールバー固定 (Keyboard top)
+      if (mobileToolbarRef.current) {
         const offset = window.innerHeight - viewport.height - viewport.offsetTop;
-        mobileToolbarRef.current.style.bottom = `${offset}px`;
-        mobileToolbarRef.current.style.position = 'fixed';
-      } else {
-        // キーボードが閉じている時
-        mobileToolbarRef.current.style.bottom = '0px';
+        mobileToolbarRef.current.style.transform = `translateY(-${Math.max(0, offset)}px)`;
+      }
+      
+      // スクロール領域のパディング調整 (グラフ拡大等に対応)
+      // キーボードが出ている間はスクローラーの下部に十分なマージンを動的に追加
+      if (scrollerRef.current) {
+        const keyboardHeight = window.innerHeight - viewport.height;
+        scrollerRef.current.style.paddingBottom = `${keyboardHeight + 250}px`;
       }
     };
 
-    window.visualViewport?.addEventListener('resize', onViewportChange);
-    window.visualViewport?.addEventListener('scroll', onViewportChange);
+    const handleUpdate = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updateLayout);
+    };
+
+    // 網を広く張る: イベントリスナーの追加
+    const listeners = [
+      [window.visualViewport, 'resize'],
+      [window.visualViewport, 'scroll'],
+      [window, 'scroll'],
+      [window, 'resize'],
+      [window, 'orientationchange'],
+      [document, 'focusin'],
+      [document, 'focusout']
+    ];
+
+    listeners.forEach(([target, event]) => {
+      (target as EventTarget)?.addEventListener(event as string, handleUpdate);
+    });
     
     // 初期実行
-    onViewportChange();
+    handleUpdate();
 
     return () => {
-      window.visualViewport?.removeEventListener('resize', onViewportChange);
-      window.visualViewport?.removeEventListener('scroll', onViewportChange);
+      listeners.forEach(([target, event]) => {
+        (target as EventTarget)?.removeEventListener(event as string, handleUpdate);
+      });
+      if (rafId) cancelAnimationFrame(rafId);
     };
   }, [isMobileView, isEditMode]);
 
@@ -522,7 +552,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
   return (
     <div className={`editor-container bg-${bgType}`}>
-      <header className="editor-header">
+      <header className="editor-header" ref={headerRef}>
         {/* 上部：戻る・共有・保存状態 (フローティングに近い丸ボタン) */}
         <div className="header-floating-top">
           <button className="btn-circle btn-back" onClick={onClose} title="戻る">
@@ -547,7 +577,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         </div>
       </header>
 
-      <div className="editor-content-wrapper">
+      <div className="editor-content-wrapper" ref={scrollerRef}>
         <div className="editor-scroller">
             <input
               type="text"
@@ -558,8 +588,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               readOnly={!isEditMode}
             />
             <EditorContent editor={editor} />
-            {/* キーボード分の余白を強制確保 */}
-            <div className="keyboard-spacer" style={{ height: '200px' }} />
         </div>
       </div>
 
@@ -738,10 +766,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           background: rgba(255,255,255,0.85);
           backdrop-filter: blur(20px);
           border-top: 1px solid var(--border);
-          padding: 8px 12px; /* Bottom padding will be handled by dynamic JS */
+          padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
           z-index: 1000;
-          will-change: bottom;
-          transition: bottom 0.1s ease-out; /* Smooth follow */
+          will-change: transform;
         }
 
         [data-theme='dark'] .mobile-keyboard-toolbar {
