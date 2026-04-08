@@ -34,10 +34,7 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
     <NodeViewWrapper 
        className="mermaid-wrapper"
        style={{ 
-         width: attrs.width && attrs.width.includes('%') && parseInt(attrs.width) <= 100 ? attrs.width : '100%',
-         transform: attrs.width && parseInt(attrs.width) > 100 ? `scale(${parseInt(attrs.width)/100})` : 'none',
-         transformOrigin: 'top center',
-         marginBottom: attrs.width && parseInt(attrs.width) > 100 ? `${(parseInt(attrs.width)-100) * 0.5}%` : '1.5rem'
+         width: attrs.width && attrs.width.includes('%') && parseInt(attrs.width) <= 100 ? attrs.width : '100%'
        }}
     >
       <div className="mermaid-header" contentEditable={false}>
@@ -80,6 +77,11 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
           className="mermaid-render" 
           dangerouslySetInnerHTML={{ __html: svg }} 
           contentEditable={false}
+          style={{
+            transformOrigin: 'top center',
+            transform: attrs.width && parseInt(attrs.width) > 100 ? `scale(${parseInt(attrs.width)/100})` : 'none',
+            marginBottom: attrs.width && parseInt(attrs.width) > 100 ? `${(parseInt(attrs.width)-100) * 0.3}vh` : '0'
+          }}
         />
       )}
 
@@ -89,8 +91,8 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
           background: var(--accent);
           border: 1px solid var(--border);
           border-radius: 12px;
-          overflow: hidden;
-          transition: width 0.3s ease;
+          overflow: visible;
+          max-width: 100%;
         }
         .mermaid-header {
           padding: 8px 12px;
