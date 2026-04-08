@@ -187,31 +187,24 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       const viewport = window.visualViewport;
       if (!viewport) return;
 
-      // ヘッダー固定 (上端に追従)
+      // ヘッダーは標準のfixed配置に任せ、ここでは位置調整しない (カクつき防止)
       if (headerRef.current) {
-        headerRef.current.style.top = `${viewport.offsetTop}px`;
+        headerRef.current.style.top = '0px';
       }
 
-      // 編集ツールバー固定 (下端に追従)
+      // 編集ツールバー固定 (下端からの距離で計算)
       if (mobileToolbarRef.current) {
+        // レイアウトビューポートの下端からビジュアルビューポートの下端までの距離
+        const layoutHeight = document.documentElement.clientHeight;
         const viewportBottom = viewport.offsetTop + viewport.height;
-        const isKeyboardVisible = viewport.height < window.innerHeight * 0.95;
+        const bottomOffset = layoutHeight - viewportBottom;
 
-        if (isKeyboardVisible) {
-          const toolbarHeight = mobileToolbarRef.current.offsetHeight || 44;
-          mobileToolbarRef.current.style.top = `${viewportBottom - toolbarHeight}px`;
-          mobileToolbarRef.current.style.bottom = 'auto';
-        } else {
-          mobileToolbarRef.current.style.top = 'auto';
-          mobileToolbarRef.current.style.bottom = '0px';
-        }
+        // 絶対座標ではなく、画面底からのオフセットとして適用
+        mobileToolbarRef.current.style.bottom = `${Math.max(0, bottomOffset)}px`;
+        mobileToolbarRef.current.style.top = 'auto';
       }
       
-      // スクロール領域のパディング調整
-      if (scrollerRef.current) {
-        const keyboardHeight = Math.max(0, window.innerHeight - viewport.height);
-        scrollerRef.current.style.paddingBottom = `${keyboardHeight + 150}px`;
-      }
+      // 本文のパディングは動的にいじらない (スクロール位置の破綻を防ぐ)
     };
 
     const handleUpdate = () => {
@@ -766,12 +759,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         /* ===== Mobile Keyboard Toolbar (Fixed at Bottom) ===== */
         .mobile-keyboard-toolbar {
           position: fixed;
-          top: 0; 
+          bottom: 0;
           left: 0;
           right: 0;
-          background: #fff; /* Solid White by default */
+          background: var(--background);
           border-top: 1px solid var(--border);
-          padding: 8px 12px;
+          padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
           z-index: 2000;
         }
 
@@ -824,17 +817,16 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           flex: 1;
           display: flex;
           flex-direction: column;
-          padding-top: 80px; /* Space for floating headers */
-          padding-bottom: 80px; /* Space for keyboard toolbar */
-          overflow-y: auto; /* Restore Scroll */
+          overflow-y: auto;
           overflow-x: hidden;
           -webkit-overflow-scrolling: touch;
           height: 100%;
+          position: relative;
         }
 
         .editor-scroller {
           min-height: 100%;
-          padding: 0 40px 24px;
+          padding: 80px 40px 180px; /* 上部にボタン群、下部にツールバー分の余白を確保 */
           display: flex;
           flex-direction: column;
         }
