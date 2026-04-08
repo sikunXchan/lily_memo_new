@@ -489,57 +489,26 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   return (
     <div className={`editor-container bg-${bgType}`}>
       <header className="editor-header">
-        <div className="header-top">
-          <div className="header-left">
-            <button className="btn-back" onClick={onClose} title="戻る">
-              <ArrowLeft size={24} />
-            </button>
-            <div className="title-container header-status">
-              {isSaving ? (
-                <div className="saving-indicator">
-                  <Loader2 size={14} className="animate-spin" />
-                  <span>保存中...</span>
-                </div>
-              ) : (
-                <span className="saved-text">保存済み</span>
-              )}
+        {/* 上部：戻る・共有・保存状態 (フローティングに近い丸ボタン) */}
+        <div className="header-floating-top">
+          <button className="btn-circle btn-back" onClick={onClose} title="戻る">
+            <ArrowLeft size={24} />
+          </button>
+          
+          <div className="header-group-right">
+            <div className="status-badge">
+              {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              <span>{isSaving ? 'Saving' : 'Saved'}</span>
             </div>
-          </div>
-          <div className="editor-toolbar">
-            {/* テキスト編集ツール (編集モード時のみ表示) */}
-            {isEditMode && !isTitleFocused && (
-              <div className="inline-text-tools">
-                <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="元に戻す"><Undo size={18} /></button>
-                <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="やり直し"><Redo size={18} /></button>
-                <div className="v-divider" />
-                <button onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive('bold') ? 'active' : ''}><Type size={18} /></button>
-                <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={18} /></button>
-                <div className="v-divider" />
-              </div>
-            )}
-
-            {/* 図・グラフ・画像挿入 (常に表示) */}
-            <button onClick={insertMermaid} title="図"><GitBranch size={20} /></button>
-            <button onClick={insertChart} title="グラフ"><BarChart3 size={20} /></button>
-            <button onClick={addNoteAsset} title="画像"><ImageIcon size={20} /></button>
-            <button onClick={() => setShowFolderPicker(true)} title="フォルダ"><FolderInput size={20} /></button>
-
-            <div className="v-divider" />
-
-            {/* 編集切替 & その他 */}
-            <button
-              className={`toolbar-btn edit-mode-btn ${isEditMode ? 'edit-active' : ''}`}
+            <button className="btn-circle" onClick={shareNote} title="共有"><Share2 size={20} /></button>
+            <button className="btn-circle" onClick={() => setShowFolderPicker(true)} title="フォルダ"><FolderInput size={20} /></button>
+            <button className="btn-circle btn-delete" onClick={deleteNote} title="削除"><Trash2 size={20} /></button>
+            <button 
+              className={`btn-circle btn-save ${isEditMode ? 'active' : ''}`} 
               onClick={() => setIsEditMode(!isEditMode)}
-              title={isEditMode ? '閲覧モードへ' : '編集モードへ'}
             >
-              {isEditMode ? <Eye size={20} /> : <Pencil size={20} />}
+              {isEditMode ? <Check size={24} strokeWidth={3} /> : <Pencil size={20} />}
             </button>
-            
-            <button className="toolbar-btn" onClick={downloadPdf} title="PDF"><Printer size={20} /></button>
-            
-            {isEditMode && (
-              <button className="toolbar-btn delete" onClick={deleteNote} title="削除"><Trash2 size={20} /></button>
-            )}
           </div>
         </div>
       </header>
@@ -551,14 +520,31 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               className="content-title-input"
               value={note?.title || ''}
               onChange={(e) => updateTitle(e.target.value)}
-              placeholder="タイトルを入力..."
+              placeholder="タイトル..."
               readOnly={!isEditMode}
-              onFocus={() => setIsTitleFocused(true)}
-              onBlur={() => setIsTitleFocused(false)}
             />
             <EditorContent editor={editor} />
         </div>
       </div>
+
+      {/* 下部：キーボードに吸い付く編集ツールバー (スマホ用) */}
+      {isEditMode && (
+        <div className="mobile-keyboard-toolbar glass">
+          <div className="toolbar-scroll-x">
+             <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo size={20} /></button>
+             <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo size={20} /></button>
+             <div className="v-divider" />
+             <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}>あぁ</button>
+             <button onClick={() => editor.chain().focus().toggleBulletList().run()} className={editor.isActive('bulletList') ? 'active' : ''}>・≡</button>
+             <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={20} /></button>
+             <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={editor.isActive('codeBlock') ? 'active' : ''}><Binary size={20} /></button>
+             <div className="v-divider" />
+             <button onClick={addNoteAsset}><ImageIcon size={20} /></button>
+             <button onClick={insertMermaid}><GitBranch size={20} /></button>
+             <button onClick={insertChart}><BarChart3 size={20} /></button>
+          </div>
+        </div>
+      )}
 
 
       {/* フォルダ移動ピッカー */}
@@ -628,156 +614,142 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           }
         }
 
+        /* ===== New Header Floating System ===== */
         .editor-header {
-          position: sticky;
-          top: 0;
+          position: absolute;
+          top: 0; left: 0; right: 0;
           z-index: 1000;
-          padding: 8px 16px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          border-bottom: 1px solid var(--border);
-          background: var(--background);
-          flex-shrink: 0;
+          padding: 16px;
+          pointer-events: none; /* Allow clicks to pass to editor if not on buttons */
         }
 
-        .header-top {
+        .header-floating-top {
           display: flex;
-          align-items: center;
           justify-content: space-between;
+          align-items: center;
           width: 100%;
+          pointer-events: auto;
+        }
+
+        .header-group-right {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: rgba(255,255,255,0.7);
+          backdrop-filter: blur(10px);
+          padding: 6px;
+          border-radius: 40px;
+          border: 1px solid rgba(0,0,0,0.05);
+          box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+
+        [data-theme='dark'] .header-group-right {
+          background: rgba(0,0,0,0.5);
+          border-color: rgba(255,255,255,0.1);
+        }
+
+        .btn-circle {
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: white;
+          color: #333;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          transition: transform 0.2s, background 0.2s;
+        }
+
+        [data-theme='dark'] .btn-circle {
+          background: #333;
+          color: white;
+        }
+
+        .btn-circle.active {
+          background: var(--primary);
+          color: white;
+        }
+
+        .btn-circle.btn-save {
+          background: #ffc107; /* Orange check color similar to image */
+          color: white;
+          box-shadow: 0 4px 12px rgba(255,193,7,0.3);
+        }
+
+        .btn-circle.btn-back {
+          background: rgba(255,255,255,0.8);
+          color: #ffc107;
+        }
+
+        .status-badge {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px 12px;
+          font-size: 0.7rem;
+          font-weight: 700;
+          color: #888;
+          text-transform: uppercase;
+        }
+
+        /* ===== Mobile Keyboard Toolbar (Fixed at Bottom) ===== */
+        .mobile-keyboard-toolbar {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          background: rgba(255,255,255,0.85);
+          backdrop-filter: blur(20px);
+          border-top: 1px solid var(--border);
+          padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+          z-index: 1000;
+        }
+
+        [data-theme='dark'] .mobile-keyboard-toolbar {
+          background: rgba(30,30,30,0.85);
+        }
+
+        .toolbar-scroll-x {
+          display: flex;
+          align-items: center;
           gap: 12px;
-        }
-
-        .header-left {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          flex: 0 0 auto;
-        }
-
-        .editor-toolbar {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          flex: 1;
-          justify-content: flex-end;
           overflow-x: auto;
           scrollbar-width: none;
-          -ms-overflow-style: none;
-          padding: 2px 0;
+          padding-bottom: 2px;
         }
-        .editor-toolbar::-webkit-scrollbar { display: none; }
+        .toolbar-scroll-x::-webkit-scrollbar { display: none; }
 
-        .inline-text-tools {
+        .toolbar-scroll-x button {
+          flex-shrink: 0;
+          width: 42px;
+          height: 42px;
           display: flex;
           align-items: center;
-          gap: 2px;
+          justify-content: center;
+          background: transparent;
+          color: var(--foreground);
+          font-weight: 800;
+          font-size: 1.1rem;
+          border-radius: 8px;
+        }
+
+        .toolbar-scroll-x button.active {
+          background: var(--accent);
+          color: var(--primary);
         }
 
         .v-divider {
           width: 1px;
-          height: 20px;
+          height: 24px;
           background: var(--border);
-          margin: 0 4px;
           flex-shrink: 0;
         }
 
-        .header-status {
-          font-size: 0.7rem;
-          color: #999;
-          white-space: nowrap;
-        }
-
-        .btn-back {
-          background: transparent;
-          color: var(--primary);
-          padding: 8px;
-          flex-shrink: 0;
-        }
-
-        .title-container {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .title-input {
-          font-size: 1.4rem;
-          font-weight: 700;
-          border: none;
-          padding: 2px 0;
-          width: 100%;
-          min-width: 0;
-          color: var(--foreground);
-          background: transparent;
-          border-bottom: 2px solid transparent;
-          transition: border-color 0.2s;
-        }
-
-        .title-input:focus {
-          outline: none;
-          border-bottom-color: var(--primary);
-        }
-
-        .header-status {
-            font-size: 0.75rem;
-            color: #999;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .saving-indicator {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            color: var(--primary);
-        }
-
-        .animate-spin {
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .editor-toolbar {
-          display: flex;
-          gap: 6px;
-          flex-shrink: 0;
-        }
-
-        .toolbar-btn {
-          width: 38px;
-          height: 38px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: var(--accent);
-          color: var(--primary);
-          border-radius: 10px;
-          flex-shrink: 0;
-        }
-
-        .toolbar-btn:hover { background: var(--primary); color: white; }
-        .toolbar-btn.delete { background: #fff0f0; color: #ff4d4d; }
-        [data-theme='dark'] .toolbar-btn.delete { background: rgba(255,77,77,0.15); }
-        .toolbar-btn.edit-mode-btn { background: var(--muted); color: var(--foreground); }
-        .toolbar-btn.edit-mode-btn.edit-active { background: var(--primary); color: white; }
-
-        /* ===== Content Wrapper (Scroll Container) ===== */
+        /* ===== Content Layout Fix ===== */
         .editor-content-wrapper {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          padding: 0;
-          overflow-y: auto; /* ここでスクロール */
-          overflow-x: hidden;
-          -webkit-overflow-scrolling: touch;
-          overscroll-behavior: contain;
-          position: relative;
+          padding-top: 80px; /* Space for floating headers */
+          padding-bottom: 80px; /* Space for keyboard toolbar */
         }
 
         .editor-scroller {
