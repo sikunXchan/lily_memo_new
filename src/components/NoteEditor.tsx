@@ -16,7 +16,7 @@ import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
   Share2, GitBranch, X, Pencil, Eye, FolderInput, Check,
-  Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud, Plus
+  Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -83,10 +83,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isMobileView, setIsMobileView] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [showInsertMenu, setShowInsertMenu] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const scrollerInnerRef = useRef<HTMLDivElement>(null);
 
   // フォルダ一覧（移動機能用）
   const folders = useLiveQuery(() => db.folders.toArray());
@@ -180,13 +180,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     if (!isMobileView) return;
 
     let rafId: number;
-    let lastScrollY = window.scrollY;
     let lastBottomOffset = -1;
-    let isHeaderHidden = false;
-
-    // 定数定義
-    const SCROLL_THRESHOLD = 100;
-    const SCROLL_DELTA = 10;
 
     const adjustScrollForCursor = () => {
       if (!isEditMode || !scrollerRef.current) return;
@@ -222,41 +216,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     };
 
     const updateControls = (source?: string) => {
-      // 1. 上のヘッダーのスクロール応答制御 (通常のブラウズ時)
-      if (headerRef.current && source === 'window-scroll') {
-        const currentScrollY = window.scrollY;
-        const diff = currentScrollY - lastScrollY;
-
-        if (currentScrollY <= 50) {
-          if (isHeaderHidden) {
-            headerRef.current.classList.remove('header-hidden');
-            isHeaderHidden = false;
-          }
-        } else if (Math.abs(diff) > SCROLL_DELTA) {
-          if (diff > 0 && currentScrollY > SCROLL_THRESHOLD) {
-            if (!isHeaderHidden) {
-              headerRef.current.classList.add('header-hidden');
-              isHeaderHidden = true;
-            }
-          } else if (diff < 0) {
-            if (isHeaderHidden) {
-              headerRef.current.classList.remove('header-hidden');
-              isHeaderHidden = false;
-            }
-          }
-          lastScrollY = currentScrollY;
-        }
-      }
-
-      // 3. カーソル追従 (入力時や選択変更時)
+      // カーソル追従 (入力時や選択変更時)
       if (source === 'selection' || source === 'input' || source === 'vv-resize') {
         adjustScrollForCursor();
       }
-    };
-
-    const handleWindowScroll = () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => updateControls('window-scroll'));
     };
 
     const handleSelectionChange = () => {
@@ -281,7 +244,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     const listeners: [EventTarget | undefined | null, string, any][] = [
       [vv, 'resize', handleVVResize],
       [vv, 'scroll', () => updateControls('vv-scroll')],
-      [window, 'scroll', handleWindowScroll],
       [window, 'orientationchange', () => updateControls('orientation')],
       [document, 'focusin', () => updateControls('focus')],
       [document, 'focusout', () => updateControls('focus')],
@@ -308,6 +270,63 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       if (rafId) cancelAnimationFrame(rafId);
     };
   }, [isMobileView, isEditMode, editor]);
+
+  // ヘッダー高さに合わせて本文コンテナの padding-top を動的に設定（常に固定値を保つ）
+  useEffect(() => {
+    const header = headerRef.current;
+    const inner = scrollerInnerRef.current;
+    if (!header || !inner) return;
+
+    const applyPadding = () => {
+      const h = header.getBoundingClientRect().height;
+      inner.style.paddingTop = `${h + 12}px`;
+    };
+
+    applyPadding();
+    const observer = new ResizeObserver(applyPadding);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
+  // ヘッダーのスクロール応答型制御（スクロールコンテナに直接リスナーを登録）
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const header = headerRef.current;
+    if (!scroller || !header) return;
+
+    let lastScrollTop = 0;
+    let isHeaderHidden = false;
+    const SCROLL_DELTA = 10;
+    const SCROLL_THRESHOLD = 100;
+
+    const handleScroll = () => {
+      const currentScrollTop = scroller.scrollTop;
+      const diff = currentScrollTop - lastScrollTop;
+
+      if (currentScrollTop <= 50) {
+        if (isHeaderHidden) {
+          header.classList.remove('header-hidden');
+          isHeaderHidden = false;
+        }
+      } else if (Math.abs(diff) > SCROLL_DELTA) {
+        if (diff > 0 && currentScrollTop > SCROLL_THRESHOLD) {
+          if (!isHeaderHidden) {
+            header.classList.add('header-hidden');
+            isHeaderHidden = true;
+          }
+        } else if (diff < 0) {
+          if (isHeaderHidden) {
+            header.classList.remove('header-hidden');
+            isHeaderHidden = false;
+          }
+        }
+        lastScrollTop = currentScrollTop;
+      }
+    };
+
+    scroller.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useEffect(() => {
     async function loadNote() {
@@ -626,63 +645,53 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   return (
     <div className={`editor-container bg-${bgType}`} data-edit-mode={isEditMode}>
       <header className="editor-header" ref={headerRef}>
-        {/* 上部：戻る・共有・保存状態 (フローティングに近い丸ボタン) */}
-        <div className="header-floating-top">
-          <button className="btn-circle btn-back" onClick={onClose} title="戻る">
-            <ArrowLeft size={24} />
-          </button>
-          
-          <div className="header-group-right">
+        <div className="header-bar">
+          {/* 左固定: 戻る + 保存状態 */}
+          <div className="header-left">
+            <button className="btn-tool btn-back" onClick={onClose} title="戻る">
+              <ArrowLeft size={20} />
+            </button>
             <div className="status-badge">
               {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
               <span>{isSaving ? 'Saving' : 'Saved'}</span>
             </div>
-            
-            {isEditMode && (
-              <div className="insert-menu-container">
-                <button 
-                  className={`btn-circle btn-insert ${showInsertMenu ? 'active' : ''}`} 
-                  onClick={() => setShowInsertMenu(!showInsertMenu)}
-                  title="挿入"
-                >
-                  <Plus size={24} />
-                </button>
-                
-                {showInsertMenu && (
-                  <div className="insert-menu glass">
-                    <div className="insert-menu-grid">
-                      <button onClick={() => { editor.chain().focus().undo().run(); setShowInsertMenu(false); }} disabled={!editor.can().undo()} title="Undo"><Undo size={18} /><span>戻る</span></button>
-                      <button onClick={() => { editor.chain().focus().redo().run(); setShowInsertMenu(false); }} disabled={!editor.can().redo()} title="Redo"><Redo size={18} /><span>進む</span></button>
-                      <div className="h-divider" />
-                      <button onClick={() => { editor.chain().focus().toggleHeading({ level: 2 }).run(); setShowInsertMenu(false); }} className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}><Type size={18} /><span>大見出し</span></button>
-                      <button onClick={() => { editor.chain().focus().toggleBulletList().run(); setShowInsertMenu(false); }} className={editor.isActive('bulletList') ? 'active' : ''}><LayoutGrid size={18} /><span>箇条書き</span></button>
-                      <button onClick={() => { editor.chain().focus().toggleTaskList().run(); setShowInsertMenu(false); }} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={18} /><span>タスク</span></button>
-                      <button onClick={() => { editor.chain().focus().toggleCodeBlock().run(); setShowInsertMenu(false); }} className={editor.isActive('codeBlock') ? 'active' : ''}><Binary size={18} /><span>コード</span></button>
-                      <div className="h-divider" />
-                      <button onClick={() => { addNoteAsset(); setShowInsertMenu(false); }}><ImageIcon size={18} /><span>画像</span></button>
-                      <button onClick={() => { insertMermaid(); setShowInsertMenu(false); }}><GitBranch size={18} /><span>図解</span></button>
-                      <button onClick={() => { insertChart(); setShowInsertMenu(false); }}><BarChart3 size={18} /><span>グラフ</span></button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+          </div>
 
-            <button className="btn-circle" onClick={shareNote} title="共有"><Share2 size={20} /></button>
-            <button className="btn-circle" onClick={() => setShowFolderPicker(true)} title="フォルダ"><FolderInput size={20} /></button>
-            <button className="btn-circle btn-delete" onClick={deleteNote} title="削除"><Trash2 size={20} /></button>
-            <button 
-              className={`btn-circle btn-save ${isEditMode ? 'active' : ''}`} 
-              onClick={() => { setIsEditMode(!isEditMode); setShowInsertMenu(false); }}
+          {/* 中央横スクロール: 編集ツール（編集モードのみ表示） */}
+          {isEditMode && (
+            <div className="header-scroll-area">
+              <button className="btn-tool" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="戻る"><Undo size={18} /></button>
+              <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="進む"><Redo size={18} /></button>
+              <div className="header-divider" />
+              <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="大見出し"><Type size={18} /></button>
+              <button className={`btn-tool ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title="箇条書き"><LayoutGrid size={18} /></button>
+              <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title="タスク"><CheckSquare size={18} /></button>
+              <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コード"><Binary size={18} /></button>
+              <div className="header-divider" />
+              <button className="btn-tool" onClick={addNoteAsset} title="画像"><ImageIcon size={18} /></button>
+              <button className="btn-tool" onClick={insertMermaid} title="図解"><GitBranch size={18} /></button>
+              <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
+            </div>
+          )}
+
+          {/* 右固定: 共有・インポート・削除・モード切替 */}
+          <div className="header-right">
+            <button className="btn-tool" onClick={shareNote} title="共有"><Share2 size={18} /></button>
+            <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="インポート"><FolderInput size={18} /></button>
+            <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
+            <button
+              className={`btn-tool btn-tool-mode ${isEditMode ? 'active' : ''}`}
+              onClick={() => setIsEditMode(!isEditMode)}
+              title={isEditMode ? '閲覧モード' : '編集モード'}
             >
-              {isEditMode ? <Check size={24} strokeWidth={3} /> : <Pencil size={20} />}
+              {isEditMode ? <Check size={20} strokeWidth={3} /> : <Pencil size={18} />}
             </button>
           </div>
         </div>
       </header>
 
       <div className="editor-content-wrapper" ref={scrollerRef}>
-        <div className="editor-scroller">
+        <div className="editor-scroller" ref={scrollerInnerRef}>
             <input
               type="text"
               className="content-title-input"
@@ -755,188 +764,127 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             height: 100dvh;
             z-index: 1001;
           }
-          .editor-header {
-            padding: 12px 14px !important;
-          }
           .title-input {
             font-size: 1.1rem !important;
           }
         }
 
-        /* ===== New Header Floating System ===== */
+        /* ===== Header System ===== */
         .editor-header {
-          position: fixed; /* Stick to screen, not scroller */
+          position: fixed;
           top: 0; left: 0; right: 0;
-          z-index: 2000; /* Ensure it stays on top */
-          padding: 16px;
-          pointer-events: auto;
-          background: transparent;
+          z-index: 2000;
+          background: var(--background);
+          border-bottom: 1px solid var(--border);
           transition: transform 0.2s ease-in-out;
           transform: translateY(0);
+        }
+
+        [data-theme='dark'] .editor-header {
+          background: rgba(30,30,30,0.97);
         }
 
         .editor-header.header-hidden {
           transform: translateY(-100%);
         }
 
-        @media (max-width: 768px) {
-          .editor-header {
-            padding: 8px 12px !important;
-            background: var(--background);
-            border-bottom: 1px solid var(--border);
-          }
-          [data-theme='dark'] .editor-header {
-            background: rgba(30,30,30,0.95);
-          }
-        }
-
-        .header-floating-top {
+        .header-bar {
           display: flex;
-          justify-content: space-between;
           align-items: center;
           width: 100%;
-          pointer-events: auto;
+          height: 52px;
+          padding: 0 6px;
+          gap: 2px;
+          overflow: hidden;
         }
 
-        .header-group-right {
+        .header-left {
           display: flex;
           align-items: center;
-          gap: 10px;
-          background: var(--background);
-          padding: 6px;
-          border-radius: 40px;
-          border: 1px solid var(--border);
+          gap: 2px;
+          flex-shrink: 0;
         }
 
-        [data-theme='dark'] .header-group-right {
-          background: rgba(0,0,0,0.5);
-          border-color: rgba(255,255,255,0.1);
+        .header-scroll-area {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          min-width: 0;
+          scrollbar-width: none;
         }
 
-        .btn-circle {
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
+        .header-scroll-area::-webkit-scrollbar {
+          display: none;
+        }
+
+        .header-right {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          flex-shrink: 0;
+        }
+
+        .header-divider {
+          width: 1px;
+          height: 20px;
+          background: var(--border);
+          margin: 0 4px;
+          flex-shrink: 0;
+        }
+
+        .btn-tool {
+          width: 38px;
+          height: 38px;
+          border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: white;
-          color: #333;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-          transition: transform 0.2s, background 0.2s;
+          background: transparent;
+          color: var(--foreground);
+          transition: background 0.15s, color 0.15s;
+          flex-shrink: 0;
         }
 
-        [data-theme='dark'] .btn-circle {
-          background: #333;
-          color: white;
+        .btn-tool:hover {
+          background: var(--accent);
         }
 
-        .btn-circle.active {
+        .btn-tool.active {
           background: var(--primary);
           color: white;
         }
 
-        .btn-circle.btn-save {
-          background: #ffc107; /* Orange check color similar to image */
-          color: white;
-          box-shadow: 0 4px 12px rgba(255,193,7,0.3);
+        .btn-tool:disabled {
+          opacity: 0.3;
+          cursor: default;
         }
 
-        .btn-circle.btn-back {
-          background: rgba(255,255,255,0.8);
-          color: #ffc107;
+        .btn-tool.btn-back {
+          color: var(--primary);
+        }
+
+        .btn-tool.btn-tool-delete {
+          color: #ef4444;
+        }
+
+        .btn-tool.btn-tool-mode.active {
+          background: #ffc107;
+          color: white;
         }
 
         .status-badge {
           display: flex;
           align-items: center;
           gap: 4px;
-          padding: 4px 12px;
-          font-size: 0.7rem;
+          padding: 4px 8px;
+          font-size: 0.65rem;
           font-weight: 700;
           color: #888;
           text-transform: uppercase;
-        }
-
-        /* ===== Mobile Keyboard Toolbar (Fixed at Bottom) ===== */
-        .mobile-keyboard-toolbar {
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          background: var(--background);
-          border-top: 1px solid var(--border);
-          padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
-          z-index: 2000;
-          display: block; /* JSでモード制御 */
-        }
-
-        @media (max-width: 768px) {
-          .editor-header {
-            padding: 8px 12px !important;
-            background: var(--background);
-            border-bottom: 1px solid var(--border);
-          }
-          [data-theme='dark'] .editor-header {
-            background: rgba(30,30,30,0.95);
-          }
-        }
-
-        .insert-menu-container {
-          position: relative;
-        }
-
-        .insert-menu {
-          position: absolute;
-          top: calc(100% + 12px);
-          right: 0;
-          width: 200px;
-          background: var(--background);
-          border: 1px solid var(--border);
-          border-radius: 16px;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-          padding: 8px;
-          z-index: 3000;
-        }
-
-        .insert-menu-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .insert-menu-grid button {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 10px 14px;
-          border-radius: 10px;
-          background: transparent;
-          color: var(--foreground);
-          font-size: 0.9rem;
-          font-weight: 500;
-          width: 100%;
-          text-align: left;
-          transition: background 0.2s;
-        }
-
-        .insert-menu-grid button:hover {
-          background: var(--accent);
-        }
-
-        .insert-menu-grid button.active {
-          background: var(--primary);
-          color: white;
-        }
-
-        .insert-menu-grid button span {
-          flex: 1;
-        }
-
-        .h-divider {
-          height: 1px;
-          background: var(--border);
-          margin: 4px 8px;
+          flex-shrink: 0;
         }
 
         /* ===== Content Layout Fix ===== */
@@ -953,7 +901,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         .editor-scroller {
           min-height: 100%;
-          padding: 80px 40px 180px; /* 上部にボタン群、下部にツールバー分の余白を確保 */
+          padding: 80px 40px 120px; /* padding-top はJSで動的に上書きされる */
           display: flex;
           flex-direction: column;
         }
@@ -1050,7 +998,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @media (max-width: 768px) {
-          .editor-scroller { padding: 80px 12px 24px; } /* 下部余白を削減 */
+          .editor-scroller { padding: 70px 12px 40px; } /* padding-top はJSで動的に上書きされる */
           .content-title-input { font-size: 1.3rem; margin-top: 8px; }
           .editor-content-wrapper { padding: 0; }
         }
