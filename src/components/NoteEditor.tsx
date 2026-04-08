@@ -197,16 +197,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         const visualBottom = vv.offsetTop + vv.height;
         const bottomOffset = Math.max(0, layoutHeight - visualBottom);
 
-        // 閲覧モードではツールバーを完全に消す (CSSでも制御するが念のため)
-        if (!isEditMode) {
-          mobileToolbarRef.current.style.display = 'none';
-        } else {
-          mobileToolbarRef.current.style.display = 'block';
-          // キャッシュチェック
-          if (bottomOffset !== lastBottomOffset) {
-            lastBottomOffset = bottomOffset;
-            mobileToolbarRef.current.style.bottom = `${bottomOffset}px`;
-          }
+        // キャッシュチェックして位置を更新 (非表示中でも位置だけは正しく保つ)
+        if (bottomOffset !== lastBottomOffset) {
+          lastBottomOffset = bottomOffset;
+          mobileToolbarRef.current.style.bottom = `${bottomOffset}px`;
         }
       }
 
@@ -627,23 +621,21 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       </div>
 
       {/* 下部：キーボードに吸い付く編集ツールバー (スマホ用) */}
-      {isEditMode && (
-        <div className="mobile-keyboard-toolbar glass" ref={mobileToolbarRef}>
-          <div className="toolbar-scroll-x">
-             <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo size={20} /></button>
-             <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo size={20} /></button>
-             <div className="v-divider" />
-             <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}>あぁ</button>
-             <button onClick={() => editor.chain().focus().toggleBulletList().run()} className={editor.isActive('bulletList') ? 'active' : ''}>・≡</button>
-             <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={20} /></button>
-             <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={editor.isActive('codeBlock') ? 'active' : ''}><Binary size={20} /></button>
-             <div className="v-divider" />
-             <button onClick={addNoteAsset}><ImageIcon size={20} /></button>
-             <button onClick={insertMermaid}><GitBranch size={20} /></button>
-             <button onClick={insertChart}><BarChart3 size={20} /></button>
-          </div>
+      <div className="mobile-keyboard-toolbar glass" ref={mobileToolbarRef}>
+        <div className="toolbar-scroll-x">
+            <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}><Undo size={20} /></button>
+            <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}><Redo size={20} /></button>
+            <div className="v-divider" />
+            <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}>あぁ</button>
+            <button onClick={() => editor.chain().focus().toggleBulletList().run()} className={editor.isActive('bulletList') ? 'active' : ''}>・≡</button>
+            <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={editor.isActive('taskList') ? 'active' : ''}><CheckSquare size={20} /></button>
+            <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={editor.isActive('codeBlock') ? 'active' : ''}><Binary size={20} /></button>
+            <div className="v-divider" />
+            <button onClick={addNoteAsset}><ImageIcon size={20} /></button>
+            <button onClick={insertMermaid}><GitBranch size={20} /></button>
+            <button onClick={insertChart}><BarChart3 size={20} /></button>
         </div>
-      )}
+      </div>
 
 
       {/* フォルダ移動ピッカー */}
@@ -823,7 +815,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         @media (max-width: 768px) {
           .editor-container[data-edit-mode="false"] .mobile-keyboard-toolbar {
-            display: none !important;
+            visibility: hidden;
+            pointer-events: none;
           }
         }
 
@@ -974,10 +967,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @media (max-width: 768px) {
-          .editor-scroller { padding: 80px 12px 24px; }
-          .editor-container[data-edit-mode="true"] .editor-scroller {
-             padding-bottom: 100px;
-          }
+          .editor-scroller { padding: 80px 12px 80px; } /* 上下ともに80px固定 */
           .content-title-input { font-size: 1.3rem; margin-top: 8px; }
           .editor-content-wrapper { padding: 0; }
         }
