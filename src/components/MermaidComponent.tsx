@@ -60,6 +60,9 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
             contentEditable={false}
             value={attrs.content || ''}
             onChange={(e) => updateAttributes({ content: e.target.value })}
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
             className="mermaid-editor"
             placeholder="graph TD..."
         />

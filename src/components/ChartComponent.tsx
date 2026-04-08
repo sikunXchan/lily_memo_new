@@ -204,6 +204,9 @@ return {
                <textarea 
                  value={localCode}
                  onChange={e => setLocalCode(e.target.value)}
+                 onWheel={(e) => e.stopPropagation()}
+                 onTouchMove={(e) => e.stopPropagation()}
+                 onKeyDown={(e) => e.stopPropagation()}
                  className="code-textarea"
                  spellCheck={false}
                />
