@@ -175,63 +175,97 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     };
   }, [editor]);
 
-  // キーボード位置への追従 (VisualViewport API & Robust Event Tracking)
+  // --- Google Docs Style Viewport & Scroll Control ---
   useEffect(() => {
-    if (!isMobileView || !isEditMode) return;
+    if (!isMobileView) return;
 
     let rafId: number;
-    
-    let lastViewportHeight = 0;
-    
-    const updateLayout = () => {
-      const viewport = window.visualViewport;
-      if (!viewport) return;
+    let lastScrollY = window.scrollY;
+    let lastBottomOffset = -1;
+    let isHeaderHidden = false;
 
-      // ヘッダーは標準のfixed配置に任せ、ここでは位置調整しない (カクつき防止)
-      if (headerRef.current) {
-        headerRef.current.style.top = '0px';
-      }
+    // 定数定義 (ヘッダーの高さ等)
+    const SCROLL_THRESHOLD = 100; // この値を超えたら隠し始める
+    const SCROLL_DELTA = 10;     // 最低限これだけスクロールしたら反応する
 
-      // 編集ツールバー固定 (下端からの距離で計算)
-      if (mobileToolbarRef.current) {
-        // レイアウトビューポートの下端からビジュアルビューポートの下端までの距離
+    const updateControls = () => {
+      // 1. 下の編集ツールバーの位置制御 (VisualViewport API)
+      const vv = window.visualViewport;
+      if (vv && mobileToolbarRef.current) {
+        // キーボード高さを正確に取得するための計算式
         const layoutHeight = document.documentElement.clientHeight;
-        const viewportBottom = viewport.offsetTop + viewport.height;
-        const bottomOffset = layoutHeight - viewportBottom;
+        const visualBottom = vv.offsetTop + vv.height;
+        const bottomOffset = Math.max(0, layoutHeight - visualBottom);
 
-        // 絶対座標ではなく、画面底からのオフセットとして適用
-        mobileToolbarRef.current.style.bottom = `${Math.max(0, bottomOffset)}px`;
-        mobileToolbarRef.current.style.top = 'auto';
+        // 閲覧モードではツールバーを完全に消す (CSSでも制御するが念のため)
+        if (!isEditMode) {
+          mobileToolbarRef.current.style.display = 'none';
+        } else {
+          mobileToolbarRef.current.style.display = 'block';
+          // キャッシュチェック
+          if (bottomOffset !== lastBottomOffset) {
+            lastBottomOffset = bottomOffset;
+            mobileToolbarRef.current.style.bottom = `${bottomOffset}px`;
+          }
+        }
       }
-      
-      // 本文のパディングは動的にいじらない (スクロール位置の破綻を防ぐ)
+
+      // 2. 上のヘッダーのスクロール応答制御
+      if (headerRef.current) {
+        const currentScrollY = window.scrollY;
+        const diff = currentScrollY - lastScrollY;
+
+        if (currentScrollY <= 50) {
+          // ページ最上部付近は常に表示
+          if (isHeaderHidden) {
+            headerRef.current.classList.remove('header-hidden');
+            isHeaderHidden = false;
+          }
+        } else if (Math.abs(diff) > SCROLL_DELTA) {
+          if (diff > 0 && currentScrollY > SCROLL_THRESHOLD) {
+            // 下スクロール: 隠す
+            if (!isHeaderHidden) {
+              headerRef.current.classList.add('header-hidden');
+              isHeaderHidden = true;
+            }
+          } else if (diff < 0) {
+            // 上スクロール: 表示
+            if (isHeaderHidden) {
+              headerRef.current.classList.remove('header-hidden');
+              isHeaderHidden = false;
+            }
+          }
+          lastScrollY = currentScrollY;
+        }
+      }
     };
 
-    const handleUpdate = () => {
+    const onEventTrigger = () => {
       if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(updateLayout);
+      rafId = requestAnimationFrame(updateControls);
     };
 
-    // 網を再度広げる: offsetTopの変化を捉えるためにvisualViewportのscrollも監視対象に戻す
-    const listeners = [
-      [window.visualViewport, 'resize'],
-      [window.visualViewport, 'scroll'],
-      [window, 'resize'],
-      [window, 'orientationchange'],
-      [document, 'focusin'],
-      [document, 'focusout']
+    // リスナー設定
+    const vv = window.visualViewport;
+    const listeners: [EventTarget | undefined | null, string, any][] = [
+      [vv, 'resize', onEventTrigger],
+      [vv, 'scroll', onEventTrigger],
+      [window, 'scroll', onEventTrigger],
+      [window, 'orientationchange', onEventTrigger],
+      [document, 'focusin', onEventTrigger],
+      [document, 'focusout', onEventTrigger]
     ];
 
-    listeners.forEach(([target, event]) => {
-      (target as EventTarget)?.addEventListener(event as string, handleUpdate);
+    listeners.forEach(([target, event, cb]) => {
+      target?.addEventListener(event, cb);
     });
-    
-    // 初期実行
-    handleUpdate();
+
+    // 初期化実行
+    onEventTrigger();
 
     return () => {
-      listeners.forEach(([target, event]) => {
-        (target as EventTarget)?.removeEventListener(event as string, handleUpdate);
+      listeners.forEach(([target, event, cb]) => {
+        target?.removeEventListener(event, cb);
       });
       if (rafId) cancelAnimationFrame(rafId);
     };
@@ -552,7 +586,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   if (!editor) return null;
 
   return (
-    <div className={`editor-container bg-${bgType}`}>
+    <div className={`editor-container bg-${bgType}`} data-edit-mode={isEditMode}>
       <header className="editor-header" ref={headerRef}>
         {/* 上部：戻る・共有・保存状態 (フローティングに近い丸ボタン) */}
         <div className="header-floating-top">
@@ -685,7 +719,25 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           top: 0; left: 0; right: 0;
           z-index: 2000; /* Ensure it stays on top */
           padding: 16px;
-          pointer-events: none; /* Allow clicks to pass to editor if not on buttons */
+          pointer-events: auto;
+          background: transparent;
+          transition: transform 0.2s ease-in-out;
+          transform: translateY(0);
+        }
+
+        .editor-header.header-hidden {
+          transform: translateY(-100%);
+        }
+
+        @media (max-width: 768px) {
+          .editor-header {
+            padding: 8px 12px !important;
+            background: var(--background);
+            border-bottom: 1px solid var(--border);
+          }
+          [data-theme='dark'] .editor-header {
+            background: rgba(30,30,30,0.95);
+          }
         }
 
         .header-floating-top {
@@ -766,14 +818,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           border-top: 1px solid var(--border);
           padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
           z-index: 2000;
+          display: block; /* JSでモード制御 */
         }
 
-        [data-theme='dark'] .mobile-keyboard-toolbar {
-          background: #1a1a1a;
-        }
-
-        [data-theme='dark'] .mobile-keyboard-toolbar {
-          background: rgba(30,30,30,0.85);
+        @media (max-width: 768px) {
+          .editor-container[data-edit-mode="false"] .mobile-keyboard-toolbar {
+            display: none !important;
+          }
         }
 
         .toolbar-scroll-x {
@@ -923,10 +974,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         }
 
         @media (max-width: 768px) {
-          .editor-scroller { padding: 0 12px 24px; }
+          .editor-scroller { padding: 80px 12px 24px; }
+          .editor-container[data-edit-mode="true"] .editor-scroller {
+             padding-bottom: 100px;
+          }
           .content-title-input { font-size: 1.3rem; margin-top: 8px; }
           .editor-content-wrapper { padding: 0; }
-          .editor-header { padding: 8px 12px; }
         }
 
         .ProseMirror p.is-editor-empty:first-child::before {
