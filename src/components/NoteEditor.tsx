@@ -181,27 +181,32 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
     let rafId: number;
     
+    let lastViewportHeight = 0;
+    
     const updateLayout = () => {
       const viewport = window.visualViewport;
       if (!viewport) return;
 
-      // ヘッダー固定 (Top)
-      // VisualViewportのoffsetTop(スクロール分)に合わせてTopを固定
-      if (headerRef.current) {
-        headerRef.current.style.transform = `translateY(${viewport.offsetTop}px)`;
-      }
+      // 変化がない場合はスキップ (レイアウト計算の抑制)
+      if (viewport.height === lastViewportHeight) return;
+      lastViewportHeight = viewport.height;
 
       // 編集ツールバー固定 (Keyboard top)
       if (mobileToolbarRef.current) {
-        const offset = window.innerHeight - viewport.height - viewport.offsetTop;
-        mobileToolbarRef.current.style.transform = `translateY(-${Math.max(0, offset)}px)`;
+        // キーボードが表示されている時のみ吸い付かせる
+        const isKeyboardVisible = viewport.height < window.innerHeight;
+        if (isKeyboardVisible) {
+           const offset = window.innerHeight - viewport.height - viewport.offsetTop;
+           mobileToolbarRef.current.style.transform = `translateY(-${Math.max(0, offset)}px)`;
+        } else {
+           mobileToolbarRef.current.style.transform = 'translateY(0)';
+        }
       }
       
-      // スクロール領域のパディング調整 (グラフ拡大等に対応)
-      // キーボードが出ている間はスクローラーの下部に十分なマージンを動的に追加
+      // スクロール領域のパディング調整 (キーボード高さに合わせて一度だけ変更)
       if (scrollerRef.current) {
         const keyboardHeight = window.innerHeight - viewport.height;
-        scrollerRef.current.style.paddingBottom = `${keyboardHeight + 250}px`;
+        scrollerRef.current.style.paddingBottom = `${keyboardHeight + 200}px`;
       }
     };
 
@@ -210,11 +215,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       rafId = requestAnimationFrame(updateLayout);
     };
 
-    // 網を広く張る: イベントリスナーの追加
+    // 網を絞る: スクロール系の高頻度イベントを除去し、高さが変わる瞬間だけに限定
     const listeners = [
       [window.visualViewport, 'resize'],
-      [window.visualViewport, 'scroll'],
-      [window, 'scroll'],
       [window, 'resize'],
       [window, 'orientationchange'],
       [document, 'focusin'],
@@ -680,11 +683,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         /* ===== New Header Floating System ===== */
         .editor-header {
-          position: absolute;
+          position: fixed; /* Stick to screen, not scroller */
           top: 0; left: 0; right: 0;
           z-index: 1000;
           padding: 16px;
           pointer-events: none; /* Allow clicks to pass to editor if not on buttons */
+          will-change: transform;
         }
 
         .header-floating-top {
@@ -699,12 +703,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           display: flex;
           align-items: center;
           gap: 10px;
-          background: rgba(255,255,255,0.7);
-          backdrop-filter: blur(10px);
+          background: var(--background);
           padding: 6px;
           border-radius: 40px;
-          border: 1px solid rgba(0,0,0,0.05);
-          box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+          border: 1px solid var(--border);
         }
 
         [data-theme='dark'] .header-group-right {
@@ -763,8 +765,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           bottom: 0;
           left: 0;
           right: 0;
-          background: rgba(255,255,255,0.85);
-          backdrop-filter: blur(20px);
+          background: var(--background);
           border-top: 1px solid var(--border);
           padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
           z-index: 1000;
