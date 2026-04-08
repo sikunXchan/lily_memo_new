@@ -33,7 +33,12 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
   return (
     <NodeViewWrapper 
        className="mermaid-wrapper"
-       style={{ width: attrs.width || '100%' }}
+       style={{ 
+         width: attrs.width && attrs.width.includes('%') && parseInt(attrs.width) <= 100 ? attrs.width : '100%',
+         transform: attrs.width && parseInt(attrs.width) > 100 ? `scale(${parseInt(attrs.width)/100})` : 'none',
+         transformOrigin: 'top center',
+         marginBottom: attrs.width && parseInt(attrs.width) > 100 ? `${(parseInt(attrs.width)-100) * 0.5}%` : '1.5rem'
+       }}
     >
       <div className="mermaid-header" contentEditable={false}>
           <span className="mermaid-label">Mermaid 図</span>

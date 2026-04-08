@@ -544,69 +544,68 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         </div>
       </header>
 
-      {/* ツールバー: タイトル編集中は非表示、図/グラフ/AIは常に表示、テキスト編集系は編集モードのみ */}
-      {!isTitleFocused && <div className="tiptap-toolbar glass">
-        {isEditMode && (
-          <>
-            <button
-              onClick={() => editor.chain().focus().undo().run()}
-              disabled={!editor.can().undo()}
-              title="元に戻す"
-            >
-              <Undo size={18} />
-            </button>
-            <button
-              onClick={() => editor.chain().focus().redo().run()}
-              disabled={!editor.can().redo()}
-              title="やり直し"
-            >
-              <Redo size={18} />
-            </button>
-            <div className="divider" />
-            <button
-              onClick={() => editor.chain().focus().toggleBold().run()}
-              className={editor.isActive('bold') ? 'active' : ''}
-              title="太字"
-            >
-              <Type size={18} />
-            </button>
-            <button
-              onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-              className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}
-              title="見出し"
-            >
-              H2
-            </button>
-            <button
-              onClick={() => editor.chain().focus().toggleTaskList().run()}
-              className={editor.isActive('taskList') ? 'active' : ''}
-              title="チェックリスト"
-            >
-              <CheckSquare size={18} />
-            </button>
-            <button
-              onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-              className={editor.isActive('codeBlock') ? 'active' : ''}
-              title="コードブロック"
-            >
-              <Binary size={18} />
-            </button>
-            <div className="divider" />
-          </>
-        )}
-        {/* 図・グラフ・画像は閲覧モードでも挿入可能 */}
-        <button onClick={insertMermaid} title="図（Mermaid）を挿入 ※キーボード不要">
-          <GitBranch size={18} />
-        </button>
-        <button onClick={insertChart} title="グラフを挿入 ※キーボード不要">
-          <BarChart3 size={18} />
-        </button>
-        <button onClick={addNoteAsset} title="画像を挿入">
-          <ImageIcon size={18} />
-        </button>
-      </div>}
-
       <div className="editor-content-wrapper">
+        {/* ツールバー: タイトル編集中は非表示 */}
+        {!isTitleFocused && <div className="tiptap-toolbar glass">
+          {isEditMode && (
+            <>
+              <button
+                onClick={() => editor.chain().focus().undo().run()}
+                disabled={!editor.can().undo()}
+                title="元に戻す"
+              >
+                <Undo size={18} />
+              </button>
+              <button
+                onClick={() => editor.chain().focus().redo().run()}
+                disabled={!editor.can().redo()}
+                title="やり直し"
+              >
+                <Redo size={18} />
+              </button>
+              <div className="divider" />
+              <button
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                className={editor.isActive('bold') ? 'active' : ''}
+                title="太字"
+              >
+                <Type size={18} />
+              </button>
+              <button
+                onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}
+                title="見出し"
+              >
+                H2
+              </button>
+              <button
+                onClick={() => editor.chain().focus().toggleTaskList().run()}
+                className={editor.isActive('taskList') ? 'active' : ''}
+                title="チェックリスト"
+              >
+                <CheckSquare size={18} />
+              </button>
+              <button
+                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                className={editor.isActive('codeBlock') ? 'active' : ''}
+                title="コードブロック"
+              >
+                <Binary size={18} />
+              </button>
+              <div className="divider" />
+            </>
+          )}
+          {/* 図・グラフ・画像は閲覧モードでも挿入可能 */}
+          <button onClick={insertMermaid} title="図（Mermaid）を挿入 ※キーボード不要">
+            <GitBranch size={18} />
+          </button>
+          <button onClick={insertChart} title="グラフを挿入 ※キーボード不要">
+            <BarChart3 size={18} />
+          </button>
+          <button onClick={addNoteAsset} title="画像を挿入">
+            <ImageIcon size={18} />
+          </button>
+        </div>}
 
         <div className="editor-scroller">
             <input
@@ -663,23 +662,24 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           flex: 1;
           display: flex;
           flex-direction: column;
-          min-height: 100vh;
-          min-height: 100dvh;
+          height: 100vh;
+          height: 100dvh;
           background: var(--background);
           border-radius: var(--radius) 0 0 var(--radius);
           box-shadow: -4px 0 20px rgba(0,0,0,0.05);
+          overflow: hidden;
           transition: background 0.3s;
         }
 
         @media (max-width: 768px) {
           .editor-container {
             border-radius: 0;
-            position: absolute;
+            position: fixed;
             top: 0; left: 0;
             width: 100%;
-            min-height: 100vh;
-            min-height: 100dvh;
-            z-index: 1001; /* ボトムナビ(1000)より上 */
+            height: 100vh;
+            height: 100dvh;
+            z-index: 1001;
           }
           .editor-header {
             padding: 12px 14px !important;
@@ -790,12 +790,16 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .toolbar-btn.edit-mode-btn { background: var(--muted); color: var(--foreground); }
         .toolbar-btn.edit-mode-btn.edit-active { background: var(--primary); color: white; }
 
-        /* ===== Content Wrapper ===== */
+        /* ===== Content Wrapper (THIS is the scroll container) ===== */
         .editor-content-wrapper {
           flex: 1;
           display: flex;
           flex-direction: column;
           padding: 0;
+          overflow-y: auto;
+          overflow-x: hidden;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
         }
 
         .editor-scroller {
@@ -830,21 +834,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
         /* ===== Tiptap Toolbar ===== */
         .tiptap-toolbar {
-          display: flex;
           position: sticky;
-          top: 72px;
-          z-index: 99;
+          top: 0;
+          z-index: 100;
+          display: flex;
           flex-wrap: wrap;
           align-items: center;
           gap: 4px;
-          margin: 0 40px 16px;
-          padding: 6px 10px;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          background: var(--accent);
-          max-width: fit-content;
+          margin: 0;
+          padding: 8px 16px;
+          border-bottom: 1px solid var(--border);
+          background: var(--background);
+          width: 100%;
           flex-shrink: 0;
-          z-index: 10;
         }
         
         [data-theme='dark'] .tiptap-toolbar { background: var(--muted); }
@@ -895,30 +897,14 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           width: 100%;
           margin: 0 auto;
           color: var(--foreground);
-        }
-
-        .tiptap-toolbar {
-          position: sticky;
-          top: 0;
-          z-index: 10;
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 4px;
-          margin: 12px 40px;
-          padding: 6px 10px;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          background: var(--accent);
-          max-width: fit-content;
-          align-self: flex-start; /* flex child sticky fix */
+          overflow-x: hidden;
         }
 
         @media (max-width: 768px) {
-          .editor-scroller { padding: 0 16px 32px; }
-          .content-title-input { font-size: 1.4rem; margin-top: 16px; }
-          .tiptap-toolbar { margin: 4px 12px 12px; top: 62px; }
-          .editor-content-wrapper { padding: 0; }
+          .editor-scroller { padding: 0 14px 24px; }
+          .content-title-input { font-size: 1.4rem; margin-top: 12px; }
+          .tiptap-toolbar { padding: 6px 10px; }
+          .editor-content-wrapper { padding: 0; overflow-x: hidden; }
         }
 
         .ProseMirror p.is-editor-empty:first-child::before {

@@ -152,7 +152,12 @@ return {
   return (
     <NodeViewWrapper 
        className="chart-wrapper" 
-       style={{ width: attrs.width || '100%' }}
+       style={{ 
+         width: attrs.width && attrs.width.includes('%') && parseInt(attrs.width) <= 100 ? attrs.width : '100%',
+         transform: attrs.width && parseInt(attrs.width) > 100 ? `scale(${parseInt(attrs.width)/100})` : 'none',
+         transformOrigin: 'top center',
+         marginBottom: attrs.width && parseInt(attrs.width) > 100 ? `${(parseInt(attrs.width)-100) * 0.5}%` : '1.5rem'
+       }}
     >
       <div className="chart-header" contentEditable={false}>
           <div className="header-info">
@@ -255,7 +260,8 @@ return {
           border: 1px solid var(--border);
           border-radius: 12px;
           overflow: hidden;
-          transition: width 0.3s ease;
+          transition: transform 0.3s ease;
+          max-width: 100%;
         }
         .chart-header {
           padding: 8px 16px;
