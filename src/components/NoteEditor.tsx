@@ -17,11 +17,11 @@ import {
   CheckSquare, BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, Eye, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud,
-  MoreVertical, Download, PlusSquare
+  MoreVertical, Download, PlusSquare, BookOpen
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
-import { MermaidExtension, ChartExtension } from '@/lib/extensions';
+import { MermaidExtension, ChartExtension, QAExtension } from '@/lib/extensions';
 
 const lowlight = createLowlight(common);
 
@@ -114,6 +114,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       }),
       MermaidExtension,
       ChartExtension,
+      QAExtension,
       TaskList,
       CustomTaskItem.configure({ nested: true }),
       ImageExtension,
@@ -442,6 +443,13 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     });
   };
 
+  const insertQA = () => {
+    insertWithoutFocus({
+      type: 'qa',
+      attrs: { pairs: [] },
+    });
+  };
+
 
 
   const downloadImage = async () => {
@@ -562,6 +570,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
                 <button className="btn-tool" onClick={addNoteAsset} title="画像"><ImageIcon size={18} /></button>
                 <button className="btn-tool" onClick={insertMermaid} title="図解"><GitBranch size={18} /></button>
                 <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
+                <button className="btn-tool" onClick={insertQA} title="Q&A"><BookOpen size={18} /></button>
                 <div className="header-divider" />
               </>
             )}
