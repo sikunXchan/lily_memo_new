@@ -58,7 +58,19 @@ export const QAExtension = Node.create({
   atom: true,
   addAttributes() {
     return {
-      pairs: { default: [] },
+      pairs: {
+        default: [],
+        parseHTML: (element) => {
+          try {
+            return JSON.parse(element.getAttribute('data-pairs') || '[]');
+          } catch {
+            return [];
+          }
+        },
+        renderHTML: (attributes) => ({
+          'data-pairs': JSON.stringify(attributes.pairs || []),
+        }),
+      },
     };
   },
   parseHTML() {
