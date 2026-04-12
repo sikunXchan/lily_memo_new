@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 
 const MermaidComponent = dynamic(() => import('@/components/MermaidComponent'), { ssr: false });
 const ChartComponent = dynamic(() => import('@/components/ChartComponent'), { ssr: false });
+const QAComponent = dynamic(() => import('@/components/QAComponent'), { ssr: false });
 
 export const MermaidExtension = Node.create({
   name: 'mermaid',
@@ -48,5 +49,25 @@ export const ChartExtension = Node.create({
   },
   addNodeView() {
     return ReactNodeViewRenderer(ChartComponent);
+  },
+});
+
+export const QAExtension = Node.create({
+  name: 'qa',
+  group: 'block',
+  atom: true,
+  addAttributes() {
+    return {
+      pairs: { default: [] },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-type="qa"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'qa' })];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(QAComponent);
   },
 });
