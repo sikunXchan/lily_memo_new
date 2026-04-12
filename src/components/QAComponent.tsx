@@ -10,11 +10,35 @@ interface QAPair {
 }
 
 function parseNumberedText(text: string): string[] {
-  // 番号（1. 2. など）に続くテキストだけを抽出。ヘッダー・空白行は無視
-  const matches = Array.from(text.matchAll(/\d+[.．]\s*([\s\S]*?)(?=\s*\d+[.．]|$)/g));
-  return matches
-    .map(m => m[1].trim())
-    .filter(Boolean);
+  const trimmed = text.trim();
+  const lines = trimmed.split('\n');
+
+  // Count lines that start with a numbered item (e.g. "1." or "１．")
+  const numberedLineCount = lines.filter(l => /^\s*\d+[.．]/.test(l)).length;
+
+  if (numberedLineCount > 1) {
+    // Multiline format: each item begins on its own line.
+    // Numbers that appear mid-line (e.g. "3.5 liters", "in 2024.") are ignored.
+    const items: string[] = [];
+    let current: string | null = null;
+
+    for (const line of lines) {
+      const match = line.match(/^\s*\d+[.．]\s*(.*)/);
+      if (match) {
+        if (current !== null) items.push(current.trim());
+        current = match[1];
+      } else if (current !== null) {
+        current += '\n' + line;
+      }
+    }
+    if (current !== null) items.push(current.trim());
+    return items.filter(Boolean);
+  }
+
+  // Single-line / inline format: items are separated by whitespace.
+  // e.g. "1. lowering　2. shorten　3. risk …"
+  const matches = Array.from(trimmed.matchAll(/\d+[.．]\s*(.*?)(?=\s*\d+[.．]|$)/g));
+  return matches.map(m => m[1].trim()).filter(Boolean);
 }
 
 export default function QAComponent({ node: { attrs }, updateAttributes }: any) {
