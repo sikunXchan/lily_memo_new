@@ -6,6 +6,7 @@ import { useState } from 'react';
 interface QAPair {
   q: string;
   a: string;
+  checked?: boolean;
 }
 
 function parseNumberedText(text: string): string[] {
@@ -199,8 +200,19 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: any) 
 
         <div className="qa-cards">
           {pairs.map((pair, i) => (
-            <div key={i} className="qa-card">
+            <div key={i} className={`qa-card ${pair.checked ? 'qa-card-checked' : ''}`}>
               <div className="qa-question">
+                <input
+                  type="checkbox"
+                  className="qa-checkbox"
+                  checked={!!pair.checked}
+                  onChange={() => {
+                    const next = pairs.map((p, j) =>
+                      j === i ? { ...p, checked: !p.checked } : p
+                    );
+                    updateAttributes({ pairs: next });
+                  }}
+                />
                 <span className="qa-num">{i + 1}</span>
                 <span className="qa-question-text">{pair.q}</span>
               </div>
@@ -269,6 +281,12 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: any) 
           overflow: hidden;
           background: var(--background);
         }
+        .qa-card-checked {
+          opacity: 0.5;
+        }
+        .qa-card-checked .qa-question-text {
+          text-decoration: line-through;
+        }
         .qa-question {
           padding: 10px 12px;
           display: flex;
@@ -276,6 +294,14 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: any) 
           align-items: flex-start;
           font-size: 0.9rem;
           line-height: 1.6;
+        }
+        .qa-checkbox {
+          margin-top: 3px;
+          width: 16px;
+          height: 16px;
+          accent-color: var(--primary);
+          flex-shrink: 0;
+          cursor: pointer;
         }
         .qa-num {
           font-weight: 700;
