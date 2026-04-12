@@ -9,10 +9,10 @@ interface QAPair {
 }
 
 function parseNumberedText(text: string): string[] {
-  // 番号（1. 2. など）で区切る。改行なしでも対応
-  const parts = text.split(/(?=\d+[.．])/);
-  return parts
-    .map(p => p.replace(/^\d+[.．]\s*/, '').trim())
+  // 番号（1. 2. など）に続くテキストだけを抽出。ヘッダー・空白行は無視
+  const matches = Array.from(text.matchAll(/\d+[.．]\s*([\s\S]*?)(?=\s*\d+[.．]|$)/g));
+  return matches
+    .map(m => m[1].trim())
     .filter(Boolean);
 }
 
@@ -186,7 +186,11 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: any) 
             </button>
             <button
               className="qa-action-btn"
-              onClick={() => { setIsEditing(true); setQText(''); setAText(''); }}
+              onClick={() => {
+                setQText(pairs.map((p, i) => `${i + 1}.${p.q}`).join('\n'));
+                setAText(pairs.map((p, i) => `${i + 1}.${p.a}`).join('\n'));
+                setIsEditing(true);
+              }}
             >
               編集
             </button>
