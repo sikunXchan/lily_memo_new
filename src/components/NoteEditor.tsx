@@ -10,7 +10,8 @@ import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Component } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
@@ -24,6 +25,41 @@ import CodeBlockComponent from './CodeBlockComponent';
 import { MermaidExtension, ChartExtension, QAExtension } from '@/lib/extensions';
 
 const lowlight = createLowlight(common);
+
+class EditorErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Editor render error:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '24px', color: '#ef4444', fontSize: '0.9rem' }}>
+          このメモの表示中にエラーが発生しました。
+          <button
+            style={{ marginLeft: '12px', textDecoration: 'underline', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+            onClick={() => this.setState({ hasError: false })}
+          >
+            再試行
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const CustomTaskItem = TaskItem.extend({
   addNodeView() {
@@ -541,7 +577,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               placeholder="タイトル..."
               readOnly={!isEditMode}
             />
-            <EditorContent editor={editor} />
+            <EditorErrorBoundary>
+              <EditorContent editor={editor} />
+            </EditorErrorBoundary>
         </div>
       </div>
 
