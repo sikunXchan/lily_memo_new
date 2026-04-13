@@ -118,7 +118,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       QAExtension,
       TaskList,
       CustomTaskItem.configure({ nested: true }),
-      ImageExtension,
+      ImageExtension.configure({ allowBase64: true }),
       Link,
       Placeholder.configure({ placeholder: 'アイデアを書き留めましょう...' }),
     ],
