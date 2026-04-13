@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 const MermaidComponent = dynamic(() => import('@/components/MermaidComponent'), { ssr: false });
 const ChartComponent = dynamic(() => import('@/components/ChartComponent'), { ssr: false });
 const QAComponent = dynamic(() => import('@/components/QAComponent'), { ssr: false });
+const ResizableImageComponent = dynamic(() => import('@/components/ResizableImageComponent'), { ssr: false });
 
 export const MermaidExtension = Node.create({
   name: 'mermaid',
@@ -49,6 +50,29 @@ export const ChartExtension = Node.create({
   },
   addNodeView() {
     return ReactNodeViewRenderer(ChartComponent);
+  },
+});
+
+export const ResizableImageExtension = Node.create({
+  name: 'image',
+  group: 'block',
+  atom: true,
+  addAttributes() {
+    return {
+      src: { default: null },
+      alt: { default: null },
+      title: { default: null },
+      width: { default: '100%' },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'img[src]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['img', mergeAttributes(HTMLAttributes)];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageComponent);
   },
 });
 

@@ -14,6 +14,10 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
   const [svg, setSvg] = useState('');
   const [editing, setEditing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const renderRef = useRef<HTMLDivElement>(null);
+  const [extraSpace, setExtraSpace] = useState(0);
+  const widthNum = attrs.width ? parseInt(attrs.width) : 100;
+  const scale = widthNum > 100 ? widthNum / 100 : 1;
 
   const renderMermaid = async () => {
     if (!attrs.content) return;
@@ -30,11 +34,28 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
     if (!editing) renderMermaid();
   }, [attrs.content, editing]);
 
+  useEffect(() => {
+    if (!renderRef.current || scale <= 1) {
+      setExtraSpace(0);
+      return;
+    }
+    const measure = () => {
+      if (renderRef.current) {
+        setExtraSpace(renderRef.current.offsetHeight * (scale - 1));
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(renderRef.current);
+    return () => ro.disconnect();
+  }, [scale, svg]);
+
   return (
-    <NodeViewWrapper 
+    <NodeViewWrapper
        className="mermaid-wrapper"
-       style={{ 
-         width: attrs.width && attrs.width.includes('%') && parseInt(attrs.width) <= 100 ? attrs.width : '100%'
+       style={{
+         width: widthNum <= 100 ? attrs.width : '100%',
+         paddingBottom: extraSpace > 0 ? `${extraSpace}px` : undefined,
        }}
     >
       <div className="mermaid-header" contentEditable={false}>
@@ -73,14 +94,14 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
             placeholder="graph TD..."
         />
       ) : (
-        <div 
-          className="mermaid-render" 
-          dangerouslySetInnerHTML={{ __html: svg }} 
+        <div
+          ref={renderRef}
+          className="mermaid-render"
+          dangerouslySetInnerHTML={{ __html: svg }}
           contentEditable={false}
           style={{
             transformOrigin: 'top center',
-            transform: attrs.width && parseInt(attrs.width) > 100 ? `scale(${parseInt(attrs.width)/100})` : 'none',
-            marginBottom: attrs.width && parseInt(attrs.width) > 100 ? `${(parseInt(attrs.width)-100) * 0.3}vh` : '0'
+            transform: scale > 1 ? `scale(${scale})` : 'none',
           }}
         />
       )}

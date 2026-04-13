@@ -4,7 +4,7 @@ import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import ImageExtension from '@tiptap/extension-image';
+import { ResizableImageExtension } from '@/lib/extensions';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
@@ -118,7 +118,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       QAExtension,
       TaskList,
       CustomTaskItem.configure({ nested: true }),
-      ImageExtension.configure({ allowBase64: true }),
+      ResizableImageExtension,
       Link,
       Placeholder.configure({ placeholder: 'アイデアを書き留めましょう...' }),
     ],
@@ -415,7 +415,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       const reader = new FileReader();
       reader.onload = async () => {
         const url = reader.result as string;
-        editor.chain().insertContentAt(to, { type: 'image', attrs: { src: url } }).run();
+        editor.chain().insertContentAt(to, { type: 'image', attrs: { src: url, width: '100%' } }).run();
         // 画像挿入後は即座に保存（デバウンスをバイパス）
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = null;
@@ -820,13 +820,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .hljs-string { color: #22863a; }
 
 
-
-        .ProseMirror img {
-          max-width: 100%;
-          border-radius: 12px;
-          margin: 16px 0;
-          display: block;
-        }
 
         /* ===== Folder Picker ===== */
         .folder-picker-overlay {
