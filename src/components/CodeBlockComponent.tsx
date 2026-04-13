@@ -108,7 +108,7 @@ export default function CodeBlockComponent({ node: { attrs }, updateAttributes }
         <span style={langLabelStyle}>{attrs.language || 'code'}</span>
       </div>
       <pre style={preStyle}>
-        <NodeViewContent as="div" />
+        <NodeViewContent as="code" />
       </pre>
     </NodeViewWrapper>
   );

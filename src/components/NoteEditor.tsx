@@ -4,26 +4,62 @@ import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import ImageExtension from '@tiptap/extension-image';
+import { ResizableImageExtension } from '@/lib/extensions';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Component } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, Eye, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud,
-  MoreVertical, Download, PlusSquare
+  MoreVertical, PlusSquare, BookOpen
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
-import { MermaidExtension, ChartExtension } from '@/lib/extensions';
+import { MermaidExtension, ChartExtension, QAExtension } from '@/lib/extensions';
 
 const lowlight = createLowlight(common);
+
+class EditorErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Editor render error:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '24px', color: '#ef4444', fontSize: '0.9rem' }}>
+          このメモの表示中にエラーが発生しました。
+          <button
+            style={{ marginLeft: '12px', textDecoration: 'underline', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+            onClick={() => this.setState({ hasError: false })}
+          >
+            再試行
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const CustomTaskItem = TaskItem.extend({
   addNodeView() {
@@ -85,6 +121,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isLoadingContentRef = useRef(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const scrollerInnerRef = useRef<HTMLDivElement>(null);
@@ -114,9 +151,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       }),
       MermaidExtension,
       ChartExtension,
+      QAExtension,
       TaskList,
       CustomTaskItem.configure({ nested: true }),
-      ImageExtension,
+      ResizableImageExtension,
       Link,
       Placeholder.configure({ placeholder: 'アイデアを書き留めましょう...' }),
     ],
@@ -127,7 +165,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       scrollMargin: 0,
     },
     onUpdate: ({ editor }) => {
-      if (noteId) saveNote(editor.getHTML());
+      if (noteId && !isLoadingContentRef.current) saveNote(editor.getHTML());
     },
   });
 
@@ -310,7 +348,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       if (data) {
         setNote(data);
         if (editor && editor.getHTML() !== data.content) {
+          isLoadingContentRef.current = true;
           editor.commands.setContent(data.content);
+          isLoadingContentRef.current = false;
         }
       }
     }
@@ -409,9 +449,18 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       if (!file || !editor) return;
       const { to } = editor.state.selection;
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         const url = reader.result as string;
-        editor.chain().insertContentAt(to, { type: 'image', attrs: { src: url } }).run();
+        editor.chain().insertContentAt(to, { type: 'image', attrs: { src: url, width: '100%' } }).run();
+        // 画像挿入後は即座に保存（デバウンスをバイパス）
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+        const content = editor.getHTML();
+        try {
+          await db.notes.update(noteId, { content, updatedAt: Date.now() });
+        } catch (e) {
+          console.error('Failed to save image:', e);
+        }
       };
       reader.readAsDataURL(file);
     };
@@ -442,89 +491,15 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     });
   };
 
-
-
-  const downloadImage = async () => {
-    const element = scrollerInnerRef.current;
-    if (!element) return;
-    
-    document.body.classList.add('pdf-exporting');
-    
-    try {
-      // @ts-ignore
-      const html2canvas = (await import('html2canvas')).default;
-      const contentClone = element.cloneNode(true) as HTMLElement;
-      
-      // クローンのスタイルをリセット。
-      contentClone.removeAttribute('style');
-      contentClone.style.cssText = 'padding: 30px !important; margin: 0 !important; width: 800px !important; background: #ffffff !important; color: #000 !important; font-family: sans-serif !important; height: auto !important; overflow: visible !important; position: absolute; left: -9999px; top: 0;';
-      
-      // canvas (Chart.js) の内容をコピー
-      const originalCanvases = element.querySelectorAll('canvas');
-      const cloneCanvases = contentClone.querySelectorAll('canvas');
-      originalCanvases.forEach((source, i) => {
-        const dest = cloneCanvases[i];
-        if (dest) {
-          const destCtx = (dest as HTMLCanvasElement).getContext('2d');
-          if (destCtx) {
-             (dest as HTMLCanvasElement).width = (source as HTMLCanvasElement).width;
-             (dest as HTMLCanvasElement).height = (source as HTMLCanvasElement).height;
-             destCtx.drawImage(source as HTMLCanvasElement, 0, 0);
-          }
-        }
-      });
-
-      const titleInput = contentClone.querySelector('.content-title-input') as HTMLInputElement;
-      if (titleInput) {
-        const titleDiv = document.createElement('h1');
-        titleDiv.textContent = titleInput.value || 'Untitled';
-        titleDiv.style.cssText = 'font-size: 28pt; font-weight: 800; margin: 0 0 30pt 0; padding: 0 0 15pt 0; border-bottom: 3pt solid #ffb6c1; color: #000; display: block;';
-        titleInput.replaceWith(titleDiv);
-      }
-
-      contentClone.querySelectorAll('button, .read-mode-banner, .folder-picker-overlay, .status-badge').forEach(el => (el as HTMLElement).remove());
-      
-      const style = document.createElement('style');
-      style.innerHTML = `
-        * { box-sizing: border-box !important; }
-        .ProseMirror { padding: 0 !important; margin: 0 !important; width: 100% !important; min-height: auto !important; }
-        .mermaid, .chart-wrapper, img, pre, h1, h2, h3, li, blockquote { 
-          margin-bottom: 32pt !important;
-          margin-top: 24pt !important;
-          display: block !important;
-          position: relative !important;
-          clear: both !important;
-        }
-        pre { background: #f8f8f8 !important; color: #000 !important; border: 1px solid #ddd !important; white-space: pre-wrap !important; word-break: break-all !important; padding: 12pt !important; border-radius: 4px !important; }
-        svg, canvas { max-width: 100% !important; height: auto !important; display: block !important; margin: 0 auto !important; }
-        p { margin-bottom: 14pt !important; line-height: 1.7 !important; font-size: 12pt !important; margin-top: 0 !important; }
-        ul, ol { margin-bottom: 14pt !important; }
-      `;
-      contentClone.appendChild(style);
-      document.body.appendChild(contentClone);
-
-      const canvas = await html2canvas(contentClone, {
-        scale: 2,
-        useCORS: true,
-        windowWidth: 800,
-        backgroundColor: '#ffffff',
-        logging: false
-      });
-
-      document.body.removeChild(contentClone);
-
-      const url = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${note?.title || 'Lily_Memo'}.png`;
-      a.click();
-    } catch (e) {
-      console.error('Image Generation failed', e);
-      alert('画像の生成に失敗しました。');
-    } finally {
-      document.body.classList.remove('pdf-exporting');
-    }
+  const insertQA = () => {
+    insertWithoutFocus({
+      type: 'qa',
+      attrs: { pairs: [] },
+    });
   };
+
+
+
 
 
 
@@ -562,6 +537,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
                 <button className="btn-tool" onClick={addNoteAsset} title="画像"><ImageIcon size={18} /></button>
                 <button className="btn-tool" onClick={insertMermaid} title="図解"><GitBranch size={18} /></button>
                 <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
+                <button className="btn-tool" onClick={insertQA} title="Q&A"><BookOpen size={18} /></button>
                 <div className="header-divider" />
               </>
             )}
@@ -569,7 +545,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             {/* 常時表示アクション */}
             {/* 共有ボタン */}
 
-            <button className="btn-tool" onClick={downloadImage} title="画像として保存"><Download size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
             
@@ -602,7 +577,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               placeholder="タイトル..."
               readOnly={!isEditMode}
             />
-            <EditorContent editor={editor} />
+            <EditorErrorBoundary>
+              <EditorContent editor={editor} />
+            </EditorErrorBoundary>
         </div>
       </div>
 
@@ -882,25 +859,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
 
 
-        /* ===== Print Optimization ===== */
-        :global(.pdf-exporting p),
-        :global(.pdf-exporting h1),
-        :global(.pdf-exporting h2),
-        :global(.pdf-exporting h3),
-        :global(.pdf-exporting li),
-        :global(.pdf-exporting img),
-        :global(.pdf-exporting pre) {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
-
-        .ProseMirror img {
-          max-width: 100%;
-          border-radius: 12px;
-          margin: 16px 0;
-          display: block;
-        }
-
         /* ===== Folder Picker ===== */
         .folder-picker-overlay {
           position: fixed;
@@ -981,11 +939,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .fp-check {
           color: var(--primary);
           flex-shrink: 0;
-        }
-
-        :global(body.pdf-exporting button),
-        :global(body.pdf-exporting select) {
-          display: none !important;
         }
 
         @keyframes slideUp {
