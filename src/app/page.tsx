@@ -17,8 +17,8 @@ export default function Home() {
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
-    checkMobile();
-    setMounted(true);
+    const initialize = () => { checkMobile(); setMounted(true); };
+    initialize();
     window.addEventListener('resize', checkMobile);
     
     const handleFocus = (e: FocusEvent) => {

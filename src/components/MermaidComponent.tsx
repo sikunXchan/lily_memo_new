@@ -1,6 +1,6 @@
 'use client';
 
-import { NodeViewWrapper } from '@tiptap/react';
+import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
@@ -10,43 +10,42 @@ mermaid.initialize({
   securityLevel: 'loose',
 });
 
-export default function MermaidComponent({ node: { attrs }, updateAttributes }: any) {
+export default function MermaidComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const [svg, setSvg] = useState('');
   const [editing, setEditing] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
   const renderRef = useRef<HTMLDivElement>(null);
   const [extraSpace, setExtraSpace] = useState(0);
-  const widthNum = attrs.width ? parseInt(attrs.width) : 100;
+  const widthNum = attrs.width ? parseInt(attrs.width as string) : 100;
   const scale = widthNum > 100 ? widthNum / 100 : 1;
 
-  const renderMermaid = async () => {
-    if (!attrs.content) return;
-    try {
-      const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-      const { svg } = await mermaid.render(id, attrs.content);
-      setSvg(svg);
-    } catch (err) {
-      console.error('Mermaid render error:', err);
-    }
-  };
-
   useEffect(() => {
-    if (!editing) renderMermaid();
+    if (editing) return;
+    const doRender = async () => {
+      if (!attrs.content) return;
+      try {
+        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+        const { svg: renderedSvg } = await mermaid.render(id, attrs.content as string);
+        setSvg(renderedSvg);
+      } catch (err) {
+        console.error('Mermaid render error:', err);
+      }
+    };
+    void doRender();
   }, [attrs.content, editing]);
 
   useEffect(() => {
-    if (!renderRef.current || scale <= 1) {
-      setExtraSpace(0);
-      return;
-    }
+    const el = renderRef.current;
     const measure = () => {
-      if (renderRef.current) {
-        setExtraSpace(renderRef.current.offsetHeight * (scale - 1));
+      if (!el || scale <= 1) {
+        setExtraSpace(0);
+        return;
       }
+      setExtraSpace(el.offsetHeight * (scale - 1));
     };
     measure();
+    if (!el || scale <= 1) return;
     const ro = new ResizeObserver(measure);
-    ro.observe(renderRef.current);
+    ro.observe(el);
     return () => ro.disconnect();
   }, [scale, svg]);
 

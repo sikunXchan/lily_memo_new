@@ -217,7 +217,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     if (!isMobileView) return;
 
     let rafId: number;
-    let lastBottomOffset = -1;
+    const lastBottomOffset = -1;
 
     const adjustScrollForCursor = () => {
       if (!isEditMode || !scrollerRef.current) return;
@@ -285,7 +285,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       headerRef.current.style.transform = `translateY(${Math.max(0, offset)}px)`;
     };
 
-    const listeners: [EventTarget | undefined | null, string, any][] = [
+    const listeners: [EventTarget | undefined | null, string, EventListenerOrEventListenerObject][] = [
       [vv, 'resize', handleVVResize],
       [vv, 'scroll', () => {
         updateControls('vv-scroll');

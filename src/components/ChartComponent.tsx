@@ -1,6 +1,6 @@
 'use client';
 
-import { NodeViewWrapper } from '@tiptap/react';
+import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Bar, Line, Pie, Scatter } from 'react-chartjs-2';
 import {
@@ -58,7 +58,7 @@ return {
   }
 };`;
 
-export default function ChartComponent({ node: { attrs }, updateAttributes }: any) {
+export default function ChartComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const [editing, setEditing] = useState(false);
   const chartRef = useRef<ChartJS>(null);
 
@@ -88,8 +88,8 @@ return {
       const func = new Function('fileData', code);
       const res = func(fileData);
       return { config: res, error: null };
-    } catch (e: any) {
-      return { config: null, error: e.message };
+    } catch (e: unknown) {
+      return { config: null, error: e instanceof Error ? e.message : String(e) };
     }
   }, [code, fileData]);
 
@@ -99,18 +99,18 @@ return {
   const scale = widthNum > 100 ? widthNum / 100 : 1;
 
   useEffect(() => {
-    if (!renderRef.current || scale <= 1) {
-      setExtraSpace(0);
-      return;
-    }
+    const el = renderRef.current;
     const measure = () => {
-      if (renderRef.current) {
-        setExtraSpace(renderRef.current.offsetHeight * (scale - 1));
+      if (!el || scale <= 1) {
+        setExtraSpace(0);
+        return;
       }
+      setExtraSpace(el.offsetHeight * (scale - 1));
     };
     measure();
+    if (!el || scale <= 1) return;
     const ro = new ResizeObserver(measure);
-    ro.observe(renderRef.current);
+    ro.observe(el);
     return () => ro.disconnect();
   }, [scale, computedConfig]);
 
@@ -140,7 +140,7 @@ return {
             fileData: rows,
             fileName: file.name 
           });
-        } catch (err: any) {
+        } catch {
              alert('ファイルの読み込みに失敗しました。');
         }
       };
@@ -155,15 +155,15 @@ return {
       updateAttributes({ code: localCode });
       setErrorMsg('');
       setEditing(false); // 保存時に編集モードを閉じる
-    } catch (e: any) {
-      setErrorMsg(e.message);
+    } catch (e: unknown) {
+      setErrorMsg(e instanceof Error ? e.message : String(e));
     }
   };
 
   // PNGとしてエクスポート
   const exportAsPng = () => {
     if (!chartRef.current) return;
-    const url = (chartRef.current as any).canvas.toDataURL('image/png');
+    const url = (chartRef.current.canvas as HTMLCanvasElement).toDataURL('image/png');
     const a = document.createElement('a');
     a.download = `${fileName || 'chart'}.png`;
     a.href = url;
@@ -265,7 +265,8 @@ return {
                     }
                     const chartType = chartConfig.type || 'bar';
                     const props = {
-                        ref: chartRef as any,
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        ref: chartRef as React.MutableRefObject<any>,
                         data: chartConfig.data,
                         options: chartConfig.options
                     };

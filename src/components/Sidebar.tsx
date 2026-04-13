@@ -41,11 +41,14 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
 
   useEffect(() => {
-    const theme = localStorage.getItem('theme');
-    if (theme === 'dark') {
-      setIsDarkMode(true);
-      document.body.setAttribute('data-theme', 'dark');
-    }
+    const applyStoredTheme = () => {
+      const theme = localStorage.getItem('theme');
+      if (theme === 'dark') {
+        setIsDarkMode(true);
+        document.body.setAttribute('data-theme', 'dark');
+      }
+    };
+    applyStoredTheme();
   }, []);
 
   const toggleTheme = () => {

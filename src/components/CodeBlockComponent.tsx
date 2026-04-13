@@ -1,6 +1,6 @@
 'use client';
 
-import { NodeViewContent, NodeViewWrapper } from '@tiptap/react';
+import { NodeViewContent, NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import React, { useState, useEffect, CSSProperties } from 'react';
 
 const LANGUAGES = [
@@ -8,7 +8,7 @@ const LANGUAGES = [
   'bash', 'powershell', 'html', 'css', 'json', 'yaml', 'markdown'
 ];
 
-export default function CodeBlockComponent({ node: { attrs }, updateAttributes }: any) {
+export default function CodeBlockComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   // インラインスタイルで管理: styled-jsxはTiptap NodeViewRenderer内で正しく動作しないため
   const [theme, setTheme] = useState<'dark' | 'light'>(attrs.theme || 'dark');
 
@@ -108,7 +108,7 @@ export default function CodeBlockComponent({ node: { attrs }, updateAttributes }
         <span style={langLabelStyle}>{attrs.language || 'code'}</span>
       </div>
       <pre style={preStyle}>
-        <NodeViewContent as="code" />
+        <NodeViewContent />
       </pre>
     </NodeViewWrapper>
   );

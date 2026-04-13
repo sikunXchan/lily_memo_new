@@ -1,11 +1,11 @@
 'use client';
 
-import { NodeViewWrapper } from '@tiptap/react';
+import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useRef, useEffect, useState } from 'react';
 
 const SIZE_OPTIONS = ['25%', '50%', '75%', '100%', '125%', '150%', '200%'];
 
-export default function ResizableImageComponent({ node: { attrs }, updateAttributes, selected }: any) {
+export default function ResizableImageComponent({ node: { attrs }, updateAttributes, selected }: ReactNodeViewProps) {
   const width = attrs.width || '100%';
   const widthNum = parseInt(width);
   const scale = widthNum > 100 ? widthNum / 100 : 1;
@@ -14,18 +14,18 @@ export default function ResizableImageComponent({ node: { attrs }, updateAttribu
   const [extraSpace, setExtraSpace] = useState(0);
 
   useEffect(() => {
-    if (!renderRef.current || scale <= 1) {
-      setExtraSpace(0);
-      return;
-    }
+    const el = renderRef.current;
     const measure = () => {
-      if (renderRef.current) {
-        setExtraSpace(renderRef.current.offsetHeight * (scale - 1));
+      if (!el || scale <= 1) {
+        setExtraSpace(0);
+        return;
       }
+      setExtraSpace(el.offsetHeight * (scale - 1));
     };
     measure();
+    if (!el || scale <= 1) return;
     const ro = new ResizeObserver(measure);
-    ro.observe(renderRef.current);
+    ro.observe(el);
     return () => ro.disconnect();
   }, [scale, attrs.src]);
 

@@ -4,10 +4,10 @@ import path from 'path';
 
 const SYNC_FILE = path.join(process.cwd(), 'sync_data.json');
 
-function getSyncData(): Record<string, any> {
+function getSyncData(): Record<string, unknown> {
   try {
     if (fs.existsSync(SYNC_FILE)) {
-      return JSON.parse(fs.readFileSync(SYNC_FILE, 'utf-8'));
+      return JSON.parse(fs.readFileSync(SYNC_FILE, 'utf-8')) as Record<string, unknown>;
     }
   } catch (e) {
     console.error('Error reading sync file:', e);
@@ -15,7 +15,7 @@ function getSyncData(): Record<string, any> {
   return {};
 }
 
-function saveSyncData(data: Record<string, any>) {
+function saveSyncData(data: Record<string, unknown>) {
   try {
     fs.writeFileSync(SYNC_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
@@ -45,8 +45,9 @@ export async function POST(req: Request) {
       }
     }
 
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
   
   return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });

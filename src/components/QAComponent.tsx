@@ -1,6 +1,6 @@
 'use client';
 
-import { NodeViewWrapper } from '@tiptap/react';
+import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useState } from 'react';
 
 interface QAPair {
@@ -41,7 +41,7 @@ function parseNumberedText(text: string): string[] {
   return matches.map(m => m[1].trim()).filter(Boolean);
 }
 
-export default function QAComponent({ node: { attrs }, updateAttributes }: any) {
+export default function QAComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const pairs: QAPair[] = attrs.pairs || [];
   const [isEditing, setIsEditing] = useState(pairs.length === 0);
   const [qText, setQText] = useState('');
