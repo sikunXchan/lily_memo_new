@@ -1,7 +1,7 @@
 'use client';
 
-import { NodeViewWrapper, NodeViewContent } from '@tiptap/react';
-import React, { useEffect, useRef, useState } from 'react';
+import { NodeViewWrapper } from '@tiptap/react';
+import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
 mermaid.initialize({

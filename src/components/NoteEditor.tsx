@@ -16,9 +16,8 @@ import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   CheckSquare, BarChart3, Binary, LayoutGrid,
-  GitBranch, X, Pencil, Eye, FolderInput, Check,
-  Undo, Redo, Image as ImageIcon, Loader2, Printer, Cloud,
-  MoreVertical, PlusSquare, BookOpen
+  GitBranch, X, Pencil, FolderInput, Check,
+  Undo, Redo, Image as ImageIcon, Loader2, BookOpen
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 

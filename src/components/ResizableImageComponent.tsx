@@ -1,7 +1,7 @@
 'use client';
 
 import { NodeViewWrapper } from '@tiptap/react';
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 const SIZE_OPTIONS = ['25%', '50%', '75%', '100%', '125%', '150%', '200%'];
 
