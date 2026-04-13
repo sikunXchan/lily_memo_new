@@ -1,7 +1,7 @@
 'use client';
 
 import { NodeViewWrapper } from '@tiptap/react';
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Bar, Line, Pie, Scatter } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -93,6 +93,27 @@ return {
     }
   }, [code, fileData]);
 
+  const renderRef = useRef<HTMLDivElement>(null);
+  const [extraSpace, setExtraSpace] = useState(0);
+  const widthNum = attrs.width ? parseInt(attrs.width) : 100;
+  const scale = widthNum > 100 ? widthNum / 100 : 1;
+
+  useEffect(() => {
+    if (!renderRef.current || scale <= 1) {
+      setExtraSpace(0);
+      return;
+    }
+    const measure = () => {
+      if (renderRef.current) {
+        setExtraSpace(renderRef.current.offsetHeight * (scale - 1));
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(renderRef.current);
+    return () => ro.disconnect();
+  }, [scale, computedConfig]);
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -150,10 +171,11 @@ return {
   };
 
   return (
-    <NodeViewWrapper 
-       className="chart-wrapper" 
-       style={{ 
-         width: attrs.width && attrs.width.includes('%') && parseInt(attrs.width) <= 100 ? attrs.width : '100%'
+    <NodeViewWrapper
+       className="chart-wrapper"
+       style={{
+         width: widthNum <= 100 ? attrs.width : '100%',
+         paddingBottom: extraSpace > 0 ? `${extraSpace}px` : undefined,
        }}
     >
       <div className="chart-header" contentEditable={false}>
@@ -222,13 +244,13 @@ return {
             {errorMsg && <div className="error-message">Error: {errorMsg}</div>}
         </div>
       ) : (
-        <div 
-          className="chart-render" 
+        <div
+          ref={renderRef}
+          className="chart-render"
           contentEditable={false}
           style={{
-            transform: attrs.width && parseInt(attrs.width) > 100 ? `scale(${parseInt(attrs.width)/100})` : 'none',
+            transform: scale > 1 ? `scale(${scale})` : 'none',
             transformOrigin: 'top center',
-            marginBottom: attrs.width && parseInt(attrs.width) > 100 ? `${(parseInt(attrs.width)-100) * 0.4}vh` : '0'
           }}
         >
             {computedConfig.error ? (

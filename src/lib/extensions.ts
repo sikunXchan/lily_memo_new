@@ -4,6 +4,8 @@ import dynamic from 'next/dynamic';
 
 const MermaidComponent = dynamic(() => import('@/components/MermaidComponent'), { ssr: false });
 const ChartComponent = dynamic(() => import('@/components/ChartComponent'), { ssr: false });
+const QAComponent = dynamic(() => import('@/components/QAComponent'), { ssr: false });
+const ResizableImageComponent = dynamic(() => import('@/components/ResizableImageComponent'), { ssr: false });
 
 export const MermaidExtension = Node.create({
   name: 'mermaid',
@@ -48,5 +50,91 @@ export const ChartExtension = Node.create({
   },
   addNodeView() {
     return ReactNodeViewRenderer(ChartComponent);
+  },
+});
+
+export const ResizableImageExtension = Node.create({
+  name: 'image',
+  group: 'block',
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return {
+      src: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute('data-src') || element.getAttribute('src'),
+      },
+      alt: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute('data-alt') || element.getAttribute('alt'),
+      },
+      title: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute('data-title') || element.getAttribute('title'),
+      },
+      width: {
+        default: '100%',
+        parseHTML: (element) =>
+          element.getAttribute('data-width') || '100%',
+      },
+    };
+  },
+  parseHTML() {
+    return [
+      { tag: 'div[data-type="resizable-image"]' },
+      { tag: 'img[src]' }, // 旧フォーマットとの後方互換
+    ];
+  },
+  renderHTML({ HTMLAttributes }) {
+    const { src, alt, title, width } = HTMLAttributes;
+    const divAttrs: Record<string, string> = {
+      'data-type': 'resizable-image',
+      'data-src': src ?? '',
+      'data-width': width ?? '100%',
+    };
+    if (alt) divAttrs['data-alt'] = alt;
+    if (title) divAttrs['data-title'] = title;
+    const imgAttrs: Record<string, string> = { src: src ?? '' };
+    if (alt) imgAttrs.alt = alt;
+    if (title) imgAttrs.title = title;
+    return ['div', divAttrs, ['img', imgAttrs]];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageComponent);
+  },
+});
+
+export const QAExtension = Node.create({
+  name: 'qa',
+  group: 'block',
+  atom: true,
+  addAttributes() {
+    return {
+      pairs: {
+        default: [],
+        parseHTML: (element) => {
+          try {
+            return JSON.parse(element.getAttribute('data-pairs') || '[]');
+          } catch {
+            return [];
+          }
+        },
+        renderHTML: (attributes) => ({
+          'data-pairs': JSON.stringify(attributes.pairs || []),
+        }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-type="qa"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'qa' })];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(QAComponent);
   },
 });
