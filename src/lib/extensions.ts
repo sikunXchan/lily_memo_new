@@ -57,19 +57,50 @@ export const ResizableImageExtension = Node.create({
   name: 'image',
   group: 'block',
   atom: true,
+  draggable: true,
   addAttributes() {
     return {
-      src: { default: null },
-      alt: { default: null },
-      title: { default: null },
-      width: { default: '100%' },
+      src: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute('data-src') || element.getAttribute('src'),
+      },
+      alt: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute('data-alt') || element.getAttribute('alt'),
+      },
+      title: {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute('data-title') || element.getAttribute('title'),
+      },
+      width: {
+        default: '100%',
+        parseHTML: (element) =>
+          element.getAttribute('data-width') || '100%',
+      },
     };
   },
   parseHTML() {
-    return [{ tag: 'img[src]' }];
+    return [
+      { tag: 'div[data-type="resizable-image"]' },
+      { tag: 'img[src]' }, // 旧フォーマットとの後方互換
+    ];
   },
   renderHTML({ HTMLAttributes }) {
-    return ['img', mergeAttributes(HTMLAttributes)];
+    const { src, alt, title, width } = HTMLAttributes;
+    const divAttrs: Record<string, string> = {
+      'data-type': 'resizable-image',
+      'data-src': src ?? '',
+      'data-width': width ?? '100%',
+    };
+    if (alt) divAttrs['data-alt'] = alt;
+    if (title) divAttrs['data-title'] = title;
+    const imgAttrs: Record<string, string> = { src: src ?? '' };
+    if (alt) imgAttrs.alt = alt;
+    if (title) imgAttrs.title = title;
+    return ['div', divAttrs, ['img', imgAttrs]];
   },
   addNodeView() {
     return ReactNodeViewRenderer(ResizableImageComponent);
