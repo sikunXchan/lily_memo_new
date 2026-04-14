@@ -119,7 +119,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isLoadingContentRef = useRef(false);
+  // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
+  const isLoadingContentRef = useRef(true);
   const noteIdRef = useRef(noteId);
   noteIdRef.current = noteId;
   const headerRef = useRef<HTMLDivElement>(null);
@@ -355,18 +356,29 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
 
   useEffect(() => {
+    // ノート切替直後のセーブをブロック（非同期ロード完了まで）
+    isLoadingContentRef.current = true;
+    let cancelled = false;
+
     async function loadNote() {
       const data = await db.notes.get(noteId);
-      if (data) {
+      if (cancelled) return;
+      if (data && editor) {
         setNote(data);
-        if (editor && editor.getHTML() !== data.content) {
-          isLoadingContentRef.current = true;
-          editor.commands.setContent(data.content);
-          isLoadingContentRef.current = false;
-        }
+        editor.commands.setContent(data.content || '');
+      }
+      if (!cancelled) {
+        isLoadingContentRef.current = false;
       }
     }
-    loadNote();
+
+    if (editor) {
+      loadNote();
+    } else {
+      // editor がまだ null の場合はセーブブロックを解除しない（editor 準備後に再実行される）
+    }
+
+    return () => { cancelled = true; };
   }, [noteId, editor]);
 
   const saveNote = (content: string) => {
