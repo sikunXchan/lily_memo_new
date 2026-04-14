@@ -120,6 +120,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isLoadingContentRef = useRef(false);
+  const noteIdRef = useRef(noteId);
+  noteIdRef.current = noteId;
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const scrollerInnerRef = useRef<HTMLDivElement>(null);
@@ -163,7 +165,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       scrollMargin: 0,
     },
     onUpdate: ({ editor }) => {
-      if (noteId && !isLoadingContentRef.current) saveNote(editor.getHTML());
+      if (noteIdRef.current && !isLoadingContentRef.current) {
+        const currentNoteId = noteIdRef.current;
+        const content = editor.getHTML();
+        setIsSaving(true);
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = setTimeout(async () => {
+          try {
+            await db.notes.update(currentNoteId, { content, updatedAt: Date.now() });
+          } finally {
+            setIsSaving(false);
+          }
+        }, 800);
+      }
     },
   });
 
