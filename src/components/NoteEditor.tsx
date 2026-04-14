@@ -361,21 +361,24 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     let cancelled = false;
 
     async function loadNote() {
-      const data = await db.notes.get(noteId);
-      if (cancelled) return;
-      if (data && editor) {
-        setNote(data);
-        editor.commands.setContent(data.content || '');
-      }
-      if (!cancelled) {
-        isLoadingContentRef.current = false;
+      try {
+        const data = await db.notes.get(noteId);
+        if (cancelled) return;
+        if (data && editor) {
+          setNote(data);
+          editor.commands.setContent(data.content || '');
+        }
+      } catch (e) {
+        console.error('Failed to load note:', e);
+      } finally {
+        if (!cancelled) {
+          isLoadingContentRef.current = false;
+        }
       }
     }
 
     if (editor) {
       loadNote();
-    } else {
-      // editor がまだ null の場合はセーブブロックを解除しない（editor 準備後に再実行される）
     }
 
     return () => { cancelled = true; };
