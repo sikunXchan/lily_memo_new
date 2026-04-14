@@ -3,6 +3,11 @@
 import { NodeViewContent, NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import React, { useState, useEffect, CSSProperties } from 'react';
 
+// TipTap v3 uses NoInfer<T> in NodeViewContentProps which prevents TypeScript from
+// inferring the element type from the `as` prop. Cast to allow the `code` element.
+// <pre><code> is semantically correct and required for ProseMirror content sync.
+const NodeViewContentCode = NodeViewContent as unknown as React.FC<{ as: 'code' }>;
+
 const LANGUAGES = [
   'javascript', 'typescript', 'python', 'rust', 'cpp', 'c', 'java', 'go',
   'bash', 'powershell', 'html', 'css', 'json', 'yaml', 'markdown'
@@ -108,7 +113,7 @@ export default function CodeBlockComponent({ node: { attrs }, updateAttributes }
         <span style={langLabelStyle}>{attrs.language || 'code'}</span>
       </div>
       <pre style={preStyle}>
-        <NodeViewContent />
+        <NodeViewContentCode as="code" />
       </pre>
     </NodeViewWrapper>
   );
