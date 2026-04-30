@@ -136,7 +136,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
 
   return (
     <>
-      <aside className="sidebar glass">
+      <aside className="sidebar glass" style={{ overflow: 'hidden' }}>
         <div className="sidebar-header">
           <Image src="/logo.png" alt="Lily Memo Logo" width={40} height={40} className="logo-img" />
           <h1 className="title">Lily Memo</h1>
@@ -169,7 +169,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
           </button>
         </div>
 
-        <div className="sidebar-content">
+        <div className="sidebar-content" style={{ minHeight: 0, overflowY: 'auto' }}>
           <div className="folder-list">
             {folders?.map(folder => (
               <div key={folder.id} className="folder-item-wrapper">
@@ -258,7 +258,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
           @media (max-width: 768px) {
             .sidebar {
               width: 100%;
-              height: 100%;
+              height: 100dvh;
               border-right: none;
               padding: 16px;
             }
