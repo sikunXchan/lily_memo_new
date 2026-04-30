@@ -247,14 +247,13 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
           .sidebar {
             width: 280px;
             height: 100vh;
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-rows: auto auto auto 1fr auto;
             padding: 20px;
             border-right: 1px solid var(--border);
             flex-shrink: 0;
             z-index: 100;
             transition: all 0.3s;
-            overflow: hidden;
           }
           @media (max-width: 768px) {
             .sidebar {
@@ -332,7 +331,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
             border-radius: 8px;
           }
           .sidebar-content {
-            flex: 1;
             overflow-y: auto;
             min-height: 0;
           }
@@ -419,7 +417,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
             text-transform: uppercase;
           }
           .sidebar-footer {
-            margin-top: auto;
             padding-top: 20px;
             border-top: 1px solid var(--border);
           }
