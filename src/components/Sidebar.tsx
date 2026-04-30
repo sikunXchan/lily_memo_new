@@ -333,6 +333,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
           .sidebar-content {
             flex: 1;
             overflow-y: auto;
+            min-height: 0;
           }
           .folder-item {
             display: flex;
