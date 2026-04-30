@@ -254,6 +254,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
             flex-shrink: 0;
             z-index: 100;
             transition: all 0.3s;
+            overflow: hidden;
           }
           @media (max-width: 768px) {
             .sidebar {
