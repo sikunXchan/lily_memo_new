@@ -3,6 +3,19 @@
 import { X, Download, Upload, Palette, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/db';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { Bar } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -16,6 +29,44 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       navigator.storage.persisted().then(setIsPersisted);
     }
   }, []);
+
+  const notes = useLiveQuery(() => db.notes.toArray(), []);
+
+  const histogramData = (() => {
+    const buckets = Array(12).fill(0);
+    notes?.forEach(note => {
+      const hour = new Date(note.updatedAt).getHours();
+      buckets[Math.floor(hour / 2)]++;
+    });
+    return buckets;
+  })();
+
+  const histogramLabels = Array.from({ length: 12 }, (_, i) => `${i * 2}〜${i * 2 + 2}時`);
+
+  const chartData = {
+    labels: histogramLabels,
+    datasets: [{
+      label: '編集回数',
+      data: histogramData,
+      backgroundColor: 'rgba(255, 182, 193, 0.7)',
+      borderColor: 'rgba(255, 182, 193, 1)',
+      borderWidth: 1,
+      barPercentage: 0.6,
+      categoryPercentage: 0.8,
+    }]
+  };
+
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: { display: false },
+      title: { display: false },
+    },
+    scales: {
+      x: { grid: { display: false } },
+      y: { beginAtZero: true as const, ticks: { stepSize: 1 } },
+    },
+  };
 
   const downloadBackup = async () => {
     const folders = await db.folders.toArray();
@@ -60,6 +111,18 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       </header>
 
       <div className="settings-sections">
+        <section className="settings-section">
+          <div className="section-title">
+            <h3>📊 1日の勉強時間の統計</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">メモを編集した時間帯の分布（2時間ごと）</p>
+            <div className="histogram-wrapper">
+              <Bar data={chartData} options={chartOptions} />
+            </div>
+          </div>
+        </section>
+
         <section className="settings-section">
           <div className="section-title">
             <Download size={20} />
@@ -145,7 +208,12 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         .desc {
           font-size: 0.85rem;
           color: #888;
-          margin-bottom: 20px;
+          margin-bottom: 12px;
+        }
+        .histogram-wrapper {
+          width: 100%;
+          height: 220px;
+          position: relative;
         }
         .action-group {
           display: flex;
