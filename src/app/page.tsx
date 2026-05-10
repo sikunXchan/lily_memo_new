@@ -13,14 +13,20 @@ export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<TabType>('memos');
   const [isMobile, setIsMobile] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
-    const initialize = () => { checkMobile(); setMounted(true); };
+    const checkLayout = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setIsMobile(w <= 768);
+      setIsLandscape(w > h);
+    };
+    const initialize = () => { checkLayout(); setMounted(true); };
     initialize();
-    window.addEventListener('resize', checkMobile);
+    window.addEventListener('resize', checkLayout);
 
     const handleFocus = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
@@ -37,13 +43,15 @@ export default function Home() {
       navigator.storage.persist();
     }
     return () => {
-      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('resize', checkLayout);
       window.removeEventListener('focusin', handleFocus);
       window.removeEventListener('focusout', handleBlur);
     }
   }, []);
 
   if (!mounted) return null;
+
+  const isDesktopLayout = !isMobile || isLandscape;
 
   const openSettings = () => {
     setActiveTab('settings');
@@ -56,8 +64,8 @@ export default function Home() {
   };
 
   return (
-    <div className={`app-container ${isMobile ? 'mobile-mode' : ''}`}>
-      {!isMobile && (
+    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape ? 'landscape-mode' : ''}`}>
+      {isDesktopLayout && (
         <Sidebar
           activeNoteId={activeNoteId}
           onSelectNote={setActiveNoteId}
@@ -69,9 +77,8 @@ export default function Home() {
       )}
 
       <main className="main-view">
-        {/* Settings renders as a full-screen overlay on all devices */}
         {activeTab === 'settings' && (
-          <div className="settings-overlay">
+          <div className={isDesktopLayout ? 'settings-panel' : 'settings-overlay'}>
             <SettingsModal onClose={() => setActiveTab('memos')} />
           </div>
         )}
@@ -84,7 +91,7 @@ export default function Home() {
             />
           ) : (
             <div className="tab-content">
-              {isMobile && activeTab === 'memos' && (
+              {isMobile && !isLandscape && activeTab === 'memos' && (
                 <Sidebar
                   activeNoteId={activeNoteId}
                   onSelectNote={setActiveNoteId}
@@ -97,7 +104,7 @@ export default function Home() {
               {activeTab === 'pdf' && (
                 <PDFViewer />
               )}
-              {!isMobile && activeTab === 'memos' && (
+              {isDesktopLayout && activeTab === 'memos' && (
                 <div className="empty-state">
                   <div className="empty-content">
                     <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
@@ -111,7 +118,7 @@ export default function Home() {
         )}
       </main>
 
-      {isMobile && !isInputFocused && !activeNoteId && (
+      {isMobile && !isLandscape && !isInputFocused && !activeNoteId && (
         <nav className="bottom-nav">
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
@@ -151,17 +158,18 @@ export default function Home() {
           top: 0;
           left: 0;
           right: 0;
-          bottom: 0;
+          bottom: calc(60px + env(safe-area-inset-bottom));
           z-index: 2000;
           background: var(--background);
           display: flex;
           flex-direction: column;
         }
 
-        @media (max-width: 768px) {
-          .settings-overlay {
-            bottom: calc(60px + env(safe-area-inset-bottom));
-          }
+        .settings-panel {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
 
         .tab-content {
@@ -227,10 +235,7 @@ export default function Home() {
           font-weight: 600;
         }
 
-        @media (max-width: 768px) {
-          .main-view {
-            padding-bottom: 0;
-          }
+        @media (max-width: 768px) and (orientation: portrait) {
           .empty-state {
             display: none;
           }
