@@ -2,7 +2,7 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Folder, type Note } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, Menu, X, CloudDownload } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 
@@ -10,6 +10,7 @@ interface SidebarProps {
   activeNoteId?: number;
   onSelectNote: (id: number) => void;
   onOpenSettings: () => void;
+  onOpenPDF?: () => void;
   isMobileOpen: boolean;
   onToggleMobile: () => void;
 }
@@ -22,16 +23,15 @@ const COLORS = [
   { name: 'Purple', value: '--folder-purple' },
 ];
 
-export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, isMobileOpen, onToggleMobile }: SidebarProps) {
+export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, isMobileOpen, onToggleMobile }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   
   const folders = useLiveQuery(() => db.folders.toArray());
   const notes = useLiveQuery(() => {
     if (!searchQuery) return db.notes.toArray();
     return db.notes
-      .filter(note => 
-        note.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        note.content.toLowerCase().includes(searchQuery.toLowerCase())
+      .filter(note =>
+        note.title.toLowerCase().includes(searchQuery.toLowerCase())
       )
       .toArray();
   }, [searchQuery]);
@@ -93,47 +93,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
     if (window.innerWidth <= 768) onToggleMobile();
   };
 
-  const fetchFromCloud = async () => {
-    const code = prompt('PC等の端末で表示された同期コードを入力してください:');
-    if (!code) return;
-    try {
-      const res = await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'pull', code: code.toUpperCase() })
-      });
-      const json = await res.json();
-      if (json.success && json.data) {
-        // 同じsyncCodeを持つノートが既にあるかチェック
-        const existing = await db.notes.where('syncCode').equals(code.toUpperCase()).first();
-        let noteId;
-        if (existing) {
-          await db.notes.update(existing.id!, {
-            title: json.data.title,
-            content: json.data.content,
-            updatedAt: Date.now()
-          });
-          noteId = existing.id;
-        } else {
-          noteId = await db.notes.add({
-            title: json.data.title,
-            content: json.data.content,
-            syncCode: code.toUpperCase(),
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          });
-        }
-        onSelectNote(noteId as number);
-        if (window.innerWidth <= 768) onToggleMobile();
-        alert('クラウドからメモを取得・更新しました！');
-      } else {
-        alert('同期データが見つかりません。コードを確認するか、元の端末で先にPushしてください。');
-      }
-    } catch {
-      alert('エラーが発生しました。');
-    }
-  };
-
   return (
     <>
       <aside className="sidebar glass" style={{ overflow: 'hidden' }}>
@@ -160,9 +119,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
           <button className="btn-add" onClick={() => addNote()}>
             <Plus size={18} />
             <span>新しいメモ</span>
-          </button>
-          <button className="btn-icon" onClick={fetchFromCloud} title="同期コードから取得">
-            <CloudDownload size={18} />
           </button>
           <button className="btn-icon" onClick={addFolder} title="フォルダ作成">
             <FolderPlus size={18} />
@@ -237,6 +193,12 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
         </div>
 
         <div className="sidebar-footer">
+          {onOpenPDF && (
+            <button className="btn-settings" onClick={onOpenPDF}>
+              <FileText size={20} />
+              <span>PDF</span>
+            </button>
+          )}
           <button className="btn-settings" onClick={onOpenSettings}>
             <Settings size={20} />
             <span>設定</span>
@@ -334,6 +296,11 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
             overflow-y: auto;
             min-height: 0;
           }
+          @media (max-width: 768px) {
+            .sidebar-content {
+              padding-bottom: calc(60px + env(safe-area-inset-bottom) + 16px);
+            }
+          }
           .folder-item {
             display: flex;
             align-items: center;
@@ -419,6 +386,9 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, is
           .sidebar-footer {
             padding-top: 20px;
             border-top: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
           }
           .btn-settings {
             width: 100%;
