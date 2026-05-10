@@ -733,7 +733,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           z-index: auto;
         }
 
-        .landscape-mode .editor-header {
+        .desktop-sidebar .editor-header {
           left: 280px;
         }
 

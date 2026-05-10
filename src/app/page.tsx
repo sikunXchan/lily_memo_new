@@ -64,11 +64,11 @@ export default function Home() {
   };
 
   return (
-    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape ? 'landscape-mode' : ''}`}>
+    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''}`}>
       {isDesktopLayout && (
         <Sidebar
           activeNoteId={activeNoteId}
-          onSelectNote={setActiveNoteId}
+          onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
           onOpenSettings={openSettings}
           onOpenPDF={openPDF}
           isMobileOpen={false}
@@ -77,44 +77,45 @@ export default function Home() {
       )}
 
       <main className="main-view">
-        {activeTab === 'settings' && (
-          <div className={isDesktopLayout ? 'settings-panel' : 'settings-overlay'}>
-            <SettingsModal onClose={() => setActiveTab('memos')} />
-          </div>
-        )}
-
-        {activeTab !== 'settings' && (
-          activeNoteId ? (
-            <NoteEditor
-              noteId={activeNoteId}
-              onClose={() => setActiveNoteId(undefined)}
-            />
-          ) : (
-            <div className="tab-content">
-              {isMobile && !isLandscape && activeTab === 'memos' && (
-                <Sidebar
-                  activeNoteId={activeNoteId}
-                  onSelectNote={setActiveNoteId}
-                  onOpenSettings={openSettings}
-                  onOpenPDF={openPDF}
-                  isMobileOpen={true}
-                  onToggleMobile={() => {}}
-                />
-              )}
-              {activeTab === 'pdf' && (
-                <PDFViewer />
-              )}
-              {isDesktopLayout && activeTab === 'memos' && (
-                <div className="empty-state">
-                  <div className="empty-content">
-                    <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
-                    <h2>メモを開くか、新しく作成してください</h2>
-                    <p>左のサイドバーから整理を始めましょう ✨</p>
+        {activeNoteId ? (
+          <NoteEditor
+            noteId={activeNoteId}
+            onClose={() => setActiveNoteId(undefined)}
+          />
+        ) : (
+          <>
+            {activeTab === 'settings' && (
+              <div className={isDesktopLayout ? 'settings-panel' : 'settings-overlay'}>
+                <SettingsModal onClose={() => setActiveTab('memos')} />
+              </div>
+            )}
+            {activeTab !== 'settings' && (
+              <div className="tab-content">
+                {isMobile && !isLandscape && activeTab === 'memos' && (
+                  <Sidebar
+                    activeNoteId={activeNoteId}
+                    onSelectNote={setActiveNoteId}
+                    onOpenSettings={openSettings}
+                    onOpenPDF={openPDF}
+                    isMobileOpen={true}
+                    onToggleMobile={() => {}}
+                  />
+                )}
+                {activeTab === 'pdf' && (
+                  <PDFViewer />
+                )}
+                {isDesktopLayout && activeTab === 'memos' && (
+                  <div className="empty-state">
+                    <div className="empty-content">
+                      <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
+                      <h2>メモを開くか、新しく作成してください</h2>
+                      <p>左のサイドバーから整理を始めましょう ✨</p>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )
+                )}
+              </div>
+            )}
+          </>
         )}
       </main>
 
