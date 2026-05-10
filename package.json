@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node -e \"const fs=require('fs');try{fs.copyFileSync(require.resolve('pdfjs-dist/build/pdf.worker.min.mjs'),'public/pdf.worker.min.mjs')}catch(e){console.warn('pdf worker copy skipped:',e.message)}\""
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
@@ -38,6 +39,7 @@
     "mermaid": "^11.14.0",
     "next": "16.2.2",
     "papaparse": "^5.5.3",
+    "pdfjs-dist": "^4.4.168",
     "react": "19.2.4",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.2.4",
