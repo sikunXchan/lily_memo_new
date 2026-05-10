@@ -37,20 +37,27 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
-        if (confirm('現在のデータを上書きしてバックアップを復元しますか？')) {
+        const text = event.target?.result;
+        if (typeof text !== 'string') throw new Error('Failed to read file content');
+        const data = JSON.parse(text);
+        if (!confirm('現在のデータを上書きしてバックアップを復元しますか？')) return;
+        await db.transaction('rw', db.folders, db.notes, async () => {
           await db.folders.clear();
           await db.notes.clear();
-          if (data.folders) await db.folders.bulkAdd(data.folders);
-          if (data.notes) await db.notes.bulkAdd(data.notes);
-          alert('復元が完了しました。ページを再読み込みします。');
-          window.location.reload();
-        }
-      } catch {
+          if (data.folders?.length) await db.folders.bulkPut(data.folders);
+          if (data.notes?.length) await db.notes.bulkPut(data.notes);
+        });
+        alert('復元が完了しました。ページを再読み込みします。');
+        window.location.reload();
+      } catch (err) {
+        console.error('Backup restore error:', err);
         alert('バックアップファイルの読み込みに失敗しました。');
       }
     };
-    reader.readAsText(file);
+    reader.onerror = () => {
+      alert('ファイルの読み込みに失敗しました。');
+    };
+    reader.readAsText(file, 'UTF-8');
   };
 
   return (
@@ -79,7 +86,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               <label className="btn-action outline">
                 <Upload size={18} />
                 復元ファイルをアップロード
-                <input type="file" hidden onChange={uploadBackup} accept=".json" />
+                <input type="file" hidden onChange={uploadBackup} accept=".json,application/json" />
               </label>
             </div>
           </div>
