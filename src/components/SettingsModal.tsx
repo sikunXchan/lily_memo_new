@@ -1,21 +1,8 @@
 'use client';
 
-import { X, Download, Upload, Palette, Trash2 } from 'lucide-react';
+import { Download, Upload, CloudUpload, CloudDownload } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/db';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { Bar } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
-
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -23,50 +10,15 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [isPersisted, setIsPersisted] = useState(false);
+  const [syncCode, setSyncCode] = useState('');
+  const [pullCode, setPullCode] = useState('');
+  const [syncStatus, setSyncStatus] = useState('');
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
       navigator.storage.persisted().then(setIsPersisted);
     }
   }, []);
-
-  const notes = useLiveQuery(() => db.notes.toArray(), []);
-
-  const histogramData = (() => {
-    const buckets = Array(12).fill(0);
-    notes?.forEach(note => {
-      const hour = new Date(note.updatedAt).getHours();
-      buckets[Math.floor(hour / 2)]++;
-    });
-    return buckets;
-  })();
-
-  const histogramLabels = Array.from({ length: 12 }, (_, i) => `${i * 2}〜${i * 2 + 2}時`);
-
-  const chartData = {
-    labels: histogramLabels,
-    datasets: [{
-      label: '編集回数',
-      data: histogramData,
-      backgroundColor: 'rgba(255, 182, 193, 0.7)',
-      borderColor: 'rgba(255, 182, 193, 1)',
-      borderWidth: 1,
-      barPercentage: 0.6,
-      categoryPercentage: 0.8,
-    }]
-  };
-
-  const chartOptions = {
-    responsive: true,
-    plugins: {
-      legend: { display: false },
-      title: { display: false },
-    },
-    scales: {
-      x: { grid: { display: false } },
-      y: { beginAtZero: true as const, ticks: { stepSize: 1 } },
-    },
-  };
 
   const downloadBackup = async () => {
     const folders = await db.folders.toArray();
@@ -97,11 +49,64 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           alert('復元が完了しました。ページを再読み込みします。');
           window.location.reload();
         }
-      } catch (err) {
+      } catch {
         alert('バックアップファイルの読み込みに失敗しました。');
       }
     };
     reader.readAsText(file);
+  };
+
+  const pushToCloud = async () => {
+    const folders = await db.folders.toArray();
+    const notes = await db.notes.toArray();
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    setSyncStatus('送信中...');
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'push', code, payload: { folders, notes } }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSyncCode(code);
+        setSyncStatus('');
+      } else {
+        setSyncStatus('送信に失敗しました。');
+      }
+    } catch {
+      setSyncStatus('エラーが発生しました。');
+    }
+  };
+
+  const pullFromCloud = async () => {
+    const code = pullCode.trim().toUpperCase();
+    if (!code) return;
+    setSyncStatus('取得中...');
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pull', code }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        if (!confirm('現在のデータを上書きして取得しますか？')) {
+          setSyncStatus('');
+          return;
+        }
+        await db.folders.clear();
+        await db.notes.clear();
+        if (json.data.folders) await db.folders.bulkAdd(json.data.folders);
+        if (json.data.notes) await db.notes.bulkAdd(json.data.notes);
+        alert('取得完了！ページを再読み込みします。');
+        window.location.reload();
+      } else {
+        setSyncStatus('コードが見つかりません。');
+      }
+    } catch {
+      setSyncStatus('エラーが発生しました。');
+    }
   };
 
   return (
@@ -113,13 +118,45 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       <div className="settings-sections">
         <section className="settings-section">
           <div className="section-title">
-            <h3>📊 1日の勉強時間の統計</h3>
+            <CloudUpload size={20} />
+            <h3>クラウド同期</h3>
           </div>
           <div className="section-content">
-            <p className="desc">メモを編集した時間帯の分布（2時間ごと）</p>
-            <div className="histogram-wrapper">
-              <Bar data={chartData} options={chartOptions} />
+            <p className="desc">別の端末とすべてのメモを同期できます。</p>
+
+            <div className="sync-block">
+              <p className="sync-label">① この端末のデータをクラウドへ送信</p>
+              <button className="btn-action" onClick={pushToCloud}>
+                <CloudUpload size={18} />
+                クラウドへ送信
+              </button>
+              {syncCode && (
+                <div className="code-display">
+                  <span className="code-label">同期コード</span>
+                  <span className="code-value">{syncCode}</span>
+                  <p className="code-hint">別の端末でこのコードを入力して取得してください（24時間有効）</p>
+                </div>
+              )}
             </div>
+
+            <div className="sync-block">
+              <p className="sync-label">② 別の端末から同期コードで取得</p>
+              <div className="pull-row">
+                <input
+                  className="code-input"
+                  placeholder="同期コードを入力"
+                  value={pullCode}
+                  onChange={e => setPullCode(e.target.value)}
+                  maxLength={6}
+                />
+                <button className="btn-action pull-btn" onClick={pullFromCloud}>
+                  <CloudDownload size={18} />
+                  取得
+                </button>
+              </div>
+            </div>
+
+            {syncStatus && <p className="sync-status">{syncStatus}</p>}
           </div>
         </section>
 
@@ -208,12 +245,69 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         .desc {
           font-size: 0.85rem;
           color: #888;
-          margin-bottom: 12px;
+          margin-bottom: 20px;
         }
-        .histogram-wrapper {
-          width: 100%;
-          height: 220px;
-          position: relative;
+        .sync-block {
+          margin-bottom: 24px;
+        }
+        .sync-label {
+          font-size: 0.85rem;
+          font-weight: 600;
+          color: var(--foreground);
+          margin-bottom: 10px;
+        }
+        .code-display {
+          margin-top: 14px;
+          padding: 14px;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .code-label {
+          font-size: 0.75rem;
+          color: #888;
+        }
+        .code-value {
+          font-size: 1.8rem;
+          font-weight: 700;
+          letter-spacing: 0.2em;
+          color: var(--primary);
+          font-family: monospace;
+        }
+        .code-hint {
+          font-size: 0.75rem;
+          color: #888;
+          margin-top: 4px;
+        }
+        .pull-row {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .code-input {
+          flex: 1;
+          padding: 10px 14px;
+          background: var(--background);
+          color: var(--foreground);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          font-size: 1rem;
+          font-family: monospace;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          outline: none;
+        }
+        .pull-btn {
+          flex-shrink: 0;
+          padding: 10px 16px !important;
+        }
+        .sync-status {
+          font-size: 0.85rem;
+          color: #888;
+          margin-top: 8px;
         }
         .action-group {
           display: flex;
@@ -230,6 +324,9 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           color: white;
           font-weight: 600;
           border-radius: 12px;
+          border: none;
+          cursor: pointer;
+          font-size: 0.9rem;
         }
         .btn-action.outline {
           background: transparent;
@@ -237,27 +334,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           color: var(--primary);
           cursor: pointer;
         }
-        .settings-input {
-          width: 100%;
-          padding: 14px;
-          background: var(--background);
-          color: var(--foreground);
-          border: 1px solid var(--border);
-          border-radius: 12px;
-        }
-        .btn-danger {
-          margin-top: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 14px;
-          background: rgba(255, 77, 77, 0.1);
-          color: #ff4d4d;
-          border-radius: 12px;
-          font-weight: 600;
-        }
-        
+
         @media (max-width: 768px) {
           .settings-view {
             padding: 24px 16px;
