@@ -45,6 +45,7 @@ export default function PDFViewer() {
 
   // Timer state
   const [showTimer, setShowTimer] = useState(false);
+  const [timerCollapsed, setTimerCollapsed] = useState(false);
   const [timerMode, setTimerMode] = useState<'stopwatch' | 'countdown'>('stopwatch');
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -215,6 +216,7 @@ export default function PDFViewer() {
     setTimerSeconds(timerInput * 60);
     setTimerRunning(true);
     setTimerAlert(false);
+    setTimerCollapsed(true);
   };
 
   const resetTimer = () => {
@@ -278,7 +280,7 @@ export default function PDFViewer() {
           <div className="pdf-bar-right">
             <button
               className={`pdf-icon-btn${showTimer ? ' active' : ''}`}
-              onClick={() => setShowTimer(v => !v)}
+              onClick={() => { setShowTimer(v => !v); setTimerCollapsed(false); }}
               title="タイマー"
             >
               <Clock size={18} />
@@ -298,59 +300,83 @@ export default function PDFViewer() {
         </div>
 
         {showTimer && (
-          <div className="timer-panel">
-            <div className="timer-mode-tabs">
-              <button
-                className={`timer-tab${timerMode === 'stopwatch' ? ' active' : ''}`}
-                onClick={() => switchTimerMode('stopwatch')}
-              >
-                ストップウォッチ
-              </button>
-              <button
-                className={`timer-tab${timerMode === 'countdown' ? ' active' : ''}`}
-                onClick={() => switchTimerMode('countdown')}
-              >
-                カウントダウン
-              </button>
-            </div>
-
-            <div className="timer-display">{formatTime(timerSeconds)}</div>
-
-            {timerMode === 'countdown' && !timerRunning && timerSeconds === 0 && (
-              <div className="timer-input-row">
-                <input
-                  type="number"
-                  className="timer-input"
-                  value={timerInput}
-                  min={1}
-                  max={180}
-                  onChange={e => setTimerInput(Math.max(1, parseInt(e.target.value) || 1))}
-                />
-                <span className="timer-unit">分</span>
-              </div>
-            )}
-
-            <div className="timer-controls">
-              {timerMode === 'countdown' && !timerRunning && timerSeconds === 0 ? (
-                <button className="timer-btn start" onClick={startCountdown}>
-                  <Play size={14} /> 開始
-                </button>
-              ) : (
-                <>
+          timerCollapsed ? (
+            <button
+              className={`timer-panel timer-panel-collapsed${timerAlert ? ' alert' : ''}`}
+              onClick={() => setTimerCollapsed(false)}
+              title="タイマーを展開"
+            >
+              <span className="timer-display-mini">{formatTime(timerSeconds)}</span>
+              {timerRunning && <span className="timer-running-dot" />}
+            </button>
+          ) : (
+            <div className="timer-panel">
+              <div className="timer-panel-header">
+                <div className="timer-mode-tabs">
                   <button
-                    className={`timer-btn${timerRunning ? ' pause' : ' start'}`}
-                    onClick={() => setTimerRunning(v => !v)}
+                    className={`timer-tab${timerMode === 'stopwatch' ? ' active' : ''}`}
+                    onClick={() => switchTimerMode('stopwatch')}
                   >
-                    {timerRunning ? <Pause size={14} /> : <Play size={14} />}
-                    {timerRunning ? '一時停止' : '再開'}
+                    ストップウォッチ
                   </button>
-                  <button className="timer-btn reset" onClick={resetTimer}>
-                    <RotateCcw size={14} /> リセット
+                  <button
+                    className={`timer-tab${timerMode === 'countdown' ? ' active' : ''}`}
+                    onClick={() => switchTimerMode('countdown')}
+                  >
+                    カウントダウン
                   </button>
-                </>
+                </div>
+                <button
+                  className="timer-collapse-btn"
+                  onClick={() => setTimerCollapsed(true)}
+                  title="しまう"
+                >
+                  <ChevronLeft size={16} />
+                  しまう
+                </button>
+              </div>
+
+              <div className="timer-display">{formatTime(timerSeconds)}</div>
+
+              {timerMode === 'countdown' && !timerRunning && timerSeconds === 0 && (
+                <div className="timer-input-row">
+                  <input
+                    type="number"
+                    className="timer-input"
+                    value={timerInput}
+                    min={1}
+                    max={180}
+                    onChange={e => setTimerInput(Math.max(1, parseInt(e.target.value) || 1))}
+                  />
+                  <span className="timer-unit">分</span>
+                </div>
               )}
+
+              <div className="timer-controls">
+                {timerMode === 'countdown' && !timerRunning && timerSeconds === 0 ? (
+                  <button className="timer-btn start" onClick={startCountdown}>
+                    <Play size={14} /> 開始
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className={`timer-btn${timerRunning ? ' pause' : ' start'}`}
+                      onClick={() => {
+                        setTimerRunning(v => !v);
+                        if (!timerRunning) setTimerCollapsed(true);
+                      }}
+                    >
+                      {timerRunning ? <Pause size={14} /> : <Play size={14} />}
+                      {timerRunning ? '一時停止' : '再開'}
+                    </button>
+                    <button className="timer-btn reset" onClick={resetTimer}>
+                      <RotateCcw size={14} /> リセット
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )
         )}
 
         <div className="pdf-canvas-area">
@@ -463,6 +489,68 @@ export default function PDFViewer() {
             align-items: center;
             gap: 10px;
             flex-shrink: 0;
+          }
+          .timer-panel-collapsed {
+            background: var(--background);
+            border-bottom: 1px solid var(--border);
+            padding: 6px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+            cursor: pointer;
+            width: 100%;
+            text-align: left;
+            transition: background 0.15s;
+          }
+          .timer-panel-collapsed:hover {
+            background: var(--accent);
+          }
+          .timer-panel-collapsed.alert {
+            animation: alertFlash 0.5s ease 3;
+          }
+          .timer-display-mini {
+            font-size: 1.3rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: var(--foreground);
+            letter-spacing: 0.05em;
+          }
+          .timer-running-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #22c55e;
+            animation: timerPulse 1s ease-in-out infinite;
+          }
+          @keyframes timerPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+          }
+          .timer-panel-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            justify-content: space-between;
+          }
+          .timer-collapse-btn {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #888;
+            background: transparent;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            flex-shrink: 0;
+          }
+          .timer-collapse-btn:hover {
+            background: var(--accent);
+            color: var(--foreground);
           }
           .timer-mode-tabs {
             display: flex;
