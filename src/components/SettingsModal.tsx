@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Upload, CloudUpload, CloudDownload } from 'lucide-react';
+import { Download, Upload } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { db } from '@/lib/db';
 
@@ -10,9 +10,6 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [isPersisted, setIsPersisted] = useState(false);
-  const [syncCode, setSyncCode] = useState('');
-  const [pullCode, setPullCode] = useState('');
-  const [syncStatus, setSyncStatus] = useState('');
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
@@ -56,59 +53,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     reader.readAsText(file);
   };
 
-  const pushToCloud = async () => {
-    const folders = await db.folders.toArray();
-    const notes = await db.notes.toArray();
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    setSyncStatus('送信中...');
-    try {
-      const res = await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'push', code, payload: { folders, notes } }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setSyncCode(code);
-        setSyncStatus('');
-      } else {
-        setSyncStatus('送信に失敗しました。');
-      }
-    } catch {
-      setSyncStatus('エラーが発生しました。');
-    }
-  };
-
-  const pullFromCloud = async () => {
-    const code = pullCode.trim().toUpperCase();
-    if (!code) return;
-    setSyncStatus('取得中...');
-    try {
-      const res = await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'pull', code }),
-      });
-      const json = await res.json();
-      if (json.success && json.data) {
-        if (!confirm('現在のデータを上書きして取得しますか？')) {
-          setSyncStatus('');
-          return;
-        }
-        await db.folders.clear();
-        await db.notes.clear();
-        if (json.data.folders) await db.folders.bulkAdd(json.data.folders);
-        if (json.data.notes) await db.notes.bulkAdd(json.data.notes);
-        alert('取得完了！ページを再読み込みします。');
-        window.location.reload();
-      } else {
-        setSyncStatus('コードが見つかりません。');
-      }
-    } catch {
-      setSyncStatus('エラーが発生しました。');
-    }
-  };
-
   return (
     <div className="settings-view">
       <header className="settings-header">
@@ -116,50 +60,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       </header>
 
       <div className="settings-sections">
-        <section className="settings-section">
-          <div className="section-title">
-            <CloudUpload size={20} />
-            <h3>クラウド同期</h3>
-          </div>
-          <div className="section-content">
-            <p className="desc">別の端末とすべてのメモを同期できます。</p>
-
-            <div className="sync-block">
-              <p className="sync-label">① この端末のデータをクラウドへ送信</p>
-              <button className="btn-action" onClick={pushToCloud}>
-                <CloudUpload size={18} />
-                クラウドへ送信
-              </button>
-              {syncCode && (
-                <div className="code-display">
-                  <span className="code-label">同期コード</span>
-                  <span className="code-value">{syncCode}</span>
-                  <p className="code-hint">別の端末でこのコードを入力して取得してください（24時間有効）</p>
-                </div>
-              )}
-            </div>
-
-            <div className="sync-block">
-              <p className="sync-label">② 別の端末から同期コードで取得</p>
-              <div className="pull-row">
-                <input
-                  className="code-input"
-                  placeholder="同期コードを入力"
-                  value={pullCode}
-                  onChange={e => setPullCode(e.target.value)}
-                  maxLength={6}
-                />
-                <button className="btn-action pull-btn" onClick={pullFromCloud}>
-                  <CloudDownload size={18} />
-                  取得
-                </button>
-              </div>
-            </div>
-
-            {syncStatus && <p className="sync-status">{syncStatus}</p>}
-          </div>
-        </section>
-
         <section className="settings-section">
           <div className="section-title">
             <Download size={20} />
@@ -189,7 +89,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       <style jsx>{`
         .settings-view {
           padding: 32px;
-          height: 100%;
+          flex: 1;
+          min-height: 0;
           overflow-y: auto;
           background: var(--background);
         }
@@ -246,68 +147,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           font-size: 0.85rem;
           color: #888;
           margin-bottom: 20px;
-        }
-        .sync-block {
-          margin-bottom: 24px;
-        }
-        .sync-label {
-          font-size: 0.85rem;
-          font-weight: 600;
-          color: var(--foreground);
-          margin-bottom: 10px;
-        }
-        .code-display {
-          margin-top: 14px;
-          padding: 14px;
-          background: var(--background);
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        .code-label {
-          font-size: 0.75rem;
-          color: #888;
-        }
-        .code-value {
-          font-size: 1.8rem;
-          font-weight: 700;
-          letter-spacing: 0.2em;
-          color: var(--primary);
-          font-family: monospace;
-        }
-        .code-hint {
-          font-size: 0.75rem;
-          color: #888;
-          margin-top: 4px;
-        }
-        .pull-row {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-        }
-        .code-input {
-          flex: 1;
-          padding: 10px 14px;
-          background: var(--background);
-          color: var(--foreground);
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          font-size: 1rem;
-          font-family: monospace;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          outline: none;
-        }
-        .pull-btn {
-          flex-shrink: 0;
-          padding: 10px 16px !important;
-        }
-        .sync-status {
-          font-size: 0.85rem;
-          color: #888;
-          margin-top: 8px;
         }
         .action-group {
           display: flex;

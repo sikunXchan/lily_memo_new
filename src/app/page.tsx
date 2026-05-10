@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import NoteEditor from '@/components/NoteEditor';
 import SettingsModal from '@/components/SettingsModal';
-import { Book, Settings as SettingsIcon } from 'lucide-react';
+import PDFViewer from '@/components/PDFViewer';
+import { Book, Settings as SettingsIcon, FileText } from 'lucide-react';
 
-type TabType = 'memos' | 'settings';
+type TabType = 'memos' | 'pdf' | 'settings';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -20,7 +21,7 @@ export default function Home() {
     const initialize = () => { checkMobile(); setMounted(true); };
     initialize();
     window.addEventListener('resize', checkMobile);
-    
+
     const handleFocus = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
@@ -28,7 +29,7 @@ export default function Home() {
       }
     };
     const handleBlur = () => setIsInputFocused(false);
-    
+
     window.addEventListener('focusin', handleFocus);
     window.addEventListener('focusout', handleBlur);
 
@@ -44,49 +45,69 @@ export default function Home() {
 
   if (!mounted) return null;
 
+  const openSettings = () => {
+    setActiveTab('settings');
+    setActiveNoteId(undefined);
+  };
+
+  const openPDF = () => {
+    setActiveTab('pdf');
+    setActiveNoteId(undefined);
+  };
+
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''}`}>
       {!isMobile && (
-        <Sidebar 
-          activeNoteId={activeNoteId} 
-          onSelectNote={setActiveNoteId} 
-          onOpenSettings={() => setActiveTab('settings')}
+        <Sidebar
+          activeNoteId={activeNoteId}
+          onSelectNote={setActiveNoteId}
+          onOpenSettings={openSettings}
+          onOpenPDF={openPDF}
           isMobileOpen={false}
           onToggleMobile={() => {}}
         />
       )}
 
       <main className="main-view">
-        {activeNoteId ? (
-          <NoteEditor 
-            noteId={activeNoteId} 
-            onClose={() => setActiveNoteId(undefined)}
-          />
-        ) : (
-          <div className="tab-content">
-            {isMobile && activeTab === 'memos' && (
-                <Sidebar
-                    activeNoteId={activeNoteId}
-                    onSelectNote={setActiveNoteId}
-                    onOpenSettings={() => setActiveTab('settings')}
-                    isMobileOpen={true}
-                    onToggleMobile={() => {}}
-                />
-            )}
-            {activeTab === 'settings' && (
-                <SettingsModal onClose={() => setActiveTab('memos')} />
-            )}
-            
-            {!isMobile && activeTab === 'memos' && (
-                <div className="empty-state">
-                    <div className="empty-content">
-                        <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
-                        <h2>メモを開くか、新しく作成してください</h2>
-                        <p>左のサイドバーから整理を始めましょう ✨</p>
-                    </div>
-                </div>
-            )}
+        {/* Settings renders as a full-screen overlay on all devices */}
+        {activeTab === 'settings' && (
+          <div className="settings-overlay">
+            <SettingsModal onClose={() => setActiveTab('memos')} />
           </div>
+        )}
+
+        {activeTab !== 'settings' && (
+          activeNoteId ? (
+            <NoteEditor
+              noteId={activeNoteId}
+              onClose={() => setActiveNoteId(undefined)}
+            />
+          ) : (
+            <div className="tab-content">
+              {isMobile && activeTab === 'memos' && (
+                <Sidebar
+                  activeNoteId={activeNoteId}
+                  onSelectNote={setActiveNoteId}
+                  onOpenSettings={openSettings}
+                  onOpenPDF={openPDF}
+                  isMobileOpen={true}
+                  onToggleMobile={() => {}}
+                />
+              )}
+              {activeTab === 'pdf' && (
+                <PDFViewer />
+              )}
+              {!isMobile && activeTab === 'memos' && (
+                <div className="empty-state">
+                  <div className="empty-content">
+                    <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
+                    <h2>メモを開くか、新しく作成してください</h2>
+                    <p>左のサイドバーから整理を始めましょう ✨</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
         )}
       </main>
 
@@ -95,6 +116,10 @@ export default function Home() {
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
             <span>メモ</span>
+          </button>
+          <button className={`nav-item ${activeTab === 'pdf' ? 'active' : ''}`} onClick={() => { setActiveTab('pdf'); setActiveNoteId(undefined); }}>
+            <FileText size={24} />
+            <span>PDF</span>
           </button>
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setActiveNoteId(undefined); }}>
             <SettingsIcon size={24} />
@@ -118,12 +143,24 @@ export default function Home() {
           display: flex;
           flex-direction: column;
           position: relative;
+          overflow: hidden;
+        }
+
+        .settings-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 2000;
+          background: var(--background);
+          display: flex;
+          flex-direction: column;
         }
 
         .tab-content {
           flex: 1;
           display: flex;
           flex-direction: column;
+          overflow: hidden;
+          min-height: 0;
         }
 
         .empty-state {

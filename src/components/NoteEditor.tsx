@@ -10,17 +10,19 @@ import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
-import { useEffect, useState, useRef, Component, type ErrorInfo, type ReactNode } from 'react';
+import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react';
 import { db, type Note } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
-  CheckSquare, BarChart3, Binary, LayoutGrid,
+  BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
-  Undo, Redo, Image as ImageIcon, Loader2, BookOpen
+  Undo, Redo, Image as ImageIcon, Loader2, BookOpen,
+  Search, ChevronUp, ChevronDown
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
 import { MermaidExtension, ChartExtension, QAExtension } from '@/lib/extensions';
+import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 
 const lowlight = createLowlight(common);
 
@@ -118,6 +120,11 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
+  const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
   const isLoadingContentRef = useRef(true);
@@ -158,6 +165,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       ResizableImageExtension,
       Link,
       Placeholder.configure({ placeholder: 'アイデアを書き留めましょう...' }),
+      InMemoSearchExtension,
     ],
     content: '',
     immediatelyRender: false,
@@ -408,47 +416,61 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }
   };
 
-  const handleSync = async () => {
-    let code = note?.syncCode;
-    if (!code) {
-      if (!confirm('このメモをクラウドと同期させますか？ 新しい同期コードを発行します。')) return;
-      code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      await db.notes.update(noteId, { syncCode: code });
-      setNote(prev => prev ? { ...prev, syncCode: code } : null);
+  const dispatchSearch = useCallback((query: string, index: number) => {
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.state.tr.setMeta(searchPluginKey, { query, currentIndex: index })
+    );
+    const state = searchPluginKey.getState(editor.state);
+    const count = state?.matches.length ?? 0;
+    setSearchMatchCount(count);
+    setSearchCurrentIndex(index);
+    if (state && state.matches[index]) {
+      const { from, to } = state.matches[index];
+      editor.commands.setTextSelection({ from, to });
+      editor.commands.scrollIntoView();
     }
-    
-    const choice = prompt(`【同期コード: ${code}】\n同期アクションを選んでください:\n1: クラウドへPush（この端末のデータを保存）\n2: クラウドからPull（PCなどで編集した内容を取得）`, '1');
-    if (choice === '1') {
-      try {
-        await fetch('/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'push', code, payload: { title: note?.title, content: editor?.getHTML() } })
-        });
-        alert('クラウドに保存しました！別の端末（PC等）のリストでこのコード番号で取得できます。');
-      } catch {
-        alert('同期エラーが発生しました。');
-      }
-    } else if (choice === '2') {
-      try {
-        const res = await fetch('/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'pull', code })
-        });
-        const json = await res.json();
-        if (json.success && json.data) {
-          editor?.commands.setContent(json.data.content);
-          updateTitle(json.data.title || '');
-          alert('クラウドから復元しました！');
-        } else {
-          alert('同期データが見つかりません。先に別の端末からPushしてください。');
-        }
-      } catch {
-        alert('同期エラーが発生しました。');
-      }
-    }
+  }, [editor]);
+
+  const openSearch = () => {
+    setShowSearch(true);
+    setTimeout(() => searchInputRef.current?.focus(), 50);
   };
+
+  const closeSearch = useCallback(() => {
+    setShowSearch(false);
+    setSearchQuery('');
+    setSearchCurrentIndex(-1);
+    setSearchMatchCount(0);
+    if (editor) {
+      editor.view.dispatch(
+        editor.state.tr.setMeta(searchPluginKey, { query: '', currentIndex: -1 })
+      );
+    }
+  }, [editor]);
+
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    dispatchSearch(q, 0);
+  };
+
+  const prevMatch = () => {
+    const next = searchCurrentIndex <= 0 ? searchMatchCount - 1 : searchCurrentIndex - 1;
+    dispatchSearch(searchQuery, next);
+  };
+
+  const nextMatch = () => {
+    const next = searchCurrentIndex >= searchMatchCount - 1 ? 0 : searchCurrentIndex + 1;
+    dispatchSearch(searchQuery, next);
+  };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showSearch) closeSearch();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showSearch, closeSearch]);
 
   // フォルダ移動
   const moveToFolder = async (folderId: number | undefined) => {
@@ -558,7 +580,6 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
                 <div className="header-divider" />
                 <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="大見出し"><Type size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title="箇条書き"><LayoutGrid size={18} /></button>
-                <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title="タスク"><CheckSquare size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コード"><Binary size={18} /></button>
                 <div className="header-divider" />
                 <button className="btn-tool" onClick={addNoteAsset} title="画像"><ImageIcon size={18} /></button>
@@ -570,8 +591,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             )}
 
             {/* 常時表示アクション */}
-            {/* 共有ボタン */}
 
+            <button className="btn-tool" onClick={openSearch} title="メモ内検索"><Search size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
             
@@ -593,6 +614,32 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           </div>
         </div>
       </header>
+
+      {showSearch && (
+        <div className="in-memo-searchbar">
+          <Search size={16} className="search-bar-icon" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            className="search-bar-input"
+            value={searchQuery}
+            onChange={e => handleSearchChange(e.target.value)}
+            placeholder="メモ内を検索..."
+          />
+          <span className="search-bar-count">
+            {searchMatchCount > 0 ? `${searchCurrentIndex + 1} / ${searchMatchCount}` : '0件'}
+          </span>
+          <button className="btn-tool" onClick={prevMatch} disabled={searchMatchCount === 0} title="前へ">
+            <ChevronUp size={16} />
+          </button>
+          <button className="btn-tool" onClick={nextMatch} disabled={searchMatchCount === 0} title="次へ">
+            <ChevronDown size={16} />
+          </button>
+          <button className="btn-tool" onClick={closeSearch} title="閉じる">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       <div className="editor-content-wrapper" ref={scrollerRef}>
         <div className="editor-scroller" ref={scrollerInnerRef}>
@@ -645,6 +692,15 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
       )}
 
       <style jsx global>{`
+        /* ===== Search Highlight Decorations ===== */
+        .search-highlight {
+          background: rgba(255, 193, 7, 0.35);
+          border-radius: 2px;
+        }
+        .search-highlight.current {
+          background: rgba(255, 140, 0, 0.65);
+          border-radius: 2px;
+        }
         /* ===== Editor Container ===== */
         .editor-container {
           flex: 1;
@@ -691,6 +747,36 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           background: rgba(26, 26, 26, 0.9);
         }
 
+        .in-memo-searchbar {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 12px;
+          background: var(--accent);
+          border-bottom: 1px solid var(--border);
+          flex-shrink: 0;
+        }
+        .search-bar-icon {
+          color: #999;
+          flex-shrink: 0;
+        }
+        .search-bar-input {
+          flex: 1;
+          border: none;
+          background: transparent;
+          font-size: 0.9rem;
+          color: var(--foreground);
+          outline: none;
+          padding: 2px 6px;
+          min-width: 0;
+        }
+        .search-bar-count {
+          font-size: 0.75rem;
+          color: #888;
+          white-space: nowrap;
+          min-width: 52px;
+          text-align: center;
+        }
         .header-bar {
           display: flex;
           align-items: center;
