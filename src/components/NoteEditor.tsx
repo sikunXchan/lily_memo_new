@@ -17,7 +17,7 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen,
-  Search, ChevronUp, ChevronDown
+  Search, ChevronUp, ChevronDown, SquareCheck
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 
@@ -580,6 +580,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
                 <div className="header-divider" />
                 <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="大見出し"><Type size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title="箇条書き"><LayoutGrid size={18} /></button>
+                <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title="チェックリスト"><SquareCheck size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コード"><Binary size={18} /></button>
                 <div className="header-divider" />
                 <button className="btn-tool" onClick={addNoteAsset} title="画像"><ImageIcon size={18} /></button>
@@ -595,7 +596,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             <button className="btn-tool" onClick={openSearch} title="メモ内検索"><Search size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
-            
+
             <div className="header-divider" />
 
             <button
@@ -613,33 +614,33 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             </button>
           </div>
         </div>
-      </header>
 
-      {showSearch && (
-        <div className="in-memo-searchbar">
-          <Search size={16} className="search-bar-icon" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            className="search-bar-input"
-            value={searchQuery}
-            onChange={e => handleSearchChange(e.target.value)}
-            placeholder="メモ内を検索..."
-          />
-          <span className="search-bar-count">
-            {searchMatchCount > 0 ? `${searchCurrentIndex + 1} / ${searchMatchCount}` : '0件'}
-          </span>
-          <button className="btn-tool" onClick={prevMatch} disabled={searchMatchCount === 0} title="前へ">
-            <ChevronUp size={16} />
-          </button>
-          <button className="btn-tool" onClick={nextMatch} disabled={searchMatchCount === 0} title="次へ">
-            <ChevronDown size={16} />
-          </button>
-          <button className="btn-tool" onClick={closeSearch} title="閉じる">
-            <X size={16} />
-          </button>
-        </div>
-      )}
+        {showSearch && (
+          <div className="in-memo-searchbar">
+            <Search size={16} className="search-bar-icon" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="search-bar-input"
+              value={searchQuery}
+              onChange={e => handleSearchChange(e.target.value)}
+              placeholder="メモ内を検索..."
+            />
+            <span className="search-bar-count">
+              {searchMatchCount > 0 ? `${searchCurrentIndex + 1} / ${searchMatchCount}` : '0件'}
+            </span>
+            <button className="btn-tool" onClick={prevMatch} disabled={searchMatchCount === 0} title="前へ">
+              <ChevronUp size={16} />
+            </button>
+            <button className="btn-tool" onClick={nextMatch} disabled={searchMatchCount === 0} title="次へ">
+              <ChevronDown size={16} />
+            </button>
+            <button className="btn-tool" onClick={closeSearch} title="閉じる">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+      </header>
 
       <div className="editor-content-wrapper" ref={scrollerRef}>
         <div className="editor-scroller" ref={scrollerInnerRef}>
@@ -732,13 +733,12 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .editor-header {
           position: fixed;
           top: 0; left: 0; right: 0;
-          height: 60px;
+          min-height: 60px;
           background: var(--background);
           border-bottom: 1px solid var(--border);
           z-index: 2000;
           display: flex;
-          align-items: center;
-          padding: 0 8px;
+          flex-direction: column;
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
         }
@@ -753,7 +753,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           gap: 4px;
           padding: 6px 12px;
           background: var(--accent);
-          border-bottom: 1px solid var(--border);
+          border-top: 1px solid var(--border);
           flex-shrink: 0;
         }
         .search-bar-icon {
@@ -782,6 +782,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           align-items: center;
           width: 100%;
           gap: 4px;
+          height: 60px;
+          padding: 0 8px;
+          flex-shrink: 0;
         }
 
         .header-left {

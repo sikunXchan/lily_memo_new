@@ -19,9 +19,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Only http/https URLs allowed' }, { status: 400 });
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LilyMemo/1.0)' },
+      signal: controller.signal,
     });
 
     if (!res.ok) {
@@ -37,6 +41,9 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    const msg = e instanceof Error && e.name === 'AbortError' ? 'Request timed out' : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  } finally {
+    clearTimeout(timeout);
   }
 }

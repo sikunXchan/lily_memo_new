@@ -148,11 +148,20 @@ export default function Home() {
 
         .settings-overlay {
           position: fixed;
-          inset: 0;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
           z-index: 2000;
           background: var(--background);
           display: flex;
           flex-direction: column;
+        }
+
+        @media (max-width: 768px) {
+          .settings-overlay {
+            bottom: calc(60px + env(safe-area-inset-bottom));
+          }
         }
 
         .tab-content {
@@ -191,7 +200,7 @@ export default function Home() {
           display: flex;
           border-top: 1px solid var(--border);
           padding-bottom: env(safe-area-inset-bottom);
-          z-index: 1000;
+          z-index: 3000;
         }
         :global([data-theme='dark']) .bottom-nav {
           background: rgba(26, 26, 26, 0.92);

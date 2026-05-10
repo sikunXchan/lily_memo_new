@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { X, Upload, Clock, FileText, Link as LinkIcon } from 'lucide-react';
+import { X, Upload, Clock, FileText, Link as LinkIcon, ExternalLink } from 'lucide-react';
 
 interface RecentPDF {
   url: string;
@@ -74,6 +74,15 @@ export default function PDFViewer() {
             <X size={18} />
             <span>閉じる</span>
           </button>
+          <a
+            href={currentUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="pdf-newtab-btn"
+          >
+            <ExternalLink size={18} />
+            <span>新しいタブで開く</span>
+          </a>
         </div>
         <iframe
           src={currentUrl}
@@ -84,17 +93,22 @@ export default function PDFViewer() {
         <style jsx>{`
           .pdf-fullscreen {
             position: fixed;
-            inset: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             z-index: 3000;
             display: flex;
             flex-direction: column;
             background: #525659;
+            height: 100dvh;
           }
           .pdf-top-bar {
             height: 48px;
             background: var(--background);
             display: flex;
             align-items: center;
+            gap: 8px;
             padding: 0 16px;
             border-bottom: 1px solid var(--border);
             flex-shrink: 0;
@@ -114,10 +128,30 @@ export default function PDFViewer() {
           .pdf-close-btn:hover {
             background: var(--accent);
           }
+          .pdf-newtab-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: transparent;
+            color: var(--primary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: background 0.2s;
+            margin-left: auto;
+          }
+          .pdf-newtab-btn:hover {
+            background: var(--accent);
+          }
           .pdf-frame {
             flex: 1;
             width: 100%;
+            height: 0;
+            min-height: 0;
             border: none;
+            display: block;
           }
         `}</style>
       </div>
