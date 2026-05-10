@@ -2,10 +2,35 @@
 
 import { Download, Upload } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { db } from '@/lib/db';
+import { db, type Note } from '@/lib/db';
 
 interface SettingsModalProps {
   onClose: () => void;
+}
+
+// Extract base64 data URLs from note content HTML, replace with asset://id refs.
+// The TipTap image extension stores base64 twice: in data-src and img src.
+// Deduplicating them halves the backup file size.
+function extractImages(content: string): { content: string; images: Record<string, string> } {
+  const images: Record<string, string> = {};
+  const urlToId = new Map<string, string>();
+  let counter = 0;
+  const result = content.replace(/((?:data-src|src))="(data:[^"]+)"/g, (_, attr, dataUrl) => {
+    let id = urlToId.get(dataUrl);
+    if (!id) {
+      id = `img_${counter++}`;
+      images[id] = dataUrl;
+      urlToId.set(dataUrl, id);
+    }
+    return `${attr}="asset://${id}"`;
+  });
+  return { content: result, images };
+}
+
+function restoreImages(content: string, imageMap: Record<string, string>): string {
+  return content.replace(/((?:data-src|src))="asset:\/\/([^"]+)"/g, (_, attr, id) => {
+    return `${attr}="${imageMap[id] ?? ''}"`;
+  });
 }
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
@@ -20,8 +45,17 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const downloadBackup = async () => {
     const folders = await db.folders.toArray();
     const notes = await db.notes.toArray();
-    const data = { folders, notes, timestamp: Date.now() };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+
+    const allImages: Record<string, string> = {};
+    const compactNotes = notes.map(note => {
+      if (!note.content) return note;
+      const { content, images } = extractImages(note.content);
+      Object.assign(allImages, images);
+      return { ...note, content };
+    });
+
+    const data = { folders, notes: compactNotes, images: allImages, timestamp: Date.now() };
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -37,20 +71,35 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
-        if (confirm('現在のデータを上書きしてバックアップを復元しますか？')) {
+        const text = event.target?.result;
+        if (typeof text !== 'string') throw new Error('Failed to read file content');
+        const data = JSON.parse(text);
+        if (!confirm('現在のデータを上書きしてバックアップを復元しますか？')) return;
+
+        // Support both new format (asset:// refs + images map) and old format (inline base64)
+        const imageMap: Record<string, string> = data.images ?? {};
+        const notes = (data.notes ?? []).map((note: Note) => {
+          if (!note.content) return note;
+          return { ...note, content: restoreImages(note.content, imageMap) };
+        });
+
+        await db.transaction('rw', db.folders, db.notes, async () => {
           await db.folders.clear();
           await db.notes.clear();
-          if (data.folders) await db.folders.bulkAdd(data.folders);
-          if (data.notes) await db.notes.bulkAdd(data.notes);
-          alert('復元が完了しました。ページを再読み込みします。');
-          window.location.reload();
-        }
-      } catch {
+          if (data.folders?.length) await db.folders.bulkPut(data.folders);
+          if (notes.length) await db.notes.bulkPut(notes);
+        });
+        alert('復元が完了しました。ページを再読み込みします。');
+        window.location.reload();
+      } catch (err) {
+        console.error('Backup restore error:', err);
         alert('バックアップファイルの読み込みに失敗しました。');
       }
     };
-    reader.readAsText(file);
+    reader.onerror = () => {
+      alert('ファイルの読み込みに失敗しました。');
+    };
+    reader.readAsText(file, 'UTF-8');
   };
 
   return (
@@ -79,7 +128,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               <label className="btn-action outline">
                 <Upload size={18} />
                 復元ファイルをアップロード
-                <input type="file" hidden onChange={uploadBackup} accept=".json" />
+                <input type="file" hidden onChange={uploadBackup} accept=".json,application/json" />
               </label>
             </div>
           </div>
