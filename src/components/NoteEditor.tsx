@@ -113,8 +113,7 @@ interface NoteEditorProps {
 
 export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
-  // スマホはデフォルト閲覧モード（テキストエリアをタップしてもキーボードが開かない）
-  const [isEditMode, setIsEditMode] = useState(true);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [isMobileView, setIsMobileView] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
@@ -190,11 +189,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     },
   });
 
-  // スマホ検出 → 初期閲覧モード
   useEffect(() => {
-    const mobile = window.innerWidth <= 768;
-    setIsMobileView(mobile);
-    if (mobile) setIsEditMode(false);
+    setIsMobileView(window.innerWidth <= 768);
   }, []);
 
   // 編集モード↔閲覧モード切替でエディタのeditableを制御
@@ -717,7 +713,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           position: relative;
         }
 
-        @media (max-width: 768px) {
+        @media (max-width: 768px) and (orientation: portrait) {
           .editor-container {
             border-radius: 0;
             position: fixed;
@@ -727,6 +723,18 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
             height: 100dvh;
             z-index: 1001;
           }
+        }
+
+        /* 横画面: サイドバーと並べて表示するため fixed を解除 */
+        .landscape-mode .editor-container {
+          border-radius: 0;
+          position: relative;
+          width: auto;
+          z-index: auto;
+        }
+
+        .landscape-mode .editor-header {
+          left: 280px;
         }
 
         /* ===== Header System ===== */

@@ -217,7 +217,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             z-index: 100;
             transition: all 0.3s;
           }
-          @media (max-width: 768px) {
+          @media (max-width: 768px) and (orientation: portrait) {
             .sidebar {
               width: 100%;
               height: 100dvh;
@@ -296,7 +296,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             overflow-y: auto;
             min-height: 0;
           }
-          @media (max-width: 768px) {
+          @media (max-width: 768px) and (orientation: portrait) {
             .sidebar-content {
               padding-bottom: calc(60px + env(safe-area-inset-bottom) + 16px);
             }
@@ -404,8 +404,8 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           .btn-settings:hover {
             background: var(--border);
           }
-          /* モバイルではタブナビゲーションで設定に遷移するため、サイドバーの設定ボタンは非表示 */
-          @media (max-width: 768px) {
+          /* 縦画面モバイルではタブナビゲーションがあるため、サイドバーのフッターは非表示 */
+          @media (max-width: 768px) and (orientation: portrait) {
             .sidebar-footer {
               display: none;
             }
