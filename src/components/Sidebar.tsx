@@ -406,10 +406,13 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           .btn-settings:hover {
             background: var(--border);
           }
-          /* 縦画面モバイルではタブナビゲーションがあるため、サイドバーのフッターは非表示 */
+          /* 縦画面モバイルではタブナビゲーションがあるため、設定/PDFボタンは非表示。SyncStatus は表示 */
           @media (max-width: 768px) and (orientation: portrait) {
-            .sidebar-footer {
+            .sidebar-footer .btn-settings {
               display: none;
+            }
+            .sidebar-footer {
+              padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
             }
           }
         `}</style>
