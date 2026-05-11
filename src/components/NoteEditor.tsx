@@ -713,7 +713,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           position: relative;
         }
 
-        @media (max-width: 768px) and (orientation: portrait) {
+        @media (max-width: 768px) {
           .editor-container {
             border-radius: 0;
             position: fixed;
