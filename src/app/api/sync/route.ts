@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { serverDb, syncSnapshots } from '@/lib/server-db';
+import { getServerDb, syncSnapshots } from '@/lib/server-db';
 import { eq } from 'drizzle-orm';
 
 interface SyncData {
@@ -12,7 +12,8 @@ export async function GET(req: Request) {
   const code = new URL(req.url).searchParams.get('code');
   if (!code) return NextResponse.json({ error: 'code required' }, { status: 400 });
 
-  const row = await serverDb.select().from(syncSnapshots)
+  const db = await getServerDb();
+  const row = await db.select().from(syncSnapshots)
     .where(eq(syncSnapshots.code, code))
     .get();
 
@@ -28,19 +29,20 @@ export async function POST(req: Request) {
   const { code, notes = [], folders = [] } = body;
   if (!code) return NextResponse.json({ error: 'code required' }, { status: 400 });
 
+  const db = await getServerDb();
   const now = Date.now();
   const data = JSON.stringify({ notes, folders });
 
-  const existing = await serverDb.select().from(syncSnapshots)
+  const existing = await db.select().from(syncSnapshots)
     .where(eq(syncSnapshots.code, code))
     .get();
 
   if (existing) {
-    await serverDb.update(syncSnapshots)
+    await db.update(syncSnapshots)
       .set({ data, updatedAt: now })
       .where(eq(syncSnapshots.code, code));
   } else {
-    await serverDb.insert(syncSnapshots).values({ code, data, updatedAt: now });
+    await db.insert(syncSnapshots).values({ code, data, updatedAt: now });
   }
 
   return NextResponse.json({ ok: true, updatedAt: now });

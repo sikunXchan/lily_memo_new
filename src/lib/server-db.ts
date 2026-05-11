@@ -10,12 +10,25 @@ export const syncSnapshots = sqliteTable('sync_snapshots', {
 
 const schema = { syncSnapshots };
 
-function createDb() {
-  const url = process.env.DATABASE_URL ?? 'file:./lily.db';
-  const client = createClient({ url });
-  return drizzle(client, { schema });
-}
+type Db = ReturnType<typeof drizzle<typeof schema>>;
+let initPromise: Promise<Db> | null = null;
 
-export const serverDb = createDb();
+export function getServerDb(): Promise<Db> {
+  if (!initPromise) {
+    initPromise = (async () => {
+      const url = process.env.DATABASE_URL ?? 'file:./lily.db';
+      const client = createClient({ url });
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS sync_snapshots (
+          code TEXT PRIMARY KEY NOT NULL,
+          data TEXT NOT NULL,
+          updatedAt INTEGER NOT NULL
+        )
+      `);
+      return drizzle(client, { schema });
+    })();
+  }
+  return initPromise;
+}
 
 export type SyncSnapshot = typeof syncSnapshots.$inferSelect;

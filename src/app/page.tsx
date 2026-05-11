@@ -21,8 +21,11 @@ export default function Home() {
     const checkLayout = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      setIsMobile(Math.min(w, h) <= 768);
-      setIsLandscape(w > h);
+      const landscape = w > h;
+      // Portrait: treat up to 1023px as mobile (covers iPad Air/Pro portrait)
+      // Landscape: use min-dimension (height) to distinguish phones from tablets/desktops
+      setIsMobile(landscape ? Math.min(w, h) <= 768 : w < 1024);
+      setIsLandscape(landscape);
     };
     const initialize = () => { checkLayout(); setMounted(true); };
     initialize();
@@ -236,7 +239,7 @@ export default function Home() {
           font-weight: 600;
         }
 
-        @media (max-width: 768px) and (orientation: portrait) {
+        @media (max-width: 1023px) and (orientation: portrait) {
           .empty-state {
             display: none;
           }
