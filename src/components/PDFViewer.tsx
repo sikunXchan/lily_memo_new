@@ -814,14 +814,14 @@ export default function PDFViewer() {
           .pdf-canvas-area {
             flex:1; overflow:auto; min-height:0;
             padding:16px; scrollbar-gutter:stable;
-            text-align:center;
+            display:flex; justify-content:center; align-items:flex-start;
           }
           .pdf-canvas-wrapper {
-            position:relative; display:inline-block;
-            vertical-align:top; text-align:left;
+            position:relative; max-width:100%; flex-shrink:0;
           }
           .pdf-canvas {
             display:block;
+            max-width:100%; height:auto;
             box-shadow:0 4px 20px rgba(0,0,0,0.4);
           }
           .pdf-overlay {
