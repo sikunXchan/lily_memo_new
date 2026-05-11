@@ -72,19 +72,25 @@ export function useSync() {
       if (!res.ok) throw new Error(`Pull failed: ${res.status}`);
       const { notes = [], folders = [], updatedAt } = await res.json();
 
-      type RawNote = { id?: number; title: string; content: string; folderId?: number; color?: string; createdAt: number; updatedAt: number; syncCode?: string; serverId?: string; syncedAt?: number };
+      type RawNote = { id?: number; syncId?: string; title: string; content: string; folderId?: number; color?: string; createdAt: number; updatedAt: number; syncCode?: string; serverId?: string; syncedAt?: number };
       type RawFolder = { id?: number; name: string; parentId?: number; color?: string; createdAt: number; serverId?: string; syncedAt?: number };
 
-      // Merge server notes into local (server wins; add if not present locally)
+      // Merge server notes into local (syncId で照合 → id collisions を回避)
       for (const raw of notes as RawNote[]) {
-        if (!raw.id) continue;
-        const existing = await db.notes.get(raw.id).catch(() => undefined);
+        const { id: _serverId, ...fields } = raw;
+
+        // syncId があればそれで検索、なければ id フォールバック（旧形式との互換）
+        let existing = raw.syncId
+          ? await db.notes.where('syncId').equals(raw.syncId).first().catch(() => undefined)
+          : undefined;
+        if (!existing && raw.id && !raw.syncId) {
+          existing = await db.notes.get(raw.id).catch(() => undefined);
+        }
+
         if (!existing) {
-          const { id: _id, ...rest } = raw;
-          await db.notes.add(rest);
+          await db.notes.add(fields);
         } else if (raw.updatedAt > existing.updatedAt) {
-          const { id: _id, ...rest } = raw;
-          await db.notes.update(raw.id, rest);
+          await db.notes.update(existing.id!, fields);
         }
       }
 

@@ -12,6 +12,7 @@ export interface Folder {
 
 export interface Note {
   id?: number;
+  syncId?: string;
   title: string;
   content: string;
   folderId?: number;
@@ -48,6 +49,9 @@ export class LilyDatabase extends Dexie {
     this.version(3).stores({
       notes: '++id, title, folderId, color, createdAt, updatedAt, syncCode, serverId',
       folders: '++id, name, parentId, color, createdAt, serverId',
+    });
+    this.version(4).stores({
+      notes: '++id, syncId, title, folderId, color, createdAt, updatedAt, syncCode, serverId',
     });
   }
 }
