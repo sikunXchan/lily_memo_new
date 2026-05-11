@@ -1,10 +1,13 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { db } from './db';
 
 const SYNC_CODE_KEY = 'lily_sync_code';
 const LAST_SYNC_KEY = 'lily_last_sync';
+
+// モジュールレベルのシングルトン — 複数インスタンスから呼ばれても同時実行を防ぐ
+const syncingRef = { current: false };
 
 export function getSyncCode(): string | null {
   try { return localStorage.getItem(SYNC_CODE_KEY); } catch { return null; }
@@ -30,7 +33,6 @@ export function useSync() {
     try { const v = localStorage.getItem(LAST_SYNC_KEY); return v ? parseInt(v) : null; } catch { return null; }
   });
   const [error, setError] = useState<string | null>(null);
-  const syncingRef = useRef(false);
 
   const push = useCallback(async (code: string) => {
     if (syncingRef.current) return;
