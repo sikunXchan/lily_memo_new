@@ -17,9 +17,11 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen,
-  Search, ChevronUp, ChevronDown, SquareCheck
+  Search, ChevronUp, ChevronDown, SquareCheck, Share2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
+import { useSession } from 'next-auth/react';
+import ShareSheet from './ShareSheet';
 
 import { MermaidExtension, ChartExtension, QAExtension } from '@/lib/extensions';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
@@ -123,8 +125,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const [showShareSheet, setShowShareSheet] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { data: session } = useSession();
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
   const isLoadingContentRef = useRef(true);
   const noteIdRef = useRef(noteId);
@@ -591,6 +595,9 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
             <button className="btn-tool" onClick={openSearch} title="メモ内検索"><Search size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
+            {session && note?.serverId && (
+              <button className="btn-tool" onClick={() => setShowShareSheet(true)} title="共有"><Share2 size={18} /></button>
+            )}
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
 
             <div className="header-divider" />
@@ -654,6 +661,11 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         </div>
       </div>
 
+
+      {/* 共有シート */}
+      {showShareSheet && note?.serverId && (
+        <ShareSheet noteServerId={note.serverId} onClose={() => setShowShareSheet(false)} />
+      )}
 
       {/* フォルダ移動ピッカー */}
       {showFolderPicker && (

@@ -6,6 +6,8 @@ export interface Folder {
   parentId?: number;
   color?: string;
   createdAt: number;
+  serverId?: string;
+  syncedAt?: number;
 }
 
 export interface Note {
@@ -17,6 +19,8 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   syncCode?: string;
+  serverId?: string;
+  syncedAt?: number;
 }
 
 export interface ImageAsset {
@@ -40,6 +44,10 @@ export class LilyDatabase extends Dexie {
     });
     this.version(2).stores({
       notes: '++id, title, folderId, color, createdAt, updatedAt, syncCode'
+    });
+    this.version(3).stores({
+      notes: '++id, title, folderId, color, createdAt, updatedAt, syncCode, serverId',
+      folders: '++id, name, parentId, color, createdAt, serverId',
     });
   }
 }
