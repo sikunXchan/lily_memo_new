@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, M_PLUS_Rounded_1c } from "next/font/google";
+import Providers from "@/components/Providers";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -47,7 +48,7 @@ export default function RootLayout({
       <body className="antialiased">
         {/* テーマをReact hydration前に適用してFOUC防止 */}
         <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('theme');if(t)document.body.setAttribute('data-theme',t);}catch(e){}` }} />
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
