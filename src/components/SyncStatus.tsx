@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { RefreshCw, Copy, Check, Upload, Download, Key, X } from 'lucide-react';
 import { nanoid } from 'nanoid';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/lib/db';
 import { useSync, getSyncCode, saveSyncCode, clearSyncCode } from '@/lib/useSync';
+import { SYNC_SETTINGS_EVENT } from './AutoSyncRunner';
+
+function notifySettingsChanged() {
+  window.dispatchEvent(new CustomEvent(SYNC_SETTINGS_EVENT));
+}
 
 export default function SyncStatus() {
   const { isSyncing, lastSyncAt, error, push, pull } = useSync();
@@ -17,49 +20,22 @@ export default function SyncStatus() {
     try { return localStorage.getItem('lily_auto_sync') === 'true'; } catch { return false; }
   });
 
-  const prevTrigger = useRef<string | null>(null);
-
   useEffect(() => {
     setCode(getSyncCode());
   }, []);
-
-  // Watch note/folder changes for auto-push trigger
-  const syncTrigger = useLiveQuery(async () => {
-    const noteCount = await db.notes.count();
-    const lastNote = await db.notes.orderBy('updatedAt').last();
-    const folderCount = await db.folders.count();
-    return `${noteCount}-${lastNote?.updatedAt ?? 0}-${folderCount}`;
-  }, []);
-
-  // Auto-push: 3s debounce after local data changes
-  useEffect(() => {
-    if (syncTrigger === undefined) return;
-    const prev = prevTrigger.current;
-    prevTrigger.current = syncTrigger;
-    if (!autoSync || !code) return;
-    if (prev === null || prev === syncTrigger) return;
-    const timer = setTimeout(() => push(code), 3000);
-    return () => clearTimeout(timer);
-  }, [syncTrigger, autoSync, code, push]);
-
-  // Auto-pull: immediate on enable, then every 60s
-  useEffect(() => {
-    if (!autoSync || !code) return;
-    pull(code);
-    const interval = setInterval(() => pull(code), 60_000);
-    return () => clearInterval(interval);
-  }, [autoSync, code, pull]);
 
   const toggleAutoSync = () => {
     const next = !autoSync;
     setAutoSync(next);
     try { localStorage.setItem('lily_auto_sync', next ? 'true' : 'false'); } catch {}
+    notifySettingsChanged();
   };
 
   const generateCode = () => {
     const newCode = nanoid(20);
     saveSyncCode(newCode);
     setCode(newCode);
+    notifySettingsChanged();
   };
 
   const forgetCode = () => {
@@ -69,6 +45,7 @@ export default function SyncStatus() {
       setAutoSync(false);
       try { localStorage.setItem('lily_auto_sync', 'false'); } catch {}
     }
+    notifySettingsChanged();
   };
 
   const copyCode = async () => {
@@ -85,6 +62,7 @@ export default function SyncStatus() {
     setCode(trimmed);
     setInputCode('');
     setShowInput(false);
+    notifySettingsChanged();
   };
 
   const formatTime = (ts: number) =>
@@ -101,7 +79,7 @@ export default function SyncStatus() {
             onClick={toggleAutoSync}
             title={autoSync ? '自動同期ON（クリックでOFF）' : '自動同期OFF（クリックでON）'}
           >
-            <RefreshCw size={11} className={autoSync && isSyncing ? 'spin' : ''} />
+            <RefreshCw size={11} className={isSyncing ? 'spin' : ''} />
             {autoSync ? '自動ON' : '自動'}
           </button>
         )}
