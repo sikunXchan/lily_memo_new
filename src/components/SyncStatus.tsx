@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Copy, Check, Upload, Download, Key, X } from 'lucide-react';
 import { nanoid } from 'nanoid';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '@/lib/db';
 import { useSync, getSyncCode, saveSyncCode, clearSyncCode } from '@/lib/useSync';
 
 export default function SyncStatus() {
@@ -11,10 +13,48 @@ export default function SyncStatus() {
   const [inputCode, setInputCode] = useState('');
   const [showInput, setShowInput] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [autoSync, setAutoSync] = useState(() => {
+    try { return localStorage.getItem('lily_auto_sync') === 'true'; } catch { return false; }
+  });
+
+  const prevTrigger = useRef<string | null>(null);
 
   useEffect(() => {
     setCode(getSyncCode());
   }, []);
+
+  // Watch note/folder changes for auto-push trigger
+  const syncTrigger = useLiveQuery(async () => {
+    const noteCount = await db.notes.count();
+    const lastNote = await db.notes.orderBy('updatedAt').last();
+    const folderCount = await db.folders.count();
+    return `${noteCount}-${lastNote?.updatedAt ?? 0}-${folderCount}`;
+  }, []);
+
+  // Auto-push: 3s debounce after local data changes
+  useEffect(() => {
+    if (syncTrigger === undefined) return;
+    const prev = prevTrigger.current;
+    prevTrigger.current = syncTrigger;
+    if (!autoSync || !code) return;
+    if (prev === null || prev === syncTrigger) return;
+    const timer = setTimeout(() => push(code), 3000);
+    return () => clearTimeout(timer);
+  }, [syncTrigger, autoSync, code, push]);
+
+  // Auto-pull: immediate on enable, then every 60s
+  useEffect(() => {
+    if (!autoSync || !code) return;
+    pull(code);
+    const interval = setInterval(() => pull(code), 60_000);
+    return () => clearInterval(interval);
+  }, [autoSync, code, pull]);
+
+  const toggleAutoSync = () => {
+    const next = !autoSync;
+    setAutoSync(next);
+    try { localStorage.setItem('lily_auto_sync', next ? 'true' : 'false'); } catch {}
+  };
 
   const generateCode = () => {
     const newCode = nanoid(20);
@@ -25,6 +65,10 @@ export default function SyncStatus() {
   const forgetCode = () => {
     clearSyncCode();
     setCode(null);
+    if (autoSync) {
+      setAutoSync(false);
+      try { localStorage.setItem('lily_auto_sync', 'false'); } catch {}
+    }
   };
 
   const copyCode = async () => {
@@ -51,6 +95,16 @@ export default function SyncStatus() {
       <div className="sync-header">
         <Key size={13} />
         <span>同期コード</span>
+        {code && (
+          <button
+            className={`auto-btn ${autoSync ? 'auto-btn--on' : ''}`}
+            onClick={toggleAutoSync}
+            title={autoSync ? '自動同期ON（クリックでOFF）' : '自動同期OFF（クリックでON）'}
+          >
+            <RefreshCw size={11} className={autoSync && isSyncing ? 'spin' : ''} />
+            {autoSync ? '自動ON' : '自動'}
+          </button>
+        )}
       </div>
 
       {code ? (
@@ -116,6 +170,10 @@ export default function SyncStatus() {
       <style jsx>{`
         .sync-wrap { padding: 10px 0; border-top: 1px solid var(--border); }
         .sync-header { display: flex; align-items: center; gap: 5px; font-size: 0.73rem; color: var(--text-secondary); margin-bottom: 6px; }
+        .auto-btn { margin-left: auto; display: flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 5px; border: 1px solid var(--border); background: none; color: var(--text-secondary); font-size: 0.7rem; cursor: pointer; flex-shrink: 0; }
+        .auto-btn:hover { background: var(--hover); }
+        .auto-btn--on { background: var(--primary); color: white; border-color: var(--primary); }
+        .auto-btn--on:hover { opacity: 0.85; background: var(--primary); }
         .code-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
         .code-text { font-size: 0.72rem; font-family: monospace; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--bg-secondary, #f5f5f5); padding: 3px 6px; border-radius: 5px; color: var(--text); }
         .icon-btn { background: none; border: 1px solid var(--border); border-radius: 5px; padding: 3px 5px; cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; }
