@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X, Upload, FileText, Link as LinkIcon, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
-  Play, Pause, RotateCcw,
+  Play, Pause, RotateCcw, Search, Highlighter, Trash2,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -14,7 +14,25 @@ if (typeof window !== 'undefined') {
 }
 
 const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
-const DEFAULT_ZOOM_INDEX = 4; // 1.5x
+const DEFAULT_ZOOM_INDEX = 4;
+const HIGHLIGHT_COLORS = ['#ffeb3b80', '#86efac80', '#fda4af80', '#93c5fd80'];
+
+type AnnotationItem = {
+  id: string;
+  x: number; // PDF user-space coords at scale=1
+  y: number;
+  w: number;
+  h: number;
+  color: string;
+};
+
+type SearchMatch = {
+  page: number;
+  x: number; // canvas Y-down coords at scale=1
+  y: number;
+  w: number;
+  h: number;
+};
 
 function playBeep() {
   try {
@@ -52,10 +70,43 @@ export default function PDFViewer() {
   const [timerInput, setTimerInput] = useState(25);
   const [timerAlert, setTimerAlert] = useState(false);
 
+  // Search state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
+  const [matchIndex, setMatchIndex] = useState(0);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Annotation state
+  const [annotationMode, setAnnotationMode] = useState<'none' | 'highlight'>('none');
+  const [highlightColor, setHighlightColor] = useState(HIGHLIGHT_COLORS[0]);
+  const [annotations, setAnnotations] = useState<Record<number, AnnotationItem[]>>({});
+  const [overlayVersion, setOverlayVersion] = useState(0);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const blobUrlRef = useRef('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const drawingRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Stable refs to avoid stale closures in drawOverlay
+  const annotationsRef = useRef(annotations);
+  const searchMatchesRef = useRef(searchMatches);
+  const matchIndexRef = useRef(matchIndex);
+  const scaleRef = useRef(ZOOM_LEVELS[DEFAULT_ZOOM_INDEX]);
+  const currentPageRef = useRef(1);
+  const highlightColorRef = useRef(HIGHLIGHT_COLORS[0]);
+  const annotationModeRef = useRef<'none' | 'highlight'>('none');
+
+  annotationsRef.current = annotations;
+  searchMatchesRef.current = searchMatches;
+  matchIndexRef.current = matchIndex;
+  scaleRef.current = ZOOM_LEVELS[zoomIndex];
+  currentPageRef.current = currentPage;
+  highlightColorRef.current = highlightColor;
+  annotationModeRef.current = annotationMode;
 
   const scale = ZOOM_LEVELS[zoomIndex];
   const hasPDF = pdfDoc !== null;
@@ -67,6 +118,9 @@ export default function PDFViewer() {
     setCurrentPage(1);
     setTotalPages(0);
     setOpenUrl(originalUrl);
+    setSearchMatches([]);
+    setSearchQuery('');
+    setAnnotations({});
 
     if (renderTaskRef.current) {
       renderTaskRef.current.cancel();
@@ -118,7 +172,43 @@ export default function PDFViewer() {
     setIsLoading(false);
     setTimerRunning(false);
     setOpenUrl('');
+    setSearchMatches([]);
+    setSearchQuery('');
+    setShowSearch(false);
+    setAnnotations({});
+    setAnnotationMode('none');
   };
+
+  // Draw annotations and search highlights on the overlay canvas.
+  // Reads from refs so it can be a stable callback (no deps).
+  const drawOverlay = useCallback(() => {
+    const overlay = overlayCanvasRef.current;
+    const canvas = canvasRef.current;
+    if (!overlay || !canvas || canvas.width === 0) return;
+
+    overlay.width = canvas.width;
+    overlay.height = canvas.height;
+
+    const ctx = overlay.getContext('2d')!;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    const sc = scaleRef.current;
+    const page = currentPageRef.current;
+
+    const pageAnnotations = annotationsRef.current[page] || [];
+    for (const ann of pageAnnotations) {
+      ctx.fillStyle = ann.color;
+      ctx.fillRect(ann.x * sc, ann.y * sc, ann.w * sc, ann.h * sc);
+    }
+
+    const matches = searchMatchesRef.current;
+    const mi = matchIndexRef.current;
+    matches.forEach((match, i) => {
+      if (match.page !== page) return;
+      ctx.fillStyle = i === mi ? 'rgba(255,165,0,0.55)' : 'rgba(255,220,0,0.35)';
+      ctx.fillRect(match.x * sc, match.y * sc, match.w * sc, match.h * sc);
+    });
+  }, []);
 
   // Page rendering
   useEffect(() => {
@@ -144,6 +234,8 @@ export default function PDFViewer() {
         renderTaskRef.current = task;
         await task.promise;
         renderTaskRef.current = null;
+
+        if (!cancelled) setOverlayVersion(v => v + 1);
       } catch (e) {
         if ((e as Error)?.name !== 'RenderingCancelledException') {
           console.error('PDF render error:', e);
@@ -159,14 +251,24 @@ export default function PDFViewer() {
     };
   }, [pdfDoc, currentPage, scale]);
 
-  // Keyboard navigation
+  // Redraw overlay when version, annotations, search results or match index change
+  useEffect(() => {
+    drawOverlay();
+  }, [overlayVersion, annotations, searchMatches, matchIndex, drawOverlay]);
+
+  // Keyboard navigation + Ctrl+F to open search
   useEffect(() => {
     if (!hasPDF) return;
     const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         setCurrentPage(p => Math.min(totalPages, p + 1));
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         setCurrentPage(p => Math.max(1, p - 1));
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setShowSearch(v => !v);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
       }
     };
     window.addEventListener('keydown', handler);
@@ -225,6 +327,137 @@ export default function PDFViewer() {
     setTimerAlert(false);
   };
 
+  // Full-document text search using PDF.js text content API
+  const performSearch = useCallback(async (query: string) => {
+    if (!pdfDoc || !query.trim()) {
+      setSearchMatches([]);
+      setMatchIndex(0);
+      return;
+    }
+    setIsSearching(true);
+    const matches: SearchMatch[] = [];
+    const queryLower = query.toLowerCase();
+
+    try {
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1 });
+        const textContent = await page.getTextContent();
+
+        for (const item of textContent.items) {
+          if (!('str' in item)) continue;
+          const str = item.str as string;
+          if (!str) continue;
+          const strLower = str.toLowerCase();
+          const tf = item.transform as number[];
+          // tf = [a, b, c, d, tx, ty]; font height ≈ |d|, fall back to |a|
+          const fontH = Math.abs(tf[3]) || Math.abs(tf[0]) || 12;
+
+          let idx = 0;
+          while (true) {
+            const pos = strLower.indexOf(queryLower, idx);
+            if (pos === -1) break;
+
+            // Convert PDF origin-bottom-left to canvas origin-top-left
+            const matchX = tf[4] + (pos / str.length) * item.width;
+            const matchY = viewport.height - tf[5] - fontH;
+
+            matches.push({
+              page: pageNum,
+              x: matchX,
+              y: Math.max(0, matchY),
+              w: Math.max((query.length / str.length) * item.width, 8),
+              h: fontH,
+            });
+            idx = pos + 1;
+          }
+        }
+      }
+    } finally {
+      setIsSearching(false);
+    }
+
+    setSearchMatches(matches);
+    setMatchIndex(0);
+    if (matches.length > 0) setCurrentPage(matches[0].page);
+  }, [pdfDoc, totalPages]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    performSearch(searchQuery);
+  };
+
+  const goToMatch = (newIndex: number) => {
+    if (searchMatches.length === 0) return;
+    const idx = ((newIndex % searchMatches.length) + searchMatches.length) % searchMatches.length;
+    setMatchIndex(idx);
+    setCurrentPage(searchMatches[idx].page);
+  };
+
+  // Annotation drawing helpers
+  const getOverlayPos = (clientX: number, clientY: number) => {
+    const overlay = overlayCanvasRef.current!;
+    const rect = overlay.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (overlay.width / rect.width),
+      y: (clientY - rect.top) * (overlay.height / rect.height),
+    };
+  };
+
+  const finishAnnotation = (start: { x: number; y: number }, end: { x: number; y: number }) => {
+    drawingRef.current = null;
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const w = Math.abs(end.x - start.x);
+    const h = Math.abs(end.y - start.y);
+
+    if (w < 5 || h < 5) { drawOverlay(); return; }
+
+    const sc = scaleRef.current;
+    const newAnn: AnnotationItem = {
+      id: Date.now().toString(),
+      x: x / sc,
+      y: y / sc,
+      w: w / sc,
+      h: h / sc,
+      color: highlightColorRef.current,
+    };
+    setAnnotations(prev => ({
+      ...prev,
+      [currentPageRef.current]: [...(prev[currentPageRef.current] || []), newAnn],
+    }));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (annotationModeRef.current !== 'highlight') return;
+    (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
+    drawingRef.current = getOverlayPos(e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current || annotationModeRef.current !== 'highlight') return;
+    const pos = getOverlayPos(e.clientX, e.clientY);
+    drawOverlay();
+    const overlay = overlayCanvasRef.current!;
+    const ctx = overlay.getContext('2d')!;
+    ctx.fillStyle = highlightColorRef.current;
+    const { x: sx, y: sy } = drawingRef.current;
+    ctx.fillRect(sx, sy, pos.x - sx, pos.y - sy);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawingRef.current || annotationModeRef.current !== 'highlight') return;
+    finishAnnotation(drawingRef.current, getOverlayPos(e.clientX, e.clientY));
+  };
+
+  const clearPageAnnotations = () => {
+    setAnnotations(prev => {
+      const next = { ...prev };
+      delete next[currentPage];
+      return next;
+    });
+  };
+
   // --- Viewer ---
   if (isLoading || hasPDF || error) {
     return (
@@ -279,6 +512,23 @@ export default function PDFViewer() {
 
           <div className="pdf-bar-right">
             <button
+              className={`pdf-icon-btn${showSearch ? ' active' : ''}`}
+              onClick={() => {
+                setShowSearch(v => !v);
+                setTimeout(() => searchInputRef.current?.focus(), 50);
+              }}
+              title="ページ内検索 (Ctrl+F)"
+            >
+              <Search size={18} />
+            </button>
+            <button
+              className={`pdf-icon-btn${annotationMode !== 'none' ? ' active' : ''}`}
+              onClick={() => setAnnotationMode(m => m === 'none' ? 'highlight' : 'none')}
+              title="ハイライト注釈"
+            >
+              <Highlighter size={18} />
+            </button>
+            <button
               className={`pdf-icon-btn${showTimer ? ' active' : ''}`}
               onClick={() => { setShowTimer(v => !v); setTimerCollapsed(false); }}
               title="タイマー"
@@ -298,6 +548,78 @@ export default function PDFViewer() {
             )}
           </div>
         </div>
+
+        {/* Search panel */}
+        {showSearch && (
+          <div className="search-panel">
+            <form onSubmit={handleSearchSubmit} className="search-form">
+              <Search size={14} className="search-icon-inner" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="キーワードを検索..."
+                className="search-input"
+              />
+              {isSearching && <span className="search-count">検索中…</span>}
+              {!isSearching && searchQuery && searchMatches.length > 0 && (
+                <span className="search-count">{matchIndex + 1} / {searchMatches.length}</span>
+              )}
+              {!isSearching && searchQuery && searchMatches.length === 0 && (
+                <span className="search-count no-match">見つかりません</span>
+              )}
+              <button
+                type="button"
+                className="search-nav-btn"
+                onClick={() => goToMatch(matchIndex - 1)}
+                disabled={searchMatches.length === 0}
+                title="前の一致"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="submit"
+                className="search-nav-btn"
+                title="次の一致 / 検索"
+              >
+                <ChevronRight size={16} />
+              </button>
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="search-clear-btn"
+                  onClick={() => { setSearchQuery(''); setSearchMatches([]); setMatchIndex(0); }}
+                  title="クリア"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </form>
+          </div>
+        )}
+
+        {/* Annotation toolbar */}
+        {annotationMode !== 'none' && (
+          <div className="annotation-bar">
+            <span className="annotation-label">ハイライト</span>
+            <div className="color-swatches">
+              {HIGHLIGHT_COLORS.map(c => (
+                <button
+                  key={c}
+                  className={`color-swatch${highlightColor === c ? ' active' : ''}`}
+                  style={{ background: c.replace('80', 'dd') }}
+                  onClick={() => setHighlightColor(c)}
+                  title="色を選択"
+                />
+              ))}
+            </div>
+            <button className="annotation-clear-btn" onClick={clearPageAnnotations} title="このページのハイライトを削除">
+              <Trash2 size={14} />
+              <span>消去</span>
+            </button>
+          </div>
+        )}
 
         {showTimer && (
           timerCollapsed ? (
@@ -394,7 +716,16 @@ export default function PDFViewer() {
             </div>
           )}
           {!isLoading && !error && (
-            <canvas ref={canvasRef} className="pdf-canvas" />
+            <div className="pdf-canvas-wrapper">
+              <canvas ref={canvasRef} className="pdf-canvas" />
+              <canvas
+                ref={overlayCanvasRef}
+                className={`pdf-overlay${annotationMode !== 'none' ? ' drawing' : ''}`}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+              />
+            </div>
           )}
         </div>
 
@@ -480,6 +811,117 @@ export default function PDFViewer() {
             gap: 2px;
             flex-shrink: 0;
           }
+          /* Search panel */
+          .search-panel {
+            background: var(--background);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 12px;
+            flex-shrink: 0;
+          }
+          .search-form {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--accent);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 6px 10px;
+          }
+          .search-icon-inner { color: #999; flex-shrink: 0; }
+          .search-input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            font-size: 0.9rem;
+            color: var(--foreground);
+            outline: none;
+            min-width: 0;
+          }
+          .search-count {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #888;
+            white-space: nowrap;
+            flex-shrink: 0;
+          }
+          .search-count.no-match { color: #f87171; }
+          .search-nav-btn {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            color: var(--foreground);
+            border-radius: 6px;
+            flex-shrink: 0;
+            cursor: pointer;
+            transition: background 0.15s;
+          }
+          .search-nav-btn:hover { background: var(--border); }
+          .search-nav-btn:disabled { opacity: 0.3; cursor: default; }
+          .search-clear-btn {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            color: #999;
+            border-radius: 4px;
+            flex-shrink: 0;
+            cursor: pointer;
+            transition: color 0.15s;
+          }
+          .search-clear-btn:hover { color: var(--foreground); }
+          /* Annotation bar */
+          .annotation-bar {
+            background: var(--background);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+          }
+          .annotation-label {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #888;
+            white-space: nowrap;
+          }
+          .color-swatches {
+            display: flex;
+            gap: 6px;
+          }
+          .color-swatch {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: transform 0.1s, border-color 0.1s;
+            flex-shrink: 0;
+          }
+          .color-swatch:hover { transform: scale(1.15); }
+          .color-swatch.active { border-color: var(--foreground); transform: scale(1.1); }
+          .annotation-clear-btn {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 10px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: #f87171;
+            border-radius: 7px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: auto;
+            transition: background 0.15s;
+          }
+          .annotation-clear-btn:hover { background: rgba(248,113,113,0.1); }
+          /* Timer panel */
           .timer-panel {
             background: var(--background);
             border-bottom: 1px solid var(--border);
@@ -503,12 +945,8 @@ export default function PDFViewer() {
             text-align: left;
             transition: background 0.15s;
           }
-          .timer-panel-collapsed:hover {
-            background: var(--accent);
-          }
-          .timer-panel-collapsed.alert {
-            animation: alertFlash 0.5s ease 3;
-          }
+          .timer-panel-collapsed:hover { background: var(--accent); }
+          .timer-panel-collapsed.alert { animation: alertFlash 0.5s ease 3; }
           .timer-display-mini {
             font-size: 1.3rem;
             font-weight: 700;
@@ -548,10 +986,7 @@ export default function PDFViewer() {
             transition: background 0.15s, color 0.15s;
             flex-shrink: 0;
           }
-          .timer-collapse-btn:hover {
-            background: var(--accent);
-            color: var(--foreground);
-          }
+          .timer-collapse-btn:hover { background: var(--accent); color: var(--foreground); }
           .timer-mode-tabs {
             display: flex;
             background: var(--accent);
@@ -580,11 +1015,7 @@ export default function PDFViewer() {
             color: var(--foreground);
             letter-spacing: 0.05em;
           }
-          .timer-input-row {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-          }
+          .timer-input-row { display: flex; align-items: center; gap: 6px; }
           .timer-input {
             width: 64px;
             padding: 6px 8px;
@@ -614,6 +1045,7 @@ export default function PDFViewer() {
           .timer-btn.pause { background: #f59e0b; color: white; }
           .timer-btn.reset { background: var(--accent); color: var(--foreground); border: 1px solid var(--border); }
           .timer-btn:hover { opacity: 0.85; }
+          /* Canvas area */
           .pdf-canvas-area {
             flex: 1;
             overflow: auto;
@@ -623,11 +1055,27 @@ export default function PDFViewer() {
             min-height: 0;
             -webkit-overflow-scrolling: touch;
           }
+          .pdf-canvas-wrapper {
+            position: relative;
+            display: inline-block;
+            align-self: flex-start;
+          }
           .pdf-canvas {
             display: block;
             box-shadow: 0 4px 20px rgba(0,0,0,0.4);
             max-width: 100%;
             height: auto;
+          }
+          .pdf-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            touch-action: none;
+          }
+          .pdf-overlay.drawing {
+            pointer-events: auto;
+            cursor: crosshair;
           }
           .pdf-status {
             display: flex;
