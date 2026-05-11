@@ -733,6 +733,17 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           z-index: auto;
         }
 
+        /* モバイル横画面でメモを開いた時: サイドバーを非表示にして全画面表示 */
+        .mobile-landscape-note .editor-container {
+          border-radius: 0;
+          position: fixed;
+          top: 0; left: 0;
+          width: 100%;
+          height: 100vh;
+          height: 100dvh;
+          z-index: 1001;
+        }
+
         .desktop-sidebar .editor-header {
           left: 280px;
         }
