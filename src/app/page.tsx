@@ -21,7 +21,7 @@ export default function Home() {
     const checkLayout = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      setIsMobile(w <= 768);
+      setIsMobile(Math.min(w, h) <= 768);
       setIsLandscape(w > h);
     };
     const initialize = () => { checkLayout(); setMounted(true); };
@@ -51,7 +51,7 @@ export default function Home() {
 
   if (!mounted) return null;
 
-  const isDesktopLayout = !isMobile || isLandscape;
+  const isDesktopLayout = !isMobile || (isLandscape && !activeNoteId);
 
   const openSettings = () => {
     setActiveTab('settings');
@@ -64,7 +64,7 @@ export default function Home() {
   };
 
   return (
-    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''}`}>
+    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''}`}>
       {isDesktopLayout && (
         <Sidebar
           activeNoteId={activeNoteId}

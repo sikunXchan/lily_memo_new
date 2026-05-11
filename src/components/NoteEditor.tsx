@@ -713,7 +713,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           position: relative;
         }
 
-        @media (max-width: 768px) and (orientation: portrait) {
+        @media (max-width: 768px) {
           .editor-container {
             border-radius: 0;
             position: fixed;
@@ -731,6 +731,17 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           position: relative;
           width: auto;
           z-index: auto;
+        }
+
+        /* モバイル横画面でメモを開いた時: サイドバーを非表示にして全画面表示 */
+        .mobile-landscape-note .editor-container {
+          border-radius: 0;
+          position: fixed;
+          top: 0; left: 0;
+          width: 100%;
+          height: 100vh;
+          height: 100dvh;
+          z-index: 1001;
         }
 
         .desktop-sidebar .editor-header {
