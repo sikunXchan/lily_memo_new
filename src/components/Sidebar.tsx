@@ -5,8 +5,6 @@ import { db, type Folder, type Note } from '@/lib/db';
 import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { useSession } from 'next-auth/react';
-import AuthButton from './AuthButton';
 import SyncStatus from './SyncStatus';
 
 interface SidebarProps {
@@ -28,7 +26,6 @@ const COLORS = [
 
 export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, isMobileOpen, onToggleMobile }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const { data: session } = useSession();
   
   const folders = useLiveQuery(() => db.folders.toArray());
   const notes = useLiveQuery(() => {
@@ -197,8 +194,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
         </div>
 
         <div className="sidebar-footer">
-          {session && <SyncStatus />}
-          <AuthButton />
+          <SyncStatus />
           {onOpenPDF && (
             <button className="btn-settings" onClick={onOpenPDF}>
               <FileText size={20} />
