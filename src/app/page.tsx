@@ -6,7 +6,6 @@ import NoteEditor from '@/components/NoteEditor';
 import SettingsModal from '@/components/SettingsModal';
 import PDFViewer from '@/components/PDFViewer';
 import { Book, Settings as SettingsIcon, FileText } from 'lucide-react';
-import AutoSyncRunner from '@/components/AutoSyncRunner';
 
 type TabType = 'memos' | 'pdf' | 'settings';
 
@@ -68,8 +67,6 @@ export default function Home() {
   };
 
   return (
-    <>
-    <AutoSyncRunner />
     <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''}`}>
       {isDesktopLayout && (
         <Sidebar
@@ -249,6 +246,5 @@ export default function Home() {
         }
       `}</style>
     </div>
-    </>
   );
 }

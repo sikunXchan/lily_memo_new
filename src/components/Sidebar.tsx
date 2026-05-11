@@ -5,8 +5,6 @@ import { db, type Folder, type Note } from '@/lib/db';
 import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { createId } from '@paralleldrive/cuid2';
-import SyncStatus from './SyncStatus';
 
 interface SidebarProps {
   activeNoteId?: number;
@@ -82,7 +80,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
 
   const addNote = async (folderId?: number) => {
     const id = await db.notes.add({
-      syncId: createId(),
       title: '無題のメモ',
       content: '',
       folderId,
@@ -196,7 +193,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
         </div>
 
         <div className="sidebar-footer">
-          <SyncStatus />
           {onOpenPDF && (
             <button className="btn-settings" onClick={onOpenPDF}>
               <FileText size={20} />
