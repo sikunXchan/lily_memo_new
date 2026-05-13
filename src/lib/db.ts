@@ -8,6 +8,8 @@ export interface Folder {
   createdAt: number;
 }
 
+export type NoteType = 'text' | 'handwriting';
+
 export interface Note {
   id?: number;
   title: string;
@@ -16,6 +18,39 @@ export interface Note {
   color?: string;
   createdAt: number;
   updatedAt: number;
+  type?: NoteType;
+}
+
+export interface HandwritingStroke {
+  points: { x: number; y: number }[];
+  color: string;
+  width: number;
+}
+
+export interface HandwritingDoc {
+  strokes: HandwritingStroke[];
+  width: number;
+  height: number;
+}
+
+export const EMPTY_HANDWRITING: HandwritingDoc = { strokes: [], width: 1024, height: 768 };
+
+export function parseHandwriting(content: string): HandwritingDoc {
+  if (!content) return { ...EMPTY_HANDWRITING };
+  try {
+    const data = JSON.parse(content) as Partial<HandwritingDoc>;
+    return {
+      strokes: Array.isArray(data.strokes) ? data.strokes : [],
+      width: typeof data.width === 'number' ? data.width : EMPTY_HANDWRITING.width,
+      height: typeof data.height === 'number' ? data.height : EMPTY_HANDWRITING.height,
+    };
+  } catch {
+    return { ...EMPTY_HANDWRITING };
+  }
+}
+
+export function serializeHandwriting(doc: HandwritingDoc): string {
+  return JSON.stringify(doc);
 }
 
 export interface ImageAsset {
@@ -49,6 +84,10 @@ export class LilyDatabase extends Dexie {
     });
     this.version(5).stores({
       notes: '++id, title, folderId, color, createdAt, updatedAt',
+      folders: '++id, name, parentId, color, createdAt',
+    });
+    this.version(6).stores({
+      notes: '++id, title, folderId, color, createdAt, updatedAt, type',
       folders: '++id, name, parentId, color, createdAt',
     });
   }

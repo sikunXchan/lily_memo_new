@@ -1,61 +1,38 @@
 'use client';
 
-import { Download, Upload } from 'lucide-react';
+import { Download, Upload, Cloud, CloudOff, CloudDownload, CloudUpload, LogOut } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { db, type Note } from '@/lib/db';
+import { buildBackupJson, restoreBackupFromJson } from '@/lib/backup';
+import {
+  driveSignIn,
+  driveSignOut,
+  driveHasToken,
+  driveUploadBackup,
+  driveDownloadBackup,
+  DRIVE_CLIENT_ID,
+} from '@/lib/googleDrive';
 
 interface SettingsModalProps {
   onClose: () => void;
 }
 
-// Extract base64 data URLs from note content HTML, replace with asset://id refs.
-// The TipTap image extension stores base64 twice: in data-src and img src.
-// Deduplicating them halves the backup file size.
-function extractImages(content: string): { content: string; images: Record<string, string> } {
-  const images: Record<string, string> = {};
-  const urlToId = new Map<string, string>();
-  let counter = 0;
-  const result = content.replace(/((?:data-src|src))="(data:[^"]+)"/g, (_, attr, dataUrl) => {
-    let id = urlToId.get(dataUrl);
-    if (!id) {
-      id = `img_${counter++}`;
-      images[id] = dataUrl;
-      urlToId.set(dataUrl, id);
-    }
-    return `${attr}="asset://${id}"`;
-  });
-  return { content: result, images };
-}
-
-function restoreImages(content: string, imageMap: Record<string, string>): string {
-  return content.replace(/((?:data-src|src))="asset:\/\/([^"]+)"/g, (_, attr, id) => {
-    return `${attr}="${imageMap[id] ?? ''}"`;
-  });
-}
-
-export default function SettingsModal({ onClose }: SettingsModalProps) {
+export default function SettingsModal({ onClose: _onClose }: SettingsModalProps) {
+  void _onClose;
   const [isPersisted, setIsPersisted] = useState(false);
+  const [driveSignedIn, setDriveSignedIn] = useState(false);
+  const [driveBusy, setDriveBusy] = useState<null | 'signin' | 'upload' | 'download'>(null);
+  const [driveMessage, setDriveMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
       navigator.storage.persisted().then(setIsPersisted);
     }
+    setDriveSignedIn(driveHasToken());
   }, []);
 
   const downloadBackup = async () => {
-    const folders = await db.folders.toArray();
-    const notes = await db.notes.toArray();
-
-    const allImages: Record<string, string> = {};
-    const compactNotes = notes.map(note => {
-      if (!note.content) return note;
-      const { content, images } = extractImages(note.content);
-      Object.assign(allImages, images);
-      return { ...note, content };
-    });
-
-    const data = { folders, notes: compactNotes, images: allImages, timestamp: Date.now() };
-    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const json = await buildBackupJson();
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -73,22 +50,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       try {
         const text = event.target?.result;
         if (typeof text !== 'string') throw new Error('Failed to read file content');
-        const data = JSON.parse(text);
         if (!confirm('現在のデータを上書きしてバックアップを復元しますか？')) return;
-
-        // Support both new format (asset:// refs + images map) and old format (inline base64)
-        const imageMap: Record<string, string> = data.images ?? {};
-        const notes = (data.notes ?? []).map((note: Note) => {
-          if (!note.content) return note;
-          return { ...note, content: restoreImages(note.content, imageMap) };
-        });
-
-        await db.transaction('rw', db.folders, db.notes, async () => {
-          await db.folders.clear();
-          await db.notes.clear();
-          if (data.folders?.length) await db.folders.bulkPut(data.folders);
-          if (notes.length) await db.notes.bulkPut(notes);
-        });
+        await restoreBackupFromJson(text);
         alert('復元が完了しました。ページを再読み込みします。');
         window.location.reload();
       } catch (err) {
@@ -100,6 +63,62 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       alert('ファイルの読み込みに失敗しました。');
     };
     reader.readAsText(file, 'UTF-8');
+  };
+
+  const handleDriveSignIn = async () => {
+    setDriveMessage(null);
+    setDriveBusy('signin');
+    try {
+      await driveSignIn();
+      setDriveSignedIn(true);
+    } catch (err) {
+      console.error(err);
+      setDriveMessage(err instanceof Error ? err.message : 'Google ログインに失敗しました');
+    } finally {
+      setDriveBusy(null);
+    }
+  };
+
+  const handleDriveSignOut = () => {
+    driveSignOut();
+    setDriveSignedIn(false);
+    setDriveMessage(null);
+  };
+
+  const handleDriveUpload = async () => {
+    setDriveMessage(null);
+    setDriveBusy('upload');
+    try {
+      const json = await buildBackupJson();
+      await driveUploadBackup(json);
+      setDriveMessage('クラウドへ保存しました');
+    } catch (err) {
+      console.error(err);
+      setDriveMessage(err instanceof Error ? err.message : '保存に失敗しました');
+    } finally {
+      setDriveBusy(null);
+    }
+  };
+
+  const handleDriveDownload = async () => {
+    setDriveMessage(null);
+    if (!confirm('クラウドのバックアップで現在のデータを上書きしますか？')) return;
+    setDriveBusy('download');
+    try {
+      const json = await driveDownloadBackup();
+      if (!json) {
+        setDriveMessage('クラウドにバックアップが見つかりませんでした');
+        return;
+      }
+      await restoreBackupFromJson(json);
+      setDriveMessage('クラウドから復元しました。再読み込みします…');
+      setTimeout(() => window.location.reload(), 600);
+    } catch (err) {
+      console.error(err);
+      setDriveMessage(err instanceof Error ? err.message : '復元に失敗しました');
+    } finally {
+      setDriveBusy(null);
+    }
   };
 
   return (
@@ -131,6 +150,47 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                 <input type="file" hidden onChange={uploadBackup} accept=".json,application/json" />
               </label>
             </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Cloud size={20} />
+            <h3>Google Drive と同期</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">
+              {DRIVE_CLIENT_ID
+                ? '非公開の appDataFolder にバックアップ JSON を保存します。複数端末で手動で push/pull することで同期します。'
+                : '同期を有効にするには NEXT_PUBLIC_GOOGLE_CLIENT_ID を設定してください。'}
+            </p>
+            {!driveSignedIn ? (
+              <button className="btn-action" onClick={handleDriveSignIn} disabled={!DRIVE_CLIENT_ID || driveBusy === 'signin'}>
+                <Cloud size={18} />
+                {driveBusy === 'signin' ? '接続中…' : 'Google でログイン'}
+              </button>
+            ) : (
+              <div className="action-group">
+                <button className="btn-action" onClick={handleDriveUpload} disabled={driveBusy !== null}>
+                  <CloudUpload size={18} />
+                  {driveBusy === 'upload' ? '保存中…' : 'クラウドへ保存'}
+                </button>
+                <button className="btn-action outline" onClick={handleDriveDownload} disabled={driveBusy !== null}>
+                  <CloudDownload size={18} />
+                  {driveBusy === 'download' ? '復元中…' : 'クラウドから復元'}
+                </button>
+                <button className="btn-action subtle" onClick={handleDriveSignOut} disabled={driveBusy !== null}>
+                  <LogOut size={18} />
+                  ログアウト
+                </button>
+              </div>
+            )}
+            {driveMessage && (
+              <div className="drive-message">
+                <CloudOff size={14} />
+                <span>{driveMessage}</span>
+              </div>
+            )}
           </div>
         </section>
       </div>
@@ -221,6 +281,28 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           border: 2px solid var(--primary);
           color: var(--primary);
           cursor: pointer;
+        }
+        .btn-action.subtle {
+          background: transparent;
+          color: var(--foreground);
+          border: 1px solid var(--border);
+          opacity: 0.85;
+        }
+        .btn-action:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .drive-message {
+          margin-top: 12px;
+          padding: 10px 12px;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          font-size: 0.85rem;
+          color: var(--foreground);
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
 
         @media (max-width: 768px) {
