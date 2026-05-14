@@ -1,10 +1,12 @@
 'use client';
 
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type Folder, type Note } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, Menu, X } from 'lucide-react';
+import { db, EMPTY_HANDWRITING, serializeHandwriting, newSyncId } from '@/lib/db';
+import { markDirty } from '@/lib/sync';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Type as TypeIcon, Pencil } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import DirectoryGraph from './DirectoryGraph';
 
 interface SidebarProps {
   activeNoteId?: number;
@@ -26,19 +28,35 @@ const COLORS = [
 export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, isMobileOpen, onToggleMobile }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   
-  const folders = useLiveQuery(() => db.folders.toArray());
+  const folders = useLiveQuery(() =>
+    db.folders.filter(f => !f.deletedAt).toArray()
+  );
   const notes = useLiveQuery(() => {
-    if (!searchQuery) return db.notes.toArray();
-    return db.notes
-      .filter(note =>
-        note.title.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    const base = db.notes.filter(note => !note.deletedAt);
+    if (!searchQuery) return base.toArray();
+    return base
+      .filter(note => note.title.toLowerCase().includes(searchQuery.toLowerCase()))
       .toArray();
   }, [searchQuery]);
 
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
+  const [showAddMenu, setShowAddMenu] = useState<{ folderId?: number } | null>(null);
+
+  useEffect(() => {
+    const restoreViewMode = () => {
+      const saved = localStorage.getItem('sidebarViewMode');
+      if (saved === 'graph' || saved === 'tree') setViewMode(saved);
+    };
+    restoreViewMode();
+  }, []);
+
+  const changeViewMode = (mode: 'tree' | 'graph') => {
+    setViewMode(mode);
+    localStorage.setItem('sidebarViewMode', mode);
+  };
 
   useEffect(() => {
     const applyStoredTheme = () => {
@@ -65,32 +83,55 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
   const addFolder = async () => {
     const name = prompt('フォルダ名を入力してください');
     if (name) {
+      const now = Date.now();
+      const syncId = newSyncId();
       await db.folders.add({
+        syncId,
         name,
-        createdAt: Date.now(),
+        createdAt: now,
+        updatedAt: now,
         color: '--folder-pink'
       });
+      markDirty('folders', syncId);
     }
   };
 
   const updateFolderColor = async (id: number, color: string) => {
-    await db.folders.update(id, { color });
+    const folder = await db.folders.get(id);
+    if (!folder) return;
+    // eslint-disable-next-line react-hooks/purity
+    await db.folders.update(id, { color, updatedAt: Date.now() });
+    markDirty('folders', folder.syncId);
     setEditingFolderColor(null);
   };
 
-  const addNote = async (folderId?: number) => {
+  const addNote = async (folderId?: number, type: 'text' | 'handwriting' = 'text') => {
+    const initialContent = type === 'handwriting' ? serializeHandwriting(EMPTY_HANDWRITING) : '';
+    const now = Date.now();
+    const syncId = newSyncId();
     const id = await db.notes.add({
-      title: '無題のメモ',
-      content: '',
+      syncId,
+      title: type === 'handwriting' ? '無題の手書きメモ' : '無題のメモ',
+      content: initialContent,
       folderId,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
+      type,
+      createdAt: now,
+      updatedAt: now
     });
+    markDirty('notes', syncId);
     onSelectNote(id as number);
     if (folderId) {
       setExpandedFolders(prev => ({ ...prev, [folderId]: true }));
     }
     if (window.innerWidth <= 768) onToggleMobile();
+  };
+
+  const openAddMenu = (folderId?: number) => setShowAddMenu({ folderId });
+  const closeAddMenu = () => setShowAddMenu(null);
+  const handleAddSelect = async (type: 'text' | 'handwriting') => {
+    const folderId = showAddMenu?.folderId;
+    closeAddMenu();
+    await addNote(folderId, type);
   };
 
   return (
@@ -116,7 +157,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
         </div>
 
         <div className="sidebar-actions">
-          <button className="btn-add" onClick={() => addNote()}>
+          <button className="btn-add" onClick={() => openAddMenu()}>
             <Plus size={18} />
             <span>新しいメモ</span>
           </button>
@@ -125,7 +166,38 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           </button>
         </div>
 
+        <div className="view-toggle" role="tablist" aria-label="表示切替">
+          <button
+            role="tab"
+            aria-selected={viewMode === 'tree'}
+            className={`view-toggle-btn ${viewMode === 'tree' ? 'active' : ''}`}
+            onClick={() => changeViewMode('tree')}
+          >
+            <List size={14} />
+            <span>ツリー</span>
+          </button>
+          <button
+            role="tab"
+            aria-selected={viewMode === 'graph'}
+            className={`view-toggle-btn ${viewMode === 'graph' ? 'active' : ''}`}
+            onClick={() => changeViewMode('graph')}
+          >
+            <Sparkles size={14} />
+            <span>つながり</span>
+          </button>
+        </div>
+
         <div className="sidebar-content" style={{ minHeight: 0, overflowY: 'auto' }}>
+          {viewMode === 'graph' ? (
+            <div className="graph-wrapper">
+              <DirectoryGraph
+                folders={folders ?? []}
+                notes={notes ?? []}
+                activeNoteId={activeNoteId}
+                onSelectNote={(id) => { onSelectNote(id); if (window.innerWidth <= 768) onToggleMobile(); }}
+              />
+            </div>
+          ) : (
           <div className="folder-list">
             {folders?.map(folder => (
               <div key={folder.id} className="folder-item-wrapper">
@@ -137,7 +209,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
                     <button className="btn-inline" onClick={(e) => { e.stopPropagation(); setEditingFolderColor(editingFolderColor === folder.id ? null : folder.id!); }}>
                       <Palette size={14} />
                     </button>
-                    <button className="btn-inline" onClick={(e) => { e.stopPropagation(); addNote(folder.id); }}>
+                    <button className="btn-inline" onClick={(e) => { e.stopPropagation(); openAddMenu(folder.id); }}>
                       <Plus size={14} />
                     </button>
                   </div>
@@ -159,12 +231,12 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
                 {expandedFolders[folder.id!] && (
                   <div className="nested-notes">
                     {notes?.filter(n => n.folderId === folder.id).map(note => (
-                      <div 
-                        key={note.id} 
+                      <div
+                        key={note.id}
                         className={`note-item ${activeNoteId === note.id ? 'active' : ''}`}
                         onClick={() => { onSelectNote(note.id!); if (window.innerWidth <= 768) onToggleMobile(); }}
                       >
-                        <FileText size={16} />
+                        {note.type === 'handwriting' ? <Pencil size={16} /> : <FileText size={16} />}
                         <span>{note.title}</span>
                       </div>
                     ))}
@@ -179,18 +251,42 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             <div className="unorganized-notes">
               <div className="section-label">{searchQuery ? '検索結果' : 'すべてのメモ'}</div>
               {notes?.filter(n => !n.folderId || (searchQuery && n.folderId)).map(note => (
-                  <div 
-                    key={note.id} 
+                  <div
+                    key={note.id}
                     className={`note-item ${activeNoteId === note.id ? 'active' : ''}`}
                     onClick={() => { onSelectNote(note.id!); if (window.innerWidth <= 768) onToggleMobile(); }}
                   >
-                    <FileText size={16} />
+                    {note.type === 'handwriting' ? <Pencil size={16} /> : <FileText size={16} />}
                     <span>{note.title}</span>
                   </div>
                 ))}
             </div>
           </div>
+          )}
         </div>
+
+        {showAddMenu && (
+          <div className="add-menu-overlay" onClick={closeAddMenu}>
+            <div className="add-menu-sheet" onClick={e => e.stopPropagation()}>
+              <div className="add-menu-title">新しいメモの種類を選択</div>
+              <button className="add-menu-item" onClick={() => handleAddSelect('text')}>
+                <TypeIcon size={20} />
+                <div>
+                  <div className="add-menu-item-title">テキストメモ</div>
+                  <div className="add-menu-item-desc">通常のリッチテキスト編集</div>
+                </div>
+              </button>
+              <button className="add-menu-item" onClick={() => handleAddSelect('handwriting')}>
+                <Pencil size={20} />
+                <div>
+                  <div className="add-menu-item-title">手書きメモ</div>
+                  <div className="add-menu-item-desc">指やペンで描く</div>
+                </div>
+              </button>
+              <button className="add-menu-cancel" onClick={closeAddMenu}>キャンセル</button>
+            </div>
+          </div>
+        )}
 
         <div className="sidebar-footer">
           {onOpenPDF && (
@@ -210,7 +306,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             width: 280px;
             height: 100vh;
             display: grid;
-            grid-template-rows: auto auto auto 1fr auto;
+            grid-template-rows: auto auto auto auto 1fr auto;
             padding: 20px;
             border-right: 1px solid var(--border);
             flex-shrink: 0;
@@ -267,7 +363,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           .sidebar-actions {
             display: flex;
             gap: 8px;
-            margin-bottom: 24px;
+            margin-bottom: 12px;
           }
           .btn-add {
             flex: 1;
@@ -291,6 +387,101 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             align-items: center;
             justify-content: center;
             border-radius: 8px;
+          }
+          .view-toggle {
+            display: flex;
+            background: var(--accent);
+            border-radius: 10px;
+            padding: 3px;
+            margin-bottom: 16px;
+            gap: 2px;
+          }
+          .view-toggle-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 7px 8px;
+            background: transparent;
+            color: var(--foreground);
+            font-size: 0.8rem;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: all 0.18s;
+            opacity: 0.65;
+          }
+          .view-toggle-btn.active {
+            background: var(--background);
+            color: var(--primary);
+            opacity: 1;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+          }
+          .graph-wrapper {
+            width: 100%;
+            height: 100%;
+            min-height: 280px;
+            display: flex;
+          }
+          .add-menu-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 4000;
+            padding: 16px;
+          }
+          .add-menu-sheet {
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+            width: 100%;
+            max-width: 360px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+          }
+          .add-menu-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 4px;
+          }
+          .add-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px;
+            background: var(--accent);
+            color: var(--foreground);
+            border-radius: 12px;
+            text-align: left;
+            cursor: pointer;
+            border: none;
+          }
+          .add-menu-item:hover {
+            background: var(--border);
+          }
+          .add-menu-item-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+          }
+          .add-menu-item-desc {
+            font-size: 0.75rem;
+            opacity: 0.7;
+            margin-top: 2px;
+          }
+          .add-menu-cancel {
+            background: transparent;
+            color: var(--foreground);
+            padding: 10px;
+            font-weight: 600;
+            border-radius: 8px;
+            margin-top: 4px;
           }
           .sidebar-content {
             overflow-y: auto;

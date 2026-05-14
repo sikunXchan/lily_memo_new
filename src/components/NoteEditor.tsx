@@ -11,7 +11,8 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
 import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react';
-import { db, type Note } from '@/lib/db';
+import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING } from '@/lib/db';
+import { markDirty } from '@/lib/sync';
 import {
   ArrowLeft, Trash2, Type,
   BarChart3, Binary, LayoutGrid,
@@ -20,6 +21,7 @@ import {
   Search, ChevronUp, ChevronDown, SquareCheck
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
+import HandwritingCanvas from './HandwritingCanvas';
 
 import { MermaidExtension, ChartExtension, QAExtension } from '@/lib/extensions';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
@@ -113,6 +115,7 @@ interface NoteEditorProps {
 
 export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
+  const [hwDoc, setHwDoc] = useState<HandwritingDoc>(EMPTY_HANDWRITING);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [isMobileView, setIsMobileView] = useState(false);
@@ -181,6 +184,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         saveTimeoutRef.current = setTimeout(async () => {
           try {
             await db.notes.update(currentNoteId, { content, updatedAt: Date.now() });
+            const updated = await db.notes.get(currentNoteId);
+            if (updated?.syncId) markDirty('notes', updated.syncId);
           } finally {
             setIsSaving(false);
           }
@@ -370,7 +375,14 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         if (cancelled) return;
         if (data && editor) {
           setNote(data);
-          editor.commands.setContent(data.content || '');
+          if (data.type === 'handwriting') {
+            setHwDoc(parseHandwriting(data.content));
+            // Don't push handwriting JSON into TipTap — it would be treated as text.
+            editor.commands.setContent('');
+          } else {
+            setHwDoc(EMPTY_HANDWRITING);
+            editor.commands.setContent(data.content || '');
+          }
         }
       } catch (e) {
         console.error('Failed to load note:', e);
@@ -400,14 +412,31 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     }, 800);
   };
 
+  const handleHandwritingChange = (next: HandwritingDoc) => {
+    setHwDoc(next);
+    setIsSaving(true);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await db.notes.update(noteId, { content: serializeHandwriting(next), updatedAt: Date.now() });
+        if (note?.syncId) markDirty('notes', note.syncId);
+      } finally {
+        setIsSaving(false);
+      }
+    }, 500);
+  };
+
   const updateTitle = async (title: string) => {
     setNote(prev => prev ? { ...prev, title } : null);
     await db.notes.update(noteId, { title, updatedAt: Date.now() });
+    if (note?.syncId) markDirty('notes', note.syncId);
   };
 
   const deleteNote = async () => {
     if (confirm('このメモを削除してもよろしいですか？')) {
-      await db.notes.delete(noteId);
+      const now = Date.now();
+      await db.notes.update(noteId, { deletedAt: now, updatedAt: now });
+      if (note?.syncId) markDirty('notes', note.syncId);
       onClose?.();
     }
   };
@@ -472,6 +501,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const moveToFolder = async (folderId: number | undefined) => {
     await db.notes.update(noteId, { folderId, updatedAt: Date.now() });
     setNote(prev => prev ? { ...prev, folderId } : null);
+    if (note?.syncId) markDirty('notes', note.syncId);
     setShowFolderPicker(false);
   };
 
@@ -503,6 +533,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         const content = editor.getHTML();
         try {
           await db.notes.update(noteId, { content, updatedAt: Date.now() });
+          if (note?.syncId) markDirty('notes', note.syncId);
         } catch (e) {
           console.error('Failed to save image:', e);
         }
@@ -551,6 +582,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
 
   if (!editor) return null;
+  const isHandwriting = note?.type === 'handwriting';
 
   return (
     <div className="editor-container" data-edit-mode={isEditMode}>
@@ -569,7 +601,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
 
           {/* 中央〜右: 全てのツールを一つの横スクロールエリアに統合 */}
           <div className="header-main-scroll main-toolbar">
-            {isEditMode && (
+            {isEditMode && !isHandwriting && (
               <>
                 <button className="btn-tool" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="戻る"><Undo size={18} /></button>
                 <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="進む"><Redo size={18} /></button>
@@ -648,9 +680,19 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
               placeholder="タイトル..."
               readOnly={!isEditMode}
             />
-            <EditorErrorBoundary>
-              <EditorContent editor={editor} />
-            </EditorErrorBoundary>
+            {isHandwriting ? (
+              <div className="handwriting-host">
+                <HandwritingCanvas
+                  value={hwDoc}
+                  onChange={handleHandwritingChange}
+                  readOnly={!isEditMode}
+                />
+              </div>
+            ) : (
+              <EditorErrorBoundary>
+                <EditorContent editor={editor} />
+              </EditorErrorBoundary>
+            )}
         </div>
       </div>
 
@@ -697,6 +739,10 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         .search-highlight.current {
           background: rgba(255, 140, 0, 0.65);
           border-radius: 2px;
+        }
+        /* ===== Handwriting host ===== */
+        .handwriting-host {
+          padding: 8px 0 24px;
         }
         /* ===== Editor Container ===== */
         .editor-container {

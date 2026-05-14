@@ -1,40 +1,40 @@
 'use client';
 
-import { Download, Upload } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { db, type Note } from '@/lib/db';
+import { Download, Upload, Cloud, CloudOff, LogOut, RefreshCw, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { buildBackupJson, restoreBackupFromJson } from '@/lib/backup';
+import { SUPABASE_CONFIGURED } from '@/lib/supabase';
+import {
+  subscribeSync,
+  signIn,
+  signUp,
+  signOut,
+  syncNow,
+  type SyncStatus,
+} from '@/lib/sync';
 
 interface SettingsModalProps {
   onClose: () => void;
 }
 
-// Extract base64 data URLs from note content HTML, replace with asset://id refs.
-// The TipTap image extension stores base64 twice: in data-src and img src.
-// Deduplicating them halves the backup file size.
-function extractImages(content: string): { content: string; images: Record<string, string> } {
-  const images: Record<string, string> = {};
-  const urlToId = new Map<string, string>();
-  let counter = 0;
-  const result = content.replace(/((?:data-src|src))="(data:[^"]+)"/g, (_, attr, dataUrl) => {
-    let id = urlToId.get(dataUrl);
-    if (!id) {
-      id = `img_${counter++}`;
-      images[id] = dataUrl;
-      urlToId.set(dataUrl, id);
-    }
-    return `${attr}="asset://${id}"`;
-  });
-  return { content: result, images };
+function formatRelative(ts: number): string {
+  if (!ts) return '未同期';
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return 'たった今';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 時間前`;
+  return new Date(ts).toLocaleString();
 }
 
-function restoreImages(content: string, imageMap: Record<string, string>): string {
-  return content.replace(/((?:data-src|src))="asset:\/\/([^"]+)"/g, (_, attr, id) => {
-    return `${attr}="${imageMap[id] ?? ''}"`;
-  });
-}
-
-export default function SettingsModal({ onClose }: SettingsModalProps) {
+export default function SettingsModal({ onClose: _onClose }: SettingsModalProps) {
+  void _onClose;
   const [isPersisted, setIsPersisted] = useState(false);
+  const [status, setStatus] = useState<SyncStatus | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
@@ -42,20 +42,14 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     }
   }, []);
 
+  useEffect(() => {
+    const unsub = subscribeSync(s => setStatus(s));
+    return unsub;
+  }, []);
+
   const downloadBackup = async () => {
-    const folders = await db.folders.toArray();
-    const notes = await db.notes.toArray();
-
-    const allImages: Record<string, string> = {};
-    const compactNotes = notes.map(note => {
-      if (!note.content) return note;
-      const { content, images } = extractImages(note.content);
-      Object.assign(allImages, images);
-      return { ...note, content };
-    });
-
-    const data = { folders, notes: compactNotes, images: allImages, timestamp: Date.now() };
-    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const json = await buildBackupJson();
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -67,28 +61,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const uploadBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
         const text = event.target?.result;
         if (typeof text !== 'string') throw new Error('Failed to read file content');
-        const data = JSON.parse(text);
         if (!confirm('現在のデータを上書きしてバックアップを復元しますか？')) return;
-
-        // Support both new format (asset:// refs + images map) and old format (inline base64)
-        const imageMap: Record<string, string> = data.images ?? {};
-        const notes = (data.notes ?? []).map((note: Note) => {
-          if (!note.content) return note;
-          return { ...note, content: restoreImages(note.content, imageMap) };
-        });
-
-        await db.transaction('rw', db.folders, db.notes, async () => {
-          await db.folders.clear();
-          await db.notes.clear();
-          if (data.folders?.length) await db.folders.bulkPut(data.folders);
-          if (notes.length) await db.notes.bulkPut(notes);
-        });
+        await restoreBackupFromJson(text);
         alert('復元が完了しました。ページを再読み込みします。');
         window.location.reload();
       } catch (err) {
@@ -96,10 +75,36 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         alert('バックアップファイルの読み込みに失敗しました。');
       }
     };
-    reader.onerror = () => {
-      alert('ファイルの読み込みに失敗しました。');
-    };
+    reader.onerror = () => alert('ファイルの読み込みに失敗しました。');
     reader.readAsText(file, 'UTF-8');
+  };
+
+  const handleAuthSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthBusy(true);
+    try {
+      if (authMode === 'login') {
+        await signIn(email.trim(), password);
+      } else {
+        await signUp(email.trim(), password);
+        setAuthError('登録メールを送信しました。認証後にログインしてください。');
+      }
+      setPassword('');
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : '認証に失敗しました');
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [authMode, email, password]);
+
+  const handleSignOut = async () => {
+    if (!confirm('クラウド同期からログアウトしますか？（ローカルのメモは残ります）')) return;
+    await signOut();
+  };
+
+  const handleSyncNow = async () => {
+    await syncNow();
   };
 
   return (
@@ -111,6 +116,109 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       <div className="settings-sections">
         <section className="settings-section">
           <div className="section-title">
+            <Cloud size={20} />
+            <h3>クラウド同期</h3>
+          </div>
+          <div className="section-content">
+            {!SUPABASE_CONFIGURED && (
+              <p className="desc">
+                同期を有効にするには <code>NEXT_PUBLIC_SUPABASE_URL</code> と <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> を <code>.env.local</code> に設定してください。詳細は <code>AGENTS.md</code>。
+              </p>
+            )}
+
+            {SUPABASE_CONFIGURED && !status?.signedIn && (
+              <>
+                <p className="desc">
+                  自分のアカウントを作成すると、同じアカウントでログインしたデバイス間でメモが自動同期されます。
+                </p>
+                <div className="auth-tabs">
+                  <button
+                    className={`auth-tab ${authMode === 'login' ? 'active' : ''}`}
+                    onClick={() => { setAuthMode('login'); setAuthError(null); }}
+                    type="button"
+                  >ログイン</button>
+                  <button
+                    className={`auth-tab ${authMode === 'signup' ? 'active' : ''}`}
+                    onClick={() => { setAuthMode('signup'); setAuthError(null); }}
+                    type="button"
+                  >新規登録</button>
+                </div>
+                <form onSubmit={handleAuthSubmit} className="auth-form">
+                  <input
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder="メールアドレス"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="auth-input"
+                    required
+                  />
+                  <input
+                    type="password"
+                    autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+                    placeholder="パスワード"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="auth-input"
+                    minLength={6}
+                    required
+                  />
+                  <button type="submit" className="btn-action" disabled={authBusy}>
+                    {authBusy ? <Loader2 size={18} className="spin" /> : <Cloud size={18} />}
+                    {authMode === 'login' ? 'ログイン' : 'アカウント作成'}
+                  </button>
+                </form>
+                {authError && (
+                  <div className="drive-message">
+                    <CloudOff size={14} />
+                    <span>{authError}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {SUPABASE_CONFIGURED && status?.signedIn && (
+              <>
+                <div className="sync-status">
+                  <div className="sync-row">
+                    <span className="sync-label">アカウント</span>
+                    <span className="sync-value">{status.email ?? '(不明)'}</span>
+                  </div>
+                  <div className="sync-row">
+                    <span className="sync-label">最終同期</span>
+                    <span className="sync-value">
+                      {status.isSyncing ? '同期中…' : formatRelative(status.lastSyncedAt)}
+                    </span>
+                  </div>
+                  <div className="sync-row">
+                    <span className="sync-label">未送信</span>
+                    <span className="sync-value">{status.pendingCount} 件</span>
+                  </div>
+                  {status.lastError && (
+                    <div className="drive-message">
+                      <CloudOff size={14} />
+                      <span>{status.lastError}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="action-group">
+                  <button className="btn-action outline" onClick={handleSyncNow} disabled={status.isSyncing}>
+                    {status.isSyncing ? <Loader2 size={18} className="spin" /> : <RefreshCw size={18} />}
+                    今すぐ同期
+                  </button>
+                  <button className="btn-action subtle" onClick={handleSignOut}>
+                    <LogOut size={18} />
+                    ログアウト
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
             <Download size={20} />
             <h3>バックアップと復元</h3>
           </div>
@@ -119,7 +227,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               <div className={`dot ${isPersisted ? 'persisted' : ''}`} />
               <span>ストレージ永続化: {isPersisted ? '有効（安全）' : '標準'}</span>
             </div>
-            <p className="desc">iOSのSafariでは「共有」ボタンからメモを個別ファイルとして保存することをお勧めします。</p>
+            <p className="desc">クラウド同期がない場合や、手元にローカルコピーを残したい時にどうぞ。</p>
             <div className="action-group">
               <button className="btn-action" onClick={downloadBackup}>
                 <Download size={18} />
@@ -196,6 +304,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           font-size: 0.85rem;
           color: #888;
           margin-bottom: 20px;
+          line-height: 1.6;
+        }
+        .desc code {
+          background: var(--background);
+          padding: 1px 6px;
+          border-radius: 4px;
+          font-size: 0.8rem;
         }
         .action-group {
           display: flex;
@@ -221,6 +336,92 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           border: 2px solid var(--primary);
           color: var(--primary);
           cursor: pointer;
+        }
+        .btn-action.subtle {
+          background: transparent;
+          color: var(--foreground);
+          border: 1px solid var(--border);
+          opacity: 0.85;
+        }
+        .btn-action:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .drive-message {
+          margin-top: 12px;
+          padding: 10px 12px;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          font-size: 0.85rem;
+          color: var(--foreground);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .auth-tabs {
+          display: flex;
+          gap: 6px;
+          background: var(--background);
+          padding: 4px;
+          border-radius: 10px;
+          margin-bottom: 12px;
+        }
+        .auth-tab {
+          flex: 1;
+          background: transparent;
+          color: var(--foreground);
+          padding: 8px 12px;
+          font-weight: 600;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          opacity: 0.65;
+        }
+        .auth-tab.active {
+          background: var(--accent);
+          color: var(--primary);
+          opacity: 1;
+        }
+        .auth-form {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-bottom: 8px;
+        }
+        .auth-input {
+          padding: 11px 12px;
+          font-size: 0.95rem;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          background: var(--background);
+          color: var(--foreground);
+          width: 100%;
+        }
+        .sync-status {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          padding: 14px;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          margin-bottom: 16px;
+        }
+        .sync-row {
+          display: flex;
+          justify-content: space-between;
+          font-size: 0.85rem;
+        }
+        .sync-label {
+          color: #888;
+        }
+        .sync-value {
+          font-weight: 600;
+          color: var(--foreground);
         }
 
         @media (max-width: 768px) {

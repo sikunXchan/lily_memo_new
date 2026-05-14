@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import NoteEditor from '@/components/NoteEditor';
 import SettingsModal from '@/components/SettingsModal';
 import PDFViewer from '@/components/PDFViewer';
+import { initSync } from '@/lib/sync';
 import { Book, Settings as SettingsIcon, FileText } from 'lucide-react';
 
 type TabType = 'memos' | 'pdf' | 'settings';
@@ -45,6 +46,9 @@ export default function Home() {
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist();
     }
+
+    void initSync();
+
     return () => {
       window.removeEventListener('resize', checkLayout);
       window.removeEventListener('focusin', handleFocus);
