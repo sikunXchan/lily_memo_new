@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Eraser, Pencil, Undo2, Trash2, Maximize2, Minimize2, ZoomIn, ZoomOut, Plus } from 'lucide-react';
 import type { HandwritingDoc, HandwritingStroke } from '@/lib/db';
 
@@ -38,13 +38,17 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  // Track container width to compute "fit to width" scale
-  useEffect(() => {
+  // Track container width to compute "fit to width" scale. Use a layout
+  // effect so the first paint already knows the real width; otherwise the
+  // initial render uses a 1280px-wide canvas and overflows narrow
+  // viewports (iPad split-view, phones), leaving the user with a stuck
+  // narrow strip of canvas before the second render kicks in.
+  useLayoutEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
     const apply = () => {
       const rect = el.getBoundingClientRect();
-      setContainerWidth(rect.width);
+      if (rect.width > 0) setContainerWidth(rect.width);
     };
     apply();
     const ro = new ResizeObserver(apply);
@@ -294,18 +298,41 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
         </div>
       )}
       <div className="hw-canvas-wrap" ref={wrapRef}>
-        <div className="hw-canvas-stage" style={{ width: displayWidth, height: displayHeight }}>
-          <canvas
-            ref={canvasRef}
-            className="hw-canvas"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            onPointerLeave={onPointerUp}
-            style={{ width: displayWidth, height: displayHeight, touchAction: 'none' }}
-          />
-        </div>
+        {/* Until the container has been measured, render at 100% width with
+            an aspect-ratio matching the doc so we never flash a 1280px-wide
+            canvas inside a 400px viewport. After measurement, we switch to
+            explicit pixel sizing so zoom in/out can grow beyond the
+            container width. */}
+        {containerWidth > 0 ? (
+          <div className="hw-canvas-stage" style={{ width: displayWidth, height: displayHeight }}>
+            <canvas
+              ref={canvasRef}
+              className="hw-canvas"
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onPointerLeave={onPointerUp}
+              style={{ width: displayWidth, height: displayHeight, touchAction: 'none' }}
+            />
+          </div>
+        ) : (
+          <div
+            className="hw-canvas-stage"
+            style={{ width: '100%', aspectRatio: `${docRef.current.width} / ${docRef.current.height}` }}
+          >
+            <canvas
+              ref={canvasRef}
+              className="hw-canvas"
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onPointerLeave={onPointerUp}
+              style={{ width: '100%', height: '100%', touchAction: 'none' }}
+            />
+          </div>
+        )}
       </div>
       <style jsx>{`
         .hw-root {
