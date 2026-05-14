@@ -46,7 +46,7 @@ export interface HandwritingDoc {
   height: number;
 }
 
-export const EMPTY_HANDWRITING: HandwritingDoc = { strokes: [], width: 1024, height: 768 };
+export const EMPTY_HANDWRITING: HandwritingDoc = { strokes: [], width: 1280, height: 1800 };
 
 export function parseHandwriting(content: string): HandwritingDoc {
   if (!content) return { ...EMPTY_HANDWRITING };

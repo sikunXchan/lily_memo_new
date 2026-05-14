@@ -113,7 +113,12 @@ async function emit(): Promise<void> {
 
 export function subscribeSync(cb: (s: SyncStatus) => void): () => void {
   listeners.add(cb);
-  emit();
+  // Always deliver an initial status to the new subscriber, even if
+  // nothing has changed since the last emit (cached JSON match would
+  // otherwise leave it stuck in the loading state).
+  void getStatus().then(s => {
+    if (listeners.has(cb)) cb(s);
+  });
   return () => { listeners.delete(cb); };
 }
 
