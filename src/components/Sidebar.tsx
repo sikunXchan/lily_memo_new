@@ -2,7 +2,6 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, EMPTY_HANDWRITING, serializeHandwriting, newSyncId } from '@/lib/db';
-import { markDirty } from '@/lib/sync';
 import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Type as TypeIcon, Pencil } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
@@ -84,15 +83,13 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
     const name = prompt('フォルダ名を入力してください');
     if (name) {
       const now = Date.now();
-      const syncId = newSyncId();
       await db.folders.add({
-        syncId,
+        syncId: newSyncId(),
         name,
         createdAt: now,
         updatedAt: now,
         color: '--folder-pink'
       });
-      markDirty('folders', syncId);
     }
   };
 
@@ -101,16 +98,14 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
     if (!folder) return;
     // eslint-disable-next-line react-hooks/purity
     await db.folders.update(id, { color, updatedAt: Date.now() });
-    markDirty('folders', folder.syncId);
     setEditingFolderColor(null);
   };
 
   const addNote = async (folderId?: number, type: 'text' | 'handwriting' = 'text') => {
     const initialContent = type === 'handwriting' ? serializeHandwriting(EMPTY_HANDWRITING) : '';
     const now = Date.now();
-    const syncId = newSyncId();
     const id = await db.notes.add({
-      syncId,
+      syncId: newSyncId(),
       title: type === 'handwriting' ? '無題の手書きメモ' : '無題のメモ',
       content: initialContent,
       folderId,
@@ -118,7 +113,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
       createdAt: now,
       updatedAt: now
     });
-    markDirty('notes', syncId);
     onSelectNote(id as number);
     if (folderId) {
       setExpandedFolders(prev => ({ ...prev, [folderId]: true }));
@@ -595,7 +589,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           .btn-settings:hover {
             background: var(--border);
           }
-          /* 縦画面モバイルではタブナビゲーションがあるため、設定/PDFボタンは非表示。SyncStatus は表示 */
+          /* 縦画面モバイルではタブナビゲーションがあるため、設定/PDFボタンは非表示 */
           @media (max-width: 1023px) and (orientation: portrait) {
             .sidebar-footer .btn-settings {
               display: none;
