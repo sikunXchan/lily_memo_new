@@ -6,6 +6,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Pencil, Eraser, Undo2, Redo2, Trash2, ZoomIn, ZoomOut, Maximize,
   PanelLeft, PanelTop, X, FileText, BookOpen, ArrowLeft, Hand, Fingerprint,
+  Search, FolderIcon, Sparkles,
 } from 'lucide-react';
 import { db } from '@/lib/db';
 
@@ -93,10 +94,14 @@ export default function SketchTab({ onClose }: SketchTabProps) {
   const [splitRatio, setSplitRatio] = useState(0.55);
   const [sidePanel, setSidePanel] = useState<SidePanelMode>('memo-list');
   const [openNoteId, setOpenNoteId] = useState<number | null>(null);
+  const [sideSearch, setSideSearch] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
 
   const notesList = useLiveQuery(() =>
     db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray()
+  );
+  const foldersList = useLiveQuery(() =>
+    db.folders.filter(f => !f.deletedAt).toArray()
   );
 
   // --- Canvas size tracking ---
@@ -421,6 +426,87 @@ export default function SketchTab({ onClose }: SketchTabProps) {
   };
 
   const splitActive = splitOpen && canSplit;
+
+  const openNoteInSide = (id: number) => {
+    setSidePanel('memo-open');
+    setOpenNoteId(id);
+  };
+
+  // Build the memo picker: search-filtered notes grouped by folder.
+  const renderNotePicker = () => {
+    const allNotes = notesList ?? [];
+    const allFolders = foldersList ?? [];
+    const q = sideSearch.trim().toLowerCase();
+    const filtered = q
+      ? allNotes.filter(n => (n.title || '').toLowerCase().includes(q))
+      : allNotes;
+
+    if (filtered.length === 0) {
+      return (
+        <div className="side-empty-wrap">
+          <div className="side-empty-icon">
+            {q ? <Search size={28} /> : <Sparkles size={28} />}
+          </div>
+          <div className="side-empty-title">
+            {q ? '見つかりませんでした' : 'メモがまだありません'}
+          </div>
+          <div className="side-empty-sub">
+            {q ? '別のキーワードを試してみてね' : '左のサイドバーから作成できます'}
+          </div>
+        </div>
+      );
+    }
+
+    // Group: folderId -> notes
+    const byFolder = new Map<number | 'none', typeof filtered>();
+    for (const n of filtered) {
+      const key: number | 'none' = (n.folderId != null && allFolders.some(f => f.id === n.folderId)) ? n.folderId : 'none';
+      const arr = byFolder.get(key) ?? [];
+      arr.push(n);
+      byFolder.set(key, arr);
+    }
+
+    const sections: Array<{ key: string; label: string; color?: string; notes: typeof filtered }> = [];
+    for (const f of allFolders) {
+      const ns = byFolder.get(f.id!);
+      if (ns && ns.length > 0) {
+        sections.push({ key: `f-${f.id}`, label: f.name, color: f.color, notes: ns });
+      }
+    }
+    const orphans = byFolder.get('none');
+    if (orphans && orphans.length > 0) {
+      sections.push({ key: 'none', label: '未分類', notes: orphans });
+    }
+
+    return (
+      <div className="side-note-list">
+        {sections.map(sec => (
+          <div key={sec.key} className="side-section">
+            <div className="side-section-header">
+              {sec.color ? (
+                <span className="side-folder-dot" style={{ background: `var(${sec.color})` }} />
+              ) : (
+                <FolderIcon size={12} className="side-folder-dim" />
+              )}
+              <span>{sec.label}</span>
+              <span className="side-section-count">{sec.notes.length}</span>
+            </div>
+            {sec.notes.map(n => (
+              <button
+                key={n.id}
+                className="side-note-item"
+                onClick={() => openNoteInSide(n.id!)}
+              >
+                <BookOpen size={14} className="side-note-icon" />
+                <span className="side-note-title">{n.title || '無題のメモ'}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const paneStyle = splitActive
     ? (splitSide === 'top'
         ? { height: `${splitRatio * 100}%` }
@@ -468,20 +554,18 @@ export default function SketchTab({ onClose }: SketchTabProps) {
               </div>
             </div>
           ) : (
-            <div className="side-note-list">
-              {(notesList ?? []).length === 0 && (
-                <div className="side-empty">メモがありません</div>
-              )}
-              {(notesList ?? []).map(n => (
-                <button
-                  key={n.id}
-                  className="side-note-item"
-                  onClick={() => { setSidePanel('memo-open'); setOpenNoteId(n.id!); }}
-                >
-                  <BookOpen size={14} />
-                  <span>{n.title || '無題のメモ'}</span>
-                </button>
-              ))}
+            <div className="side-picker">
+              <div className="side-search">
+                <Search size={14} className="side-search-icon" />
+                <input
+                  type="text"
+                  placeholder="メモを検索..."
+                  value={sideSearch}
+                  onChange={e => setSideSearch(e.target.value)}
+                  className="side-search-input"
+                />
+              </div>
+              {renderNotePicker()}
             </div>
           )}
         </div>
@@ -850,33 +934,138 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           position: relative;
           overflow: hidden;
         }
+        .side-picker {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+        }
+        .side-search {
+          position: relative;
+          margin: 10px 10px 6px;
+          flex-shrink: 0;
+        }
+        .side-search-icon {
+          position: absolute;
+          left: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #999;
+          pointer-events: none;
+        }
+        .side-search-input {
+          width: 100%;
+          padding: 8px 10px 8px 30px;
+          background: var(--accent);
+          border: 1px solid transparent;
+          border-radius: 10px;
+          font-size: 0.85rem;
+          color: var(--foreground);
+          outline: none;
+          transition: border-color 0.15s;
+          box-sizing: border-box;
+        }
+        .side-search-input:focus {
+          border-color: var(--primary);
+        }
         .side-note-list {
           flex: 1;
           overflow-y: auto;
-          padding: 8px;
+          padding: 4px 8px 12px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 12px;
+        }
+        .side-section {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .side-section-header {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 8px;
+          font-size: 0.7rem;
+          font-weight: 700;
+          color: #888;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .side-folder-dot {
+          display: inline-block;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+        .side-folder-dim {
+          color: #aaa;
+          flex-shrink: 0;
+        }
+        .side-section-count {
+          margin-left: auto;
+          font-size: 0.65rem;
+          font-weight: 600;
+          color: #aaa;
+          background: var(--accent);
+          padding: 1px 6px;
+          border-radius: 6px;
         }
         .side-note-item {
           display: flex;
           align-items: center;
           gap: 8px;
           padding: 8px 10px;
-          border-radius: 8px;
+          border-radius: 10px !important;
           background: transparent;
           color: var(--foreground);
           font-size: 0.85rem;
           text-align: left;
+          transition: background 0.15s;
         }
         .side-note-item:hover {
           background: var(--accent);
         }
-        .side-empty {
-          padding: 16px;
-          font-size: 0.8rem;
-          color: #888;
+        .side-note-icon {
+          color: var(--primary);
+          flex-shrink: 0;
+        }
+        .side-note-title {
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .side-empty-wrap {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 32px 24px;
           text-align: center;
+        }
+        .side-empty-icon {
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          background: var(--accent);
+          color: var(--primary);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 12px;
+        }
+        .side-empty-title {
+          font-size: 0.95rem;
+          font-weight: 700;
+          color: var(--foreground);
+          margin-bottom: 4px;
+        }
+        .side-empty-sub {
+          font-size: 0.75rem;
+          color: #888;
         }
         .side-note-host {
           flex: 1;
