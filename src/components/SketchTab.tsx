@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Pencil, Eraser, Undo2, Redo2, Trash2, ZoomIn, ZoomOut, Maximize,
-  SplitSquareHorizontal, X, FileText, BookOpen, ArrowLeft,
+  SplitSquareHorizontal, X, FileText, BookOpen, ArrowLeft, Hand, Fingerprint,
 } from 'lucide-react';
 import { db } from '@/lib/db';
 
@@ -13,7 +13,7 @@ const NoteEditor = dynamic(() => import('./NoteEditor'), { ssr: false });
 const PDFViewer = dynamic(() => import('./PDFViewer'), { ssr: false });
 
 interface SketchTabProps {
-  isMobile: boolean;
+  onClose?: () => void;
 }
 
 type Stroke = {
@@ -28,11 +28,13 @@ const PEN_COLORS = ['#1a1a1a', '#e94e77', '#3273dc', '#23a55a', '#f5a623', '#9b5
 const PEN_WIDTHS = [1.5, 3, 6, 10];
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
-const ERASER_RADIUS = 12; // CSS px radius for hit detection on stroke points
+const ERASER_RADIUS = 12;
+// Smallest viewport dimension considered "tablet-ish" — split UI uses this.
+const SPLIT_MIN_WIDTH = 700;
 
 type SidePanelMode = 'memo-list' | 'memo-open' | 'pdf';
 
-export default function SketchTab({ isMobile }: SketchTabProps) {
+export default function SketchTab({ onClose }: SketchTabProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -40,20 +42,43 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
   const [color, setColor] = useState(PEN_COLORS[0]);
   const [width, setWidth] = useState(PEN_WIDTHS[1]);
   const [view, setView] = useState<View>({ scale: 1, tx: 0, ty: 0 });
+  // Pen-only: touch input pans/zooms only, pen input draws.
+  // Persisted so the preference survives navigation.
+  const [penOnly, setPenOnly] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('sketchPenOnly') === '1';
+  });
+  useEffect(() => {
+    try { localStorage.setItem('sketchPenOnly', penOnly ? '1' : '0'); } catch {}
+  }, [penOnly]);
 
   const strokesRef = useRef<Stroke[]>([]);
   const redoRef = useRef<Stroke[]>([]);
   const currentRef = useRef<Stroke | null>(null);
 
   // Pointer state
-  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pointersRef = useRef<Map<number, { x: number; y: number; type: string }>>(new Map());
   const drawingRef = useRef<{ pointerId: number; moved: boolean } | null>(null);
-  const panRef = useRef<{ initial: View; startX: number; startY: number } | null>(null);
+  const panRef = useRef<{ initial: View; startX: number; startY: number; pointerId: number } | null>(null);
   const pinchRef = useRef<{ initial: View; dist: number; center: { x: number; y: number } } | null>(null);
+
+  // Viewport sizing — used both for canvas size and for whether the split UI is allowed.
+  const [viewport, setViewport] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const apply = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    apply();
+    window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', apply);
+    return () => {
+      window.removeEventListener('resize', apply);
+      window.removeEventListener('orientationchange', apply);
+    };
+  }, []);
+  const canSplit = viewport.w >= SPLIT_MIN_WIDTH;
 
   // Split screen
   const [splitOpen, setSplitOpen] = useState(false);
-  const [splitRatio, setSplitRatio] = useState(0.55); // left (canvas) fraction
+  const [splitRatio, setSplitRatio] = useState(0.55);
   const [sidePanel, setSidePanel] = useState<SidePanelMode>('memo-list');
   const [openNoteId, setOpenNoteId] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -62,7 +87,7 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
     db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray()
   );
 
-  // --- Resizing canvas with container ---
+  // --- Canvas size tracking ---
   const [size, setSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
     const el = wrapRef.current;
@@ -94,7 +119,6 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, size.w, size.h);
 
-    // Apply view transform
     ctx.translate(view.tx, view.ty);
     ctx.scale(view.scale, view.scale);
 
@@ -125,15 +149,13 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
     redraw();
   }, [redraw]);
 
-  // --- Coordinate helpers ---
   const toWorld = (px: number, py: number) => ({
     x: (px - view.tx) / view.scale,
     y: (py - view.ty) / view.scale,
   });
-
   const clampScale = (s: number) => Math.max(MIN_SCALE, Math.min(MAX_SCALE, s));
 
-  // --- Wheel zoom ---
+  // --- Wheel zoom (for trackpad pinch / mouse wheel — harmless on iPad) ---
   useEffect(() => {
     const cnv = canvasRef.current;
     if (!cnv) return;
@@ -155,24 +177,33 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
     return () => cnv.removeEventListener('wheel', onWheel);
   }, []);
 
-  // --- Pointer handlers ---
   const localPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  // Touch input behaves as a pan/scroll gesture when:
+  //   - penOnly mode is on, OR
+  //   - there are 2+ touches (pinch always wins)
+  const shouldPanForTouch = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType !== 'touch') return false;
+    if (penOnly) return true;
+    return false;
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const cnv = e.currentTarget;
     cnv.setPointerCapture(e.pointerId);
     const p = localPoint(e);
-    pointersRef.current.set(e.pointerId, p);
+    pointersRef.current.set(e.pointerId, { x: p.x, y: p.y, type: e.pointerType });
 
-    // Two-finger → pinch (cancel any in-progress draw)
+    // Two pointers → pinch zoom (cancel any in-progress draw).
     if (pointersRef.current.size === 2) {
       if (drawingRef.current) {
         currentRef.current = null;
         drawingRef.current = null;
       }
+      panRef.current = null;
       const pts = Array.from(pointersRef.current.values());
       const dx = pts[0].x - pts[1].x;
       const dy = pts[0].y - pts[1].y;
@@ -181,20 +212,19 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
         dist: Math.hypot(dx, dy),
         center: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 },
       };
-      panRef.current = null;
+      redraw();
       return;
     }
 
-    // Single finger / mouse:
-    // - Mouse middle button or shift held → pan.
-    // - Touch / pen / left mouse button → draw.
-    const isPanGesture = e.button === 1 || e.shiftKey;
-    if (isPanGesture) {
-      panRef.current = { initial: view, startX: p.x, startY: p.y };
+    // Mouse middle button / shift → pan (kept for completeness — user said no PC).
+    const explicitPan = e.button === 1 || e.shiftKey;
+
+    if (explicitPan || shouldPanForTouch(e)) {
+      panRef.current = { initial: view, startX: p.x, startY: p.y, pointerId: e.pointerId };
       return;
     }
 
-    // Begin draw
+    // Begin draw (pen or non-penOnly touch or mouse).
     const wp = toWorld(p.x, p.y);
     if (tool === 'eraser') {
       eraseAt(wp.x, wp.y);
@@ -209,9 +239,9 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!pointersRef.current.has(e.pointerId)) return;
     const p = localPoint(e);
-    pointersRef.current.set(e.pointerId, p);
+    const existing = pointersRef.current.get(e.pointerId)!;
+    pointersRef.current.set(e.pointerId, { x: p.x, y: p.y, type: existing.type });
 
-    // Pinch
     if (pinchRef.current && pointersRef.current.size === 2) {
       const pts = Array.from(pointersRef.current.values());
       const dx = pts[0].x - pts[1].x;
@@ -221,7 +251,6 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
       const { initial } = pinchRef.current;
       const ratio = dist / pinchRef.current.dist;
       const nextScale = clampScale(initial.scale * ratio);
-      // Anchor at the pinch midpoint, but also let the midpoint drift to translate.
       const wx = (pinchRef.current.center.x - initial.tx) / initial.scale;
       const wy = (pinchRef.current.center.y - initial.ty) / initial.scale;
       const tx = center.x - wx * nextScale;
@@ -230,14 +259,12 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
       return;
     }
 
-    // Pan
-    if (panRef.current) {
+    if (panRef.current && panRef.current.pointerId === e.pointerId) {
       const { initial, startX, startY } = panRef.current;
       setView({ scale: initial.scale, tx: initial.tx + (p.x - startX), ty: initial.ty + (p.y - startY) });
       return;
     }
 
-    // Drawing
     if (drawingRef.current && drawingRef.current.pointerId === e.pointerId) {
       const wp = toWorld(p.x, p.y);
       if (tool === 'eraser') {
@@ -259,11 +286,9 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
     if (cnv.hasPointerCapture(e.pointerId)) cnv.releasePointerCapture(e.pointerId);
     pointersRef.current.delete(e.pointerId);
 
-    if (pointersRef.current.size < 2) {
-      pinchRef.current = null;
-    }
+    if (pointersRef.current.size < 2) pinchRef.current = null;
 
-    if (panRef.current && pointersRef.current.size === 0) {
+    if (panRef.current && panRef.current.pointerId === e.pointerId) {
       panRef.current = null;
     }
 
@@ -324,9 +349,9 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
     redraw();
   };
 
-  const zoomIn = () => {
+  const zoomAt = (factor: number) => {
     setView(v => {
-      const ns = clampScale(v.scale * 1.4);
+      const ns = clampScale(v.scale * factor);
       const ax = size.w / 2;
       const ay = size.h / 2;
       const wx = (ax - v.tx) / v.scale;
@@ -334,44 +359,37 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
       return { scale: ns, tx: ax - wx * ns, ty: ay - wy * ns };
     });
   };
-  const zoomOut = () => {
-    setView(v => {
-      const ns = clampScale(v.scale / 1.4);
-      const ax = size.w / 2;
-      const ay = size.h / 2;
-      const wx = (ax - v.tx) / v.scale;
-      const wy = (ay - v.ty) / v.scale;
-      return { scale: ns, tx: ax - wx * ns, ty: ay - wy * ns };
-    });
-  };
+  const zoomIn = () => zoomAt(1.4);
+  const zoomOut = () => zoomAt(1 / 1.4);
   const resetView = () => setView({ scale: 1, tx: 0, ty: 0 });
 
-  // --- Split screen divider drag ---
-  const dividerDragRef = useRef<{ startX: number; startRatio: number } | null>(null);
-
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      const root = rootRef.current;
-      if (!dividerDragRef.current || !root) return;
-      const rect = root.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const ratio = Math.max(0.2, Math.min(0.8, x / rect.width));
-      setSplitRatio(ratio);
-    };
-    const onUp = () => { dividerDragRef.current = null; };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-  }, []);
+  // --- Split divider drag (use pointer capture on the divider itself
+  // so iPad touch events keep firing on it). ---
+  const dividerDragRef = useRef<{ pointerId: number } | null>(null);
 
   const onDividerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
-    dividerDragRef.current = { startX: e.clientX, startRatio: splitRatio };
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    dividerDragRef.current = { pointerId: e.pointerId };
+  };
+
+  const onDividerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dividerDragRef.current || dividerDragRef.current.pointerId !== e.pointerId) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const rect = root.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const ratio = Math.max(0.2, Math.min(0.85, x / rect.width));
+    setSplitRatio(ratio);
+  };
+
+  const onDividerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    if (dividerDragRef.current && dividerDragRef.current.pointerId === e.pointerId) {
+      dividerDragRef.current = null;
+    }
   };
 
   const toggleSplit = () => {
@@ -384,9 +402,17 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
     <div className="sketch-root" ref={rootRef}>
       <div
         className="sketch-pane"
-        style={splitOpen && !isMobile ? { width: `${splitRatio * 100}%` } : undefined}
+        style={splitOpen && canSplit ? { width: `${splitRatio * 100}%` } : undefined}
       >
         <div className="sketch-toolbar">
+          {onClose && (
+            <>
+              <button className="sk-btn sk-back" onClick={onClose} title="戻る">
+                <ArrowLeft size={16} />
+              </button>
+              <div className="sk-divider" />
+            </>
+          )}
           <button
             className={`sk-btn ${tool === 'pen' ? 'active' : ''}`}
             onClick={() => setTool('pen')}
@@ -449,7 +475,15 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
           <button className="sk-btn" onClick={resetView} title="全体表示">
             <Maximize size={16} />
           </button>
-          {!isMobile && (
+          <div className="sk-divider" />
+          <button
+            className={`sk-btn ${penOnly ? 'active' : ''}`}
+            onClick={() => setPenOnly(v => !v)}
+            title={penOnly ? 'ペン専用モード ON（指でスクロール）' : 'ペン専用モード OFF（指でも描画）'}
+          >
+            {penOnly ? <Hand size={16} /> : <Fingerprint size={16} />}
+          </button>
+          {canSplit && (
             <>
               <div className="sk-divider" />
               <button
@@ -473,17 +507,21 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
             onPointerLeave={finishPointer}
           />
           <div className="sketch-hint">
-            {tool === 'pen' ? '指やペンで自由に描けます' : 'タップでストロークを消去'}
-            <span className="sketch-hint-sub">・ 二本指でピンチズーム / Shift+ドラッグで移動</span>
+            {penOnly
+              ? 'ペンで描画 / 指でスクロール・ピンチズーム'
+              : (tool === 'pen' ? '指やペンで自由に描けます' : 'タップでストロークを消去')}
           </div>
         </div>
       </div>
 
-      {splitOpen && !isMobile && (
+      {splitOpen && canSplit && (
         <>
           <div
             className="sketch-divider"
             onPointerDown={onDividerDown}
+            onPointerMove={onDividerMove}
+            onPointerUp={onDividerUp}
+            onPointerCancel={onDividerUp}
             role="separator"
             aria-orientation="vertical"
             aria-label="パネルの幅を調整"
@@ -545,13 +583,17 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
 
       <style jsx>{`
         .sketch-root {
-          flex: 1;
+          position: fixed;
+          inset: 0;
+          z-index: 1500;
           display: flex;
           flex-direction: row;
-          height: 100%;
-          min-height: 0;
           background: var(--background);
           overflow: hidden;
+          padding-top: env(safe-area-inset-top);
+          padding-bottom: env(safe-area-inset-bottom);
+          padding-left: env(safe-area-inset-left);
+          padding-right: env(safe-area-inset-right);
         }
         .sketch-pane {
           flex: 1;
@@ -585,9 +627,13 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
           flex-shrink: 0;
           font-size: 0.75rem;
           font-weight: 600;
+          min-height: 32px;
         }
         .sk-btn.active {
           border-color: var(--primary);
+          color: var(--primary);
+        }
+        .sk-btn.sk-back {
           color: var(--primary);
         }
         .sk-btn.sk-label {
@@ -661,25 +707,33 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
           padding: 4px 8px;
           border-radius: 6px;
         }
-        .sketch-hint-sub {
-          margin-left: 6px;
-          opacity: 0.7;
-        }
         :global([data-theme='dark']) .sketch-hint {
           background: rgba(0,0,0,0.55);
           color: #ddd;
         }
 
         .sketch-divider {
-          width: 6px;
+          width: 10px;
           cursor: col-resize;
           background: var(--border);
           flex-shrink: 0;
           touch-action: none;
+          position: relative;
         }
-        .sketch-divider:hover {
+        .sketch-divider::after {
+          content: '';
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          width: 3px;
+          height: 32px;
+          transform: translate(-50%, -50%);
           background: var(--primary);
-          opacity: 0.6;
+          border-radius: 2px;
+          opacity: 0.45;
+        }
+        .sketch-divider:hover::after {
+          opacity: 0.9;
         }
 
         .sketch-side {
@@ -785,19 +839,23 @@ export default function SketchTab({ isMobile }: SketchTabProps) {
           position: relative;
           overflow: hidden;
         }
-        /* NoteEditor uses position:fixed in its mobile/header CSS; constrain
-           it to this panel by overriding to absolute within the body. */
+        /* NoteEditor uses position:fixed for its header (top:0;left:0).
+           Constrain it inside our side panel so it doesn't escape and
+           cover the sketch toolbar / split tabs. */
         .side-note-body :global(.editor-container) {
           position: absolute !important;
-          inset: 0;
+          inset: 0 !important;
           width: 100% !important;
           height: 100% !important;
           z-index: auto !important;
+          border-radius: 0 !important;
         }
         .side-note-body :global(.editor-header) {
           position: absolute !important;
+          top: 0 !important;
           left: 0 !important;
           right: 0 !important;
+          z-index: 1 !important;
         }
       `}</style>
     </div>
