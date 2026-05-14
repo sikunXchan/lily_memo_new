@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import type { Folder, Note } from '@/lib/db';
 
 interface DirectoryGraphProps {
@@ -21,6 +22,11 @@ type LaidOutNode = {
 };
 
 type Link = { ax: number; ay: number; bx: number; by: number };
+type View = { scale: number; tx: number; ty: number };
+
+const MIN_SCALE = 0.4;
+const MAX_SCALE = 6;
+const TAP_MOVE_THRESHOLD = 6; // px in screen space — distinguishes tap from drag
 
 const COLOR_MAP: Record<string, string> = {
   '--folder-pink': '#ffb6c1',
@@ -189,6 +195,7 @@ function paintGraph(
   dpr: number,
   data: { nodes: LaidOutNode[]; links: Link[] },
   activeId: { kind: 'note'; refId: number } | null,
+  view: View,
 ) {
   cnv.width = Math.max(1, Math.ceil(w * dpr));
   cnv.height = Math.max(1, Math.ceil(h * dpr));
@@ -200,8 +207,12 @@ function paintGraph(
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
 
+  // Apply user view transform after DPR scale.
+  ctx.translate(view.tx, view.ty);
+  ctx.scale(view.scale, view.scale);
+
   // Links first (under nodes).
-  ctx.lineWidth = 0.6;
+  ctx.lineWidth = 0.6 / view.scale;
   ctx.strokeStyle = 'rgba(180, 200, 255, 0.22)';
   ctx.beginPath();
   for (const l of data.links) {
@@ -239,20 +250,24 @@ function paintGraph(
 
     if (activeId && n.kind === 'note' && n.refId === activeId.refId) {
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.4 / view.scale;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r + 2.5, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, n.r + 2.5 / view.scale, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
 
-  // Labels last so they sit on top.
+  // Labels last so they sit on top. Counter-scale so font remains readable.
   ctx.fillStyle = '#dfe6ff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (const n of data.nodes) {
-    ctx.font = `${n.kind === 'folder' ? 10 : 9}px sans-serif`;
-    ctx.fillText(n.label.slice(0, 14), n.x, n.y + n.r + 3);
+    const baseSize = n.kind === 'folder' ? 10 : 9;
+    // Keep labels roughly the same screen size by dividing by view.scale,
+    // but clamp so they don't explode when zoomed out.
+    const fontSize = Math.max(7, Math.min(16, baseSize / view.scale));
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.fillText(n.label.slice(0, 14), n.x, n.y + n.r + 3 / view.scale);
   }
 }
 
@@ -261,6 +276,7 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const fgCanvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 280, height: 400 });
+  const [view, setView] = useState<View>({ scale: 1, tx: 0, ty: 0 });
 
   const data = useMemo(
     () => layoutNodes(folders, notes, size.width, size.height),
@@ -290,34 +306,221 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
     if (!fg) return;
     const dpr = window.devicePixelRatio || 1;
     const active = activeNoteId != null ? { kind: 'note' as const, refId: activeNoteId } : null;
-    paintGraph(fg, size.width, size.height, dpr, data, active);
-  }, [data, size.width, size.height, activeNoteId]);
+    paintGraph(fg, size.width, size.height, dpr, data, active, view);
+  }, [data, size.width, size.height, activeNoteId, view]);
 
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    // Hit radius generous enough to be tappable on mobile.
-    const tapR = 14;
-    let best: LaidOutNode | null = null;
-    let bestDist = tapR * tapR;
-    for (const n of data.nodes) {
-      if (n.kind !== 'note') continue;
-      const dx = n.x - x;
-      const dy = n.y - y;
-      const d = dx * dx + dy * dy;
-      if (d < bestDist) {
-        bestDist = d;
-        best = n;
+  const clampScale = (s: number) => Math.max(MIN_SCALE, Math.min(MAX_SCALE, s));
+
+  // Zoom toward an anchor point given in canvas-local (CSS) pixels.
+  const zoomAt = useCallback((nextScaleRaw: number, ax: number, ay: number) => {
+    setView(v => {
+      const nextScale = clampScale(nextScaleRaw);
+      if (nextScale === v.scale) return v;
+      // World point under the anchor before zooming: (ax - tx) / scale.
+      // We want the same world point under the anchor after zooming, so:
+      const wx = (ax - v.tx) / v.scale;
+      const wy = (ay - v.ty) / v.scale;
+      return {
+        scale: nextScale,
+        tx: ax - wx * nextScale,
+        ty: ay - wy * nextScale,
+      };
+    });
+  }, []);
+
+  // --- Wheel zoom (desktop) ---
+  useEffect(() => {
+    const fg = fgCanvasRef.current;
+    if (!fg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = fg.getBoundingClientRect();
+      const ax = e.clientX - rect.left;
+      const ay = e.clientY - rect.top;
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      setView(v => {
+        const nextScale = clampScale(v.scale * factor);
+        if (nextScale === v.scale) return v;
+        const wx = (ax - v.tx) / v.scale;
+        const wy = (ay - v.ty) / v.scale;
+        return { scale: nextScale, tx: ax - wx * nextScale, ty: ay - wy * nextScale };
+      });
+    };
+    fg.addEventListener('wheel', onWheel, { passive: false });
+    return () => fg.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // --- Pointer drag / pinch ---
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const dragStateRef = useRef<{
+    moved: boolean;
+    startX: number;
+    startY: number;
+    initial: View | null;
+    pinchDist: number | null;
+    pinchCenter: { x: number; y: number } | null;
+  }>({ moved: false, startX: 0, startY: 0, initial: null, pinchDist: null, pinchCenter: null });
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const fg = e.currentTarget;
+    fg.setPointerCapture(e.pointerId);
+    const rect = fg.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    pointersRef.current.set(e.pointerId, { x: px, y: py });
+
+    if (pointersRef.current.size === 1) {
+      dragStateRef.current = {
+        moved: false,
+        startX: px,
+        startY: py,
+        initial: view,
+        pinchDist: null,
+        pinchCenter: null,
+      };
+    } else if (pointersRef.current.size === 2) {
+      const pts = Array.from(pointersRef.current.values());
+      const dx = pts[0].x - pts[1].x;
+      const dy = pts[0].y - pts[1].y;
+      dragStateRef.current.pinchDist = Math.hypot(dx, dy);
+      dragStateRef.current.pinchCenter = {
+        x: (pts[0].x + pts[1].x) / 2,
+        y: (pts[0].y + pts[1].y) / 2,
+      };
+      dragStateRef.current.initial = view;
+      dragStateRef.current.moved = true;
+    }
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    const fg = e.currentTarget;
+    const rect = fg.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    pointersRef.current.set(e.pointerId, { x: px, y: py });
+
+    if (pointersRef.current.size === 2) {
+      // Pinch zoom.
+      const pts = Array.from(pointersRef.current.values());
+      const dx = pts[0].x - pts[1].x;
+      const dy = pts[0].y - pts[1].y;
+      const dist = Math.hypot(dx, dy);
+      const center = {
+        x: (pts[0].x + pts[1].x) / 2,
+        y: (pts[0].y + pts[1].y) / 2,
+      };
+      const ds = dragStateRef.current;
+      if (ds.pinchDist && ds.initial) {
+        const ratio = dist / ds.pinchDist;
+        const nextScale = clampScale(ds.initial.scale * ratio);
+        const wx = (center.x - ds.initial.tx) / ds.initial.scale;
+        const wy = (center.y - ds.initial.ty) / ds.initial.scale;
+        setView({
+          scale: nextScale,
+          tx: center.x - wx * nextScale,
+          ty: center.y - wy * nextScale,
+        });
+      }
+      return;
+    }
+
+    if (pointersRef.current.size === 1) {
+      const ds = dragStateRef.current;
+      if (!ds.initial) return;
+      const dxRaw = px - ds.startX;
+      const dyRaw = py - ds.startY;
+      if (!ds.moved && Math.hypot(dxRaw, dyRaw) > TAP_MOVE_THRESHOLD) {
+        ds.moved = true;
+      }
+      if (ds.moved) {
+        setView({ scale: ds.initial.scale, tx: ds.initial.tx + dxRaw, ty: ds.initial.ty + dyRaw });
       }
     }
-    if (best) onSelectNote(best.refId);
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const fg = e.currentTarget;
+    const rect = fg.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const wasPinch = pointersRef.current.size >= 2;
+    pointersRef.current.delete(e.pointerId);
+    if (fg.hasPointerCapture(e.pointerId)) fg.releasePointerCapture(e.pointerId);
+
+    if (pointersRef.current.size === 0) {
+      const ds = dragStateRef.current;
+      if (!ds.moved && !wasPinch) {
+        // Treat as tap → select.
+        const tapR = 14 / view.scale;
+        // Convert tap point to world coords.
+        const wx = (px - view.tx) / view.scale;
+        const wy = (py - view.ty) / view.scale;
+        let best: LaidOutNode | null = null;
+        let bestDist = tapR * tapR;
+        for (const n of data.nodes) {
+          if (n.kind !== 'note') continue;
+          const dx = n.x - wx;
+          const dy = n.y - wy;
+          const d = dx * dx + dy * dy;
+          if (d < bestDist) {
+            bestDist = d;
+            best = n;
+          }
+        }
+        if (best) onSelectNote(best.refId);
+      }
+      dragStateRef.current.initial = null;
+      dragStateRef.current.pinchDist = null;
+    } else if (pointersRef.current.size === 1) {
+      // Switching back to single-pointer drag — re-anchor.
+      const remaining = Array.from(pointersRef.current.entries())[0];
+      dragStateRef.current = {
+        moved: true,
+        startX: remaining[1].x,
+        startY: remaining[1].y,
+        initial: view,
+        pinchDist: null,
+        pinchCenter: null,
+      };
+    }
+  };
+
+  const zoomInBtn = () => {
+    zoomAt(view.scale * 1.4, size.width / 2, size.height / 2);
+  };
+  const zoomOutBtn = () => {
+    zoomAt(view.scale / 1.4, size.width / 2, size.height / 2);
+  };
+  const resetView = () => {
+    setView({ scale: 1, tx: 0, ty: 0 });
   };
 
   return (
     <div ref={containerRef} className="directory-graph">
       <canvas ref={bgCanvasRef} className="layer bg" aria-hidden="true" />
-      <canvas ref={fgCanvasRef} className="layer fg" onClick={handleClick} />
+      <canvas
+        ref={fgCanvasRef}
+        className="layer fg"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      />
+      <div className="graph-controls" aria-label="ズーム操作">
+        <button className="gc-btn" onClick={zoomInBtn} title="拡大" aria-label="拡大">
+          <ZoomIn size={14} />
+        </button>
+        <button className="gc-btn gc-label" onClick={resetView} title="リセット">
+          {Math.round(view.scale * 100)}%
+        </button>
+        <button className="gc-btn" onClick={zoomOutBtn} title="縮小" aria-label="縮小">
+          <ZoomOut size={14} />
+        </button>
+        <button className="gc-btn" onClick={resetView} title="全体表示" aria-label="全体表示">
+          <Maximize size={14} />
+        </button>
+      </div>
       <style jsx>{`
         .directory-graph {
           width: 100%;
@@ -340,7 +543,46 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
         }
         .fg {
           z-index: 1;
-          cursor: pointer;
+          cursor: grab;
+          touch-action: none;
+        }
+        .fg:active {
+          cursor: grabbing;
+        }
+        .graph-controls {
+          position: absolute;
+          bottom: 8px;
+          right: 8px;
+          z-index: 2;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          background: rgba(20, 22, 40, 0.7);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          padding: 4px;
+          border-radius: 10px;
+          border: 1px solid rgba(255,255,255,0.08);
+        }
+        .gc-btn {
+          width: 30px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: transparent;
+          color: #cfd6ff;
+          border-radius: 6px;
+          padding: 0;
+          font-size: 0.65rem;
+          font-weight: 600;
+        }
+        .gc-btn:hover {
+          background: rgba(255,255,255,0.08);
+        }
+        .gc-btn.gc-label {
+          min-width: 36px;
+          padding: 0 4px;
         }
       `}</style>
     </div>

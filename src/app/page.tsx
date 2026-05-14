@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
-import { Book, Settings as SettingsIcon, FileText } from 'lucide-react';
+import { Book, Settings as SettingsIcon, FileText, Brush } from 'lucide-react';
 
 // Heavy components are loaded only when their tab is opened so the
 // initial bundle stays small enough for mobile Safari to parse without
@@ -11,8 +11,9 @@ import { Book, Settings as SettingsIcon, FileText } from 'lucide-react';
 const NoteEditor = dynamic(() => import('@/components/NoteEditor'), { ssr: false });
 const SettingsModal = dynamic(() => import('@/components/SettingsModal'), { ssr: false });
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
+const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
 
-type TabType = 'memos' | 'pdf' | 'settings';
+type TabType = 'memos' | 'pdf' | 'sketch' | 'settings';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -85,6 +86,11 @@ export default function Home() {
     setActiveNoteId(undefined);
   };
 
+  const openSketch = () => {
+    setActiveTab('sketch');
+    setActiveNoteId(undefined);
+  };
+
   return (
     <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''}`}>
       {isDesktopLayout && (
@@ -93,6 +99,7 @@ export default function Home() {
           onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
           onOpenSettings={openSettings}
           onOpenPDF={openPDF}
+          onOpenSketch={openSketch}
           isMobileOpen={false}
           onToggleMobile={() => {}}
         />
@@ -119,12 +126,16 @@ export default function Home() {
                     onSelectNote={setActiveNoteId}
                     onOpenSettings={openSettings}
                     onOpenPDF={openPDF}
+                    onOpenSketch={openSketch}
                     isMobileOpen={true}
                     onToggleMobile={() => {}}
                   />
                 )}
                 {activeTab === 'pdf' && (
                   <PDFViewer />
+                )}
+                {activeTab === 'sketch' && (
+                  <SketchTab isMobile={isMobile} />
                 )}
                 {isDesktopLayout && activeTab === 'memos' && (
                   <div className="empty-state">
@@ -146,6 +157,10 @@ export default function Home() {
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
             <span>メモ</span>
+          </button>
+          <button className={`nav-item ${activeTab === 'sketch' ? 'active' : ''}`} onClick={() => { setActiveTab('sketch'); setActiveNoteId(undefined); }}>
+            <Brush size={24} />
+            <span>落書き</span>
           </button>
           <button className={`nav-item ${activeTab === 'pdf' ? 'active' : ''}`} onClick={() => { setActiveTab('pdf'); setActiveNoteId(undefined); }}>
             <FileText size={24} />
