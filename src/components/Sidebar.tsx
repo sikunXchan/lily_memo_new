@@ -2,14 +2,9 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, EMPTY_HANDWRITING, serializeHandwriting, newSyncId } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Type as TypeIcon, Pencil } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, Type as TypeIcon, Pencil } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
 import Image from 'next/image';
-
-// Heavy: pulls in react-force-graph-2d + d3 + canvas-confetti shaders.
-// Only needed when the user switches to the graph view.
-const DirectoryGraph = dynamic(() => import('./DirectoryGraph'), { ssr: false });
 
 interface SidebarProps {
   activeNoteId?: number;
@@ -45,21 +40,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
   const [showAddMenu, setShowAddMenu] = useState<{ folderId?: number } | null>(null);
-
-  useEffect(() => {
-    const restoreViewMode = () => {
-      const saved = localStorage.getItem('sidebarViewMode');
-      if (saved === 'graph' || saved === 'tree') setViewMode(saved);
-    };
-    restoreViewMode();
-  }, []);
-
-  const changeViewMode = (mode: 'tree' | 'graph') => {
-    setViewMode(mode);
-    localStorage.setItem('sidebarViewMode', mode);
-  };
 
   useEffect(() => {
     const applyStoredTheme = () => {
@@ -164,38 +145,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           </button>
         </div>
 
-        <div className="view-toggle" role="tablist" aria-label="表示切替">
-          <button
-            role="tab"
-            aria-selected={viewMode === 'tree'}
-            className={`view-toggle-btn ${viewMode === 'tree' ? 'active' : ''}`}
-            onClick={() => changeViewMode('tree')}
-          >
-            <List size={14} />
-            <span>ツリー</span>
-          </button>
-          <button
-            role="tab"
-            aria-selected={viewMode === 'graph'}
-            className={`view-toggle-btn ${viewMode === 'graph' ? 'active' : ''}`}
-            onClick={() => changeViewMode('graph')}
-          >
-            <Sparkles size={14} />
-            <span>つながり</span>
-          </button>
-        </div>
-
         <div className="sidebar-content" style={{ minHeight: 0, overflowY: 'auto' }}>
-          {viewMode === 'graph' ? (
-            <div className="graph-wrapper">
-              <DirectoryGraph
-                folders={folders ?? []}
-                notes={notes ?? []}
-                activeNoteId={activeNoteId}
-                onSelectNote={(id) => { onSelectNote(id); if (window.innerWidth <= 768) onToggleMobile(); }}
-              />
-            </div>
-          ) : (
           <div className="folder-list">
             {folders?.map(folder => (
               <div key={folder.id} className="folder-item-wrapper">
@@ -260,7 +210,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
                 ))}
             </div>
           </div>
-          )}
         </div>
 
         {showAddMenu && (
@@ -385,41 +334,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             align-items: center;
             justify-content: center;
             border-radius: 8px;
-          }
-          .view-toggle {
-            display: flex;
-            background: var(--accent);
-            border-radius: 10px;
-            padding: 3px;
-            margin-bottom: 16px;
-            gap: 2px;
-          }
-          .view-toggle-btn {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            padding: 7px 8px;
-            background: transparent;
-            color: var(--foreground);
-            font-size: 0.8rem;
-            font-weight: 600;
-            border-radius: 8px;
-            transition: all 0.18s;
-            opacity: 0.65;
-          }
-          .view-toggle-btn.active {
-            background: var(--background);
-            color: var(--primary);
-            opacity: 1;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-          }
-          .graph-wrapper {
-            width: 100%;
-            height: 100%;
-            min-height: 280px;
-            display: flex;
           }
           .add-menu-overlay {
             position: fixed;
