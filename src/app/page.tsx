@@ -92,8 +92,8 @@ export default function Home() {
   };
 
   return (
-    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''}`}>
-      {isDesktopLayout && (
+    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
+      {isDesktopLayout && activeTab !== 'sketch' && (
         <Sidebar
           activeNoteId={activeNoteId}
           onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
@@ -135,7 +135,7 @@ export default function Home() {
                   <PDFViewer />
                 )}
                 {activeTab === 'sketch' && (
-                  <SketchTab isMobile={isMobile} />
+                  <SketchTab onClose={() => setActiveTab('memos')} />
                 )}
                 {isDesktopLayout && activeTab === 'memos' && (
                   <div className="empty-state">
@@ -250,6 +250,11 @@ export default function Home() {
         }
         :global([data-theme='dark']) .bottom-nav {
           background: rgba(26, 26, 26, 0.92);
+        }
+        /* Sketch tab is a full-screen overlay — hide bottom nav so the
+           sketch toolbar isn't covered. */
+        .app-container.sketch-mode .bottom-nav {
+          display: none;
         }
 
         .nav-item {
