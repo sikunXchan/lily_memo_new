@@ -76,25 +76,21 @@ export default function SketchTab({ onClose }: SketchTabProps) {
   }, []);
   const canSplit = viewport.w >= SPLIT_MIN_WIDTH;
 
-  // Split screen — side panel position is either left of, or above, the sketch.
-  // Right-side split was dropped: pen-hand naturally rests on the right edge,
-  // so reference material on the left or top is more useful.
+  // Split screen — user wants the side panel either on the LEFT or on TOP
+  // (right was dropped since the pen-hand rests on the right edge).
   type SplitSide = 'left' | 'top';
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitSide, setSplitSide] = useState<SplitSide>(() => {
     if (typeof window === 'undefined') return 'left';
     const saved = localStorage.getItem('sketchSplitSide');
-    if (saved === 'top' || saved === 'left') return saved;
-    // First-time default: portrait → top split (more horizontal drawing room),
-    // landscape → left split (reference next to drawing).
-    return window.innerWidth >= window.innerHeight ? 'left' : 'top';
+    return saved === 'top' ? 'top' : 'left';
   });
   useEffect(() => {
     try { localStorage.setItem('sketchSplitSide', splitSide); } catch {}
   }, [splitSide]);
-  // Side panel size fraction (of the total) for each direction, persisted separately
-  // because comfortable widths and heights differ.
-  const [splitRatio, setSplitRatio] = useState(0.4);
+  // splitRatio = sketch-pane fraction of the total (preserves the original
+  // "pane is 55%, side is 45%" default).
+  const [splitRatio, setSplitRatio] = useState(0.55);
   const [sidePanel, setSidePanel] = useState<SidePanelMode>('memo-list');
   const [openNoteId, setOpenNoteId] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -116,7 +112,7 @@ export default function SketchTab({ onClose }: SketchTabProps) {
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [splitOpen, splitRatio, splitSide]);
+  }, [splitOpen, splitRatio]);
 
   const redraw = useCallback(() => {
     const cnv = canvasRef.current;
@@ -395,11 +391,14 @@ export default function SketchTab({ onClose }: SketchTabProps) {
     const root = rootRef.current;
     if (!root) return;
     const rect = root.getBoundingClientRect();
-    // splitRatio = side-panel fraction (panel is the first child in both modes).
-    const raw = splitSide === 'top'
+    // Side panel is the FIRST child (left or top). The divider position from
+    // the start of the container equals the side panel's size. splitRatio is
+    // the sketch-pane fraction, so it's 1 - sideFraction.
+    const sideFrac = splitSide === 'top'
       ? (e.clientY - rect.top) / rect.height
       : (e.clientX - rect.left) / rect.width;
-    setSplitRatio(Math.max(0.15, Math.min(0.85, raw)));
+    const next = 1 - sideFrac;
+    setSplitRatio(Math.max(0.2, Math.min(0.85, next)));
   };
 
   const onDividerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -422,14 +421,94 @@ export default function SketchTab({ onClose }: SketchTabProps) {
   };
 
   const splitActive = splitOpen && canSplit;
-  const sidePct = `${splitRatio * 100}%`;
   const paneStyle = splitActive
-    ? (splitSide === 'top' ? { height: `${(1 - splitRatio) * 100}%` } : { width: `${(1 - splitRatio) * 100}%` })
+    ? (splitSide === 'top'
+        ? { height: `${splitRatio * 100}%` }
+        : { width: `${splitRatio * 100}%` })
     : undefined;
-  const sideStyle = splitSide === 'top' ? { height: sidePct } : { width: sidePct };
+  const sideStyle = splitSide === 'top'
+    ? { height: `${(1 - splitRatio) * 100}%` }
+    : { width: `${(1 - splitRatio) * 100}%` };
 
-  const sketchPane = (
-    <div className="sketch-pane" style={paneStyle}>
+  // Side panel + divider rendered BEFORE the sketch-pane so the side panel
+  // sits on the left (in row mode) or on the top (in column mode).
+  const splitBlock = splitActive && (
+    <>
+      <div className="sketch-side" style={sideStyle}>
+        <div className="side-tabs">
+          <button
+            className={`side-tab ${sidePanel !== 'pdf' ? 'active' : ''}`}
+            onClick={() => { setSidePanel('memo-list'); setOpenNoteId(null); }}
+          >
+            <BookOpen size={14} />
+            <span>メモ</span>
+          </button>
+          <button
+            className={`side-tab ${sidePanel === 'pdf' ? 'active' : ''}`}
+            onClick={() => { setSidePanel('pdf'); setOpenNoteId(null); }}
+          >
+            <FileText size={14} />
+            <span>PDF</span>
+          </button>
+          <button className="side-close" onClick={() => setSplitOpen(false)} title="閉じる">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="side-body">
+          {sidePanel === 'pdf' ? (
+            <PDFViewer />
+          ) : openNoteId ? (
+            <div className="side-note-host">
+              <button className="side-back" onClick={() => setOpenNoteId(null)}>
+                <ArrowLeft size={14} />
+                <span>一覧に戻る</span>
+              </button>
+              <div className="side-note-body">
+                <NoteEditor noteId={openNoteId} onClose={() => setOpenNoteId(null)} />
+              </div>
+            </div>
+          ) : (
+            <div className="side-note-list">
+              {(notesList ?? []).length === 0 && (
+                <div className="side-empty">メモがありません</div>
+              )}
+              {(notesList ?? []).map(n => (
+                <button
+                  key={n.id}
+                  className="side-note-item"
+                  onClick={() => { setSidePanel('memo-open'); setOpenNoteId(n.id!); }}
+                >
+                  <BookOpen size={14} />
+                  <span>{n.title || '無題のメモ'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div
+        className="sketch-divider"
+        onPointerDown={onDividerDown}
+        onPointerMove={onDividerMove}
+        onPointerUp={onDividerUp}
+        onPointerCancel={onDividerUp}
+        role="separator"
+        aria-orientation={splitSide === 'top' ? 'horizontal' : 'vertical'}
+        aria-label="パネルのサイズを調整"
+      />
+    </>
+  );
+
+  return (
+    <div
+      className={`sketch-root ${splitActive ? `split-${splitSide}` : ''}`}
+      ref={rootRef}
+    >
+      {splitBlock}
+      <div
+        className="sketch-pane"
+        style={paneStyle}
+      >
         <div className="sketch-toolbar">
           {onClose && (
             <>
@@ -546,84 +625,6 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           </div>
         </div>
       </div>
-  );
-
-  const sideDivider = splitActive && (
-    <div
-      className="sketch-divider"
-      onPointerDown={onDividerDown}
-      onPointerMove={onDividerMove}
-      onPointerUp={onDividerUp}
-      onPointerCancel={onDividerUp}
-      role="separator"
-      aria-orientation={splitSide === 'top' ? 'horizontal' : 'vertical'}
-      aria-label="パネルのサイズを調整"
-    />
-  );
-
-  const sidePanelEl = splitActive && (
-    <div className="sketch-side" style={sideStyle}>
-      <div className="side-tabs">
-        <button
-          className={`side-tab ${sidePanel !== 'pdf' ? 'active' : ''}`}
-          onClick={() => { setSidePanel('memo-list'); setOpenNoteId(null); }}
-        >
-          <BookOpen size={14} />
-          <span>メモ</span>
-        </button>
-        <button
-          className={`side-tab ${sidePanel === 'pdf' ? 'active' : ''}`}
-          onClick={() => { setSidePanel('pdf'); setOpenNoteId(null); }}
-        >
-          <FileText size={14} />
-          <span>PDF</span>
-        </button>
-        <button className="side-close" onClick={() => setSplitOpen(false)} title="閉じる">
-          <X size={16} />
-        </button>
-      </div>
-      <div className="side-body">
-        {sidePanel === 'pdf' ? (
-          <PDFViewer />
-        ) : openNoteId ? (
-          <div className="side-note-host">
-            <button className="side-back" onClick={() => setOpenNoteId(null)}>
-              <ArrowLeft size={14} />
-              <span>一覧に戻る</span>
-            </button>
-            <div className="side-note-body">
-              <NoteEditor noteId={openNoteId} onClose={() => setOpenNoteId(null)} />
-            </div>
-          </div>
-        ) : (
-          <div className="side-note-list">
-            {(notesList ?? []).length === 0 && (
-              <div className="side-empty">メモがありません</div>
-            )}
-            {(notesList ?? []).map(n => (
-              <button
-                key={n.id}
-                className="side-note-item"
-                onClick={() => { setSidePanel('memo-open'); setOpenNoteId(n.id!); }}
-              >
-                <BookOpen size={14} />
-                <span>{n.title || '無題のメモ'}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <div
-      className={`sketch-root ${splitActive ? `split-${splitSide}` : ''}`}
-      ref={rootRef}
-    >
-      {sidePanelEl}
-      {sideDivider}
-      {sketchPane}
 
       <style jsx>{`
         .sketch-root {
@@ -643,54 +644,38 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           flex-direction: column;
         }
         .sketch-pane {
-          flex: 1 1 auto;
+          flex: 1;
           display: flex;
           flex-direction: column;
           min-width: 0;
           min-height: 0;
-          position: relative;
-          z-index: 1;
         }
-        .split-left .sketch-pane {
-          min-width: 280px;
-        }
-        .split-top .sketch-pane {
-          min-height: 240px;
-        }
-        /* Toolbar: use white-space:nowrap + inline-flex children so the row
-           cannot accidentally wrap regardless of any flex quirks on iPad
-           Safari. Width is explicit 100% with box-sizing border-box. */
         .sketch-toolbar {
-          display: block;
-          white-space: nowrap;
+          display: flex;
+          align-items: center;
+          gap: 6px;
           padding: 8px 10px;
           background: var(--accent);
           border-bottom: 1px solid var(--border);
           overflow-x: auto;
-          overflow-y: hidden;
           -webkit-overflow-scrolling: touch;
           scrollbar-width: none;
           flex-shrink: 0;
-          width: 100%;
-          box-sizing: border-box;
-          z-index: 5;
         }
         .sketch-toolbar::-webkit-scrollbar { display: none; }
         .sk-btn {
           background: var(--background);
           color: var(--foreground);
           padding: 6px 8px;
-          margin-right: 6px;
-          border-radius: 8px !important;
+          border-radius: 8px;
           border: 1px solid transparent;
-          display: inline-flex;
-          vertical-align: middle;
+          display: flex;
           align-items: center;
           justify-content: center;
+          flex-shrink: 0;
           font-size: 0.75rem;
           font-weight: 600;
           min-height: 32px;
-          white-space: nowrap;
         }
         .sk-btn.active {
           border-color: var(--primary);
@@ -706,19 +691,16 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           color: #ef4444;
         }
         .sk-divider {
-          display: inline-block;
-          vertical-align: middle;
           width: 1px;
-          height: 22px;
+          align-self: stretch;
           background: var(--border);
-          margin: 0 4px 0 -2px;
+          flex-shrink: 0;
         }
         .sk-colors, .sk-widths {
-          display: inline-flex;
-          vertical-align: middle;
+          display: flex;
           gap: 6px;
           align-items: center;
-          margin-right: 6px;
+          flex-shrink: 0;
         }
         .sk-color {
           width: 22px;
@@ -734,12 +716,11 @@ export default function SketchTab({ onClose }: SketchTabProps) {
         .sk-width {
           width: 30px;
           height: 30px;
-          display: inline-flex;
-          vertical-align: middle;
+          display: flex;
           align-items: center;
           justify-content: center;
           background: var(--background);
-          border-radius: 8px !important;
+          border-radius: 8px;
           border: 1px solid transparent;
           flex-shrink: 0;
         }
@@ -780,11 +761,10 @@ export default function SketchTab({ onClose }: SketchTabProps) {
         }
 
         .sketch-divider {
+          background: var(--border);
           flex-shrink: 0;
           touch-action: none;
           position: relative;
-          background: var(--border);
-          z-index: 4;
         }
         .split-left .sketch-divider {
           width: 10px;
@@ -799,10 +779,10 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           position: absolute;
           left: 50%;
           top: 50%;
+          transform: translate(-50%, -50%);
           background: var(--primary);
           border-radius: 2px;
           opacity: 0.45;
-          transform: translate(-50%, -50%);
         }
         .split-left .sketch-divider::after {
           width: 3px;
@@ -822,8 +802,6 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           min-width: 0;
           min-height: 0;
           background: var(--background);
-          position: relative;
-          z-index: 1;
         }
         .split-left .sketch-side {
           border-right: 1px solid var(--border);
@@ -833,17 +811,12 @@ export default function SketchTab({ onClose }: SketchTabProps) {
         }
         .side-tabs {
           display: flex;
-          flex-direction: row;
-          flex-wrap: nowrap;
           align-items: center;
           gap: 4px;
           padding: 6px 8px;
           border-bottom: 1px solid var(--border);
           background: var(--accent);
           flex-shrink: 0;
-          width: 100%;
-          box-sizing: border-box;
-          z-index: 5;
         }
         .side-tab {
           display: inline-flex;
