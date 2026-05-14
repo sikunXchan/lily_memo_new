@@ -657,12 +657,12 @@ export default function SketchTab({ onClose }: SketchTabProps) {
         .split-top .sketch-pane {
           min-height: 240px;
         }
+        /* Toolbar: use white-space:nowrap + inline-flex children so the row
+           cannot accidentally wrap regardless of any flex quirks on iPad
+           Safari. Width is explicit 100% with box-sizing border-box. */
         .sketch-toolbar {
-          display: flex;
-          flex-direction: row;
-          flex-wrap: nowrap;
-          align-items: center;
-          gap: 6px;
+          display: block;
+          white-space: nowrap;
           padding: 8px 10px;
           background: var(--accent);
           border-bottom: 1px solid var(--border);
@@ -680,15 +680,17 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           background: var(--background);
           color: var(--foreground);
           padding: 6px 8px;
-          border-radius: 8px;
+          margin-right: 6px;
+          border-radius: 8px !important;
           border: 1px solid transparent;
-          display: flex;
+          display: inline-flex;
+          vertical-align: middle;
           align-items: center;
           justify-content: center;
-          flex-shrink: 0;
           font-size: 0.75rem;
           font-weight: 600;
           min-height: 32px;
+          white-space: nowrap;
         }
         .sk-btn.active {
           border-color: var(--primary);
@@ -704,16 +706,19 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           color: #ef4444;
         }
         .sk-divider {
+          display: inline-block;
+          vertical-align: middle;
           width: 1px;
-          align-self: stretch;
+          height: 22px;
           background: var(--border);
-          flex-shrink: 0;
+          margin: 0 4px 0 -2px;
         }
         .sk-colors, .sk-widths {
-          display: flex;
+          display: inline-flex;
+          vertical-align: middle;
           gap: 6px;
           align-items: center;
-          flex-shrink: 0;
+          margin-right: 6px;
         }
         .sk-color {
           width: 22px;
@@ -729,11 +734,12 @@ export default function SketchTab({ onClose }: SketchTabProps) {
         .sk-width {
           width: 30px;
           height: 30px;
-          display: flex;
+          display: inline-flex;
+          vertical-align: middle;
           align-items: center;
           justify-content: center;
           background: var(--background);
-          border-radius: 8px;
+          border-radius: 8px !important;
           border: 1px solid transparent;
           flex-shrink: 0;
         }
