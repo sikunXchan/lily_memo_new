@@ -1,7 +1,7 @@
 'use client';
 
 import { db, type Folder, type Note } from './db';
-import { getSupabase, getCurrentUserId, SUPABASE_CONFIGURED } from './supabase';
+import { getSupabase, SUPABASE_CONFIGURED } from './supabase';
 
 const LS_LAST_SYNC = 'sync:lastSyncedAt';
 const LS_PENDING = 'sync:pending';
@@ -42,6 +42,8 @@ interface RemoteNote {
 
 export interface SyncStatus {
   configured: boolean;
+  /** True once the initial session check has completed (signedIn is meaningful) */
+  sessionResolved: boolean;
   signedIn: boolean;
   email?: string;
   lastSyncedAt: number;
@@ -55,7 +57,13 @@ let isSyncing = false;
 let lastError: string | undefined;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let lastEmittedJSON = '';
-let authUnsubscribe: (() => void) | null = null;
+// Cached session info, kept in sync via onAuthStateChange so getStatus
+// (and pull/push) never have to await a potentially-hanging
+// sb.auth.getSession() call.
+let sessionSignedIn = false;
+let sessionEmail: string | undefined;
+let sessionUserId: string | undefined;
+let sessionResolved = false;
 
 function readPending(): Pending {
   if (typeof window === 'undefined') return { folders: [], notes: [] };
@@ -87,20 +95,13 @@ function writeLastSynced(v: number): void {
   localStorage.setItem(LS_LAST_SYNC, String(v));
 }
 
-async function getStatus(): Promise<SyncStatus> {
-  const sb = getSupabase();
-  let email: string | undefined;
-  let signedIn = false;
-  if (sb) {
-    const { data } = await sb.auth.getSession();
-    signedIn = !!data.session;
-    email = data.session?.user.email;
-  }
+function getStatus(): SyncStatus {
   const pending = readPending();
   return {
     configured: SUPABASE_CONFIGURED,
-    signedIn,
-    email,
+    sessionResolved: sessionResolved || !SUPABASE_CONFIGURED,
+    signedIn: sessionSignedIn,
+    email: sessionEmail,
     lastSyncedAt: readLastSynced(),
     pendingCount: pending.folders.length + pending.notes.length,
     isSyncing,
@@ -108,8 +109,8 @@ async function getStatus(): Promise<SyncStatus> {
   };
 }
 
-async function emit(): Promise<void> {
-  const s = await getStatus();
+function emit(): void {
+  const s = getStatus();
   const json = JSON.stringify(s);
   if (json === lastEmittedJSON) return;
   lastEmittedJSON = json;
@@ -118,12 +119,8 @@ async function emit(): Promise<void> {
 
 export function subscribeSync(cb: (s: SyncStatus) => void): () => void {
   listeners.add(cb);
-  // Always deliver an initial status to the new subscriber, even if
-  // nothing has changed since the last emit (cached JSON match would
-  // otherwise leave it stuck in the loading state).
-  void getStatus().then(s => {
-    if (listeners.has(cb)) cb(s);
-  });
+  // Always deliver an initial status to the new subscriber.
+  cb(getStatus());
   return () => { listeners.delete(cb); };
 }
 
@@ -148,15 +145,15 @@ export async function pushPending(): Promise<void> {
   if (isSyncing) return;
   const sb = getSupabase();
   if (!sb) return;
-  const userId = await getCurrentUserId();
+  const userId = sessionUserId;
   if (!userId) return;
   const pending = readPending();
   if (pending.folders.length === 0 && pending.notes.length === 0) return;
 
   isSyncing = true;
-  lastError = undefined;
-  await emit();
   try {
+    lastError = undefined;
+    emit();
     // Folders first (parent before children possible since FK is absent)
     if (pending.folders.length > 0) {
       const localFolders = await db.folders.where('syncId').anyOf(pending.folders).toArray();
@@ -217,7 +214,7 @@ export async function pushPending(): Promise<void> {
     console.error('Sync push error:', e);
   } finally {
     isSyncing = false;
-    await emit();
+    emit();
   }
 }
 
@@ -281,13 +278,13 @@ export async function pull(): Promise<void> {
   if (isSyncing) return;
   const sb = getSupabase();
   if (!sb) return;
-  const userId = await getCurrentUserId();
+  const userId = sessionUserId;
   if (!userId) return;
 
   isSyncing = true;
-  lastError = undefined;
-  await emit();
   try {
+    lastError = undefined;
+    emit();
     const since = readLastSynced();
     const PAGE = 500;
 
@@ -339,7 +336,7 @@ export async function pull(): Promise<void> {
     console.error('Sync pull error:', e);
   } finally {
     isSyncing = false;
-    await emit();
+    emit();
   }
 }
 
@@ -352,7 +349,7 @@ async function gcOldTombstones(): Promise<void> {
 async function gcCloudTombstones(): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-  const userId = await getCurrentUserId();
+  const userId = sessionUserId;
   if (!userId) return;
   const cutoff = Date.now() - CLOUD_TOMBSTONE_TTL_MS;
   // Hard-delete cloud rows whose tombstone has aged past the propagation window.
@@ -392,15 +389,29 @@ export async function initSync(): Promise<void> {
 
   // Re-pull on auth state changes. When the active account changes,
   // wipe local data first so each account's notes stay isolated.
-  const { data: { subscription } } = sb.auth.onAuthStateChange(async (_event, session) => {
-    await emit();
+  // The INITIAL_SESSION event also fires here, so we use it to populate
+  // the cached session state without ever blocking on getSession().
+  sb.auth.onAuthStateChange(async (_event, session) => {
+    sessionSignedIn = !!session;
+    sessionEmail = session?.user.email;
+    sessionUserId = session?.user.id;
+    sessionResolved = true;
+    emit();
     if (session?.user) {
       await ensureAccountIsolation(session.user.id);
       await pull();
       await pushPending();
     }
   });
-  authUnsubscribe = () => subscription.unsubscribe();
+
+  // Watchdog: if INITIAL_SESSION never fires (e.g. broken auth), still
+  // notify subscribers after 2s so the UI doesn't hang on the loading state.
+  setTimeout(() => {
+    if (!sessionResolved) {
+      sessionResolved = true;
+      emit();
+    }
+  }, 2000);
 
   // Visibility / pagehide → flush + light pull
   if (typeof window !== 'undefined') {
@@ -416,15 +427,10 @@ export async function initSync(): Promise<void> {
     window.addEventListener('online', () => { void pushPending(); });
   }
 
-  // Initial pull + flush any leftovers
-  const userId = await getCurrentUserId();
-  if (userId) {
-    await ensureAccountIsolation(userId);
-    await pull();
-    await pushPending();
-    await gcOldTombstones();
-  }
-  await emit();
+  // Local Dexie tombstone GC doesn't depend on auth; safe to run eagerly.
+  void gcOldTombstones();
+  // No explicit pull/push here — the INITIAL_SESSION event from
+  // onAuthStateChange handles the first sync once the session is loaded.
 }
 
 /**
@@ -464,12 +470,9 @@ export async function signOut(): Promise<void> {
   // Don't wipe local Dexie data — user might want to keep using offline.
   writeLastSynced(0);
   writePending({ folders: [], notes: [] });
-  if (authUnsubscribe) {
-    authUnsubscribe();
-    authUnsubscribe = null;
-  }
-  initialized = false;
-  await emit();
+  // Keep the auth listener alive so subsequent sign-in still triggers
+  // ensureAccountIsolation/pull/push without needing a page reload.
+  emit();
 }
 
 export async function syncNow(): Promise<void> {
