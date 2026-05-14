@@ -154,9 +154,9 @@ export async function pushPending(): Promise<void> {
   if (pending.folders.length === 0 && pending.notes.length === 0) return;
 
   isSyncing = true;
-  lastError = undefined;
-  await emit();
   try {
+    lastError = undefined;
+    await emit();
     // Folders first (parent before children possible since FK is absent)
     if (pending.folders.length > 0) {
       const localFolders = await db.folders.where('syncId').anyOf(pending.folders).toArray();
@@ -285,9 +285,9 @@ export async function pull(): Promise<void> {
   if (!userId) return;
 
   isSyncing = true;
-  lastError = undefined;
-  await emit();
   try {
+    lastError = undefined;
+    await emit();
     const since = readLastSynced();
     const PAGE = 500;
 
