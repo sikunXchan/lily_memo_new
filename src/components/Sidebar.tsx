@@ -1,7 +1,8 @@
 'use client';
 
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, EMPTY_HANDWRITING, serializeHandwriting } from '@/lib/db';
+import { db, EMPTY_HANDWRITING, serializeHandwriting, newSyncId } from '@/lib/db';
+import { markDirty } from '@/lib/sync';
 import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Type as TypeIcon, Pencil } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
@@ -27,13 +28,14 @@ const COLORS = [
 export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, isMobileOpen, onToggleMobile }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   
-  const folders = useLiveQuery(() => db.folders.toArray());
+  const folders = useLiveQuery(() =>
+    db.folders.filter(f => !f.deletedAt).toArray()
+  );
   const notes = useLiveQuery(() => {
-    if (!searchQuery) return db.notes.toArray();
-    return db.notes
-      .filter(note =>
-        note.title.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    const base = db.notes.filter(note => !note.deletedAt);
+    if (!searchQuery) return base.toArray();
+    return base
+      .filter(note => note.title.toLowerCase().includes(searchQuery.toLowerCase()))
       .toArray();
   }, [searchQuery]);
 
@@ -81,29 +83,42 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
   const addFolder = async () => {
     const name = prompt('フォルダ名を入力してください');
     if (name) {
+      const now = Date.now();
+      const syncId = newSyncId();
       await db.folders.add({
+        syncId,
         name,
-        createdAt: Date.now(),
+        createdAt: now,
+        updatedAt: now,
         color: '--folder-pink'
       });
+      markDirty('folders', syncId);
     }
   };
 
   const updateFolderColor = async (id: number, color: string) => {
-    await db.folders.update(id, { color });
+    const folder = await db.folders.get(id);
+    if (!folder) return;
+    // eslint-disable-next-line react-hooks/purity
+    await db.folders.update(id, { color, updatedAt: Date.now() });
+    markDirty('folders', folder.syncId);
     setEditingFolderColor(null);
   };
 
   const addNote = async (folderId?: number, type: 'text' | 'handwriting' = 'text') => {
     const initialContent = type === 'handwriting' ? serializeHandwriting(EMPTY_HANDWRITING) : '';
+    const now = Date.now();
+    const syncId = newSyncId();
     const id = await db.notes.add({
+      syncId,
       title: type === 'handwriting' ? '無題の手書きメモ' : '無題のメモ',
       content: initialContent,
       folderId,
       type,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
+      createdAt: now,
+      updatedAt: now
     });
+    markDirty('notes', syncId);
     onSelectNote(id as number);
     if (folderId) {
       setExpandedFolders(prev => ({ ...prev, [folderId]: true }));

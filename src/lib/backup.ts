@@ -1,4 +1,4 @@
-import { db, type Note } from './db';
+import { db, type Folder, type Note, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -56,16 +56,33 @@ export async function buildBackupJson(): Promise<string> {
 export async function restoreBackupFromJson(jsonText: string): Promise<void> {
   const data = JSON.parse(jsonText) as Partial<BackupPayload>;
   const imageMap: Record<string, string> = data.images ?? {};
+  const now = Date.now();
   const notes: Note[] = (data.notes ?? []).map(note => {
-    if (!note.content || note.type === 'handwriting') return note;
-    return { ...note, content: restoreImages(note.content, imageMap) };
+    const content = (!note.content || note.type === 'handwriting')
+      ? note.content
+      : restoreImages(note.content, imageMap);
+    return {
+      ...note,
+      content: content ?? '',
+      syncId: note.syncId || newSyncId(),
+      updatedAt: note.updatedAt ?? now,
+    };
+  });
+  const folders: Folder[] = (data.folders ?? []).map(raw => {
+    const f = raw as Partial<Folder>;
+    return {
+      ...f,
+      name: f.name ?? '',
+      createdAt: f.createdAt ?? now,
+      updatedAt: f.updatedAt ?? f.createdAt ?? now,
+      syncId: f.syncId || newSyncId(),
+    } as Folder;
   });
 
   await db.transaction('rw', db.folders, db.notes, async () => {
     await db.folders.clear();
     await db.notes.clear();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (data.folders?.length) await db.folders.bulkPut(data.folders as any);
+    if (folders.length) await db.folders.bulkPut(folders);
     if (notes.length) await db.notes.bulkPut(notes);
   });
 }

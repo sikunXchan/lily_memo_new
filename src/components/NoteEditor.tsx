@@ -12,6 +12,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
 import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react';
 import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING } from '@/lib/db';
+import { markDirty } from '@/lib/sync';
 import {
   ArrowLeft, Trash2, Type,
   BarChart3, Binary, LayoutGrid,
@@ -183,6 +184,8 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         saveTimeoutRef.current = setTimeout(async () => {
           try {
             await db.notes.update(currentNoteId, { content, updatedAt: Date.now() });
+            const updated = await db.notes.get(currentNoteId);
+            if (updated?.syncId) markDirty('notes', updated.syncId);
           } finally {
             setIsSaving(false);
           }
@@ -416,6 +419,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         await db.notes.update(noteId, { content: serializeHandwriting(next), updatedAt: Date.now() });
+        if (note?.syncId) markDirty('notes', note.syncId);
       } finally {
         setIsSaving(false);
       }
@@ -425,11 +429,14 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const updateTitle = async (title: string) => {
     setNote(prev => prev ? { ...prev, title } : null);
     await db.notes.update(noteId, { title, updatedAt: Date.now() });
+    if (note?.syncId) markDirty('notes', note.syncId);
   };
 
   const deleteNote = async () => {
     if (confirm('このメモを削除してもよろしいですか？')) {
-      await db.notes.delete(noteId);
+      const now = Date.now();
+      await db.notes.update(noteId, { deletedAt: now, updatedAt: now });
+      if (note?.syncId) markDirty('notes', note.syncId);
       onClose?.();
     }
   };
@@ -494,6 +501,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const moveToFolder = async (folderId: number | undefined) => {
     await db.notes.update(noteId, { folderId, updatedAt: Date.now() });
     setNote(prev => prev ? { ...prev, folderId } : null);
+    if (note?.syncId) markDirty('notes', note.syncId);
     setShowFolderPicker(false);
   };
 
@@ -525,6 +533,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
         const content = editor.getHTML();
         try {
           await db.notes.update(noteId, { content, updatedAt: Date.now() });
+          if (note?.syncId) markDirty('notes', note.syncId);
         } catch (e) {
           console.error('Failed to save image:', e);
         }
