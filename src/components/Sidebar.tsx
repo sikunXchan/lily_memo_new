@@ -1,8 +1,8 @@
 'use client';
 
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, EMPTY_HANDWRITING, serializeHandwriting, newSyncId } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Type as TypeIcon, Pencil } from 'lucide-react';
+import { db, newSyncId } from '@/lib/db';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -16,6 +16,7 @@ interface SidebarProps {
   onSelectNote: (id: number) => void;
   onOpenSettings: () => void;
   onOpenPDF?: () => void;
+  onOpenSketch?: () => void;
   isMobileOpen: boolean;
   onToggleMobile: () => void;
 }
@@ -28,7 +29,7 @@ const COLORS = [
   { name: 'Purple', value: '--folder-purple' },
 ];
 
-export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, isMobileOpen, onToggleMobile }: SidebarProps) {
+export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, isMobileOpen, onToggleMobile }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   
   const folders = useLiveQuery(() =>
@@ -46,7 +47,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
-  const [showAddMenu, setShowAddMenu] = useState<{ folderId?: number } | null>(null);
 
   useEffect(() => {
     const restoreViewMode = () => {
@@ -105,15 +105,14 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
     setEditingFolderColor(null);
   };
 
-  const addNote = async (folderId?: number, type: 'text' | 'handwriting' = 'text') => {
-    const initialContent = type === 'handwriting' ? serializeHandwriting(EMPTY_HANDWRITING) : '';
+  const addNote = async (folderId?: number) => {
     const now = Date.now();
     const id = await db.notes.add({
       syncId: newSyncId(),
-      title: type === 'handwriting' ? '無題の手書きメモ' : '無題のメモ',
-      content: initialContent,
+      title: '無題のメモ',
+      content: '',
       folderId,
-      type,
+      type: 'text',
       createdAt: now,
       updatedAt: now
     });
@@ -122,14 +121,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
       setExpandedFolders(prev => ({ ...prev, [folderId]: true }));
     }
     if (window.innerWidth <= 768) onToggleMobile();
-  };
-
-  const openAddMenu = (folderId?: number) => setShowAddMenu({ folderId });
-  const closeAddMenu = () => setShowAddMenu(null);
-  const handleAddSelect = async (type: 'text' | 'handwriting') => {
-    const folderId = showAddMenu?.folderId;
-    closeAddMenu();
-    await addNote(folderId, type);
   };
 
   return (
@@ -155,7 +146,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
         </div>
 
         <div className="sidebar-actions">
-          <button className="btn-add" onClick={() => openAddMenu()}>
+          <button className="btn-add" onClick={() => addNote()}>
             <Plus size={18} />
             <span>新しいメモ</span>
           </button>
@@ -207,7 +198,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
                     <button className="btn-inline" onClick={(e) => { e.stopPropagation(); setEditingFolderColor(editingFolderColor === folder.id ? null : folder.id!); }}>
                       <Palette size={14} />
                     </button>
-                    <button className="btn-inline" onClick={(e) => { e.stopPropagation(); openAddMenu(folder.id); }}>
+                    <button className="btn-inline" onClick={(e) => { e.stopPropagation(); addNote(folder.id); }}>
                       <Plus size={14} />
                     </button>
                   </div>
@@ -263,30 +254,13 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           )}
         </div>
 
-        {showAddMenu && (
-          <div className="add-menu-overlay" onClick={closeAddMenu}>
-            <div className="add-menu-sheet" onClick={e => e.stopPropagation()}>
-              <div className="add-menu-title">新しいメモの種類を選択</div>
-              <button className="add-menu-item" onClick={() => handleAddSelect('text')}>
-                <TypeIcon size={20} />
-                <div>
-                  <div className="add-menu-item-title">テキストメモ</div>
-                  <div className="add-menu-item-desc">通常のリッチテキスト編集</div>
-                </div>
-              </button>
-              <button className="add-menu-item" onClick={() => handleAddSelect('handwriting')}>
-                <Pencil size={20} />
-                <div>
-                  <div className="add-menu-item-title">手書きメモ</div>
-                  <div className="add-menu-item-desc">指やペンで描く</div>
-                </div>
-              </button>
-              <button className="add-menu-cancel" onClick={closeAddMenu}>キャンセル</button>
-            </div>
-          </div>
-        )}
-
         <div className="sidebar-footer">
+          {onOpenSketch && (
+            <button className="btn-settings" onClick={onOpenSketch}>
+              <Brush size={20} />
+              <span>落書き</span>
+            </button>
+          )}
           {onOpenPDF && (
             <button className="btn-settings" onClick={onOpenPDF}>
               <FileText size={20} />
@@ -420,66 +394,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             height: 100%;
             min-height: 280px;
             display: flex;
-          }
-          .add-menu-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.4);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 4000;
-            padding: 16px;
-          }
-          .add-menu-sheet {
-            background: var(--background);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            box-shadow: 0 12px 32px rgba(0,0,0,0.25);
-            width: 100%;
-            max-width: 360px;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-          }
-          .add-menu-title {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: var(--primary);
-            margin-bottom: 4px;
-          }
-          .add-menu-item {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 14px;
-            background: var(--accent);
-            color: var(--foreground);
-            border-radius: 12px;
-            text-align: left;
-            cursor: pointer;
-            border: none;
-          }
-          .add-menu-item:hover {
-            background: var(--border);
-          }
-          .add-menu-item-title {
-            font-weight: 700;
-            font-size: 0.95rem;
-          }
-          .add-menu-item-desc {
-            font-size: 0.75rem;
-            opacity: 0.7;
-            margin-top: 2px;
-          }
-          .add-menu-cancel {
-            background: transparent;
-            color: var(--foreground);
-            padding: 10px;
-            font-weight: 600;
-            border-radius: 8px;
-            margin-top: 4px;
           }
           .sidebar-content {
             overflow-y: auto;
