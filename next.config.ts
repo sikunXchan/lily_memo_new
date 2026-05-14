@@ -11,7 +11,11 @@ const withPWA = withPWAInit({
     skipWaiting: true,
     clientsClaim: true,
   },
-  reloadOnOnline: true,
+  // Mobile networks bounce between offline/online frequently
+  // (lock screen, WiFi handoff, tunnels). Auto-reloading on every
+  // online event causes reload storms that Safari surfaces as
+  // "This page couldn't load". Keep state instead.
+  reloadOnOnline: false,
 });
 
 const nextConfig: NextConfig = {

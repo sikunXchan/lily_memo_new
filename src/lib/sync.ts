@@ -8,10 +8,6 @@ const LS_PENDING = 'sync:pending';
 const LS_LAST_USER_ID = 'sync:lastUserId';
 const PUSH_DEBOUNCE_MS = 5000;
 const TOMBSTONE_GC_MS = 30 * 24 * 60 * 60 * 1000;
-// Tombstones live in cloud just long enough for other devices on the same
-// account to pull them. After this window, any device that pulls will
-// hard-delete them — keeps the cloud table free of "deleted" leftovers.
-const CLOUD_TOMBSTONE_TTL_MS = 10 * 60 * 1000;
 
 type TableName = 'folders' | 'notes';
 type Pending = { folders: string[]; notes: string[] };
@@ -327,10 +323,6 @@ export async function pull(): Promise<void> {
     }
 
     if (maxUpdated > since) writeLastSynced(maxUpdated);
-
-    // Hard-delete tombstones older than the propagation window so the
-    // cloud table doesn't accumulate "deleted" rows forever.
-    await gcCloudTombstones();
   } catch (e) {
     lastError = e instanceof Error ? e.message : String(e);
     console.error('Sync pull error:', e);
@@ -344,18 +336,6 @@ async function gcOldTombstones(): Promise<void> {
   const cutoff = Date.now() - TOMBSTONE_GC_MS;
   await db.notes.where('deletedAt').above(0).and(n => (n.deletedAt ?? 0) < cutoff).delete();
   await db.folders.where('deletedAt').above(0).and(f => (f.deletedAt ?? 0) < cutoff).delete();
-}
-
-async function gcCloudTombstones(): Promise<void> {
-  const sb = getSupabase();
-  if (!sb) return;
-  const userId = sessionUserId;
-  if (!userId) return;
-  const cutoff = Date.now() - CLOUD_TOMBSTONE_TTL_MS;
-  // Hard-delete cloud rows whose tombstone has aged past the propagation window.
-  // RLS limits this to rows owned by the current user.
-  await sb.from('notes').delete().not('deleted_at', 'is', null).lt('deleted_at', cutoff);
-  await sb.from('folders').delete().not('deleted_at', 'is', null).lt('deleted_at', cutoff);
 }
 
 async function wipeLocalData(): Promise<void> {
@@ -398,9 +378,16 @@ export async function initSync(): Promise<void> {
     sessionResolved = true;
     emit();
     if (session?.user) {
-      await ensureAccountIsolation(session.user.id);
-      await pull();
-      await pushPending();
+      try {
+        await ensureAccountIsolation(session.user.id);
+        await pull();
+        await pushPending();
+      } catch (e) {
+        // Token refresh on flaky mobile networks can fire this callback
+        // again mid-sync. Swallow so the unhandled rejection doesn't
+        // leak into the page and trip Safari's crash reporter.
+        console.error('Auth-state sync error:', e);
+      }
     }
   });
 
