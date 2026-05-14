@@ -84,7 +84,10 @@ export default function SketchTab({ onClose }: SketchTabProps) {
   const [splitSide, setSplitSide] = useState<SplitSide>(() => {
     if (typeof window === 'undefined') return 'left';
     const saved = localStorage.getItem('sketchSplitSide');
-    return saved === 'top' ? 'top' : 'left';
+    if (saved === 'top' || saved === 'left') return saved;
+    // First-time default: portrait → top split (more horizontal drawing room),
+    // landscape → left split (reference next to drawing).
+    return window.innerWidth >= window.innerHeight ? 'left' : 'top';
   });
   useEffect(() => {
     try { localStorage.setItem('sketchSplitSide', splitSide); } catch {}
@@ -640,29 +643,36 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           flex-direction: column;
         }
         .sketch-pane {
-          flex: 1;
+          flex: 1 1 auto;
           display: flex;
           flex-direction: column;
           min-width: 0;
           min-height: 0;
-          /* Stacking context so the sticky toolbar inside is never covered
-             by the side panel's content. */
           position: relative;
           z-index: 1;
         }
+        .split-left .sketch-pane {
+          min-width: 280px;
+        }
+        .split-top .sketch-pane {
+          min-height: 240px;
+        }
         .sketch-toolbar {
           display: flex;
+          flex-direction: row;
+          flex-wrap: nowrap;
           align-items: center;
           gap: 6px;
           padding: 8px 10px;
           background: var(--accent);
           border-bottom: 1px solid var(--border);
           overflow-x: auto;
+          overflow-y: hidden;
           -webkit-overflow-scrolling: touch;
           scrollbar-width: none;
           flex-shrink: 0;
-          position: sticky;
-          top: 0;
+          width: 100%;
+          box-sizing: border-box;
           z-index: 5;
         }
         .sketch-toolbar::-webkit-scrollbar { display: none; }
@@ -817,14 +827,16 @@ export default function SketchTab({ onClose }: SketchTabProps) {
         }
         .side-tabs {
           display: flex;
+          flex-direction: row;
+          flex-wrap: nowrap;
           align-items: center;
           gap: 4px;
           padding: 6px 8px;
           border-bottom: 1px solid var(--border);
           background: var(--accent);
           flex-shrink: 0;
-          position: sticky;
-          top: 0;
+          width: 100%;
+          box-sizing: border-box;
           z-index: 5;
         }
         .side-tab {
