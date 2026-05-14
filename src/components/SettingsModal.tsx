@@ -126,14 +126,14 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
               </p>
             )}
 
-            {SUPABASE_CONFIGURED && status === null && (
+            {SUPABASE_CONFIGURED && status !== null && !status.sessionResolved && (
               <div className="status-loading">
                 <Loader2 size={16} className="spin" />
                 <span>同期状態を確認しています…</span>
               </div>
             )}
 
-            {SUPABASE_CONFIGURED && status !== null && !status.signedIn && (
+            {SUPABASE_CONFIGURED && status?.sessionResolved && !status.signedIn && (
               <>
                 <p className="desc">
                   自分のアカウントを作成すると、同じアカウントでログインしたデバイス間でメモが自動同期されます。
