@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Eraser, Pencil, Undo2, Trash2 } from 'lucide-react';
+import { Eraser, Pencil, Undo2, Trash2, Maximize2, Minimize2, ZoomIn, ZoomOut, Plus } from 'lucide-react';
 import type { HandwritingDoc, HandwritingStroke } from '@/lib/db';
 
 interface HandwritingCanvasProps {
@@ -12,10 +12,13 @@ interface HandwritingCanvasProps {
 
 const PEN_COLORS = ['#1a1a1a', '#e94e77', '#3273dc', '#23a55a', '#f5a623', '#9b59b6'];
 const PEN_WIDTHS = [1.5, 3, 6];
+const ZOOM_LEVELS = [0.5, 0.75, 1, 1.5, 2, 3];
+const PAGE_EXTEND_PX = 800;
 
 export default function HandwritingCanvas({ value, onChange, readOnly = false }: HandwritingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HandwritingDoc>(value);
   const currentStrokeRef = useRef<HandwritingStroke | null>(null);
   const isDrawingRef = useRef(false);
@@ -23,6 +26,10 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
   const [color, setColor] = useState(PEN_COLORS[0]);
   const [width, setWidth] = useState(PEN_WIDTHS[1]);
+  const [zoom, setZoom] = useState(1);
+  const [fitWidth, setFitWidth] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
 
   // Keep doc ref in sync with prop changes (e.g. note switch)
   useEffect(() => {
@@ -30,6 +37,23 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
     redraw();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
+
+  // Track container width to compute "fit to width" scale
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const apply = () => {
+      const rect = el.getBoundingClientRect();
+      setContainerWidth(rect.width);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isFullscreen]);
+
+  const fitScale = containerWidth > 0 ? containerWidth / docRef.current.width : 1;
+  const displayScale = fitWidth ? fitScale : zoom;
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -176,8 +200,42 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
     redraw();
   };
 
+  const zoomIn = () => {
+    setFitWidth(false);
+    setZoom(z => {
+      const idx = ZOOM_LEVELS.findIndex(l => l > z);
+      return idx === -1 ? z : ZOOM_LEVELS[idx];
+    });
+  };
+
+  const zoomOut = () => {
+    setFitWidth(false);
+    setZoom(z => {
+      const next = [...ZOOM_LEVELS].reverse().find(l => l < z);
+      return next ?? z;
+    });
+  };
+
+  const resetZoom = () => {
+    setZoom(1);
+    setFitWidth(true);
+  };
+
+  const extendPage = () => {
+    if (readOnly) return;
+    const next: HandwritingDoc = { ...docRef.current, height: docRef.current.height + PAGE_EXTEND_PX };
+    docRef.current = next;
+    onChange(next);
+    redraw();
+  };
+
+  const toggleFullscreen = () => setIsFullscreen(v => !v);
+
+  const displayWidth = docRef.current.width * displayScale;
+  const displayHeight = docRef.current.height * displayScale;
+
   return (
-    <div ref={containerRef} className="hw-root">
+    <div ref={containerRef} className={`hw-root ${isFullscreen ? 'is-fullscreen' : ''}`}>
       {!readOnly && (
         <div className="hw-toolbar">
           <button
@@ -222,19 +280,32 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           <div className="hw-divider" />
           <button className="hw-btn" onClick={undo} title="一手戻す"><Undo2 size={16} /></button>
           <button className="hw-btn" onClick={clearAll} title="全消去"><Trash2 size={16} /></button>
+          <div className="hw-divider" />
+          <button className="hw-btn" onClick={zoomOut} title="縮小"><ZoomOut size={16} /></button>
+          <button className="hw-btn hw-zoom-label" onClick={resetZoom} title="表示倍率をリセット">
+            {Math.round(displayScale * 100)}%
+          </button>
+          <button className="hw-btn" onClick={zoomIn} title="拡大"><ZoomIn size={16} /></button>
+          <div className="hw-divider" />
+          <button className="hw-btn" onClick={extendPage} title="下にページ追加"><Plus size={16} /></button>
+          <button className="hw-btn" onClick={toggleFullscreen} title={isFullscreen ? '全画面解除' : '全画面で編集'}>
+            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
         </div>
       )}
-      <div className="hw-canvas-wrap">
-        <canvas
-          ref={canvasRef}
-          className="hw-canvas"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          onPointerLeave={onPointerUp}
-          style={{ touchAction: 'none' }}
-        />
+      <div className="hw-canvas-wrap" ref={wrapRef}>
+        <div className="hw-canvas-stage" style={{ width: displayWidth, height: displayHeight }}>
+          <canvas
+            ref={canvasRef}
+            className="hw-canvas"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onPointerLeave={onPointerUp}
+            style={{ width: displayWidth, height: displayHeight, touchAction: 'none' }}
+          />
+        </div>
       </div>
       <style jsx>{`
         .hw-root {
@@ -242,6 +313,14 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           flex-direction: column;
           gap: 12px;
           width: 100%;
+        }
+        .hw-root.is-fullscreen {
+          position: fixed;
+          inset: 0;
+          z-index: 5000;
+          background: var(--background);
+          padding: env(safe-area-inset-top) 8px calc(8px + env(safe-area-inset-bottom));
+          gap: 8px;
         }
         .hw-toolbar {
           display: flex;
@@ -253,26 +332,42 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           border-radius: 10px;
           flex-wrap: wrap;
         }
+        .is-fullscreen .hw-toolbar {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+        .is-fullscreen .hw-toolbar::-webkit-scrollbar { display: none; }
         .hw-btn {
           background: var(--background);
           color: var(--foreground);
           padding: 6px;
           border-radius: 8px;
           border: 1px solid transparent;
+          flex-shrink: 0;
         }
         .hw-btn.active {
           border-color: var(--primary);
           color: var(--primary);
         }
+        .hw-zoom-label {
+          padding: 6px 8px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          min-width: 48px;
+        }
         .hw-divider {
           width: 1px;
           align-self: stretch;
           background: var(--border);
+          flex-shrink: 0;
         }
         .hw-colors, .hw-widths {
           display: flex;
           gap: 6px;
           align-items: center;
+          flex-shrink: 0;
         }
         .hw-color {
           width: 20px;
@@ -280,6 +375,7 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           border-radius: 50%;
           border: 2px solid transparent;
           padding: 0;
+          flex-shrink: 0;
         }
         .hw-color.active {
           border-color: var(--foreground);
@@ -293,6 +389,7 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           background: var(--background);
           border-radius: 8px;
           border: 1px solid transparent;
+          flex-shrink: 0;
         }
         .hw-width.active {
           border-color: var(--primary);
@@ -305,17 +402,24 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           background: #fff;
           border: 1px solid var(--border);
           border-radius: 12px;
-          overflow: hidden;
+          overflow: auto;
+          -webkit-overflow-scrolling: touch;
           box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+          max-height: 75vh;
+        }
+        .is-fullscreen .hw-canvas-wrap {
+          flex: 1;
+          max-height: none;
+          border-radius: 8px;
         }
         :global([data-theme='dark']) .hw-canvas-wrap {
           background: #f5f5f5;
         }
+        .hw-canvas-stage {
+          position: relative;
+        }
         .hw-canvas {
           display: block;
-          width: 100%;
-          height: auto;
-          aspect-ratio: 4 / 3;
           touch-action: none;
         }
       `}</style>

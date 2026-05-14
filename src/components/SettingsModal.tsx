@@ -126,7 +126,14 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
               </p>
             )}
 
-            {SUPABASE_CONFIGURED && !status?.signedIn && (
+            {SUPABASE_CONFIGURED && status === null && (
+              <div className="status-loading">
+                <Loader2 size={16} className="spin" />
+                <span>同期状態を確認しています…</span>
+              </div>
+            )}
+
+            {SUPABASE_CONFIGURED && status !== null && !status.signedIn && (
               <>
                 <p className="desc">
                   自分のアカウントを作成すると、同じアカウントでログインしたデバイス間でメモが自動同期されます。
@@ -400,6 +407,17 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
           background: var(--background);
           color: var(--foreground);
           width: 100%;
+        }
+        .status-loading {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 12px;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          color: #888;
+          font-size: 0.85rem;
         }
         .sync-status {
           display: flex;
