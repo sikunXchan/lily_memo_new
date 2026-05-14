@@ -1,11 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
-import NoteEditor from '@/components/NoteEditor';
-import SettingsModal from '@/components/SettingsModal';
-import PDFViewer from '@/components/PDFViewer';
 import { Book, Settings as SettingsIcon, FileText } from 'lucide-react';
+
+// Heavy components are loaded only when their tab is opened so the
+// initial bundle stays small enough for mobile Safari to parse without
+// running out of memory ("This page couldn't load").
+const NoteEditor = dynamic(() => import('@/components/NoteEditor'), { ssr: false });
+const SettingsModal = dynamic(() => import('@/components/SettingsModal'), { ssr: false });
+const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
 
 type TabType = 'memos' | 'pdf' | 'settings';
 
@@ -44,6 +49,19 @@ export default function Home() {
 
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist();
+    }
+
+    // Tear down any leftover Service Worker that was installed when the
+    // app shipped a PWA (with cached sync-era JS that crashes mobile
+    // Safari on subsequent visits). Safe to run on every load; if no SW
+    // is registered the calls just no-op.
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(r => r.unregister());
+      }).catch(() => {});
+      if (typeof caches !== 'undefined') {
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
+      }
     }
 
     return () => {

@@ -4,8 +4,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, EMPTY_HANDWRITING, serializeHandwriting, newSyncId } from '@/lib/db';
 import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Type as TypeIcon, Pencil } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import DirectoryGraph from './DirectoryGraph';
+
+// Heavy: pulls in react-force-graph-2d + d3 + canvas-confetti shaders.
+// Only needed when the user switches to the graph view.
+const DirectoryGraph = dynamic(() => import('./DirectoryGraph'), { ssr: false });
 
 interface SidebarProps {
   activeNoteId?: number;
