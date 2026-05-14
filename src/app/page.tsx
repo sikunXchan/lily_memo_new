@@ -51,6 +51,19 @@ export default function Home() {
       navigator.storage.persist();
     }
 
+    // Tear down any leftover Service Worker that was installed when the
+    // app shipped a PWA (with cached sync-era JS that crashes mobile
+    // Safari on subsequent visits). Safe to run on every load; if no SW
+    // is registered the calls just no-op.
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(r => r.unregister());
+      }).catch(() => {});
+      if (typeof caches !== 'undefined') {
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
+      }
+    }
+
     return () => {
       window.removeEventListener('resize', checkLayout);
       window.removeEventListener('focusin', handleFocus);
