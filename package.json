@@ -14,7 +14,6 @@
     "@ducanh2912/next-pwa": "^10.2.9",
     "@libsql/client": "^0.17.3",
     "@paralleldrive/cuid2": "^3.3.0",
-    "@supabase/supabase-js": "^2.105.4",
     "@tiptap/extension-code-block-lowlight": "^3.22.2",
     "@tiptap/extension-highlight": "^3.22.2",
     "@tiptap/extension-history": "^3.22.2",
