@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { Folder, Note } from '@/lib/db';
 
-// CSR only — force-graph touches window on import
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
 
 type GraphNode = {
@@ -39,36 +38,68 @@ function resolveColor(token?: string): string {
   return token;
 }
 
-interface BackgroundStar {
-  x: number;
-  y: number;
-  r: number;
-  baseAlpha: number;
-  twinkleSpeed: number;
-  twinklePhase: number;
+const GLOW_SPRITE_PX = 96; // CSS-pixel sprite resolution
+
+// Pre-render the radial glow once per color so the per-frame node draw
+// is a cheap bitmap blit instead of recreating a CanvasGradient.
+function makeGlowSprite(color: string): HTMLCanvasElement {
+  const cnv = document.createElement('canvas');
+  cnv.width = GLOW_SPRITE_PX;
+  cnv.height = GLOW_SPRITE_PX;
+  const ctx = cnv.getContext('2d');
+  if (!ctx) return cnv;
+  const cx = GLOW_SPRITE_PX / 2;
+  const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
+  g.addColorStop(0, color + 'dd');
+  g.addColorStop(0.4, color + '55');
+  g.addColorStop(1, color + '00');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, GLOW_SPRITE_PX, GLOW_SPRITE_PX);
+  return cnv;
 }
 
-function makeStars(width: number, height: number): BackgroundStar[] {
-  const area = width * height;
+// Pre-render the entire starry backdrop (base color + 2 nebula gradients
+// + static stars) once per size change. Drawing this each frame is just
+// a single drawImage — no allocations, mobile Safari friendly.
+function makeStarfield(w: number, h: number, dpr: number): HTMLCanvasElement {
+  const cnv = document.createElement('canvas');
+  cnv.width = Math.max(1, Math.ceil(w * dpr));
+  cnv.height = Math.max(1, Math.ceil(h * dpr));
+  const ctx = cnv.getContext('2d');
+  if (!ctx) return cnv;
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#070716';
+  ctx.fillRect(0, 0, w, h);
+  const g1 = ctx.createRadialGradient(w * 0.2, h * 0.3, 0, w * 0.2, h * 0.3, w * 0.6);
+  g1.addColorStop(0, 'rgba(110, 70, 160, 0.22)');
+  g1.addColorStop(1, 'rgba(110, 70, 160, 0)');
+  ctx.fillStyle = g1;
+  ctx.fillRect(0, 0, w, h);
+  const g2 = ctx.createRadialGradient(w * 0.8, h * 0.75, 0, w * 0.8, h * 0.75, w * 0.6);
+  g2.addColorStop(0, 'rgba(60, 100, 200, 0.18)');
+  g2.addColorStop(1, 'rgba(60, 100, 200, 0)');
+  ctx.fillStyle = g2;
+  ctx.fillRect(0, 0, w, h);
+  const area = w * h;
   const count = Math.min(280, Math.max(80, Math.floor(area / 3500)));
-  const stars: BackgroundStar[] = [];
   for (let i = 0; i < count; i++) {
-    stars.push({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      r: Math.random() < 0.85 ? Math.random() * 0.7 + 0.2 : Math.random() * 1.3 + 0.7,
-      baseAlpha: Math.random() * 0.6 + 0.25,
-      twinkleSpeed: Math.random() * 0.0015 + 0.0005,
-      twinklePhase: Math.random() * Math.PI * 2,
-    });
+    const r = Math.random() < 0.85 ? Math.random() * 0.7 + 0.2 : Math.random() * 1.3 + 0.7;
+    const a = Math.random() * 0.6 + 0.25;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(Math.random() * w, Math.random() * h, r, 0, Math.PI * 2);
+    ctx.fill();
   }
-  return stars;
+  ctx.globalAlpha = 1;
+  return cnv;
 }
 
 export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectNote }: DirectoryGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 280, height: 400 });
-  const starsRef = useRef<BackgroundStar[]>([]);
+  const starfieldRef = useRef<HTMLCanvasElement | null>(null);
+  const glowCacheRef = useRef<Map<string, HTMLCanvasElement>>(new Map());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
 
@@ -80,7 +111,8 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
       const w = Math.max(120, Math.floor(rect.width));
       const h = Math.max(200, Math.floor(rect.height));
       setSize({ width: w, height: h });
-      starsRef.current = makeStars(w, h);
+      const dpr = window.devicePixelRatio || 1;
+      starfieldRef.current = makeStarfield(w, h, dpr);
     };
     apply();
     const ro = new ResizeObserver(apply);
@@ -88,7 +120,6 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
     return () => ro.disconnect();
   }, []);
 
-  // Tighten the simulation — bring nodes closer together
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
@@ -155,40 +186,27 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
         height={size.height}
         graphData={graphData}
         backgroundColor="rgba(0,0,0,0)"
-        cooldownTicks={150}
+        cooldownTicks={120}
+        cooldownTime={4000}
         nodeRelSize={4}
         linkColor={() => linkColor}
         linkWidth={0.6}
         enableNodeDrag={true}
         onRenderFramePre={(ctx) => {
-          // Paint twinkling stars in graph coordinate space (nope — this fires after transforms).
-          // We draw in canvas pixel space using identity transform for backdrop.
+          // Backdrop is painted in canvas-pixel space (identity transform),
+          // covering the full pixel buffer regardless of devicePixelRatio.
+          // Pre-rendered to an offscreen canvas at the same DPR-scaled
+          // resolution, so this is a single 1:1 blit per frame — no
+          // gradient allocations, no per-star math.
           ctx.save();
           ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.fillStyle = '#070716';
-          ctx.fillRect(0, 0, size.width, size.height);
-          // subtle nebula tint
-          const grad1 = ctx.createRadialGradient(size.width * 0.2, size.height * 0.3, 0, size.width * 0.2, size.height * 0.3, size.width * 0.6);
-          grad1.addColorStop(0, 'rgba(110, 70, 160, 0.22)');
-          grad1.addColorStop(1, 'rgba(110, 70, 160, 0)');
-          ctx.fillStyle = grad1;
-          ctx.fillRect(0, 0, size.width, size.height);
-          const grad2 = ctx.createRadialGradient(size.width * 0.8, size.height * 0.75, 0, size.width * 0.8, size.height * 0.75, size.width * 0.6);
-          grad2.addColorStop(0, 'rgba(60, 100, 200, 0.18)');
-          grad2.addColorStop(1, 'rgba(60, 100, 200, 0)');
-          ctx.fillStyle = grad2;
-          ctx.fillRect(0, 0, size.width, size.height);
-          // stars
-          const t = performance.now();
-          for (const s of starsRef.current) {
-            const a = s.baseAlpha * (0.6 + 0.4 * Math.sin(t * s.twinkleSpeed + s.twinklePhase));
-            ctx.globalAlpha = Math.max(0, Math.min(1, a));
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-            ctx.fill();
+          const sf = starfieldRef.current;
+          if (sf && sf.width > 0 && sf.height > 0) {
+            ctx.drawImage(sf, 0, 0);
+          } else {
+            ctx.fillStyle = '#070716';
+            ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
           }
-          ctx.globalAlpha = 1;
           ctx.restore();
         }}
         onNodeClick={(rawNode) => {
@@ -203,17 +221,15 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
           const y = node.y ?? 0;
           const isActive = node.id === activeId;
           const r = node.kind === 'folder' ? 3.2 : 2.2;
-          // outer glow — bigger and softer, like a star
           const glowR = r * 6;
-          const glow = ctx.createRadialGradient(x, y, 0, x, y, glowR);
-          glow.addColorStop(0, node.color + 'dd');
-          glow.addColorStop(0.4, node.color + '55');
-          glow.addColorStop(1, node.color + '00');
-          ctx.fillStyle = glow;
-          ctx.beginPath();
-          ctx.arc(x, y, glowR, 0, Math.PI * 2);
-          ctx.fill();
-          // bright core (white-hot center)
+          // Glow: pre-rendered per-color sprite, blitted (cheap).
+          let sprite = glowCacheRef.current.get(node.color);
+          if (!sprite) {
+            sprite = makeGlowSprite(node.color);
+            glowCacheRef.current.set(node.color, sprite);
+          }
+          ctx.drawImage(sprite, x - glowR, y - glowR, glowR * 2, glowR * 2);
+          // bright core
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
           ctx.arc(x, y, r * 0.55, 0, Math.PI * 2);
@@ -234,7 +250,6 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
             ctx.arc(x, y, r + 2, 0, Math.PI * 2);
             ctx.stroke();
           }
-          // label (only when zoomed in enough OR for folders)
           if (globalScale > 1.4 || node.kind === 'folder') {
             const fontSize = Math.max(3, 9 / globalScale);
             ctx.font = `${fontSize}px sans-serif`;
