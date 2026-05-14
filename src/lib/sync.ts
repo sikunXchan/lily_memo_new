@@ -5,8 +5,13 @@ import { getSupabase, getCurrentUserId, SUPABASE_CONFIGURED } from './supabase';
 
 const LS_LAST_SYNC = 'sync:lastSyncedAt';
 const LS_PENDING = 'sync:pending';
+const LS_LAST_USER_ID = 'sync:lastUserId';
 const PUSH_DEBOUNCE_MS = 5000;
 const TOMBSTONE_GC_MS = 30 * 24 * 60 * 60 * 1000;
+// Tombstones live in cloud just long enough for other devices on the same
+// account to pull them. After this window, any device that pulls will
+// hard-delete them — keeps the cloud table free of "deleted" leftovers.
+const CLOUD_TOMBSTONE_TTL_MS = 10 * 60 * 1000;
 
 type TableName = 'folders' | 'notes';
 type Pending = { folders: string[]; notes: string[] };
@@ -325,6 +330,10 @@ export async function pull(): Promise<void> {
     }
 
     if (maxUpdated > since) writeLastSynced(maxUpdated);
+
+    // Hard-delete tombstones older than the propagation window so the
+    // cloud table doesn't accumulate "deleted" rows forever.
+    await gcCloudTombstones();
   } catch (e) {
     lastError = e instanceof Error ? e.message : String(e);
     console.error('Sync pull error:', e);
@@ -340,6 +349,38 @@ async function gcOldTombstones(): Promise<void> {
   await db.folders.where('deletedAt').above(0).and(f => (f.deletedAt ?? 0) < cutoff).delete();
 }
 
+async function gcCloudTombstones(): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) return;
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+  const cutoff = Date.now() - CLOUD_TOMBSTONE_TTL_MS;
+  // Hard-delete cloud rows whose tombstone has aged past the propagation window.
+  // RLS limits this to rows owned by the current user.
+  await sb.from('notes').delete().not('deleted_at', 'is', null).lt('deleted_at', cutoff);
+  await sb.from('folders').delete().not('deleted_at', 'is', null).lt('deleted_at', cutoff);
+}
+
+async function wipeLocalData(): Promise<void> {
+  await db.transaction('rw', db.folders, db.notes, async () => {
+    await db.notes.clear();
+    await db.folders.clear();
+  });
+  writeLastSynced(0);
+  writePending({ folders: [], notes: [] });
+}
+
+function readLastUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(LS_LAST_USER_ID);
+}
+
+function writeLastUserId(uid: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (uid) localStorage.setItem(LS_LAST_USER_ID, uid);
+  else localStorage.removeItem(LS_LAST_USER_ID);
+}
+
 let initialized = false;
 export async function initSync(): Promise<void> {
   if (initialized) return;
@@ -349,10 +390,12 @@ export async function initSync(): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
 
-  // Re-pull on auth state changes
+  // Re-pull on auth state changes. When the active account changes,
+  // wipe local data first so each account's notes stay isolated.
   const { data: { subscription } } = sb.auth.onAuthStateChange(async (_event, session) => {
     await emit();
     if (session?.user) {
+      await ensureAccountIsolation(session.user.id);
       await pull();
       await pushPending();
     }
@@ -376,11 +419,28 @@ export async function initSync(): Promise<void> {
   // Initial pull + flush any leftovers
   const userId = await getCurrentUserId();
   if (userId) {
+    await ensureAccountIsolation(userId);
     await pull();
     await pushPending();
     await gcOldTombstones();
   }
   await emit();
+}
+
+/**
+ * If the signed-in account differs from the previously remembered one,
+ * wipe all local notes/folders before pulling fresh data. This prevents
+ * one account's notes from leaking into another account's view.
+ *
+ * The very first sign-in (no remembered user) does NOT wipe — any
+ * pre-account local data is preserved and gets pushed to that account.
+ */
+async function ensureAccountIsolation(currentUserId: string): Promise<void> {
+  const lastUserId = readLastUserId();
+  if (lastUserId && lastUserId !== currentUserId) {
+    await wipeLocalData();
+  }
+  writeLastUserId(currentUserId);
 }
 
 export async function signUp(email: string, password: string): Promise<void> {
