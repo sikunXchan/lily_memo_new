@@ -6,7 +6,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Pencil, Eraser, Undo2, Redo2, Trash2, ZoomIn, ZoomOut, Maximize,
   PanelLeft, PanelTop, X, FileText, BookOpen, ArrowLeft, Hand, Fingerprint,
-  Search, FolderIcon, Sparkles,
+  FolderIcon, Sparkles,
 } from 'lucide-react';
 import { db } from '@/lib/db';
 
@@ -30,8 +30,10 @@ const PEN_WIDTHS = [1.5, 3, 6, 10];
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
 const ERASER_RADIUS = 12;
-// Smallest viewport dimension considered "tablet-ish" — split UI uses this.
-const SPLIT_MIN_WIDTH = 700;
+// Allow split UI on phones too. Below SPLIT_LEFT_MIN_WIDTH we only expose
+// the top/bottom split (left/right would leave each pane too narrow).
+const SPLIT_MIN_WIDTH = 360;
+const SPLIT_LEFT_MIN_WIDTH = 700;
 
 type SidePanelMode = 'memo-list' | 'memo-open' | 'pdf';
 
@@ -76,6 +78,7 @@ export default function SketchTab({ onClose }: SketchTabProps) {
     };
   }, []);
   const canSplit = viewport.w >= SPLIT_MIN_WIDTH;
+  const canSplitLeft = viewport.w >= SPLIT_LEFT_MIN_WIDTH;
 
   // Split screen — user wants the side panel either on the LEFT or on TOP
   // (right was dropped since the pen-hand rests on the right edge).
@@ -90,12 +93,25 @@ export default function SketchTab({ onClose }: SketchTabProps) {
     try { localStorage.setItem('sketchSplitSide', splitSide); } catch {}
   }, [splitSide]);
   // splitRatio = sketch-pane fraction of the total (preserves the original
-  // "pane is 55%, side is 45%" default).
-  const [splitRatio, setSplitRatio] = useState(0.55);
+  // "pane is 55%, side is 45%" default). Persisted across sessions so the
+  // user's preferred size sticks.
+  const [splitRatio, setSplitRatio] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0.55;
+    const saved = parseFloat(localStorage.getItem('sketchSplitRatio') || '');
+    return Number.isFinite(saved) && saved >= 0.2 && saved <= 0.85 ? saved : 0.55;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('sketchSplitRatio', String(splitRatio)); } catch {}
+  }, [splitRatio]);
   const [sidePanel, setSidePanel] = useState<SidePanelMode>('memo-list');
   const [openNoteId, setOpenNoteId] = useState<number | null>(null);
-  const [sideSearch, setSideSearch] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // If the persisted preference is 'left' but the viewport is now too
+  // narrow for a side-by-side split, coerce to 'top' at render time.
+  // (Derived, not stored — the user's preference is preserved for when
+  // they're back on a wider screen.)
+  const effectiveSplitSide: SplitSide = splitSide === 'left' && !canSplitLeft ? 'top' : splitSide;
 
   const notesList = useLiveQuery(() =>
     db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray()
@@ -399,7 +415,7 @@ export default function SketchTab({ onClose }: SketchTabProps) {
     // Side panel is the FIRST child (left or top). The divider position from
     // the start of the container equals the side panel's size. splitRatio is
     // the sketch-pane fraction, so it's 1 - sideFraction.
-    const sideFrac = splitSide === 'top'
+    const sideFrac = effectiveSplitSide === 'top'
       ? (e.clientY - rect.top) / rect.height
       : (e.clientX - rect.left) / rect.width;
     const next = 1 - sideFrac;
@@ -432,41 +448,35 @@ export default function SketchTab({ onClose }: SketchTabProps) {
     setOpenNoteId(id);
   };
 
-  // Build the memo picker: search-filtered notes grouped by folder.
+  // Build the memo picker: notes grouped by folder. Modern card-style list
+  // — no search, no per-section counts (kept intentionally minimal so the
+  // side panel doesn't compete with the sketch canvas for attention).
   const renderNotePicker = () => {
     const allNotes = notesList ?? [];
     const allFolders = foldersList ?? [];
-    const q = sideSearch.trim().toLowerCase();
-    const filtered = q
-      ? allNotes.filter(n => (n.title || '').toLowerCase().includes(q))
-      : allNotes;
 
-    if (filtered.length === 0) {
+    if (allNotes.length === 0) {
       return (
         <div className="side-empty-wrap">
           <div className="side-empty-icon">
-            {q ? <Search size={28} /> : <Sparkles size={28} />}
+            <Sparkles size={28} />
           </div>
-          <div className="side-empty-title">
-            {q ? '見つかりませんでした' : 'メモがまだありません'}
-          </div>
-          <div className="side-empty-sub">
-            {q ? '別のキーワードを試してみてね' : '左のサイドバーから作成できます'}
-          </div>
+          <div className="side-empty-title">メモがまだありません</div>
+          <div className="side-empty-sub">メモタブから作成できます</div>
         </div>
       );
     }
 
     // Group: folderId -> notes
-    const byFolder = new Map<number | 'none', typeof filtered>();
-    for (const n of filtered) {
+    const byFolder = new Map<number | 'none', typeof allNotes>();
+    for (const n of allNotes) {
       const key: number | 'none' = (n.folderId != null && allFolders.some(f => f.id === n.folderId)) ? n.folderId : 'none';
       const arr = byFolder.get(key) ?? [];
       arr.push(n);
       byFolder.set(key, arr);
     }
 
-    const sections: Array<{ key: string; label: string; color?: string; notes: typeof filtered }> = [];
+    const sections: Array<{ key: string; label: string; color?: string; notes: typeof allNotes }> = [];
     for (const f of allFolders) {
       const ns = byFolder.get(f.id!);
       if (ns && ns.length > 0) {
@@ -489,18 +499,21 @@ export default function SketchTab({ onClose }: SketchTabProps) {
                 <FolderIcon size={12} className="side-folder-dim" />
               )}
               <span>{sec.label}</span>
-              <span className="side-section-count">{sec.notes.length}</span>
             </div>
-            {sec.notes.map(n => (
-              <button
-                key={n.id}
-                className="side-note-item"
-                onClick={() => openNoteInSide(n.id!)}
-              >
-                <BookOpen size={14} className="side-note-icon" />
-                <span className="side-note-title">{n.title || '無題のメモ'}</span>
-              </button>
-            ))}
+            <div className="side-section-items">
+              {sec.notes.map(n => (
+                <button
+                  key={n.id}
+                  className="side-note-item"
+                  onClick={() => openNoteInSide(n.id!)}
+                >
+                  <span className="side-note-icon-wrap">
+                    <BookOpen size={14} />
+                  </span>
+                  <span className="side-note-title">{n.title || '無題のメモ'}</span>
+                </button>
+              ))}
+            </div>
           </div>
         ))}
       </div>
@@ -508,11 +521,11 @@ export default function SketchTab({ onClose }: SketchTabProps) {
   };
 
   const paneStyle = splitActive
-    ? (splitSide === 'top'
+    ? (effectiveSplitSide === 'top'
         ? { height: `${splitRatio * 100}%` }
         : { width: `${splitRatio * 100}%` })
     : undefined;
-  const sideStyle = splitSide === 'top'
+  const sideStyle = effectiveSplitSide === 'top'
     ? { height: `${(1 - splitRatio) * 100}%` }
     : { width: `${(1 - splitRatio) * 100}%` };
 
@@ -542,7 +555,7 @@ export default function SketchTab({ onClose }: SketchTabProps) {
         </div>
         <div className="side-body">
           {sidePanel === 'pdf' ? (
-            <PDFViewer />
+            <PDFViewer embedded />
           ) : openNoteId ? (
             <div className="side-note-host">
               <button className="side-back" onClick={() => setOpenNoteId(null)}>
@@ -555,16 +568,6 @@ export default function SketchTab({ onClose }: SketchTabProps) {
             </div>
           ) : (
             <div className="side-picker">
-              <div className="side-search">
-                <Search size={14} className="side-search-icon" />
-                <input
-                  type="text"
-                  placeholder="メモを検索..."
-                  value={sideSearch}
-                  onChange={e => setSideSearch(e.target.value)}
-                  className="side-search-input"
-                />
-              </div>
               {renderNotePicker()}
             </div>
           )}
@@ -577,7 +580,7 @@ export default function SketchTab({ onClose }: SketchTabProps) {
         onPointerUp={onDividerUp}
         onPointerCancel={onDividerUp}
         role="separator"
-        aria-orientation={splitSide === 'top' ? 'horizontal' : 'vertical'}
+        aria-orientation={effectiveSplitSide === 'top' ? 'horizontal' : 'vertical'}
         aria-label="パネルのサイズを調整"
       />
     </>
@@ -585,7 +588,7 @@ export default function SketchTab({ onClose }: SketchTabProps) {
 
   return (
     <div
-      className={`sketch-root ${splitActive ? `split-${splitSide}` : ''}`}
+      className={`sketch-root ${splitActive ? `split-${effectiveSplitSide}` : ''}`}
       ref={rootRef}
     >
       {splitBlock}
@@ -675,15 +678,17 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           {canSplit && (
             <>
               <div className="sk-divider" />
+              {canSplitLeft && (
+                <button
+                  className={`sk-btn ${splitOpen && effectiveSplitSide === 'left' ? 'active' : ''}`}
+                  onClick={() => openSplit('left')}
+                  title="左にメモ/PDFを開く"
+                >
+                  <PanelLeft size={16} />
+                </button>
+              )}
               <button
-                className={`sk-btn ${splitOpen && splitSide === 'left' ? 'active' : ''}`}
-                onClick={() => openSplit('left')}
-                title="左にメモ/PDFを開く"
-              >
-                <PanelLeft size={16} />
-              </button>
-              <button
-                className={`sk-btn ${splitOpen && splitSide === 'top' ? 'active' : ''}`}
+                className={`sk-btn ${splitOpen && effectiveSplitSide === 'top' ? 'active' : ''}`}
                 onClick={() => openSplit('top')}
                 title="上にメモ/PDFを開く"
               >
@@ -940,96 +945,85 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           flex-direction: column;
           min-height: 0;
         }
-        .side-search {
-          position: relative;
-          margin: 10px 10px 6px;
-          flex-shrink: 0;
-        }
-        .side-search-icon {
-          position: absolute;
-          left: 10px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: #999;
-          pointer-events: none;
-        }
-        .side-search-input {
-          width: 100%;
-          padding: 8px 10px 8px 30px;
-          background: var(--accent);
-          border: 1px solid transparent;
-          border-radius: 10px;
-          font-size: 0.85rem;
-          color: var(--foreground);
-          outline: none;
-          transition: border-color 0.15s;
-          box-sizing: border-box;
-        }
-        .side-search-input:focus {
-          border-color: var(--primary);
-        }
         .side-note-list {
           flex: 1;
           overflow-y: auto;
-          padding: 4px 8px 12px;
+          -webkit-overflow-scrolling: touch;
+          padding: 12px 12px 18px;
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 18px;
         }
         .side-section {
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          gap: 6px;
         }
         .side-section-header {
           display: flex;
           align-items: center;
-          gap: 6px;
-          padding: 4px 8px;
-          font-size: 0.7rem;
+          gap: 8px;
+          padding: 0 4px;
+          font-size: 0.72rem;
           font-weight: 700;
-          color: #888;
+          color: #999;
+          letter-spacing: 0.06em;
           text-transform: uppercase;
-          letter-spacing: 0.04em;
         }
         .side-folder-dot {
           display: inline-block;
-          width: 8px;
-          height: 8px;
+          width: 9px;
+          height: 9px;
           border-radius: 50%;
           flex-shrink: 0;
+          box-shadow: 0 0 0 2px rgba(255,255,255,0.6);
+        }
+        :global([data-theme='dark']) .side-folder-dot {
+          box-shadow: 0 0 0 2px rgba(0,0,0,0.3);
         }
         .side-folder-dim {
           color: #aaa;
           flex-shrink: 0;
         }
-        .side-section-count {
-          margin-left: auto;
-          font-size: 0.65rem;
-          font-weight: 600;
-          color: #aaa;
-          background: var(--accent);
-          padding: 1px 6px;
-          border-radius: 6px;
+        .side-section-items {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
         }
         .side-note-item {
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 8px 10px;
-          border-radius: 10px !important;
-          background: transparent;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 12px !important;
+          background: var(--accent);
           color: var(--foreground);
-          font-size: 0.85rem;
+          font-size: 0.88rem;
+          font-weight: 500;
           text-align: left;
-          transition: background 0.15s;
+          border: 1px solid transparent;
+          transition: background 0.15s, border-color 0.15s, transform 0.1s;
         }
         .side-note-item:hover {
-          background: var(--accent);
+          background: var(--background);
+          border-color: var(--border);
         }
-        .side-note-icon {
+        .side-note-item:active {
+          transform: scale(0.98);
+        }
+        .side-note-icon-wrap {
+          width: 28px;
+          height: 28px;
+          border-radius: 8px;
+          background: var(--background);
           color: var(--primary);
+          display: flex;
+          align-items: center;
+          justify-content: center;
           flex-shrink: 0;
+        }
+        .side-note-item:hover .side-note-icon-wrap {
+          background: var(--accent);
         }
         .side-note-title {
           flex: 1;

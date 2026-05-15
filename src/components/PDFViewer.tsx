@@ -139,7 +139,14 @@ function playBeep() {
 
 // ========== Component ==========
 
-export default function PDFViewer() {
+interface PDFViewerProps {
+  // When true, the viewer fills its parent (position:absolute) instead of
+  // taking over the whole viewport (position:fixed). Used inside the
+  // sketch tab's split panel so PDFs don't escape the panel.
+  embedded?: boolean;
+}
+
+export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const [inputUrl, setInputUrl] = useState('');
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -503,7 +510,7 @@ export default function PDFViewer() {
   // ========== VIEWER ==========
   if (isLoading || hasPDF || error) {
     return (
-      <div className={`pdf-fullscreen${timerAlert ? ' timer-alert' : ''}`}>
+      <div className={`pdf-fullscreen${embedded ? ' embedded' : ''}${timerAlert ? ' timer-alert' : ''}`}>
         {/* Top bar */}
         <div className="pdf-top-bar">
           <button className="pdf-text-btn" onClick={closePDF}>
@@ -673,6 +680,10 @@ export default function PDFViewer() {
             height: 100dvh; z-index: 3000;
             display: flex; flex-direction: column;
             background: #525659;
+          }
+          .pdf-fullscreen.embedded {
+            position: absolute; inset: 0;
+            height: 100%; z-index: auto;
           }
           .pdf-fullscreen.timer-alert { animation: alertFlash 0.5s ease 3; }
           @keyframes alertFlash {
@@ -850,7 +861,7 @@ export default function PDFViewer() {
 
   // ========== HOME SCREEN ==========
   return (
-    <div className="pdf-home">
+    <div className={`pdf-home${embedded ? ' embedded' : ''}`}>
       <div className="pdf-home-inner">
         <div className="pdf-header">
           <FileText size={32} className="pdf-header-icon" />
@@ -911,12 +922,18 @@ export default function PDFViewer() {
 
       <style jsx>{`
         .pdf-home {
-          flex:1; overflow-y:auto; background:var(--background);
-          display:flex; justify-content:center;
+          flex:1; min-height:0;
+          overflow-y:auto; overflow-x:hidden;
+          -webkit-overflow-scrolling:touch;
+          background:var(--background);
           padding:40px 16px calc(60px + env(safe-area-inset-bottom) + 16px);
+        }
+        .pdf-home.embedded {
+          padding:24px 16px 32px;
         }
         .pdf-home-inner {
           width:100%; max-width:520px;
+          margin:0 auto;
           display:flex; flex-direction:column; gap:24px;
         }
         .pdf-header { text-align:center; padding:24px 0 8px; }
