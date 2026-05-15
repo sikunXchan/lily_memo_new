@@ -891,6 +891,12 @@ export default function SketchTab({ onClose }: SketchTabProps) {
           min-width: 0;
           min-height: 0;
           background: var(--background);
+          /* Forces this element to become the containing block for any
+             position:fixed descendants (NoteEditor's editor-container /
+             editor-header use position:fixed on mobile). Without this,
+             those descendants escape to the viewport and cover the
+             whole sketch, breaking the split layout. */
+          transform: translateZ(0);
         }
         .split-left .sketch-side {
           border-right: 1px solid var(--border);
