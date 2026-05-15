@@ -45,9 +45,6 @@ export default function RootLayout({
   return (
     <html lang="ja" className={`${outfit.variable} ${mPlusRounded.variable}`}>
       <body className="antialiased">
-        {/* 旧 Service Worker / Cache API を即時に駆除。React 前に走るので
-            後続バンドルが落ちても確実に実行される。*/}
-        <script dangerouslySetInnerHTML={{ __html: `try{if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){rs.forEach(function(r){r.unregister();});}).catch(function(){});}if('caches' in window){caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k);}));}).catch(function(){});}}catch(e){}` }} />
         {/* テーマをReact hydration前に適用してFOUC防止 */}
         <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('theme');if(t)document.body.setAttribute('data-theme',t);}catch(e){}` }} />
         {children}
