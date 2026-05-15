@@ -823,9 +823,15 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           .timer-btn:hover { opacity:0.85; }
           /* Canvas — stable centering via scrollbar-gutter + text-align */
           .pdf-canvas-area {
-            flex:1; overflow:auto; min-height:0;
+            flex:1; overflow-y:auto; overflow-x:auto; min-height:0;
+            -webkit-overflow-scrolling:touch;
             padding:16px; scrollbar-gutter:stable;
             display:flex; justify-content:center; align-items:flex-start;
+          }
+          .pdf-fullscreen.embedded .pdf-canvas-area {
+            overflow-x: hidden;
+            touch-action: pan-y;
+            overscroll-behavior: contain;
           }
           .pdf-canvas-wrapper {
             position:relative; max-width:100%; flex-shrink:0;
@@ -937,6 +943,9 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           flex: none; min-height: 0;
           padding: 24px 16px 32px;
           overflow-y: auto; overflow-x: hidden;
+          -webkit-overflow-scrolling: touch;
+          touch-action: pan-y;
+          overscroll-behavior: contain;
         }
         .pdf-home-inner {
           width:100%; max-width:520px;

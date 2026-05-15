@@ -897,6 +897,10 @@ export default function SketchTab({ onClose }: SketchTabProps) {
              those descendants escape to the viewport and cover the
              whole sketch, breaking the split layout. */
           transform: translateZ(0);
+          /* Belt-and-suspenders: even if a descendant uses position:fixed
+             with height:100dvh, clip it so it can't extend past the panel
+             and bleed into the sketch area below. */
+          overflow: hidden;
         }
         .split-left .sketch-side {
           border-right: 1px solid var(--border);
