@@ -928,8 +928,15 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           background:var(--background);
           padding:40px 16px calc(60px + env(safe-area-inset-bottom) + 16px);
         }
+        /* When embedded inside the sketch side panel, the parent flex
+           chain is unreliable (esp. on mobile Safari) and scroll silently
+           dies. Pin to the parent box explicitly so overflow always
+           scrolls vertically — horizontal stays locked. */
         .pdf-home.embedded {
-          padding:24px 16px 32px;
+          position: absolute; inset: 0;
+          flex: none; min-height: 0;
+          padding: 24px 16px 32px;
+          overflow-y: auto; overflow-x: hidden;
         }
         .pdf-home-inner {
           width:100%; max-width:520px;
