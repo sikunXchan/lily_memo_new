@@ -110,9 +110,13 @@ const CustomTaskItem = TaskItem.extend({
 interface NoteEditorProps {
   noteId: number;
   onClose?: () => void;
+  // When true, render constrained to the parent (no position:fixed
+  // on container/header). Used by the sketch tab's split panel so the
+  // editor doesn't escape its pane.
+  embedded?: boolean;
 }
 
-export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
+export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [hwDoc, setHwDoc] = useState<HandwritingDoc>(EMPTY_HANDWRITING);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -576,7 +580,7 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
   const isHandwriting = note?.type === 'handwriting';
 
   return (
-    <div className="editor-container" data-edit-mode={isEditMode}>
+    <div className={`editor-container${embedded ? ' embedded' : ''}`} data-edit-mode={isEditMode}>
       <header className="editor-header" ref={headerRef}>
         <div className="header-bar">
           {/* 左固定: 戻る + 保存状態 */}
@@ -779,6 +783,25 @@ export default function NoteEditor({ noteId, onClose }: NoteEditorProps) {
           height: 100vh;
           height: 100dvh;
           z-index: 1001;
+        }
+
+        /* 埋め込みモード（落書きタブの分割パネル等）。
+           viewport を覆う position:fixed / 100dvh をすべて打ち消し
+           親要素にぴったり収める。後置されているので cascade で勝つ。*/
+        .editor-container.embedded {
+          position: absolute;
+          inset: 0;
+          top: 0; left: 0;
+          width: 100%;
+          height: 100%;
+          z-index: auto;
+          border-radius: 0;
+          box-shadow: none;
+        }
+        .editor-container.embedded .editor-header {
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          z-index: 1;
         }
 
         .desktop-sidebar .editor-header {

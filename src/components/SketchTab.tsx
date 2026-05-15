@@ -563,7 +563,7 @@ export default function SketchTab({ onClose }: SketchTabProps) {
                 <span>一覧に戻る</span>
               </button>
               <div className="side-note-body">
-                <NoteEditor noteId={openNoteId} onClose={() => setOpenNoteId(null)} />
+                <NoteEditor noteId={openNoteId} onClose={() => setOpenNoteId(null)} embedded />
               </div>
             </div>
           ) : (
