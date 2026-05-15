@@ -52,17 +52,11 @@ export default function Home() {
       navigator.storage.persist();
     }
 
-    // Tear down any leftover Service Worker that was installed when the
-    // app shipped a PWA (with cached sync-era JS that crashes mobile
-    // Safari on subsequent visits). Safe to run on every load; if no SW
-    // is registered the calls just no-op.
+    // Register the offline service worker. Memos/folders/handwriting
+    // already live in IndexedDB; the SW just caches the HTML/JS/CSS
+    // shell so cold loads work without a network connection.
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        regs.forEach(r => r.unregister());
-      }).catch(() => {});
-      if (typeof caches !== 'undefined') {
-        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).catch(() => {});
-      }
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
 
     return () => {
