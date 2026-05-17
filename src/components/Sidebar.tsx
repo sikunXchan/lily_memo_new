@@ -2,7 +2,7 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -19,6 +19,7 @@ interface SidebarProps {
   onOpenSketch?: () => void;
   isMobileOpen: boolean;
   onToggleMobile: () => void;
+  onActiveNoteDeleted?: () => void;
 }
 
 const COLORS = [
@@ -29,9 +30,15 @@ const COLORS = [
   { name: 'Purple', value: '--folder-purple' },
 ];
 
-export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, isMobileOpen, onToggleMobile }: SidebarProps) {
+interface DeletingFolderState {
+  id: number;
+  name: string;
+  noteCount: number;
+}
+
+export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, isMobileOpen, onToggleMobile, onActiveNoteDeleted }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   const folders = useLiveQuery(() =>
     db.folders.filter(f => !f.deletedAt).toArray()
   );
@@ -47,6 +54,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
+  const [deletingFolder, setDeletingFolder] = useState<DeletingFolderState | null>(null);
 
   useEffect(() => {
     const restoreViewMode = () => {
@@ -98,9 +106,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
   };
 
   const updateFolderColor = async (id: number, color: string) => {
-    const folder = await db.folders.get(id);
-    if (!folder) return;
-    // eslint-disable-next-line react-hooks/purity
     await db.folders.update(id, { color, updatedAt: Date.now() });
     setEditingFolderColor(null);
   };
@@ -123,22 +128,52 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
     if (window.innerWidth <= 768) onToggleMobile();
   };
 
+  const handleDeleteFolder = (e: React.MouseEvent, folder: { id: number; name: string }) => {
+    e.stopPropagation();
+    const noteCount = notes?.filter(n => n.folderId === folder.id).length ?? 0;
+    setDeletingFolder({ id: folder.id, name: folder.name, noteCount });
+    setEditingFolderColor(null);
+  };
+
+  const confirmDeleteFolder = async (deleteNotes: boolean) => {
+    if (!deletingFolder) return;
+    const { id } = deletingFolder;
+
+    const folderNoteIds = notes?.filter(n => n.folderId === id).map(n => n.id!) ?? [];
+
+    if (deleteNotes && folderNoteIds.length > 0) {
+      if (activeNoteId && folderNoteIds.includes(activeNoteId)) {
+        onActiveNoteDeleted?.();
+      }
+      await db.notes.bulkDelete(folderNoteIds);
+    } else if (!deleteNotes && folderNoteIds.length > 0) {
+      for (const noteId of folderNoteIds) {
+        await db.notes.update(noteId, { folderId: undefined, updatedAt: Date.now() });
+      }
+    }
+
+    await db.folders.delete(id);
+    setDeletingFolder(null);
+  };
+
   return (
     <>
       <aside className="sidebar glass" style={{ overflow: 'hidden' }}>
         <div className="sidebar-header">
-          <Image src="/logo.png" alt="Lily Memo Logo" width={40} height={40} className="logo-img" />
-          <h1 className="title">Lily Memo</h1>
-          <button className="theme-toggle" onClick={toggleTheme}>
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          <div className="logo-area">
+            <Image src="/logo.png" alt="Lily Memo Logo" width={36} height={36} className="logo-img" />
+            <h1 className="title">Lily Memo</h1>
+          </div>
+          <button className="theme-toggle" onClick={toggleTheme} title={isDarkMode ? 'ライトモード' : 'ダークモード'}>
+            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
         </div>
 
         <div className="search-container">
-          <Search size={16} className="search-icon" />
-          <input 
-            type="text" 
-            placeholder="メモを検索..." 
+          <Search size={15} className="search-icon" />
+          <input
+            type="text"
+            placeholder="メモを検索..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input"
@@ -147,11 +182,11 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
 
         <div className="sidebar-actions">
           <button className="btn-add" onClick={() => addNote()}>
-            <Plus size={18} />
+            <Plus size={17} />
             <span>新しいメモ</span>
           </button>
           <button className="btn-icon" onClick={addFolder} title="フォルダ作成">
-            <FolderPlus size={18} />
+            <FolderPlus size={17} />
           </button>
         </div>
 
@@ -162,7 +197,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             className={`view-toggle-btn ${viewMode === 'tree' ? 'active' : ''}`}
             onClick={() => changeViewMode('tree')}
           >
-            <List size={14} />
+            <List size={13} />
             <span>ツリー</span>
           </button>
           <button
@@ -171,7 +206,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             className={`view-toggle-btn ${viewMode === 'graph' ? 'active' : ''}`}
             onClick={() => changeViewMode('graph')}
           >
-            <Sparkles size={14} />
+            <Sparkles size={13} />
             <span>つながり</span>
           </button>
         </div>
@@ -191,15 +226,20 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             {folders?.map(folder => (
               <div key={folder.id} className="folder-item-wrapper">
                 <div className="folder-item" onClick={() => folder.id && toggleFolder(folder.id)}>
-                  {expandedFolders[folder.id!] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  <FolderIcon size={18} style={{ color: `var(${folder.color || '--folder-pink'})` }} />
-                  <span>{folder.name}</span>
+                  <span className={`chevron ${expandedFolders[folder.id!] ? 'expanded' : ''}`}>
+                    <ChevronRight size={14} />
+                  </span>
+                  <FolderIcon size={16} style={{ color: `var(${folder.color || '--folder-pink'})`, flexShrink: 0 }} />
+                  <span className="folder-name">{folder.name}</span>
                   <div className="folder-item-actions">
-                    <button className="btn-inline" onClick={(e) => { e.stopPropagation(); setEditingFolderColor(editingFolderColor === folder.id ? null : folder.id!); }}>
-                      <Palette size={14} />
+                    <button className="btn-inline" title="色を変更" onClick={(e) => { e.stopPropagation(); setEditingFolderColor(editingFolderColor === folder.id ? null : folder.id!); }}>
+                      <Palette size={13} />
                     </button>
-                    <button className="btn-inline" onClick={(e) => { e.stopPropagation(); addNote(folder.id); }}>
-                      <Plus size={14} />
+                    <button className="btn-inline" title="メモを追加" onClick={(e) => { e.stopPropagation(); addNote(folder.id); }}>
+                      <Plus size={13} />
+                    </button>
+                    <button className="btn-inline btn-inline-delete" title="フォルダを削除" onClick={(e) => handleDeleteFolder(e, { id: folder.id!, name: folder.name })}>
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 </div>
@@ -207,16 +247,17 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
                 {editingFolderColor === folder.id && (
                   <div className="color-picker" onClick={e => e.stopPropagation()}>
                     {COLORS.map(c => (
-                      <button 
-                        key={c.value} 
-                        className="color-dot" 
+                      <button
+                        key={c.value}
+                        className="color-dot"
                         style={{ background: `var(${c.value})` }}
                         onClick={() => updateFolderColor(folder.id!, c.value)}
+                        title={c.name}
                       />
                     ))}
                   </div>
                 )}
-                
+
                 {expandedFolders[folder.id!] && (
                   <div className="nested-notes">
                     {notes?.filter(n => n.folderId === folder.id).map(note => (
@@ -225,7 +266,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
                         className={`note-item ${activeNoteId === note.id ? 'active' : ''}`}
                         onClick={() => { onSelectNote(note.id!); if (window.innerWidth <= 768) onToggleMobile(); }}
                       >
-                        {note.type === 'handwriting' ? <Pencil size={16} /> : <FileText size={16} />}
+                        {note.type === 'handwriting' ? <Pencil size={14} /> : <FileText size={14} />}
                         <span>{note.title}</span>
                       </div>
                     ))}
@@ -245,7 +286,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
                     className={`note-item ${activeNoteId === note.id ? 'active' : ''}`}
                     onClick={() => { onSelectNote(note.id!); if (window.innerWidth <= 768) onToggleMobile(); }}
                   >
-                    {note.type === 'handwriting' ? <Pencil size={16} /> : <FileText size={16} />}
+                    {note.type === 'handwriting' ? <Pencil size={14} /> : <FileText size={14} />}
                     <span>{note.title}</span>
                   </div>
                 ))}
@@ -257,21 +298,50 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
         <div className="sidebar-footer">
           {onOpenSketch && (
             <button className="btn-settings" onClick={onOpenSketch}>
-              <Brush size={20} />
+              <Brush size={18} />
               <span>落書き</span>
             </button>
           )}
           {onOpenPDF && (
             <button className="btn-settings" onClick={onOpenPDF}>
-              <FileText size={20} />
+              <FileText size={18} />
               <span>PDF</span>
             </button>
           )}
           <button className="btn-settings" onClick={onOpenSettings}>
-            <Settings size={20} />
+            <Settings size={18} />
             <span>設定</span>
           </button>
         </div>
+
+        {/* フォルダ削除確認モーダル */}
+        {deletingFolder && (
+          <div className="delete-overlay" onClick={() => setDeletingFolder(null)}>
+            <div className="delete-dialog" onClick={e => e.stopPropagation()}>
+              <div className="delete-dialog-icon">
+                <Trash2 size={22} />
+              </div>
+              <h3 className="delete-dialog-title">フォルダを削除</h3>
+              <p className="delete-dialog-folder-name">「{deletingFolder.name}」</p>
+              {deletingFolder.noteCount > 0 ? (
+                <p className="delete-dialog-desc">
+                  {deletingFolder.noteCount}件のメモが含まれています。<br />メモはどうしますか？
+                </p>
+              ) : (
+                <p className="delete-dialog-desc">このフォルダを削除します。</p>
+              )}
+              <div className="delete-dialog-actions">
+                <button className="dda-cancel" onClick={() => setDeletingFolder(null)}>キャンセル</button>
+                {deletingFolder.noteCount > 0 && (
+                  <button className="dda-keep" onClick={() => confirmDeleteFolder(false)}>メモを残す</button>
+                )}
+                <button className="dda-delete" onClick={() => confirmDeleteFolder(deletingFolder.noteCount === 0 ? false : true)}>
+                  {deletingFolder.noteCount > 0 ? 'すべて削除' : '削除する'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <style jsx>{`
           .sidebar {
@@ -279,11 +349,14 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             height: 100vh;
             display: grid;
             grid-template-rows: auto auto auto auto 1fr auto;
-            padding: 20px;
+            padding: 18px 16px;
             border-right: 1px solid var(--border);
             flex-shrink: 0;
             z-index: 100;
             transition: all 0.3s;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
           }
           @media (max-width: 1023px) and (orientation: portrait) {
             .sidebar {
@@ -296,41 +369,60 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           .sidebar-header {
             display: flex;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
+            justify-content: space-between;
+            margin-bottom: 16px;
+          }
+          .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
           }
           .logo-img {
-            border-radius: 12px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(255, 182, 193, 0.4);
           }
           .title {
-            font-size: 1.2rem;
-            font-weight: 700;
+            font-size: 1.15rem;
+            font-weight: 800;
             color: var(--primary);
-            flex: 1;
+            letter-spacing: -0.3px;
           }
           .theme-toggle {
-            background: transparent;
+            background: var(--accent);
             color: var(--foreground);
-            padding: 4px;
+            padding: 8px;
+            border-radius: 10px;
+            opacity: 0.8;
+            transition: opacity 0.2s, background 0.2s;
+          }
+          .theme-toggle:hover {
+            opacity: 1;
+            background: var(--border);
           }
           .search-container {
             position: relative;
-            margin-bottom: 20px;
+            margin-bottom: 14px;
           }
           .search-icon {
             position: absolute;
-            left: 12px;
+            left: 13px;
             top: 50%;
             transform: translateY(-50%);
-            color: #999;
+            color: #bbb;
+            pointer-events: none;
           }
           .search-input {
             width: 100%;
-            padding: 8px 12px 8px 36px;
+            padding: 9px 14px 9px 36px;
             background: var(--accent);
-            border: none;
-            font-size: 0.9rem;
-            border-radius: 8px;
+            border: 1.5px solid transparent;
+            font-size: 0.875rem;
+            border-radius: 50px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+          }
+          .search-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(255, 182, 193, 0.2);
           }
           .sidebar-actions {
             display: flex;
@@ -339,16 +431,22 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .btn-add {
             flex: 1;
-            background: var(--primary);
+            background: linear-gradient(135deg, var(--primary) 0%, #ff8da1 100%);
             color: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            padding: 10px;
-            font-weight: 600;
-            box-shadow: var(--shadow);
-            border-radius: 8px;
+            gap: 7px;
+            padding: 10px 14px;
+            font-weight: 700;
+            font-size: 0.875rem;
+            box-shadow: 0 4px 14px rgba(255, 141, 161, 0.35);
+            border-radius: 12px;
+            transition: transform 0.18s, box-shadow 0.18s;
+          }
+          .btn-add:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(255, 141, 161, 0.45);
           }
           .btn-icon {
             width: 40px;
@@ -358,14 +456,18 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             display: flex;
             align-items: center;
             justify-content: center;
-            border-radius: 8px;
+            border-radius: 12px;
+            transition: background 0.2s;
+          }
+          .btn-icon:hover {
+            background: var(--border);
           }
           .view-toggle {
             display: flex;
             background: var(--accent);
             border-radius: 10px;
             padding: 3px;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             gap: 2px;
           }
           .view-toggle-btn {
@@ -373,21 +475,21 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 5px;
             padding: 7px 8px;
             background: transparent;
             color: var(--foreground);
-            font-size: 0.8rem;
+            font-size: 0.78rem;
             font-weight: 600;
             border-radius: 8px;
             transition: all 0.18s;
-            opacity: 0.65;
+            opacity: 0.55;
           }
           .view-toggle-btn.active {
             background: var(--background);
             color: var(--primary);
             opacity: 1;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+            box-shadow: 0 1px 6px rgba(0,0,0,0.1);
           }
           .graph-wrapper {
             width: 100%;
@@ -404,24 +506,45 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
               padding-bottom: calc(60px + env(safe-area-inset-bottom) + 16px);
             }
           }
+          .folder-item-wrapper {
+            margin-bottom: 2px;
+          }
           .folder-item {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 8px;
-            border-radius: 12px;
+            gap: 7px;
+            padding: 8px 8px 8px 6px;
+            border-radius: 10px;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: background 0.18s;
           }
           .folder-item:hover {
-            background: var(--accent);
+            background: rgba(255, 182, 193, 0.12);
+          }
+          .chevron {
+            display: flex;
+            color: #bbb;
+            transition: transform 0.2s;
+            flex-shrink: 0;
+          }
+          .chevron.expanded {
+            transform: rotate(90deg);
+          }
+          .folder-name {
+            flex: 1;
+            font-size: 0.875rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--foreground);
           }
           .folder-item-actions {
-            margin-left: auto;
             display: flex;
-            gap: 4px;
+            gap: 2px;
             opacity: 0;
             transition: opacity 0.15s;
+            flex-shrink: 0;
           }
           .folder-item:hover .folder-item-actions {
             opacity: 1;
@@ -434,78 +557,106 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .btn-inline {
             background: transparent;
+            color: #aaa;
+            padding: 4px;
+            border-radius: 6px;
+            transition: background 0.15s, color 0.15s;
+          }
+          .btn-inline:hover {
+            background: var(--accent);
             color: var(--primary);
-            padding: 2px;
+          }
+          .btn-inline-delete:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
           }
           .color-picker {
             display: flex;
             gap: 8px;
-            padding: 8px;
+            padding: 10px 12px;
             background: var(--background);
             border: 1px solid var(--border);
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            margin: 4px 0 12px 24px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            margin: 4px 0 10px 28px;
           }
           .color-dot {
-            width: 20px;
-            height: 20px;
+            width: 22px;
+            height: 22px;
             border-radius: 50%;
+            transition: transform 0.15s;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+          }
+          .color-dot:hover {
+            transform: scale(1.2);
           }
           .nested-notes {
-            margin-left: 20px;
+            margin-left: 22px;
             border-left: 2px solid var(--border);
-            padding-left: 8px;
+            padding-left: 6px;
+            margin-top: 2px;
+            margin-bottom: 4px;
           }
           .note-item {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 12px;
-            border-radius: 12px;
+            padding: 7px 10px 7px 7px;
+            border-radius: 8px;
             cursor: pointer;
-            margin: 4px 0;
-            font-size: 0.9rem;
-            transition: all 0.2s;
+            margin: 2px 0;
+            font-size: 0.85rem;
+            transition: background 0.18s, color 0.18s;
+            border-left: 2.5px solid transparent;
+            color: var(--foreground);
           }
           .note-item:hover {
-            background: var(--accent);
+            background: rgba(255, 182, 193, 0.1);
           }
           .note-item.active {
-            background: var(--primary);
-            color: white;
+            background: rgba(255, 182, 193, 0.15);
+            border-left-color: var(--primary);
+            color: var(--primary);
+            font-weight: 600;
+            padding-left: 4.5px;
           }
           .empty-hint {
-            font-size: 0.75rem;
+            font-size: 0.73rem;
             color: #ccc;
-            padding: 4px 12px;
+            padding: 4px 10px;
           }
           .section-label {
-            font-size: 0.75rem;
-            color: #999;
-            margin: 20px 0 8px 8px;
+            font-size: 0.7rem;
+            color: #bbb;
+            font-weight: 700;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
+            margin: 18px 0 6px 8px;
           }
           .sidebar-footer {
-            padding-top: 20px;
+            padding-top: 14px;
             border-top: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 4px;
           }
           .btn-settings {
             width: 100%;
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px;
-            background: var(--accent);
+            gap: 10px;
+            padding: 10px 12px;
+            background: transparent;
             color: var(--foreground);
+            font-size: 0.875rem;
             font-weight: 600;
-            border-radius: 8px;
+            border-radius: 10px;
+            transition: background 0.18s;
+            opacity: 0.75;
           }
           .btn-settings:hover {
-            background: var(--border);
+            background: var(--accent);
+            opacity: 1;
           }
           /* 縦画面モバイルではタブナビゲーションがあるため、設定/PDFボタンは非表示 */
           @media (max-width: 1023px) and (orientation: portrait) {
@@ -515,6 +666,111 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             .sidebar-footer {
               padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
             }
+          }
+
+          /* ===== フォルダ削除モーダル ===== */
+          .delete-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+          }
+          .delete-dialog {
+            background: var(--background);
+            border-radius: 20px;
+            padding: 28px 24px 24px;
+            width: 100%;
+            max-width: 320px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            animation: dialogIn 0.2s ease-out;
+          }
+          @keyframes dialogIn {
+            from { transform: scale(0.92); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+          }
+          .delete-dialog-icon {
+            width: 52px;
+            height: 52px;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ef4444;
+            margin-bottom: 14px;
+          }
+          .delete-dialog-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: var(--foreground);
+            margin-bottom: 6px;
+          }
+          .delete-dialog-folder-name {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 10px;
+          }
+          .delete-dialog-desc {
+            font-size: 0.85rem;
+            color: #888;
+            line-height: 1.6;
+            margin-bottom: 22px;
+          }
+          .delete-dialog-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+          }
+          .dda-cancel {
+            padding: 11px;
+            background: var(--accent);
+            color: var(--foreground);
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: background 0.15s;
+          }
+          .dda-cancel:hover {
+            background: var(--border);
+          }
+          .dda-keep {
+            padding: 11px;
+            background: rgba(255, 182, 193, 0.15);
+            color: var(--primary);
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            border: 1.5px solid rgba(255, 182, 193, 0.4);
+            transition: background 0.15s;
+          }
+          .dda-keep:hover {
+            background: rgba(255, 182, 193, 0.25);
+          }
+          .dda-delete {
+            padding: 11px;
+            background: #ef4444;
+            color: white;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: background 0.15s, box-shadow 0.15s;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+          }
+          .dda-delete:hover {
+            background: #dc2626;
+            box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
           }
         `}</style>
       </aside>

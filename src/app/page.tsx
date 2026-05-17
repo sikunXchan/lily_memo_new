@@ -96,6 +96,7 @@ export default function Home() {
           onOpenSketch={openSketch}
           isMobileOpen={false}
           onToggleMobile={() => {}}
+          onActiveNoteDeleted={() => setActiveNoteId(undefined)}
         />
       )}
 
@@ -123,6 +124,7 @@ export default function Home() {
                     onOpenSketch={openSketch}
                     isMobileOpen={true}
                     onToggleMobile={() => {}}
+                    onActiveNoteDeleted={() => setActiveNoteId(undefined)}
                   />
                 )}
                 {activeTab === 'pdf' && (
