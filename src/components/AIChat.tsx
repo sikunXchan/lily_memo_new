@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
-  FileText, Settings as SettingsIcon, Paperclip, X, Search, Eye, EyeOff,
+  FileText, Settings as SettingsIcon, Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil,
 } from 'lucide-react';
 import {
@@ -15,12 +15,15 @@ import {
   LineElement, ArcElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js';
 import mermaid from 'mermaid';
+import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import { callGeminiChat, LILY_CHAT_SYSTEM_PROMPT } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseSlides, exportSlidesToPptx } from '@/lib/slides';
+import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
+import { renderRich } from '@/lib/richText';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
@@ -55,7 +58,7 @@ interface ChatMessage {
 
 interface InsertableBlock {
   id: string;
-  type: 'mermaid' | 'chart' | 'qa' | 'slides' | 'file';
+  type: 'mermaid' | 'chart' | 'qa' | 'slides' | 'file' | 'geometry';
   rawCode: string;
   previewLabel: string;
   fileName?: string;
@@ -149,7 +152,7 @@ function parseAIResponse(text: string): {
     return `\n✨ [ファイル「${fileName}」を作ったよ]\n`;
   });
 
-  const FENCE_RE = /```(mermaid|chart|qa|slides)([\s\S]*?)```/g;
+  const FENCE_RE = /```(mermaid|chart|qa|slides|geometry)([\s\S]*?)```/g;
   const textContent = work.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
@@ -175,6 +178,11 @@ function parseAIResponse(text: string): {
       blocks.push({ id, type: 'slides', rawCode: trimmed, previewLabel: label });
       return `\n✨ [${label}を作ったよ]\n`;
     }
+    if (type === 'geometry') {
+      try { parseGeometry(trimmed); } catch { return '\n[図の生成に失敗しちゃった]\n'; }
+      blocks.push({ id, type: 'geometry', rawCode: trimmed, previewLabel: '数学・幾何の図' });
+      return `\n✨ [数学の図を描いたよ]\n`;
+    }
     return '';
   }).trim();
   return { textContent, blocks, questions };
@@ -193,6 +201,11 @@ function blockToHtml(block: InsertableBlock): string {
     const pairs = parseQAPairs(block.rawCode);
     if (pairs.length === 0) throw new Error('Q&Aの解析に失敗しました');
     return `<div data-pairs="${escHtmlAttr(JSON.stringify(pairs))}" data-type="qa"></div>`;
+  }
+  if (block.type === 'geometry') {
+    const svg = renderGeometrySvg(parseGeometry(block.rawCode));
+    const dataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+    return `<img src="${dataUrl}" alt="数学の図" />`;
   }
   if (block.type === 'file') {
     return `<pre><code>${escHtmlAttr(block.rawCode)}</code></pre>`;
@@ -337,6 +350,30 @@ function ChartPreview({ code, baseName }: { code: string; baseName: string }) {
   );
 }
 
+function GeometryPreview({ code, baseName }: { code: string; baseName: string }) {
+  const svg = useMemo(() => {
+    try { return renderGeometrySvg(parseGeometry(code)); } catch { return ''; }
+  }, [code]);
+  if (!svg) return <div className="prev-err">図のプレビューを表示できなかったよ💦</div>;
+  return (
+    <div>
+      <div className="geo-prev" dangerouslySetInnerHTML={{ __html: svg }} />
+      <ImageSaveBar>
+        <button onClick={() => downloadSvgAsPng(svg, `${baseName}.png`)}>
+          <Download size={13} /> PNG保存
+        </button>
+        <button onClick={() => downloadSvg(svg, `${baseName}.svg`)}>
+          <Download size={13} /> SVG保存
+        </button>
+      </ImageSaveBar>
+      <style jsx>{`
+        .geo-prev { background: #fff; border-radius: 8px; padding: 8px; overflow: auto; text-align: center; }
+        .geo-prev :global(svg) { max-width: 100%; height: auto; }
+      `}</style>
+    </div>
+  );
+}
+
 function FilePreview({ block }: { block: InsertableBlock }) {
   const snippet = block.rawCode.slice(0, 400);
   return (
@@ -427,6 +464,7 @@ function InsertableBlockCard({
   const typeEmoji = block.type === 'mermaid' ? '🌊'
     : block.type === 'chart' ? '📊'
     : block.type === 'slides' ? '🖼️'
+    : block.type === 'geometry' ? '📐'
     : block.type === 'file' ? '📄' : '📚';
 
   const handleInsert = async () => {
@@ -471,6 +509,7 @@ function InsertableBlockCard({
         {block.type === 'chart' && <ChartPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'qa' && <QAPreview code={block.rawCode} />}
         {block.type === 'slides' && <SlidesPreview code={block.rawCode} />}
+        {block.type === 'geometry' && <GeometryPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'file' && <FilePreview block={block} />}
       </div>
 
@@ -673,11 +712,10 @@ function LilyBubble({
         <img src="/lily-character.png" alt="Lily" className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div className="lily-bubble">
-          {message.text.split('\n').map((line, i, arr) => (
-            <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
-          ))}
-        </div>
+        <div
+          className="lily-bubble rt-body"
+          dangerouslySetInnerHTML={{ __html: renderRich(message.text) }}
+        />
         {message.questions && message.questions.length > 0 && (
           <div className="ask-asked-hint">❓ {message.questions.length}件の質問をしたよ</div>
         )}
@@ -695,6 +733,20 @@ function LilyBubble({
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
         .lily-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
+        .rt-body :global(p) { margin: 0 0 0.5em; }
+        .rt-body :global(p:last-child) { margin-bottom: 0; }
+        .rt-body :global(h1), .rt-body :global(h2), .rt-body :global(h3) { font-size: 1rem; font-weight: 800; margin: 0.6em 0 0.3em; color: var(--primary); }
+        .rt-body :global(ul), .rt-body :global(ol) { margin: 0.3em 0; padding-left: 1.3em; }
+        .rt-body :global(li) { margin: 0.15em 0; }
+        .rt-body :global(strong) { font-weight: 800; }
+        .rt-body :global(a) { color: var(--primary); text-decoration: underline; }
+        .rt-body :global(table) { border-collapse: collapse; margin: 0.4em 0; font-size: 0.85rem; }
+        .rt-body :global(th), .rt-body :global(td) { border: 1px solid var(--border); padding: 4px 8px; }
+        .rt-body :global(.rt-code) { background: var(--background); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 0.84em; font-family: 'Fira Code','Consolas',monospace; }
+        .rt-body :global(.rt-pre) { background: var(--background); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 0.5em 0; }
+        .rt-body :global(.rt-pre code) { font-size: 0.8rem; font-family: 'Fira Code','Consolas',monospace; white-space: pre; }
+        .rt-body :global(.katex) { font-size: 1.05em; }
+        .rt-body :global(.katex-display) { margin: 0.5em 0; overflow-x: auto; overflow-y: hidden; }
         .block-list { margin-top: 4px; }
         .ask-asked-hint { margin-top: 6px; font-size: 0.78rem; color: var(--fg-muted); display: flex; align-items: center; gap: 4px; }
       `}</style>
@@ -976,10 +1028,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
           <button
             className={`web-toggle ${webSearch ? 'on' : ''}`}
             onClick={() => setWebSearch(p => !p)}
-            title={webSearch ? 'ネット検索: ON' : 'ネット検索: OFF'}
+            title="ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ"
           >
-            {webSearch ? <Eye size={14} /> : <EyeOff size={14} />}
             <Search size={13} />
+            <span className="web-label">ネット検索</span>
+            <span className="web-state">{webSearch ? 'ON' : 'OFF'}</span>
           </button>
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
             {selectedNote ? (
@@ -1145,8 +1198,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         .header-title { font-size: 0.95rem; font-weight: 800; color: var(--primary); }
         .header-sub { font-size: 0.7rem; color: var(--fg-muted); }
         .header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-        .web-toggle { display: flex; align-items: center; gap: 2px; background: var(--accent); border: 1px solid var(--border); border-radius: 8px; padding: 5px 7px; cursor: pointer; color: var(--fg-muted); }
+        .web-toggle { display: flex; align-items: center; gap: 5px; background: var(--accent); border: 1px solid var(--border); border-radius: 16px; padding: 5px 10px; cursor: pointer; color: var(--fg-muted); font-size: 0.74rem; font-weight: 600; white-space: nowrap; }
         .web-toggle.on { color: var(--primary); border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+        .web-state { background: var(--border); color: var(--foreground); border-radius: 8px; padding: 1px 6px; font-size: 0.66rem; font-weight: 800; }
+        .web-toggle.on .web-state { background: var(--primary); color: white; }
+        @media (max-width: 380px) { .web-toggle .web-label { display: none; } }
         .context-toggle { background: transparent; border: none; cursor: pointer; padding: 2px; }
         .context-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent); border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px; font-size: 0.78rem; color: var(--fg-muted); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
         .context-chip.selected { color: var(--primary); border-color: var(--primary); }
