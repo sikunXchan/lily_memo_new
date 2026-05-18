@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Sparkles, Send, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush, FileText, Settings as SettingsIcon } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import { callGeminiChat, LILY_CHAT_SYSTEM_PROMPT } from '@/lib/gemini';
@@ -25,6 +25,7 @@ interface InsertableBlock {
 
 interface AIChatProps {
   onOpenSettings: () => void;
+  onSwitchTab?: (tab: 'memos' | 'sketch' | 'pdf' | 'settings') => void;
 }
 
 function stripHtml(html: string): string {
@@ -443,7 +444,7 @@ const SUGGESTIONS = [
   'アドバイスして',
 ];
 
-export default function AIChat({ onOpenSettings }: AIChatProps) {
+export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -709,6 +710,32 @@ export default function AIChat({ onOpenSettings }: AIChatProps) {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Mobile fullscreen bottom nav */}
+      {onSwitchTab && (
+        <nav className="ai-bottom-nav">
+          <button className="ai-nav-item" onClick={() => onSwitchTab('memos')}>
+            <Book size={22} />
+            <span>メモ</span>
+          </button>
+          <button className="ai-nav-item" onClick={() => onSwitchTab('sketch')}>
+            <Brush size={22} />
+            <span>落書き</span>
+          </button>
+          <button className="ai-nav-item" onClick={() => onSwitchTab('pdf')}>
+            <FileText size={22} />
+            <span>PDF</span>
+          </button>
+          <button className="ai-nav-item active">
+            <Sparkles size={22} />
+            <span>Lily</span>
+          </button>
+          <button className="ai-nav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}>
+            <SettingsIcon size={22} />
+            <span>設定</span>
+          </button>
+        </nav>
+      )}
+
       {/* Input area */}
       <div className="input-area">
         <textarea
@@ -934,9 +961,36 @@ export default function AIChat({ onOpenSettings }: AIChatProps) {
         }
         .send-btn:disabled { opacity: 0.4; cursor: default; }
 
-        /* mobile: extra bottom padding when bottom nav is visible */
+        /* ── Mobile fullscreen bottom nav ── */
+        .ai-bottom-nav {
+          display: none;
+          flex-shrink: 0;
+        }
         @media (max-width: 1023px) {
-          .messages-list { padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+          .ai-bottom-nav {
+            display: flex;
+            height: calc(56px + env(safe-area-inset-bottom));
+            background: var(--glass-tint, rgba(255,255,255,0.9));
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 1px solid var(--border);
+            padding-bottom: env(safe-area-inset-bottom);
+          }
+          .ai-nav-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            background: transparent;
+            color: var(--fg-muted);
+            transition: color 0.15s;
+          }
+          .ai-nav-item.active { color: var(--primary); }
+          .ai-nav-item span { font-size: 0.65rem; font-weight: 600; }
+          /* input area sits just above the nav — no extra padding needed */
+          .messages-list { padding-bottom: 16px; }
         }
       `}</style>
     </div>

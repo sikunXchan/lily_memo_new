@@ -166,7 +166,10 @@ export default function Home() {
                   <SketchTab onClose={() => setActiveTab('memos')} />
                 )}
                 {activeTab === 'ai' && (
-                  <AIChat onOpenSettings={openSettings} />
+                  <AIChat
+                    onOpenSettings={openSettings}
+                    onSwitchTab={(tab) => { setActiveTab(tab); setActiveNoteId(undefined); }}
+                  />
                 )}
                 {/* Desktop / iPad / iPhone landscape — Hero in main content area */}
                 {isDesktopLayout && activeTab === 'memos' && (
@@ -179,7 +182,10 @@ export default function Home() {
                   />
                 )}
                 {isDesktopLayout && activeTab === 'ai' && (
-                  <AIChat onOpenSettings={openSettings} />
+                  <AIChat
+                    onOpenSettings={openSettings}
+                    onSwitchTab={(tab) => { setActiveTab(tab); setActiveNoteId(undefined); }}
+                  />
                 )}
               </div>
             )}
@@ -187,7 +193,7 @@ export default function Home() {
         )}
       </main>
 
-      {isMobile && !isInputFocused && !activeNoteId && (
+      {isMobile && !isInputFocused && !activeNoteId && activeTab !== 'ai' && (
         <nav className="bottom-nav">
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
@@ -201,7 +207,7 @@ export default function Home() {
             <FileText size={24} />
             <span>PDF</span>
           </button>
-          <button className={`nav-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => { setActiveTab('ai'); setActiveNoteId(undefined); }}>
+          <button className="nav-item" onClick={() => { setActiveTab('ai'); setActiveNoteId(undefined); }}>
             <Sparkles size={24} />
             <span>Lily</span>
           </button>
