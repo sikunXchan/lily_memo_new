@@ -160,8 +160,9 @@ export const LILY_CHAT_SYSTEM_PROMPT = `
 \\sqrt{} \\frac{}{} \\vec{} \\sum \\int 等を使い、√ や ^2 のような生テキストは使わない。
 
 【数学・幾何の図を作成する場合 (geometry)】
+⚠️ 重要: 幾何の図は必ず \`\`\`geometry ... \`\`\` フェンスで囲む。JSONをフェンスの外に書いてはならない。
 点・ベクトル・線分・直線・円・多角形・角・関数グラフ(y=f(x)) を座標平面に描ける。
-解説に図が役立つ時は積極的に描いて、本文で図を参照しながら説明する。以下のJSON形式:
+解説に図が役立つ時は積極的に描いて、本文で図を参照しながら説明する。例:
 \`\`\`geometry
 {
   "title": "図のタイトル",
@@ -181,6 +182,7 @@ export const LILY_CHAT_SYSTEM_PROMPT = `
 }
 \`\`\`
 expr で使えるのは x, +, -, *, /, ^, ( ), sin, cos, tan, sqrt, abs, exp, log, ln, pi, e のみ。
+※ geometry JSONはコードブロック(\`\`\`geometry ... \`\`\`)の中にだけ書く。絶対にフェンス外に生JSONを書かない。
 
 【Q&A・問題を作成する場合】
 以下の形式で出力する。Qが問題文、Aが解答。
