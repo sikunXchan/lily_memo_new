@@ -48,6 +48,7 @@ export interface Theme {
 
   dark: boolean;
   starfield?: boolean;
+  fireworks?: boolean;
 }
 
 export const THEMES: Record<string, Theme> = {
@@ -146,9 +147,67 @@ export const THEMES: Record<string, Theme> = {
     dark: true,
     starfield: true,
   },
+
+  fireworks: {
+    id: 'fireworks', name: '花火', tag: 'SUMMER · HANABI',
+    bg: '#0a0a1f', surface: '#14132e', surfaceAlt: '#1d1b40',
+    surfaceDeep: '#272357',
+    fg: '#f0e9ff', fgMuted: '#9b93c8', fgFaint: '#534d80',
+    primary: '#ff6f9c', primaryDeep: '#e0457b', primaryFg: '#1a0613',
+    border: '#221f4a', borderStrong: '#332e63',
+    folders: { pink: '#ff6f9c', blue: '#5fb8ff', green: '#5fe0b0', yellow: '#ffd45f', purple: '#b98cff' },
+    fontDisplay: '"Plus Jakarta Sans","Noto Sans JP",system-ui,sans-serif',
+    fontBody: '"Noto Sans JP","Plus Jakarta Sans",system-ui,sans-serif',
+    fontLatin: '"Plus Jakarta Sans","Inter",system-ui,sans-serif',
+    fontMono: '"JetBrains Mono",ui-monospace,monospace',
+    radius: 14, radiusSm: 10, radiusXs: 6,
+    shadow: '0 1px 3px rgba(0,0,0,0.7), 0 12px 32px -12px rgba(255,111,156,0.30)',
+    shadowSoft: '0 1px 2px rgba(0,0,0,0.6), 0 4px 14px -6px rgba(0,0,0,0.55)',
+    glassTint: 'rgba(10,10,31,0.84)',
+    dark: true,
+    fireworks: true,
+  },
+
+  flower: {
+    id: 'flower', name: '花畑', tag: 'BLOOM · MEADOW',
+    bg: '#fdf7f4', surface: '#ffffff', surfaceAlt: '#fbeef0',
+    surfaceDeep: '#f3e2dd',
+    fg: '#3a322e', fgMuted: '#8a7468', fgFaint: '#c2ab9e',
+    primary: '#ec6f9e', primaryDeep: '#cf4d80', primaryFg: '#ffffff',
+    border: '#f5e1de', borderStrong: '#e6c8c2',
+    folders: { pink: '#ec6f9e', blue: '#74b7d8', green: '#7cbf7a', yellow: '#e6b94f', purple: '#b08cd4' },
+    fontDisplay: '"Plus Jakarta Sans","Noto Sans JP",system-ui,sans-serif',
+    fontBody: '"Noto Sans JP","Plus Jakarta Sans",system-ui,sans-serif',
+    fontLatin: '"Plus Jakarta Sans","Inter",system-ui,sans-serif',
+    fontMono: '"JetBrains Mono",ui-monospace,monospace',
+    radius: 18, radiusSm: 12, radiusXs: 7,
+    shadow: '0 1px 2px rgba(120,60,60,0.05), 0 10px 28px -12px rgba(236,111,158,0.22)',
+    shadowSoft: '0 1px 2px rgba(120,60,60,0.04), 0 3px 10px -6px rgba(236,111,158,0.12)',
+    glassTint: 'rgba(253,247,244,0.82)',
+    dark: false,
+  },
+
+  library: {
+    id: 'library', name: '図書館', tag: 'COZY · READING',
+    bg: '#1c140d', surface: '#282016', surfaceAlt: '#33281c',
+    surfaceDeep: '#42341f',
+    fg: '#f1e6d2', fgMuted: '#b09a7a', fgFaint: '#6e5c43',
+    primary: '#d8a24a', primaryDeep: '#b3812f', primaryFg: '#1c1409',
+    border: '#352a1d', borderStrong: '#4a3c28',
+    folders: { pink: '#d68a72', blue: '#7fa0a8', green: '#8aa06a', yellow: '#d8a24a', purple: '#a98fb0' },
+    fontDisplay: '"Lora","Noto Serif JP",serif',
+    fontBody: '"Noto Serif JP","Lora",serif',
+    fontLatin: '"Lora","Inter",serif',
+    fontMono: '"JetBrains Mono",ui-monospace,monospace',
+    radius: 8, radiusSm: 5, radiusXs: 3,
+    shadow: '0 1px 3px rgba(0,0,0,0.5), 0 12px 30px -12px rgba(216,162,74,0.16)',
+    shadowSoft: '0 1px 2px rgba(0,0,0,0.4), 0 4px 12px -6px rgba(0,0,0,0.4)',
+    glassTint: 'rgba(28,20,13,0.84)',
+    dark: true,
+  },
 };
 
-export const THEME_LIST = ['cream', 'paper', 'clean', 'night', 'starry'];
+export const THEME_LIST = ['cream', 'paper', 'clean', 'night', 'starry', 'fireworks', 'flower', 'library'];
 
 export const THEME_STORAGE_KEY = 'lily-memo-theme';
 
@@ -195,8 +254,9 @@ export function themeCssVars(t: Theme): Record<string, string> {
     '--shadow-lg': t.shadow,
 
     '--surface': t.surface,
-    // Cards are translucent on the starry theme so the sky shows through.
-    '--card-bg': t.starfield ? 'rgba(13,20,38,0.62)' : t.surface,
+    // Cards are translucent on the starry/fireworks themes so the
+    // animated night sky shows through behind them.
+    '--card-bg': t.starfield ? 'rgba(13,20,38,0.62)' : t.fireworks ? 'rgba(20,19,46,0.66)' : t.surface,
     '--surface-alt': t.surfaceAlt,
     '--surface-deep': t.surfaceDeep,
     '--fg-muted': t.fgMuted,

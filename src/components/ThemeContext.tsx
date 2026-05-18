@@ -51,6 +51,11 @@ function applyTheme(theme: Theme) {
   } else {
     document.body.removeAttribute('data-starfield');
   }
+  if (theme.fireworks) {
+    document.body.setAttribute('data-fireworks', 'true');
+  } else {
+    document.body.removeAttribute('data-fireworks');
+  }
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -130,6 +135,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return (
     <ThemeContext.Provider value={{ theme, themeId, setThemeId, cycleTheme, nextThemeName, fontId, setFontId }}>
       {theme.starfield && <div className="starfield-overlay" aria-hidden="true" />}
+      {theme.fireworks && (
+        <div className="fireworks-overlay" aria-hidden="true">
+          <span className="fw fw1" />
+          <span className="fw fw2" />
+          <span className="fw fw3" />
+          <span className="fw fw4" />
+          <span className="fw fw5" />
+        </div>
+      )}
       {children}
     </ThemeContext.Provider>
   );
