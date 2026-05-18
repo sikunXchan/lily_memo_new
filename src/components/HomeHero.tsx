@@ -298,7 +298,8 @@ export default function HomeHero({
       <style jsx>{`
         .home-hero {
           width: 100%;
-          height: 100%;
+          flex: 1;
+          min-height: 0;
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -357,7 +358,7 @@ export default function HomeHero({
         .folder-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
         .folder-dot.lg { width: 12px; height: 12px; }
 
-        .home-hero.mobile { padding-bottom: 0; }
+        .home-hero.mobile { overflow-y: auto; padding-bottom: calc(60px + env(safe-area-inset-bottom) + 16px); }
         .search-container { position: relative; margin: 0 12px 12px; flex-shrink: 0; }
         .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--fg-faint); pointer-events: none; }
         .search-input { width: 100%; padding: 10px 14px 10px 36px; background: var(--surface-alt, var(--accent)); border: 1.5px solid transparent; font-size: 0.875rem; border-radius: 50px; color: var(--foreground); }
@@ -369,7 +370,8 @@ export default function HomeHero({
         .vt-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 8px; background: transparent; color: var(--foreground); font-size: 0.78rem; font-weight: 600; border-radius: 8px; opacity: 0.55; }
         .vt-btn.active { background: var(--card-bg, var(--background)); color: var(--primary); opacity: 1; box-shadow: var(--shadow-sm); }
 
-        .content-area { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px calc(60px + env(safe-area-inset-bottom) + 16px); }
+        .content-area { padding: 0 12px; }
+        @media (max-height: 500px) { .hero-banner { height: 110px; } }
         .graph-wrap { width: 100%; height: 100%; min-height: 320px; display: flex; }
 
         .folder-item-wrapper { margin-bottom: 2px; }
