@@ -20,7 +20,7 @@ import type { Note } from '@/lib/db';
 import { callGeminiChat, LILY_CHAT_SYSTEM_PROMPT } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
-import { parseSlides, exportSlidesToPdf } from '@/lib/slidePdf';
+import { parseSlides, exportSlidesToPptx } from '@/lib/slides';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
@@ -419,13 +419,13 @@ function InsertableBlockCard({
     }
   };
 
-  const handlePdf = async () => {
+  const handlePptx = async () => {
     if (pdfStatus === 'loading') return;
     setPdfStatus('loading');
     try {
-      await exportSlidesToPdf(parseSlides(block.rawCode));
+      await exportSlidesToPptx(parseSlides(block.rawCode));
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'PDFの作成に失敗しちゃった');
+      setErrorMsg(e instanceof Error ? e.message : 'PowerPointの作成に失敗しちゃった');
     } finally {
       setPdfStatus('idle');
     }
@@ -446,9 +446,9 @@ function InsertableBlockCard({
       </div>
 
       {block.type === 'slides' && (
-        <button className="pdf-btn" onClick={handlePdf} disabled={pdfStatus === 'loading'}>
+        <button className="pdf-btn" onClick={handlePptx} disabled={pdfStatus === 'loading'}>
           <FileDown size={14} />
-          {pdfStatus === 'loading' ? 'PDF作成中...' : 'PDFで保存'}
+          {pdfStatus === 'loading' ? 'PowerPoint作成中...' : 'PowerPoint(.pptx)で保存'}
         </button>
       )}
 
