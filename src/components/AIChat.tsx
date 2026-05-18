@@ -998,12 +998,21 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
       const systemPrompt = buildSystemPrompt(contextNotes);
 
       const allMsgs = [...messages, userMsg];
-      const history: ChatTurn[] = allMsgs.slice(-20).map(m => {
+      // Keep last 10 messages to limit token usage per request.
+      const recentMsgs = allMsgs.slice(-10);
+      // Only include attachments on the last user message — older attachments
+      // have already been processed by the model, so re-sending their base64
+      // data on every turn wastes significant quota.
+      const lastUserIdx = recentMsgs.reduce(
+        (acc, m, idx) => (m.role === 'user' && m.attachments?.length ? idx : acc),
+        -1
+      );
+      const history: ChatTurn[] = recentMsgs.map((m, idx) => {
         const turn: ChatTurn = {
           role: m.role === 'user' ? 'user' : 'model',
           text: m.text,
         };
-        if (m.attachments && m.attachments.length > 0) {
+        if (idx === lastUserIdx && m.attachments && m.attachments.length > 0) {
           turn.attachments = m.attachments.map<ChatAttachment>(a => ({
             mimeType: a.mimeType, data: a.data,
           }));
