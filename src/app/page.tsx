@@ -77,7 +77,7 @@ export default function Home() {
 
   if (!mounted) return null;
 
-  const isDesktopLayout = !isMobile || (isLandscape && !activeNoteId);
+  const isDesktopLayout = !isMobile;
 
   const openSettings = () => {
     setActiveTab('settings');
@@ -111,7 +111,7 @@ export default function Home() {
   };
 
   return (
-    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
+    <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
       {isDesktopLayout && activeTab !== 'sketch' && (
         <Sidebar
           activeNoteId={activeNoteId}
@@ -143,8 +143,8 @@ export default function Home() {
             )}
             {activeTab !== 'settings' && (
               <div className="tab-content">
-                {/* Mobile portrait — self-contained Hero home */}
-                {isMobile && !isLandscape && activeTab === 'memos' && (
+                {/* Mobile (portrait & landscape) — self-contained Hero home */}
+                {isMobile && activeTab === 'memos' && (
                   <HomeHero
                     onSelectNote={(id) => setActiveNoteId(id)}
                     onOpenSketch={openSketch}
@@ -173,7 +173,7 @@ export default function Home() {
         )}
       </main>
 
-      {isMobile && !isLandscape && !isInputFocused && !activeNoteId && (
+      {isMobile && !isInputFocused && !activeNoteId && (
         <nav className="bottom-nav">
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
