@@ -33,8 +33,9 @@ export default function Home() {
       const h = window.innerHeight;
       const landscape = w > h;
       // Portrait: treat up to 1023px as mobile (covers iPad Air/Pro portrait)
-      // Landscape: use min-dimension (height) to distinguish phones from tablets/desktops
-      setIsMobile(landscape ? Math.min(w, h) <= 768 : w < 1024);
+      // Landscape: min-dimension up to 1024 is mobile (covers all iPads incl.
+      // 12.9" Pro) so tablets in landscape get the Hero + bottom nav, no sidebar
+      setIsMobile(landscape ? Math.min(w, h) <= 1024 : w < 1024);
       setIsLandscape(landscape);
     };
     const initialize = () => { checkLayout(); setMounted(true); };
@@ -77,7 +78,7 @@ export default function Home() {
 
   if (!mounted) return null;
 
-  const isDesktopLayout = !isMobile || (isLandscape && !activeNoteId);
+  const isDesktopLayout = !isMobile;
 
   const openSettings = () => {
     setActiveTab('settings');
@@ -111,7 +112,7 @@ export default function Home() {
   };
 
   return (
-    <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
+    <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
       {isDesktopLayout && activeTab !== 'sketch' && (
         <Sidebar
           activeNoteId={activeNoteId}
@@ -143,8 +144,8 @@ export default function Home() {
             )}
             {activeTab !== 'settings' && (
               <div className="tab-content">
-                {/* Mobile portrait — self-contained Hero home */}
-                {isMobile && !isLandscape && activeTab === 'memos' && (
+                {/* Mobile (portrait & landscape) — self-contained Hero home */}
+                {isMobile && activeTab === 'memos' && (
                   <HomeHero
                     onSelectNote={(id) => setActiveNoteId(id)}
                     onOpenSketch={openSketch}
@@ -173,7 +174,7 @@ export default function Home() {
         )}
       </main>
 
-      {isMobile && !isLandscape && !isInputFocused && !activeNoteId && (
+      {isMobile && !isInputFocused && !activeNoteId && (
         <nav className="bottom-nav">
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
