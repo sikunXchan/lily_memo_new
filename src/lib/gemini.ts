@@ -48,13 +48,17 @@ export async function callGeminiChat(
 
   let lastError = 'AI request failed';
 
-  for (const model of GEMINI_MODELS) {
+  for (let i = 0; i < GEMINI_MODELS.length; i++) {
+    const model = GEMINI_MODELS[i];
     // Google Search grounding is only reliable on the 2.x models, so we
     // only attach the tool there; the 1.5 fallback runs without it.
     const useSearch = options.webSearch && !model.includes('1.5');
     const body = JSON.stringify(
       useSearch ? { ...baseBody, tools: [{ google_search: {} }] } : baseBody
     );
+
+    // Brief delay before retrying a different model to avoid hammering the API.
+    if (i > 0) await new Promise(r => setTimeout(r, 500 * i));
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const response = await fetch(url, {
