@@ -33,8 +33,9 @@ export default function Home() {
       const h = window.innerHeight;
       const landscape = w > h;
       // Portrait: treat up to 1023px as mobile (covers iPad Air/Pro portrait)
-      // Landscape: use min-dimension (height) to distinguish phones from tablets/desktops
-      setIsMobile(landscape ? Math.min(w, h) <= 768 : w < 1024);
+      // Landscape: min-dimension up to 1024 is mobile (covers all iPads incl.
+      // 12.9" Pro) so tablets in landscape get the Hero + bottom nav, no sidebar
+      setIsMobile(landscape ? Math.min(w, h) <= 1024 : w < 1024);
       setIsLandscape(landscape);
     };
     const initialize = () => { checkLayout(); setMounted(true); };
