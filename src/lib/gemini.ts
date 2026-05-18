@@ -1,6 +1,12 @@
+export interface ChatAttachment {
+  mimeType: string;
+  data: string; // base64 without the data: prefix
+}
+
 export interface ChatTurn {
   role: 'user' | 'model';
   text: string;
+  attachments?: ChatAttachment[];
 }
 
 // Free-tier quotas differ per model and Google changes them over time, so we
@@ -21,7 +27,12 @@ export async function callGeminiChat(
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: history.map(t => ({
       role: t.role,
-      parts: [{ text: t.text }],
+      parts: [
+        { text: t.text },
+        ...(t.attachments?.map(a => ({
+          inline_data: { mime_type: a.mimeType, data: a.data },
+        })) ?? []),
+      ],
     })),
     generationConfig: {
       temperature: 0.8,
@@ -76,7 +87,8 @@ export const LILY_CHAT_SYSTEM_PROMPT = `
 2. **UML図・フロー図 (Mermaid)**: 情報を図にしてメモに挿入できる
 3. **グラフ (Chart.js)**: データを可視化してメモに挿入できる
 4. **Q&A・問題作成**: 学習用の問題・クイズを作成してメモに挿入できる
-5. **なんでも相談**: ノートのアイデア、文章の改善、計画立て、など何でも話しかけて！
+5. **ファイル解析**: 添付された画像やPDFを読み取って、内容を分析・要約したり、そこからグラフ・問題・図を作成できる
+6. **なんでも相談**: ノートのアイデア、文章の改善、計画立て、など何でも話しかけて！
 
 【Mermaid図を作成する場合】
 必ず以下のフェンスで囲む。内容はMermaidの有効な構文にする。

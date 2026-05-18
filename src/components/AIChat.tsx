@@ -2,11 +2,21 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush, FileText, Settings as SettingsIcon } from 'lucide-react';
+import { Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush, FileText, Settings as SettingsIcon, Paperclip, X } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import { callGeminiChat, LILY_CHAT_SYSTEM_PROMPT } from '@/lib/gemini';
-import type { ChatTurn } from '@/lib/gemini';
+import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
+
+const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12MB
+const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain';
+
+interface AttachmentMeta {
+  name: string;
+  mimeType: string;
+  data: string; // base64
+  isImage: boolean;
+}
 
 interface ChatMessage {
   id: string;
@@ -14,6 +24,7 @@ interface ChatMessage {
   text: string;
   timestamp: number;
   extractedBlocks?: InsertableBlock[];
+  attachment?: { name: string; isImage: boolean; data: string; mimeType: string };
 }
 
 interface InsertableBlock {
@@ -347,9 +358,20 @@ function LilyBubble({
 }
 
 function UserBubble({ message }: { message: ChatMessage }) {
+  const att = message.attachment;
   return (
     <div className="user-bubble-row">
       <div className="user-bubble">
+        {att && (
+          <div className="att-preview">
+            {att.isImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={`data:${att.mimeType};base64,${att.data}`} alt={att.name} className="att-img" />
+            ) : (
+              <span className="att-file">📎 {att.name}</span>
+            )}
+          </div>
+        )}
         {message.text.split('\n').map((line, i) => (
           <span key={i}>{line}{i < message.text.split('\n').length - 1 && <br />}</span>
         ))}
@@ -369,6 +391,20 @@ function UserBubble({ message }: { message: ChatMessage }) {
           font-size: 0.9rem;
           line-height: 1.65;
           word-break: break-word;
+        }
+        .att-preview { margin-bottom: 6px; }
+        .att-img {
+          max-width: 200px;
+          max-height: 200px;
+          border-radius: 10px;
+          display: block;
+        }
+        .att-file {
+          display: inline-block;
+          background: rgba(255,255,255,0.25);
+          border-radius: 8px;
+          padding: 4px 10px;
+          font-size: 0.82rem;
         }
       `}</style>
     </div>
@@ -451,8 +487,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
   const [selectedNoteId, setSelectedNoteId] = useState<number | undefined>();
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [apiKey, setApiKey] = useState<string>('');
+  const [attachment, setAttachment] = useState<AttachmentMeta | null>(null);
+  const [fileError, setFileError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const allNotes = useLiveQuery(
     () => db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray(),
@@ -475,19 +514,54 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
+    if (!file) return;
+    setFileError('');
+    if (file.size > MAX_FILE_BYTES) {
+      setFileError('ファイルが大きすぎます（12MBまで）');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1] ?? '';
+      setAttachment({
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        data: base64,
+        isImage: file.type.startsWith('image/'),
+      });
+    };
+    reader.onerror = () => setFileError('ファイルの読み込みに失敗しました');
+    reader.readAsDataURL(file);
+  };
+
   const sendMessage = useCallback(async (text?: string) => {
     const userText = (text ?? input).trim();
-    if (!userText || isLoading || !apiKey) return;
+    const sentAttachment = attachment;
+    if ((!userText && !sentAttachment) || isLoading || !apiKey) return;
 
     setInput('');
+    setAttachment(null);
+    setFileError('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsLoading(true);
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
-      text: userText,
+      text: userText || (sentAttachment ? '(ファイルを送信)' : ''),
       timestamp: Date.now(),
+      attachment: sentAttachment
+        ? {
+            name: sentAttachment.name,
+            isImage: sentAttachment.isImage,
+            data: sentAttachment.data,
+            mimeType: sentAttachment.mimeType,
+          }
+        : undefined,
     };
     setMessages(prev => [...prev, userMsg]);
 
@@ -500,10 +574,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
       const systemPrompt = buildSystemPrompt(contextNotes);
 
       const allMsgs = [...messages, userMsg];
-      const history: ChatTurn[] = allMsgs.slice(-20).map(m => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        text: m.text,
-      }));
+      const history: ChatTurn[] = allMsgs.slice(-20).map(m => {
+        const turn: ChatTurn = {
+          role: m.role === 'user' ? 'user' : 'model',
+          text: m.text,
+        };
+        if (m.attachment) {
+          const a: ChatAttachment = { mimeType: m.attachment.mimeType, data: m.attachment.data };
+          turn.attachments = [a];
+        }
+        return turn;
+      });
 
       const aiText = await callGeminiChat(history, systemPrompt, apiKey);
       const { textContent, blocks } = parseAIResponse(aiText);
@@ -527,7 +608,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, apiKey, messages, selectedNoteId]);
+  }, [input, attachment, isLoading, apiKey, messages, selectedNoteId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -680,7 +761,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/lily-character.png" alt="Lily" className="welcome-lily" />
             </div>
-            <p className="welcome-text">なんでも話しかけてね！<br />メモを選んで「分析して」「図にして」とか言ってみて 🦊</p>
+            <p className="welcome-text">なんでも話しかけてね！<br />メモを選んだり、📎 で画像・PDFを添付して<br />「分析して」「グラフにして」とか言ってみて 🦊</p>
             <div className="suggestions">
               {SUGGESTIONS.map(s => (
                 <button
@@ -736,8 +817,48 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         </nav>
       )}
 
+      {/* Attachment preview / error */}
+      {(attachment || fileError) && (
+        <div className="att-bar">
+          {attachment && (
+            <div className="att-chip">
+              {attachment.isImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`data:${attachment.mimeType};base64,${attachment.data}`}
+                  alt={attachment.name}
+                  className="att-chip-thumb"
+                />
+              ) : (
+                <span className="att-chip-icon">📎</span>
+              )}
+              <span className="att-chip-name">{attachment.name}</span>
+              <button className="att-remove" onClick={() => setAttachment(null)} title="削除">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+          {fileError && <span className="att-error">{fileError}</span>}
+        </div>
+      )}
+
       {/* Input area */}
       <div className="input-area">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_FILE_TYPES}
+          hidden
+          onChange={handleFileSelect}
+        />
+        <button
+          className="attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isLoading}
+          title="ファイルを添付"
+        >
+          <Paperclip size={20} />
+        </button>
         <textarea
           ref={textareaRef}
           className="chat-input"
@@ -751,7 +872,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         <button
           className="send-btn"
           onClick={() => sendMessage()}
-          disabled={!input.trim() || isLoading}
+          disabled={(!input.trim() && !attachment) || isLoading}
           title="送信 (Enter)"
         >
           <Send size={20} />
@@ -945,6 +1066,22 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
           overflow-y: auto;
         }
         .chat-input:focus { border-color: var(--primary); }
+        .attach-btn {
+          flex-shrink: 0;
+          width: 40px;
+          height: 40px;
+          background: var(--accent);
+          color: var(--fg-muted);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s;
+        }
+        .attach-btn:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
+        .attach-btn:disabled { opacity: 0.4; cursor: default; }
         .send-btn {
           flex-shrink: 0;
           width: 40px;
@@ -960,6 +1097,52 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
           transition: opacity 0.15s;
         }
         .send-btn:disabled { opacity: 0.4; cursor: default; }
+
+        /* ── Attachment bar ── */
+        .att-bar {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 14px;
+          border-top: 1px solid var(--border);
+          background: var(--accent);
+          flex-shrink: 0;
+        }
+        .att-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 5px 8px 5px 10px;
+          max-width: 70%;
+        }
+        .att-chip-thumb {
+          width: 32px;
+          height: 32px;
+          object-fit: cover;
+          border-radius: 6px;
+        }
+        .att-chip-icon { font-size: 1rem; }
+        .att-chip-name {
+          font-size: 0.78rem;
+          color: var(--foreground);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 160px;
+        }
+        .att-remove {
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          color: var(--fg-muted);
+          display: flex;
+          align-items: center;
+          padding: 2px;
+        }
+        .att-error { font-size: 0.78rem; color: #cc0000; }
 
         /* ── Mobile fullscreen bottom nav ── */
         .ai-bottom-nav {
