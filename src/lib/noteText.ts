@@ -36,6 +36,11 @@ export function noteHtmlToText(html: string): string {
     el.replaceWith(doc.createTextNode(`\n[グラフ (${type})]\n${code}\n`));
   });
 
+  doc.querySelectorAll('div[data-type="geometry"]').forEach(el => {
+    const code = el.getAttribute('data-code') || '';
+    el.replaceWith(doc.createTextNode(`\n[幾何の図 (JSON)]\n${code}\n`));
+  });
+
   doc.querySelectorAll('div[data-type="qa"]').forEach(el => {
     let pairs: { q: string; a: string }[] = [];
     try {

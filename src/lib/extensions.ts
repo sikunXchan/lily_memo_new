@@ -6,6 +6,7 @@ const MermaidComponent = dynamic(() => import('@/components/MermaidComponent'), 
 const ChartComponent = dynamic(() => import('@/components/ChartComponent'), { ssr: false });
 const QAComponent = dynamic(() => import('@/components/QAComponent'), { ssr: false });
 const ResizableImageComponent = dynamic(() => import('@/components/ResizableImageComponent'), { ssr: false });
+const GeometryComponent = dynamic(() => import('@/components/GeometryComponent'), { ssr: false });
 
 export const MermaidExtension = Node.create({
   name: 'mermaid',
@@ -136,5 +137,26 @@ export const QAExtension = Node.create({
   },
   addNodeView() {
     return ReactNodeViewRenderer(QAComponent);
+  },
+});
+
+export const GeometryExtension = Node.create({
+  name: 'geometry',
+  group: 'block',
+  atom: true,
+  addAttributes() {
+    return {
+      code: { default: '' },
+      width: { default: '100%' },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-type="geometry"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'geometry' })];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(GeometryComponent);
   },
 });
