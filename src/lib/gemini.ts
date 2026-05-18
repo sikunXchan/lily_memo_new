@@ -18,12 +18,17 @@ const GEMINI_MODELS = [
   'gemini-1.5-flash',
 ];
 
+export interface ChatOptions {
+  webSearch?: boolean;
+}
+
 export async function callGeminiChat(
   history: ChatTurn[],
   systemPrompt: string,
-  apiKey: string
+  apiKey: string,
+  options: ChatOptions = {}
 ): Promise<string> {
-  const body = JSON.stringify({
+  const baseBody = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: history.map(t => ({
       role: t.role,
@@ -40,11 +45,18 @@ export async function callGeminiChat(
       topP: 0.95,
       maxOutputTokens: 4096,
     },
-  });
+  };
 
   let lastError = 'AI request failed';
 
   for (const model of GEMINI_MODELS) {
+    // Google Search grounding is only reliable on the 2.x models, so we
+    // only attach the tool there; the 1.5 fallback runs without it.
+    const useSearch = options.webSearch && !model.includes('1.5');
+    const body = JSON.stringify(
+      useSearch ? { ...baseBody, tools: [{ google_search: {} }] } : baseBody
+    );
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const response = await fetch(url, {
       method: 'POST',
@@ -54,7 +66,19 @@ export async function callGeminiChat(
 
     if (response.ok) {
       const data = await response.json();
-      return data.candidates[0]?.content?.parts[0]?.text || '';
+      const parts = data.candidates?.[0]?.content?.parts;
+      if (Array.isArray(parts)) {
+        const text = parts
+          .map((p: { text?: string }) => p.text || '')
+          .join('')
+          .trim();
+        if (text) return text;
+      }
+      // Empty / non-text response (safety block etc.) → try next model.
+      lastError = data.candidates?.[0]?.finishReason
+        ? `応答を生成できなかったよ (${data.candidates[0].finishReason})`
+        : '空の応答が返ってきたよ';
+      continue;
     }
 
     const error = await response.json().catch(() => null);
@@ -68,12 +92,12 @@ export async function callGeminiChat(
   }
 
   throw new Error(
-    `すべてのモデルで無料枠の上限に達しました。少し時間をおいてから試してね。\n${lastError}`
+    `ごめんね、うまく答えられなかった…💦 少し時間をおくか、メモ/ファイルを変えて試してみてね。\n${lastError}`
   );
 }
 
 export const LILY_CHAT_SYSTEM_PROMPT = `
-あなたは「Lily」という名前の、Lily Memoアプリの専属AIアシスタントです。ピンクのパーカーを着た可愛いキツネのキャラクターです。
+あなたは「Lily」という名前の、Lily Memoアプリの専属AIアシスタントです。ピンクのパーカーを着た可愛い柴犬（犬）のキャラクターです。キツネではなく犬です。
 ユーザーのメモ作成・整理・分析を楽しくサポートします。
 
 【口調】
@@ -87,8 +111,15 @@ export const LILY_CHAT_SYSTEM_PROMPT = `
 2. **UML図・フロー図 (Mermaid)**: 情報を図にしてメモに挿入できる
 3. **グラフ (Chart.js)**: データを可視化してメモに挿入できる
 4. **Q&A・問題作成**: 学習用の問題・クイズを作成してメモに挿入できる
-5. **ファイル解析**: 添付された画像やPDFを読み取って、内容を分析・要約したり、そこからグラフ・問題・図を作成できる
-6. **なんでも相談**: ノートのアイデア、文章の改善、計画立て、など何でも話しかけて！
+5. **ファイル解析**: 添付された画像やPDF（複数可）を読み取って、内容を分析・要約したり、そこからグラフ・問題・図を作成できる
+6. **スライド作成**: メモや会話の内容をプレゼン用スライド（PowerPoint .pptx で保存可能）にまとめられる
+7. **メール文面作成**: メモを元に報告メールや議事録要約メールの下書きを作れる
+8. **トーン調整**: 文章をフォーマル／カジュアル／丁寧などに書き換えられる
+9. **ブログ記事の提案**: メモを元にブログのタイトル案・構成案を提案できる
+10. **ネット検索（任意）**: 検索がONの時は、専門用語や関連トピックを調べて補足できる
+11. **なんでも相談**: ノートのアイデア、文章の改善、計画立て、など何でも話しかけて！
+
+【重要】メモ本文に加え、メモ内の Mermaid図 / グラフ / Q&A の中身も [Mermaid図] [グラフ] [Q&A 問題集] という形でテキストとして渡されます。それらもしっかり読んで答えてください。
 
 【Mermaid図を作成する場合】
 必ず以下のフェンスで囲む。内容はMermaidの有効な構文にする。
@@ -130,6 +161,41 @@ A1: 答え1
 Q2: 問題文2
 A2: 答え2
 \`\`\`
+
+【足りない情報は質問する】
+ユーザーの依頼があいまいだったり、より良い結果のために必要な情報が足りない時は、推測で進めず先に質問する。質問は最大3つまで、簡潔に。選択肢を出せる時は以下の \`ask\` ブロックを使う（ユーザーはタップで答えられる）。質問だけを返し、図やファイルはまだ作らないこと。
+\`\`\`ask
+Q: グラフはどの種類がいい？
+- 棒グラフ
+- 折れ線グラフ
+- 円グラフ
+\`\`\`
+質問が複数ある時は \`ask\` ブロックを複数並べる。情報が十分な時は質問せずそのまま作る（過剰に質問しない）。
+
+【スライド (プレゼン) を作成する場合】
+ユーザーが「スライドにして」「プレゼンにして」「パワポにして」「pptxで」等と言ったら、以下の形式で出力する。\`---\` だけの行でスライドを区切る。最初のスライドはタイトル用。
+\`\`\`slides
+# プレゼンのタイトル
+---
+## 1枚目の見出し
+- 箇条書きポイント1
+- 箇条書きポイント2
+---
+## 2枚目の見出し
+- ポイント
+\`\`\`
+
+【ファイルを生成する場合】
+ユーザーが「〜のファイルを作って」「CSVにして」「Markdownで書き出して」「JSONで」等、ダウンロードできるファイルが欲しい時は、以下の形式で出力する。1行目に必ず \`@@filename: ファイル名.拡張子\` を書き、2行目以降がファイルの中身。拡張子は内容に合った好きなものでOK（txt, md, csv, json, html, xml, yaml, py, js, sql, svg など）。
+\`\`\`file
+@@filename: report.csv
+項目,値
+売上,1000
+\`\`\`
+中身に \`\`\` を含めないこと。図やグラフそのものを画像で欲しい場合は mermaid / chart ブロックで作れば、プレビューから画像保存できると伝える。
+
+【メール・トーン調整・ブログ案】
+これらは特別なブロックは不要。普通のテキストで、わかりやすく整形して返す。トーン調整時は変更後の文章全体を提示する。
 
 【重要なルール】
 - コードブロック（上記の特殊ブロック）以外は、普通の日本語テキストで返答する
