@@ -12,12 +12,14 @@ const NoteEditor = dynamic(() => import('@/components/NoteEditor'), { ssr: false
 const SettingsModal = dynamic(() => import('@/components/SettingsModal'), { ssr: false });
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
+const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
 
 type TabType = 'memos' | 'pdf' | 'sketch' | 'settings';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<TabType>('memos');
+  const [mobileMemoView, setMobileMemoView] = useState<'home' | 'list'>('home');
   const [isMobile, setIsMobile] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -115,7 +117,14 @@ export default function Home() {
             )}
             {activeTab !== 'settings' && (
               <div className="tab-content">
-                {isMobile && !isLandscape && activeTab === 'memos' && (
+                {isMobile && !isLandscape && activeTab === 'memos' && mobileMemoView === 'home' && (
+                  <HomeHero
+                    onSelectNote={(id) => setActiveNoteId(id)}
+                    onOpenList={() => setMobileMemoView('list')}
+                    onOpenSketch={openSketch}
+                  />
+                )}
+                {isMobile && !isLandscape && activeTab === 'memos' && mobileMemoView === 'list' && (
                   <Sidebar
                     activeNoteId={activeNoteId}
                     onSelectNote={setActiveNoteId}
@@ -125,6 +134,7 @@ export default function Home() {
                     isMobileOpen={true}
                     onToggleMobile={() => {}}
                     onActiveNoteDeleted={() => setActiveNoteId(undefined)}
+                    onBackToHome={() => setMobileMemoView('home')}
                   />
                 )}
                 {activeTab === 'pdf' && (
@@ -150,7 +160,7 @@ export default function Home() {
 
       {isMobile && !isLandscape && !isInputFocused && !activeNoteId && (
         <nav className="bottom-nav">
-          <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
+          <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); setMobileMemoView('home'); }}>
             <Book size={24} />
             <span>メモ</span>
           </button>
@@ -236,16 +246,13 @@ export default function Home() {
           left: 0;
           right: 0;
           height: calc(60px + env(safe-area-inset-bottom));
-          background: rgba(255, 255, 255, 0.9);
+          background: var(--glass-tint, rgba(255, 255, 255, 0.9));
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           display: flex;
           border-top: 1px solid var(--border);
           padding-bottom: env(safe-area-inset-bottom);
           z-index: 3000;
-        }
-        :global([data-theme='dark']) .bottom-nav {
-          background: rgba(26, 26, 26, 0.92);
         }
         /* Sketch tab is a full-screen overlay — hide bottom nav so the
            sketch toolbar isn't covered. */

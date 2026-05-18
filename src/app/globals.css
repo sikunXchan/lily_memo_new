@@ -123,15 +123,40 @@ input:focus, textarea:focus {
 
 /* Glassmorphism */
 .glass {
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--glass-tint, rgba(255, 255, 255, 0.85));
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.4));
 }
 
 [data-theme='dark'] .glass {
-  background: rgba(28, 28, 30, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--glass-tint, rgba(28, 28, 30, 0.9));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+/* 夜空テーマ専用 — 星空パーティクル背景。bg の上に重ねる固定オーバーレイ。 */
+.starfield-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 20% 15%,  rgba(221,230,248,0.85) 0%, transparent 100%),
+    radial-gradient(1px 1px at 67% 38%,  rgba(221,230,248,0.70) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 42% 72%, rgba(221,230,248,0.60) 0%, transparent 100%),
+    radial-gradient(1px 1px at 83% 58%,  rgba(221,230,248,0.55) 0%, transparent 100%),
+    radial-gradient(1px 1px at 11% 85%,  rgba(137,171,240,0.80) 0%, transparent 100%),
+    radial-gradient(2px 2px at 55% 22%,  rgba(192,156,244,0.65) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 10%,  rgba(221,230,248,0.90) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 34% 48%, rgba(221,230,248,0.50) 0%, transparent 100%),
+    radial-gradient(1px 1px at 75% 80%,  rgba(137,171,240,0.75) 0%, transparent 100%),
+    radial-gradient(1px 1px at 5%  50%,  rgba(221,230,248,0.40) 0%, transparent 100%);
+  background-size: 400px 400px;
+}
+
+/* Starfield を背面に見せるため、最上位コンテナの不透明背景を外す */
+body[data-starfield] .app-container {
+  background: transparent;
 }
 
 /* Dark mode: ensure all text is readable */

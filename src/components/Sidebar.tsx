@@ -2,10 +2,11 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2 } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
+import { useTheme } from './ThemeContext';
 
 // Heavy: pulls in react-force-graph-2d + d3 + canvas-confetti shaders.
 // Only needed when the user switches to the graph view.
@@ -20,6 +21,7 @@ interface SidebarProps {
   isMobileOpen: boolean;
   onToggleMobile: () => void;
   onActiveNoteDeleted?: () => void;
+  onBackToHome?: () => void;
 }
 
 const COLORS = [
@@ -36,7 +38,8 @@ interface DeletingFolderState {
   noteCount: number;
 }
 
-export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, isMobileOpen, onToggleMobile, onActiveNoteDeleted }: SidebarProps) {
+export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, isMobileOpen, onToggleMobile, onActiveNoteDeleted, onBackToHome }: SidebarProps) {
+  const { theme, cycleTheme, nextThemeName } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
 
   const folders = useLiveQuery(() =>
@@ -51,7 +54,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
   }, [searchQuery]);
 
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
   const [deletingFolder, setDeletingFolder] = useState<DeletingFolderState | null>(null);
@@ -67,24 +69,6 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
   const changeViewMode = (mode: 'tree' | 'graph') => {
     setViewMode(mode);
     localStorage.setItem('sidebarViewMode', mode);
-  };
-
-  useEffect(() => {
-    const applyStoredTheme = () => {
-      const theme = localStorage.getItem('theme');
-      if (theme === 'dark') {
-        setIsDarkMode(true);
-        document.body.setAttribute('data-theme', 'dark');
-      }
-    };
-    applyStoredTheme();
-  }, []);
-
-  const toggleTheme = () => {
-    const newMode = !isDarkMode;
-    setIsDarkMode(newMode);
-    document.body.setAttribute('data-theme', newMode ? 'dark' : 'light');
-    localStorage.setItem('theme', newMode ? 'dark' : 'light');
   };
 
   const toggleFolder = (id: number) => {
@@ -161,11 +145,17 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
       <aside className="sidebar glass" style={{ overflow: 'hidden' }}>
         <div className="sidebar-header">
           <div className="logo-area">
+            {onBackToHome && (
+              <button className="back-btn" onClick={onBackToHome} title="ホームに戻る" aria-label="ホームに戻る">
+                <ArrowLeft size={18} />
+              </button>
+            )}
             <Image src="/logo.png" alt="Lily Memo Logo" width={36} height={36} className="logo-img" />
             <h1 className="title">Lily Memo</h1>
           </div>
-          <button className="theme-toggle" onClick={toggleTheme} title={isDarkMode ? 'ライトモード' : 'ダークモード'}>
-            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          <button className="theme-toggle" onClick={cycleTheme} title={`テーマ切替（次: ${nextThemeName}）`}>
+            <Palette size={16} />
+            {theme.dark ? <Moon size={14} /> : <Sun size={14} />}
           </button>
         </div>
 
@@ -354,7 +344,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             flex-shrink: 0;
             z-index: 100;
             transition: all 0.3s;
-            background: rgba(255, 255, 255, 0.85);
+            background: var(--glass-tint, rgba(255, 255, 255, 0.85));
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
           }
@@ -377,6 +367,21 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             align-items: center;
             gap: 10px;
           }
+          .back-btn {
+            background: var(--accent);
+            color: var(--foreground);
+            padding: 7px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.8;
+            transition: opacity 0.2s, background 0.2s;
+          }
+          .back-btn:hover {
+            opacity: 1;
+            background: var(--border);
+          }
           .logo-img {
             border-radius: 10px;
             box-shadow: 0 2px 8px rgba(255, 182, 193, 0.4);
@@ -390,10 +395,13 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           .theme-toggle {
             background: var(--accent);
             color: var(--foreground);
-            padding: 8px;
+            padding: 8px 10px;
             border-radius: 10px;
             opacity: 0.8;
             transition: opacity 0.2s, background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
           }
           .theme-toggle:hover {
             opacity: 1;
