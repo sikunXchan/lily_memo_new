@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search, Eye, EyeOff,
-  FileDown, Wand2,
+  FileDown, Wand2, Download,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -21,6 +21,9 @@ import { callGeminiChat, LILY_CHAT_SYSTEM_PROMPT } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseSlides, exportSlidesToPdf } from '@/lib/slidePdf';
+import {
+  downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
+} from '@/lib/fileGen';
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, PointElement, LineElement,
@@ -51,9 +54,10 @@ interface ChatMessage {
 
 interface InsertableBlock {
   id: string;
-  type: 'mermaid' | 'chart' | 'qa' | 'slides';
+  type: 'mermaid' | 'chart' | 'qa' | 'slides' | 'file';
   rawCode: string;
   previewLabel: string;
+  fileName?: string;
 }
 
 interface AIChatProps {
@@ -100,9 +104,24 @@ function parseQAPairs(code: string): { q: string; a: string }[] {
 }
 
 function parseAIResponse(text: string): { textContent: string; blocks: InsertableBlock[] } {
-  const FENCE_RE = /```(mermaid|chart|qa|slides)([\s\S]*?)```/g;
   const blocks: InsertableBlock[] = [];
-  const textContent = text.replace(FENCE_RE, (_full, type, code) => {
+
+  // Generic downloadable file blocks first (filename on the first line).
+  const FILE_RE = /```file\s*\n@@filename:\s*([^\n]+)\n([\s\S]*?)```/g;
+  const work = text.replace(FILE_RE, (_full, name: string, content: string) => {
+    const fileName = name.trim();
+    blocks.push({
+      id: crypto.randomUUID(),
+      type: 'file',
+      rawCode: content.replace(/\n$/, ''),
+      previewLabel: fileName,
+      fileName,
+    });
+    return `\n✨ [ファイル「${fileName}」を作ったよ]\n`;
+  });
+
+  const FENCE_RE = /```(mermaid|chart|qa|slides)([\s\S]*?)```/g;
+  const textContent = work.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
     if (type === 'mermaid') {
@@ -145,6 +164,9 @@ function blockToHtml(block: InsertableBlock): string {
     const pairs = parseQAPairs(block.rawCode);
     if (pairs.length === 0) throw new Error('Q&Aの解析に失敗しました');
     return `<div data-pairs="${escHtmlAttr(JSON.stringify(pairs))}" data-type="qa"></div>`;
+  }
+  if (block.type === 'file') {
+    return `<pre><code>${escHtmlAttr(block.rawCode)}</code></pre>`;
   }
   if (block.type === 'slides') {
     const deck = parseSlides(block.rawCode);
@@ -196,7 +218,25 @@ function buildSystemPrompt(contextNotes: Note[]): string {
 
 /* ───────────── Block previews ───────────── */
 
-function MermaidPreview({ code }: { code: string }) {
+function ImageSaveBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="img-save-bar">
+      {children}
+      <style jsx>{`
+        .img-save-bar { display: flex; gap: 6px; margin-top: 8px; }
+        .img-save-bar :global(button) {
+          display: flex; align-items: center; gap: 4px;
+          background: var(--accent); border: 1px solid var(--border);
+          color: var(--foreground); border-radius: 8px;
+          padding: 5px 10px; font-size: 0.74rem; font-weight: 600; cursor: pointer;
+        }
+        .img-save-bar :global(button:hover) { border-color: var(--primary); color: var(--primary); }
+      `}</style>
+    </div>
+  );
+}
+
+function MermaidPreview({ code, baseName }: { code: string; baseName: string }) {
   const [svg, setSvg] = useState('');
   const [err, setErr] = useState(false);
   useEffect(() => {
@@ -214,30 +254,79 @@ function MermaidPreview({ code }: { code: string }) {
   }, [code]);
   if (err) return <div className="prev-err">図のプレビューを表示できなかったよ💦</div>;
   return (
-    <div className="mmd-prev" dangerouslySetInnerHTML={{ __html: svg }}>
+    <div>
+      <div className="mmd-prev" dangerouslySetInnerHTML={{ __html: svg }} />
+      <ImageSaveBar>
+        <button onClick={() => downloadSvgAsPng(svg, `${baseName}.png`)} disabled={!svg}>
+          <Download size={13} /> PNG保存
+        </button>
+        <button onClick={() => downloadSvg(svg, `${baseName}.svg`)} disabled={!svg}>
+          <Download size={13} /> SVG保存
+        </button>
+      </ImageSaveBar>
       <style jsx>{`
-        .mmd-prev { background:#fff; border-radius:8px; padding:12px; overflow:auto; }
-        .mmd-prev :global(svg) { max-width:100%; height:auto; }
+        .mmd-prev { background: #fff; border-radius: 8px; padding: 12px; overflow: auto; }
+        .mmd-prev :global(svg) { max-width: 100%; height: auto; }
       `}</style>
     </div>
   );
 }
 
-function ChartPreview({ code }: { code: string }) {
+function ChartPreview({ code, baseName }: { code: string; baseName: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chartRef = useRef<any>(null);
   const cfg = useMemo(() => {
     try { return JSON.parse(code); } catch { return null; }
   }, [code]);
   if (!cfg || !cfg.data || !Array.isArray(cfg.data.datasets)) {
     return <div className="prev-err">グラフのプレビューを表示できなかったよ💦</div>;
   }
-  const props = { data: cfg.data, options: { ...(cfg.options || {}), responsive: true, maintainAspectRatio: false } };
+  const props = {
+    ref: chartRef,
+    data: cfg.data,
+    options: { ...(cfg.options || {}), responsive: true, maintainAspectRatio: false },
+  };
   const type = cfg.type || 'bar';
+  const savePng = () => {
+    const canvas: HTMLCanvasElement | undefined = chartRef.current?.canvas;
+    if (canvas) downloadCanvasAsPng(canvas, `${baseName}.png`);
+  };
   return (
-    <div style={{ height: 220, background: '#fff', borderRadius: 8, padding: 10 }}>
-      {type === 'line' ? <Line {...props} /> :
-       type === 'pie' ? <Pie {...props} /> :
-       type === 'scatter' ? <Scatter {...props} /> :
-       <Bar {...props} />}
+    <div>
+      <div style={{ height: 220, background: '#fff', borderRadius: 8, padding: 10 }}>
+        {type === 'line' ? <Line {...props} /> :
+         type === 'pie' ? <Pie {...props} /> :
+         type === 'scatter' ? <Scatter {...props} /> :
+         <Bar {...props} />}
+      </div>
+      <ImageSaveBar>
+        <button onClick={savePng}>
+          <Download size={13} /> PNG画像で保存
+        </button>
+      </ImageSaveBar>
+    </div>
+  );
+}
+
+function FilePreview({ block }: { block: InsertableBlock }) {
+  const snippet = block.rawCode.slice(0, 400);
+  return (
+    <div className="file-prev">
+      <pre className="file-snippet">{snippet}{block.rawCode.length > 400 ? '\n…' : ''}</pre>
+      <ImageSaveBar>
+        <button onClick={() => downloadTextFile(block.rawCode, block.fileName || 'lily-file.txt')}>
+          <FileDown size={13} /> {block.fileName} をダウンロード
+        </button>
+      </ImageSaveBar>
+      <style jsx>{`
+        .file-snippet {
+          font-family: 'Fira Code', 'Consolas', monospace;
+          font-size: 0.72rem; color: var(--fg-muted);
+          background: var(--accent); border-radius: 8px;
+          padding: 10px; margin: 0; white-space: pre-wrap;
+          word-break: break-word; max-height: 160px; overflow: auto; line-height: 1.5;
+        }
+      `}</style>
     </div>
   );
 }
@@ -305,9 +394,11 @@ function InsertableBlockCard({
   const [errorMsg, setErrorMsg] = useState('');
   const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading'>('idle');
 
+  const baseName = `lily-${block.type}-${block.id.slice(0, 6)}`;
   const typeEmoji = block.type === 'mermaid' ? '🌊'
     : block.type === 'chart' ? '📊'
-    : block.type === 'slides' ? '🖼️' : '📚';
+    : block.type === 'slides' ? '🖼️'
+    : block.type === 'file' ? '📄' : '📚';
 
   const handleInsert = async () => {
     if (status === 'loading') return;
@@ -347,10 +438,11 @@ function InsertableBlockCard({
       </div>
 
       <div className="block-visual">
-        {block.type === 'mermaid' && <MermaidPreview code={block.rawCode} />}
-        {block.type === 'chart' && <ChartPreview code={block.rawCode} />}
+        {block.type === 'mermaid' && <MermaidPreview code={block.rawCode} baseName={baseName} />}
+        {block.type === 'chart' && <ChartPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'qa' && <QAPreview code={block.rawCode} />}
         {block.type === 'slides' && <SlidesPreview code={block.rawCode} />}
+        {block.type === 'file' && <FilePreview block={block} />}
       </div>
 
       {block.type === 'slides' && (
