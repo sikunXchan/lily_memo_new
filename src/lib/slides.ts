@@ -144,51 +144,136 @@ const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationship
 const SLIDE_W = 12192000;
 const SLIDE_H = 6858000;
 
-function paragraph(text: string, opts: { size: number; bold?: boolean; bullet?: boolean; align?: string }): string {
-  const pPr = `<a:pPr${opts.align ? ` algn="${opts.align}"` : ''}>${
-    opts.bullet ? '<a:buChar char="•"/>' : '<a:buNone/>'
-  }</a:pPr>`;
-  const rPr = `<a:rPr lang="ja-JP" sz="${opts.size}"${opts.bold ? ' b="1"' : ''} dirty="0"/>`;
-  return `<a:p>${pPr}<a:r>${rPr}<a:t>${xmlEsc(text)}</a:t></a:r></a:p>`;
+/* ── modern design system ── */
+
+const INK = '241F33';        // near-black text
+const MUTED = '8A8499';      // muted captions / footer
+const PAPER = 'FFFFFF';      // content background
+const DARK1 = '1E1B2E';      // title bg gradient start
+const DARK2 = '4A3A5C';      // title bg gradient end
+// accent rotation gives each content slide its own rhythm
+const ACCENTS = ['E26A8D', '8AB6D6', '9AD0C2', 'F6C28B', 'B79CE0'];
+
+function clr(hex: string, alpha?: number): string {
+  return alpha == null
+    ? `<a:srgbClr val="${hex}"/>`
+    : `<a:srgbClr val="${hex}"><a:alpha val="${alpha}"/></a:srgbClr>`;
+}
+const solid = (hex: string, alpha?: number) => `<a:solidFill>${clr(hex, alpha)}</a:solidFill>`;
+function grad(c1: string, c2: string, ang = 2700000): string {
+  return `<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0">${clr(c1)}</a:gs><a:gs pos="100000">${clr(c2)}</a:gs></a:gsLst><a:lin ang="${ang}" scaled="0"/></a:gradFill>`;
+}
+const NO_LN = '<a:ln><a:noFill/></a:ln>';
+const EMPTY_TX = '<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="ja-JP"/></a:p></p:txBody>';
+
+function shape(
+  id: number, name: string, geom: string,
+  x: number, y: number, cx: number, cy: number,
+  fill: string, txBody = EMPTY_TX, line = NO_LN
+): string {
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${geom}"><a:avLst/></a:prstGeom>${fill}${line}</p:spPr>${txBody}</p:sp>`;
 }
 
-function slideXml(slide: Slide, isTitle: boolean): string {
-  const titleSize = isTitle ? 4400 : 3200;
-  const titleBox = isTitle
-    ? { x: 1524000, y: 2400000, cx: 9144000, cy: 2058000 }
-    : { x: 838200, y: 457200, cx: 10515600, cy: 1143000 };
+function run(text: string, size: number, color: string, bold = false): string {
+  return `<a:r><a:rPr lang="ja-JP" altLang="en-US" sz="${size}"${bold ? ' b="1"' : ''} dirty="0">${solid(color)}</a:rPr><a:t>${xmlEsc(text)}</a:t></a:r>`;
+}
 
-  const titleSp = `
-  <p:sp>
-    <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>
-    <p:spPr><a:xfrm><a:off x="${titleBox.x}" y="${titleBox.y}"/><a:ext cx="${titleBox.cx}" cy="${titleBox.cy}"/></a:xfrm></p:spPr>
-    <p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/>${paragraph(slide.title, {
-      size: titleSize, bold: true, align: isTitle ? 'ctr' : 'l',
-    })}</p:txBody>
-  </p:sp>`;
+function para(
+  text: string, size: number, color: string,
+  opts: { bold?: boolean; align?: string; bulletColor?: string } = {}
+): string {
+  const bul = opts.bulletColor
+    ? `<a:buClr>${clr(opts.bulletColor)}</a:buClr><a:buSzPct val="80000"/><a:buFont typeface="Arial"/><a:buChar char="▸"/>`
+    : '<a:buNone/>';
+  const marL = opts.bulletColor ? ' marL="285750" indent="-285750"' : '';
+  const pPr = `<a:pPr${marL}${opts.align ? ` algn="${opts.align}"` : ''}><a:spcBef><a:spcPts val="700"/></a:spcBef><a:spcAft><a:spcPts val="300"/></a:spcAft>${bul}</a:pPr>`;
+  return `<a:p>${pPr}${run(text, size, color, opts.bold)}</a:p>`;
+}
 
-  const bodyParas = [
-    ...slide.bullets.map(b => paragraph(b, { size: 2000, bullet: true })),
-    ...slide.body.map(p => paragraph(p, { size: 1800 })),
-  ].join('');
+function txBox(
+  id: number, name: string,
+  x: number, y: number, cx: number, cy: number,
+  paras: string, anchor = 't'
+): string {
+  const tx = `<p:txBody><a:bodyPr wrap="square" anchor="${anchor}"><a:normAutofit/></a:bodyPr><a:lstStyle/>${paras}</p:txBody>`;
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>${tx}</p:sp>`;
+}
 
-  const bodySp = isTitle || (!slide.bullets.length && !slide.body.length)
-    ? ''
-    : `
-  <p:sp>
-    <p:nvSpPr><p:cNvPr id="3" name="Body"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>
-    <p:spPr><a:xfrm><a:off x="838200" y="1828800"/><a:ext cx="10515600" cy="4525963"/></a:xfrm></p:spPr>
-    <p:txBody><a:bodyPr/><a:lstStyle/>${bodyParas}</p:txBody>
-  </p:sp>`;
-
+function wrap(shapes: string): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}">
 <p:cSld><p:spTree>
 <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
 <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
-${titleSp}${bodySp}
-</p:spTree></p:cSld><p:clrMapOvr><a:overrideClrMapping bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/></p:clrMapOvr>
+${shapes}
+</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>`;
+}
+
+function titleSlideXml(slide: Slide, deckTitle: string): string {
+  const subtitle = slide.body[0] || slide.bullets[0] || '';
+  const s: string[] = [];
+  // gradient backdrop + soft geometric accents
+  s.push(shape(2, 'bg', 'rect', 0, 0, SLIDE_W, SLIDE_H, grad(DARK1, DARK2, 2700000)));
+  s.push(shape(3, 'glow1', 'ellipse', 8200000, -1700000, 6200000, 6200000, solid(ACCENTS[0], 16000)));
+  s.push(shape(4, 'glow2', 'ellipse', -1500000, 4200000, 4400000, 4400000, solid(ACCENTS[1], 13000)));
+  s.push(shape(5, 'ring', 'ellipse', 9700000, 4600000, 1900000, 1900000, '<a:noFill/>',
+    EMPTY_TX, `<a:ln w="19050">${solid(ACCENTS[0], 40000)}</a:ln>`));
+  // accent bar above the title
+  s.push(shape(6, 'bar', 'roundRect', 1219200, 2360000, 760000, 84000, solid(ACCENTS[0])));
+  // title + subtitle + tag
+  s.push(txBox(7, 'title', 1219200, 2520000, 9750000, 2050000,
+    para(slide.title || deckTitle, 5400, PAPER, { bold: true }), 't'));
+  if (subtitle) {
+    s.push(txBox(8, 'subtitle', 1219200, 4560000, 9750000, 760000,
+      para(subtitle, 2000, 'D9CFE6'), 't'));
+  }
+  s.push(txBox(9, 'tag', 1219200, 6020000, 6000000, 500000,
+    para('🐶  Presented with Lily', 1200, MUTED), 't'));
+  return wrap(s.join(''));
+}
+
+function contentSlideXml(slide: Slide, index: number, total: number, deckTitle: string): string {
+  const accent = ACCENTS[(index - 1) % ACCENTS.length];
+  const num = String(index).padStart(2, '0');
+  const s: string[] = [];
+
+  s.push(shape(2, 'bg', 'rect', 0, 0, SLIDE_W, SLIDE_H, solid(PAPER)));
+  // decorative corner circles (subtle, behind content)
+  s.push(shape(3, 'deco1', 'ellipse', 10700000, 5250000, 2200000, 2200000, solid(accent, 10000)));
+  s.push(shape(4, 'deco2', 'ellipse', 11500000, 5950000, 1300000, 1300000, solid(accent, 14000)));
+  // number badge
+  s.push(shape(5, 'badge', 'roundRect', 838200, 560000, 760000, 760000, solid(accent),
+    `<p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/>${para(num, 2400, PAPER, { bold: true, align: 'ctr' })}</p:txBody>`));
+  // title + divider
+  s.push(txBox(6, 'title', 1740000, 560000, 9600000, 800000,
+    para(slide.title, 3000, INK, { bold: true }), 'ctr'));
+  s.push(shape(7, 'divider', 'roundRect', 845000, 1500000, 2300000, 50000, solid(accent)));
+  s.push(shape(8, 'divider2', 'rect', 3145000, 1512000, 8200000, 26000, solid('ECE8F0')));
+
+  // body
+  const paras = [
+    ...slide.bullets.map(b => para(b, 2000, INK, { bulletColor: accent })),
+    ...slide.body.map(p => para(p, 1800, '5A5468')),
+  ].join('') || para(' ', 1800, INK);
+  s.push(txBox(9, 'body', 845000, 1820000, 10500000, 4150000, paras, 't'));
+
+  // footer
+  s.push(shape(10, 'footdot', 'ellipse', 845000, 6420000, 90000, 90000, solid(accent)));
+  s.push(txBox(11, 'footL', 1000000, 6330000, 7000000, 360000,
+    para(deckTitle, 1000, MUTED), 't'));
+  s.push(txBox(12, 'footR', 9500000, 6330000, 1850000, 360000,
+    para(`${index} / ${total}`, 1000, MUTED, { align: 'r' }), 't'));
+  return wrap(s.join(''));
+}
+
+function slideXml(
+  slide: Slide,
+  o: { isTitle: boolean; number: number; total: number; deckTitle: string }
+): string {
+  return o.isTitle
+    ? titleSlideXml(slide, o.deckTitle)
+    : contentSlideXml(slide, o.number, o.total, o.deckTitle);
 }
 
 const THEME_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -209,8 +294,8 @@ const THEME_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <a:folHlink><a:srgbClr val="954F72"/></a:folHlink>
 </a:clrScheme>
 <a:fontScheme name="Lily">
-<a:majorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>
-<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>
+<a:majorFont><a:latin typeface="Segoe UI Semibold"/><a:ea typeface="Yu Gothic UI"/><a:cs typeface=""/></a:majorFont>
+<a:minorFont><a:latin typeface="Segoe UI"/><a:ea typeface="Yu Gothic UI"/><a:cs typeface=""/></a:minorFont>
 </a:fontScheme>
 <a:fmtScheme name="Lily">
 <a:fillStyleLst>
@@ -324,8 +409,17 @@ ${slideOverrides}
 <Relationship Id="rId1" Type="${R_NS}/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
 </Relationships>`);
 
+  const titleCount = deck.slides[0] &&
+    deck.slides[0].bullets.length === 0 && deck.slides[0].body.length <= 1 ? 1 : 0;
+  const contentTotal = deck.slides.length - titleCount;
   deck.slides.forEach((slide, i) => {
-    add(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, i === 0 && slide.bullets.length === 0));
+    const isTitle = i === 0 && titleCount === 1;
+    add(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, {
+      isTitle,
+      number: i + 1 - titleCount,
+      total: contentTotal,
+      deckTitle: deck.title,
+    }));
     add(`ppt/slides/_rels/slide${i + 1}.xml.rels`,
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="${REL_NS}">
