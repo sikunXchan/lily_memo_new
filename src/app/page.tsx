@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
 import { Book, Settings as SettingsIcon, FileText, Brush } from 'lucide-react';
@@ -20,6 +20,9 @@ export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<TabType>('memos');
   const [mobileMemoView, setMobileMemoView] = useState<'home' | 'list'>('home');
+  const [sidebarViewMode, setSidebarViewMode] = useState<'tree' | 'graph'>('tree');
+  const [highlightFolderReq, setHighlightFolderReq] = useState<{ id: number; seq: number } | null>(null);
+  const highlightSeq = useRef(0);
   const [isMobile, setIsMobile] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -49,6 +52,10 @@ export default function Home() {
 
     window.addEventListener('focusin', handleFocus);
     window.addEventListener('focusout', handleBlur);
+
+    // Restore sidebar view mode.
+    const savedViewMode = localStorage.getItem('sidebarViewMode');
+    if (savedViewMode === 'graph' || savedViewMode === 'tree') setSidebarViewMode(savedViewMode);
 
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist();
@@ -87,6 +94,24 @@ export default function Home() {
     setActiveNoteId(undefined);
   };
 
+  const changeSidebarViewMode = (mode: 'tree' | 'graph') => {
+    setSidebarViewMode(mode);
+    localStorage.setItem('sidebarViewMode', mode);
+  };
+
+  // Called from HomeHero's Connection tile.
+  const openConnection = () => {
+    changeSidebarViewMode('graph');
+    if (!isDesktopLayout) setMobileMemoView('list');
+  };
+
+  // Called from HomeHero's Folder chips.
+  const selectFolder = (id: number) => {
+    highlightSeq.current += 1;
+    setHighlightFolderReq({ id, seq: highlightSeq.current });
+    if (!isDesktopLayout) setMobileMemoView('list');
+  };
+
   return (
     <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
       {isDesktopLayout && activeTab !== 'sketch' && (
@@ -99,6 +124,9 @@ export default function Home() {
           isMobileOpen={false}
           onToggleMobile={() => {}}
           onActiveNoteDeleted={() => setActiveNoteId(undefined)}
+          viewModeProp={sidebarViewMode}
+          onViewModeChangeProp={changeSidebarViewMode}
+          highlightFolderReq={highlightFolderReq}
         />
       )}
 
@@ -117,11 +145,15 @@ export default function Home() {
             )}
             {activeTab !== 'settings' && (
               <div className="tab-content">
+                {/* Mobile portrait — home (Hero) or list (Sidebar) */}
                 {isMobile && !isLandscape && activeTab === 'memos' && mobileMemoView === 'home' && (
                   <HomeHero
                     onSelectNote={(id) => setActiveNoteId(id)}
-                    onOpenList={() => setMobileMemoView('list')}
+                    onOpenConnection={openConnection}
+                    onSelectFolder={selectFolder}
                     onOpenSketch={openSketch}
+                    onOpenAllNotes={() => setMobileMemoView('list')}
+                    isDesktop={false}
                   />
                 )}
                 {isMobile && !isLandscape && activeTab === 'memos' && mobileMemoView === 'list' && (
@@ -135,6 +167,9 @@ export default function Home() {
                     onToggleMobile={() => {}}
                     onActiveNoteDeleted={() => setActiveNoteId(undefined)}
                     onBackToHome={() => setMobileMemoView('home')}
+                    viewModeProp={sidebarViewMode}
+                    onViewModeChangeProp={changeSidebarViewMode}
+                    highlightFolderReq={highlightFolderReq}
                   />
                 )}
                 {activeTab === 'pdf' && (
@@ -143,14 +178,15 @@ export default function Home() {
                 {activeTab === 'sketch' && (
                   <SketchTab onClose={() => setActiveTab('memos')} />
                 )}
+                {/* Desktop / iPad / iPhone landscape — Hero in main content area */}
                 {isDesktopLayout && activeTab === 'memos' && (
-                  <div className="empty-state">
-                    <div className="empty-content">
-                      <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
-                      <h2>メモを開くか、新しく作成してください</h2>
-                      <p>左のサイドバーから整理を始めましょう ✨</p>
-                    </div>
-                  </div>
+                  <HomeHero
+                    onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
+                    onOpenConnection={openConnection}
+                    onSelectFolder={selectFolder}
+                    onOpenSketch={openSketch}
+                    isDesktop={true}
+                  />
                 )}
               </div>
             )}
@@ -224,22 +260,6 @@ export default function Home() {
           min-height: 0;
         }
 
-        .empty-state {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          background: var(--accent);
-          border-radius: var(--radius) 0 0 var(--radius);
-        }
-
-        .empty-logo {
-          width: 100px;
-          opacity: 0.5;
-          margin-bottom: 20px;
-        }
-
         .bottom-nav {
           position: fixed;
           bottom: 0;
@@ -268,7 +288,7 @@ export default function Home() {
           justify-content: center;
           gap: 4px;
           background: transparent;
-          color: #999;
+          color: var(--fg-muted);
           transition: all 0.2s;
         }
 
@@ -281,11 +301,6 @@ export default function Home() {
           font-weight: 600;
         }
 
-        @media (max-width: 1023px) and (orientation: portrait) {
-          .empty-state {
-            display: none;
-          }
-        }
       `}</style>
     </div>
   );

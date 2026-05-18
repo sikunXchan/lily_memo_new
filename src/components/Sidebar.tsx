@@ -22,6 +22,11 @@ interface SidebarProps {
   onToggleMobile: () => void;
   onActiveNoteDeleted?: () => void;
   onBackToHome?: () => void;
+  /** Controlled view mode. When provided, Sidebar delegates to parent. */
+  viewModeProp?: 'tree' | 'graph';
+  onViewModeChangeProp?: (mode: 'tree' | 'graph') => void;
+  /** Pass a new object each time to trigger folder expand + scroll. */
+  highlightFolderReq?: { id: number; seq: number } | null;
 }
 
 const COLORS = [
@@ -38,7 +43,11 @@ interface DeletingFolderState {
   noteCount: number;
 }
 
-export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, isMobileOpen, onToggleMobile, onActiveNoteDeleted, onBackToHome }: SidebarProps) {
+export default function Sidebar({
+  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch,
+  isMobileOpen, onToggleMobile, onActiveNoteDeleted, onBackToHome,
+  viewModeProp, onViewModeChangeProp, highlightFolderReq,
+}: SidebarProps) {
   const { theme, cycleTheme, nextThemeName } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -55,21 +64,36 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
 
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
+  const [internalViewMode, setInternalViewMode] = useState<'tree' | 'graph'>('tree');
   const [deletingFolder, setDeletingFolder] = useState<DeletingFolderState | null>(null);
 
+  // Controlled or uncontrolled view mode.
+  const viewMode = viewModeProp ?? internalViewMode;
+
   useEffect(() => {
-    const restoreViewMode = () => {
-      const saved = localStorage.getItem('sidebarViewMode');
-      if (saved === 'graph' || saved === 'tree') setViewMode(saved);
-    };
-    restoreViewMode();
+    const saved = localStorage.getItem('sidebarViewMode');
+    if (saved === 'graph' || saved === 'tree') {
+      if (onViewModeChangeProp) onViewModeChangeProp(saved as 'tree' | 'graph');
+      else setInternalViewMode(saved as 'tree' | 'graph');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const changeViewMode = (mode: 'tree' | 'graph') => {
-    setViewMode(mode);
+    if (onViewModeChangeProp) onViewModeChangeProp(mode);
+    else setInternalViewMode(mode);
     localStorage.setItem('sidebarViewMode', mode);
   };
+
+  // Auto-expand a folder when parent requests a highlight.
+  useEffect(() => {
+    if (highlightFolderReq) {
+      setExpandedFolders(prev => ({ ...prev, [highlightFolderReq.id]: true }));
+      // Switch to tree view so the folder is visible.
+      if (viewMode === 'graph') changeViewMode('tree');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightFolderReq]);
 
   const toggleFolder = (id: number) => {
     setExpandedFolders(prev => ({ ...prev, [id]: !prev[id] }));
@@ -384,7 +408,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .logo-img {
             border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(255, 182, 193, 0.4);
+            box-shadow: var(--shadow-sm);
           }
           .title {
             font-size: 1.15rem;
@@ -416,7 +440,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             left: 13px;
             top: 50%;
             transform: translateY(-50%);
-            color: #bbb;
+            color: var(--fg-faint);
             pointer-events: none;
           }
           .search-input {
@@ -430,7 +454,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .search-input:focus {
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(255, 182, 193, 0.2);
+            box-shadow: 0 0 0 3px rgba(128,128,128,0.15);
           }
           .sidebar-actions {
             display: flex;
@@ -439,8 +463,8 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .btn-add {
             flex: 1;
-            background: linear-gradient(135deg, var(--primary) 0%, #ff8da1 100%);
-            color: white;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: var(--primary-foreground, white);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -448,13 +472,13 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             padding: 10px 14px;
             font-weight: 700;
             font-size: 0.875rem;
-            box-shadow: 0 4px 14px rgba(255, 141, 161, 0.35);
+            box-shadow: var(--shadow-sm);
             border-radius: 12px;
             transition: transform 0.18s, box-shadow 0.18s;
           }
           .btn-add:hover {
             transform: translateY(-1px);
-            box-shadow: 0 6px 18px rgba(255, 141, 161, 0.45);
+            box-shadow: var(--shadow);
           }
           .btn-icon {
             width: 40px;
@@ -527,11 +551,11 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             transition: background 0.18s;
           }
           .folder-item:hover {
-            background: rgba(255, 182, 193, 0.12);
+            background: var(--surface-alt, var(--accent));
           }
           .chevron {
             display: flex;
-            color: #bbb;
+            color: var(--fg-faint);
             transition: transform 0.2s;
             flex-shrink: 0;
           }
@@ -565,7 +589,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .btn-inline {
             background: transparent;
-            color: #aaa;
+            color: var(--fg-faint);
             padding: 4px;
             border-radius: 6px;
             transition: background 0.15s, color 0.15s;
@@ -619,10 +643,10 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
             color: var(--foreground);
           }
           .note-item:hover {
-            background: rgba(255, 182, 193, 0.1);
+            background: var(--surface-alt, var(--accent));
           }
           .note-item.active {
-            background: rgba(255, 182, 193, 0.15);
+            background: var(--surface-deep, var(--muted));
             border-left-color: var(--primary);
             color: var(--primary);
             font-weight: 600;
@@ -630,12 +654,12 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .empty-hint {
             font-size: 0.73rem;
-            color: #ccc;
+            color: var(--fg-faint);
             padding: 4px 10px;
           }
           .section-label {
             font-size: 0.7rem;
-            color: #bbb;
+            color: var(--fg-faint);
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -731,7 +755,7 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .delete-dialog-desc {
             font-size: 0.85rem;
-            color: #888;
+            color: var(--fg-muted);
             line-height: 1.6;
             margin-bottom: 22px;
           }
@@ -755,16 +779,16 @@ export default function Sidebar({ activeNoteId, onSelectNote, onOpenSettings, on
           }
           .dda-keep {
             padding: 11px;
-            background: rgba(255, 182, 193, 0.15);
+            background: var(--surface-alt, var(--accent));
             color: var(--primary);
             border-radius: 12px;
             font-weight: 600;
             font-size: 0.9rem;
-            border: 1.5px solid rgba(255, 182, 193, 0.4);
+            border: 1.5px solid var(--border);
             transition: background 0.15s;
           }
           .dda-keep:hover {
-            background: rgba(255, 182, 193, 0.25);
+            background: var(--surface-deep, var(--muted));
           }
           .dda-delete {
             padding: 11px;
