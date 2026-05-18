@@ -3,38 +3,62 @@ export interface ChatTurn {
   text: string;
 }
 
+// Free-tier quotas differ per model and Google changes them over time, so we
+// try models in order and fall back to the next one on a 429 (quota) error.
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+];
+
 export async function callGeminiChat(
   history: ChatTurn[],
   systemPrompt: string,
   apiKey: string
 ): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: history.map(t => ({
-        role: t.role,
-        parts: [{ text: t.text }],
-      })),
-      generationConfig: {
-        temperature: 0.8,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 4096,
-      },
-    }),
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: history.map(t => ({
+      role: t.role,
+      parts: [{ text: t.text }],
+    })),
+    generationConfig: {
+      temperature: 0.8,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 4096,
+    },
   });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'AI request failed');
+  let lastError = 'AI request failed';
+
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.candidates[0]?.content?.parts[0]?.text || '';
+    }
+
+    const error = await response.json().catch(() => null);
+    lastError = error?.error?.message || lastError;
+
+    // 429 = quota exceeded for this model → try the next one.
+    // Any other error (bad key, bad request) won't be fixed by retrying.
+    if (response.status !== 429) {
+      throw new Error(lastError);
+    }
   }
 
-  const data = await response.json();
-  return data.candidates[0]?.content?.parts[0]?.text || '';
+  throw new Error(
+    `すべてのモデルで無料枠の上限に達しました。少し時間をおいてから試してね。\n${lastError}`
+  );
 }
 
 export const LILY_CHAT_SYSTEM_PROMPT = `
