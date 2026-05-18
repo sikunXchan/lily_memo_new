@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Upload, Type, Palette } from 'lucide-react';
+import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { buildBackupJson, restoreBackupFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
@@ -14,12 +14,22 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   void _onClose;
   const [isPersisted, setIsPersisted] = useState(false);
   const { fontId, setFontId, themeId, setThemeId } = useTheme();
+  const [geminiKey, setGeminiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [keySaved, setKeySaved] = useState(false);
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
       navigator.storage.persisted().then(setIsPersisted);
     }
+    setGeminiKey(localStorage.getItem('lily_gemini_api_key') || '');
   }, []);
+
+  const saveGeminiKey = () => {
+    localStorage.setItem('lily_gemini_api_key', geminiKey.trim());
+    setKeySaved(true);
+    setTimeout(() => setKeySaved(false), 2000);
+  };
 
   const downloadBackup = async () => {
     const json = await buildBackupJson();
@@ -112,6 +122,32 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
                 </button>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Sparkles size={20} />
+            <h3>AIアシスタント (Lily)</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">Gemini APIキーを設定すると、Lilyがメモの分析・図の作成・問題作りをお手伝いします。</p>
+            <div className="api-key-wrap">
+              <input
+                type={showKey ? 'text' : 'password'}
+                className="api-key-input"
+                placeholder="AIzaSy..."
+                value={geminiKey}
+                onChange={e => setGeminiKey(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveGeminiKey(); }}
+              />
+              <button className="show-key-btn" onClick={() => setShowKey(p => !p)} title={showKey ? '隠す' : '表示'}>
+                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <button className={`btn-action ${keySaved ? 'saved' : ''}`} onClick={saveGeminiKey}>
+              {keySaved ? '✓ 保存しました' : '保存する'}
+            </button>
           </div>
         </section>
 
@@ -289,6 +325,37 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
           border: 2px solid var(--primary);
           color: var(--primary);
           cursor: pointer;
+        }
+        .btn-action.saved {
+          background: #22863a;
+        }
+        .api-key-wrap {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+        .api-key-input {
+          flex: 1;
+          background: var(--accent);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 10px 12px;
+          font-size: 0.9rem;
+          color: var(--foreground);
+          outline: none;
+          font-family: monospace;
+        }
+        .api-key-input:focus { border-color: var(--primary); }
+        .show-key-btn {
+          background: var(--accent);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 8px 10px;
+          cursor: pointer;
+          color: var(--fg-muted);
+          display: flex;
+          align-items: center;
         }
 
         @media (max-width: 768px) {

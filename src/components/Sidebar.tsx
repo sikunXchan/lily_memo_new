@@ -18,6 +18,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenPDF?: () => void;
   onOpenSketch?: () => void;
+  onOpenAI?: () => void;
   isMobileOpen: boolean;
   onToggleMobile: () => void;
   onActiveNoteDeleted?: () => void;
@@ -44,7 +45,7 @@ interface DeletingFolderState {
 }
 
 export default function Sidebar({
-  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch,
+  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, onOpenAI,
   isMobileOpen, onToggleMobile, onActiveNoteDeleted, onBackToHome,
   viewModeProp, onViewModeChangeProp, highlightFolderReq,
 }: SidebarProps) {
@@ -310,6 +311,12 @@ export default function Sidebar({
         </div>
 
         <div className="sidebar-footer">
+          {onOpenAI && (
+            <button className="btn-settings btn-ai" onClick={onOpenAI}>
+              <Sparkles size={18} />
+              <span>Lily</span>
+            </button>
+          )}
           {onOpenSketch && (
             <button className="btn-settings" onClick={onOpenSketch}>
               <Brush size={18} />
@@ -690,6 +697,11 @@ export default function Sidebar({
             background: var(--accent);
             opacity: 1;
           }
+          .btn-ai {
+            color: var(--primary);
+            opacity: 0.85;
+          }
+          .btn-ai:hover { opacity: 1; }
           /* 縦画面モバイルではタブナビゲーションがあるため、設定/PDFボタンは非表示 */
           @media (max-width: 1023px) and (orientation: portrait) {
             .sidebar-footer .btn-settings {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
-import { Book, Settings as SettingsIcon, FileText, Brush } from 'lucide-react';
+import { Book, Settings as SettingsIcon, FileText, Brush, Sparkles } from 'lucide-react';
 
 // Heavy components are loaded only when their tab is opened so the
 // initial bundle stays small enough for mobile Safari to parse without
@@ -13,8 +13,9 @@ const SettingsModal = dynamic(() => import('@/components/SettingsModal'), { ssr:
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
 const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
+const AIChat = dynamic(() => import('@/components/AIChat'), { ssr: false });
 
-type TabType = 'memos' | 'pdf' | 'sketch' | 'settings';
+type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -95,6 +96,11 @@ export default function Home() {
     setActiveNoteId(undefined);
   };
 
+  const openAI = () => {
+    setActiveTab('ai');
+    setActiveNoteId(undefined);
+  };
+
   const changeSidebarViewMode = (mode: 'tree' | 'graph') => {
     setSidebarViewMode(mode);
     localStorage.setItem('sidebarViewMode', mode);
@@ -120,6 +126,7 @@ export default function Home() {
           onOpenSettings={openSettings}
           onOpenPDF={openPDF}
           onOpenSketch={openSketch}
+          onOpenAI={openAI}
           isMobileOpen={false}
           onToggleMobile={() => {}}
           onActiveNoteDeleted={() => setActiveNoteId(undefined)}
@@ -158,6 +165,9 @@ export default function Home() {
                 {activeTab === 'sketch' && (
                   <SketchTab onClose={() => setActiveTab('memos')} />
                 )}
+                {activeTab === 'ai' && (
+                  <AIChat onOpenSettings={openSettings} />
+                )}
                 {/* Desktop / iPad / iPhone landscape — Hero in main content area */}
                 {isDesktopLayout && activeTab === 'memos' && (
                   <HomeHero
@@ -167,6 +177,9 @@ export default function Home() {
                     onOpenSketch={openSketch}
                     isDesktop={true}
                   />
+                )}
+                {isDesktopLayout && activeTab === 'ai' && (
+                  <AIChat onOpenSettings={openSettings} />
                 )}
               </div>
             )}
@@ -187,6 +200,10 @@ export default function Home() {
           <button className={`nav-item ${activeTab === 'pdf' ? 'active' : ''}`} onClick={() => { setActiveTab('pdf'); setActiveNoteId(undefined); }}>
             <FileText size={24} />
             <span>PDF</span>
+          </button>
+          <button className={`nav-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => { setActiveTab('ai'); setActiveNoteId(undefined); }}>
+            <Sparkles size={24} />
+            <span>Lily</span>
           </button>
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setActiveNoteId(undefined); }}>
             <SettingsIcon size={24} />
