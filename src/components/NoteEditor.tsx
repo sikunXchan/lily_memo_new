@@ -556,7 +556,7 @@ export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEd
           datasets: [{
             label: 'データ',
             data: [10, 20, 15],
-            backgroundColor: 'rgba(255, 182, 193, 0.6)',
+            backgroundColor: ['rgba(255,99,132,0.75)','rgba(54,162,235,0.75)','rgba(255,206,86,0.75)'],
           }],
         },
       },

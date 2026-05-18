@@ -201,14 +201,36 @@ function parseAIResponse(text: string): {
   return { textContent, blocks, questions };
 }
 
+const CHART_PALETTE = [
+  'rgba(255,99,132,0.75)', 'rgba(54,162,235,0.75)', 'rgba(255,206,86,0.75)',
+  'rgba(75,192,192,0.75)', 'rgba(153,102,255,0.75)', 'rgba(255,159,64,0.75)',
+  'rgba(231,76,60,0.75)', 'rgba(46,204,113,0.75)', 'rgba(52,152,219,0.75)',
+];
+const CHART_PALETTE_BORDER = CHART_PALETTE.map(c => c.replace('0.75', '1'));
+
+function autoColorChart(parsed: Record<string, unknown>): Record<string, unknown> {
+  const data = parsed.data as { datasets?: Array<Record<string, unknown>> } | undefined;
+  if (!Array.isArray(data?.datasets)) return parsed;
+  const datasets = data!.datasets!.map((ds, i) => {
+    if (ds.backgroundColor) return ds;
+    const isPie = parsed.type === 'pie' || parsed.type === 'doughnut';
+    return {
+      ...ds,
+      backgroundColor: isPie ? CHART_PALETTE : CHART_PALETTE[i % CHART_PALETTE.length],
+      borderColor: isPie ? CHART_PALETTE_BORDER : CHART_PALETTE_BORDER[i % CHART_PALETTE_BORDER.length],
+    };
+  });
+  return { ...parsed, data: { ...data, datasets } };
+}
+
 function blockToHtml(block: InsertableBlock): string {
   if (block.type === 'mermaid') {
     return `<div content="${escHtmlAttr(block.rawCode)}" width="100%" data-type="mermaid"></div>`;
   }
   if (block.type === 'chart') {
-    const parsed = JSON.parse(block.rawCode);
+    const parsed = autoColorChart(JSON.parse(block.rawCode));
     const codeStr = `return ${JSON.stringify(parsed)};`;
-    return `<div code="${escHtmlAttr(codeStr)}" type="${escHtmlAttr(parsed.type || 'bar')}" width="100%" data-type="chart"></div>`;
+    return `<div code="${escHtmlAttr(codeStr)}" type="${escHtmlAttr((parsed.type as string) || 'bar')}" width="100%" data-type="chart"></div>`;
   }
   if (block.type === 'qa') {
     const pairs = parseQAPairs(block.rawCode);
@@ -709,6 +731,27 @@ function ClarifyBottomSheet({
   );
 }
 
+function CopyButton({ text, light }: { text: string; light?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+  return (
+    <>
+      <button className={`copy-btn${light ? ' copy-btn-light' : ''}`} onClick={copy} title="コピー">
+        {copied ? '✓' : '⎘'}
+      </button>
+      <style jsx>{`
+        .copy-btn { opacity: 0; transition: opacity 0.15s; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; font-size: 0.75rem; cursor: pointer; color: var(--fg-muted); flex-shrink: 0; }
+        .copy-btn-light { border-color: rgba(255,255,255,0.5); color: rgba(255,255,255,0.8); }
+        .copy-btn:hover { opacity: 1 !important; background: var(--accent); }
+      `}</style>
+    </>
+  );
+}
+
 function LilyBubble({
   message, allNotes, selectedNoteId,
 }: {
@@ -723,10 +766,13 @@ function LilyBubble({
         <img src="/lily-character.png" alt="Lily" className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div
-          className="lily-bubble rt-body"
-          dangerouslySetInnerHTML={{ __html: renderRich(message.text) }}
-        />
+        <div className="lily-bubble-header">
+          <div
+            className="lily-bubble rt-body"
+            dangerouslySetInnerHTML={{ __html: renderRich(message.text) }}
+          />
+          <CopyButton text={message.text} />
+        </div>
         {message.questions && message.questions.length > 0 && (
           <div className="ask-asked-hint">❓ {message.questions.length}件の質問をしたよ</div>
         )}
@@ -743,7 +789,9 @@ function LilyBubble({
         .lily-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--accent); border: 2px solid var(--border); }
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
-        .lily-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
+        .lily-bubble-header { display: flex; align-items: flex-start; gap: 6px; }
+        .lily-bubble-header:hover :global(.copy-btn) { opacity: 1; }
+        .lily-bubble { flex: 1; min-width: 0; background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
         .rt-body :global(p) { margin: 0 0 0.5em; }
         .rt-body :global(p:last-child) { margin-bottom: 0; }
         .rt-body :global(h1), .rt-body :global(h2), .rt-body :global(h3) { font-size: 1rem; font-weight: 800; margin: 0.6em 0 0.3em; color: var(--primary); }
@@ -769,6 +817,7 @@ function UserBubble({ message }: { message: ChatMessage }) {
   const atts = message.attachments ?? [];
   return (
     <div className="user-bubble-row">
+      <CopyButton text={message.text} light />
       <div className="user-bubble">
         {atts.length > 0 && (
           <div className="att-preview">
@@ -787,7 +836,8 @@ function UserBubble({ message }: { message: ChatMessage }) {
         ))}
       </div>
       <style jsx>{`
-        .user-bubble-row { display: flex; justify-content: flex-end; align-self: flex-end; max-width: 80%; }
+        .user-bubble-row { display: flex; justify-content: flex-end; align-items: flex-start; gap: 6px; align-self: flex-end; max-width: 80%; }
+        .user-bubble-row:hover :global(.copy-btn) { opacity: 1; }
         .user-bubble { background: var(--primary); color: white; border-radius: 16px 4px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; word-break: break-word; }
         .att-preview { margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
         .att-img { max-width: 140px; max-height: 140px; border-radius: 10px; display: block; }
