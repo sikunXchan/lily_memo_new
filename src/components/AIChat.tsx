@@ -49,6 +49,7 @@ interface ChatMessage {
   text: string;
   timestamp: number;
   extractedBlocks?: InsertableBlock[];
+  questions?: ClarifyQuestion[];
   attachments?: AttachmentMeta[];
 }
 
@@ -58,6 +59,12 @@ interface InsertableBlock {
   rawCode: string;
   previewLabel: string;
   fileName?: string;
+}
+
+interface ClarifyQuestion {
+  id: string;
+  question: string;
+  options: string[];
 }
 
 interface AIChatProps {
@@ -103,12 +110,34 @@ function parseQAPairs(code: string): { q: string; a: string }[] {
   return pairs;
 }
 
-function parseAIResponse(text: string): { textContent: string; blocks: InsertableBlock[] } {
+function parseAIResponse(text: string): {
+  textContent: string;
+  blocks: InsertableBlock[];
+  questions: ClarifyQuestion[];
+} {
   const blocks: InsertableBlock[] = [];
+  const questions: ClarifyQuestion[] = [];
 
-  // Generic downloadable file blocks first (filename on the first line).
+  // Clarifying-question blocks first.
+  const ASK_RE = /```ask\s*([\s\S]*?)```/g;
+  const afterAsk = text.replace(ASK_RE, (_full, inner: string) => {
+    const lines = inner.split('\n').map((l: string) => l.trim()).filter(Boolean);
+    let question = '';
+    const options: string[] = [];
+    for (const line of lines) {
+      const qm = line.match(/^(?:Q|質問)\s*[:：]\s*(.*)/i);
+      const om = line.match(/^[-*・]\s+(.*)/);
+      if (qm) question = qm[1].trim();
+      else if (om) options.push(om[1].trim());
+      else if (!question) question = line;
+    }
+    if (question) questions.push({ id: crypto.randomUUID(), question, options });
+    return '';
+  });
+
+  // Generic downloadable file blocks (filename on the first line).
   const FILE_RE = /```file\s*\n@@filename:\s*([^\n]+)\n([\s\S]*?)```/g;
-  const work = text.replace(FILE_RE, (_full, name: string, content: string) => {
+  const work = afterAsk.replace(FILE_RE, (_full, name: string, content: string) => {
     const fileName = name.trim();
     blocks.push({
       id: crypto.randomUUID(),
@@ -148,7 +177,7 @@ function parseAIResponse(text: string): { textContent: string; blocks: Insertabl
     }
     return '';
   }).trim();
-  return { textContent, blocks };
+  return { textContent, blocks, questions };
 }
 
 function blockToHtml(block: InsertableBlock): string {
@@ -490,11 +519,13 @@ function InsertableBlockCard({
 }
 
 function LilyBubble({
-  message, allNotes, selectedNoteId,
+  message, allNotes, selectedNoteId, onAnswer, disabled,
 }: {
   message: ChatMessage;
   allNotes: Note[];
   selectedNoteId?: number;
+  onAnswer: (text: string) => void;
+  disabled: boolean;
 }) {
   return (
     <div className="lily-bubble-row">
@@ -508,6 +539,29 @@ function LilyBubble({
             <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
           ))}
         </div>
+        {message.questions && message.questions.length > 0 && (
+          <div className="ask-list">
+            {message.questions.map(q => (
+              <div key={q.id} className="ask-card">
+                <div className="ask-q">❓ {q.question}</div>
+                {q.options.length > 0 && (
+                  <div className="ask-opts">
+                    {q.options.map((o, i) => (
+                      <button
+                        key={i}
+                        className="ask-opt"
+                        disabled={disabled}
+                        onClick={() => onAnswer(o)}
+                      >
+                        {o}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {message.extractedBlocks && message.extractedBlocks.length > 0 && (
           <div className="block-list">
             {message.extractedBlocks.map(block => (
@@ -523,6 +577,13 @@ function LilyBubble({
         .lily-bubble-wrap { flex: 1; min-width: 0; }
         .lily-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
         .block-list { margin-top: 4px; }
+        .ask-list { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+        .ask-card { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+        .ask-q { font-size: 0.85rem; font-weight: 700; color: var(--foreground); margin-bottom: 8px; }
+        .ask-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+        .ask-opt { background: color-mix(in srgb, var(--primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent); color: var(--primary); border-radius: 16px; padding: 5px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+        .ask-opt:hover:not(:disabled) { background: var(--primary); color: white; }
+        .ask-opt:disabled { opacity: 0.5; cursor: default; }
       `}</style>
     </div>
   );
@@ -717,14 +778,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
       });
 
       const aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
-      const { textContent, blocks } = parseAIResponse(aiText);
+      const { textContent, blocks, questions } = parseAIResponse(aiText);
 
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: textContent || '...',
+        text: textContent || (questions.length > 0 ? 'いくつか教えてほしいな！🐶' : '...'),
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
+        questions: questions.length > 0 ? questions : undefined,
       }]);
     } catch (e) {
       setMessages(prev => [...prev, {
@@ -858,7 +920,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
           msg.role === 'user' ? (
             <UserBubble key={msg.id} message={msg} />
           ) : (
-            <LilyBubble key={msg.id} message={msg} allNotes={allNotes ?? []} selectedNoteId={selectedNoteId} />
+            <LilyBubble
+              key={msg.id}
+              message={msg}
+              allNotes={allNotes ?? []}
+              selectedNoteId={selectedNoteId}
+              onAnswer={(t) => sendMessage(t)}
+              disabled={isLoading}
+            />
           )
         )}
         {isLoading && <TypingIndicator />}
