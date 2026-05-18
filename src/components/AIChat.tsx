@@ -152,8 +152,21 @@ function parseAIResponse(text: string): {
     return `\n✨ [ファイル「${fileName}」を作ったよ]\n`;
   });
 
+  // Fallback: catch geometry JSON that Gemini accidentally put in ```json fences or bare
+  const JSON_FENCE_RE = /```(?:json)?\s*\n(\{[\s\S]*?"elements"\s*:[\s\S]*?\})\s*\n```/g;
+  const work2 = work.replace(JSON_FENCE_RE, (_full, jsonStr: string) => {
+    try {
+      parseGeometry(jsonStr.trim());
+      const id = crypto.randomUUID();
+      blocks.push({ id, type: 'geometry', rawCode: jsonStr.trim(), previewLabel: '数学・幾何の図' });
+      return `\n✨ [数学の図を描いたよ]\n`;
+    } catch {
+      return _full; // not a geometry block, leave it
+    }
+  });
+
   const FENCE_RE = /```(mermaid|chart|qa|slides|geometry)([\s\S]*?)```/g;
-  const textContent = work.replace(FENCE_RE, (_full, type, code) => {
+  const textContent = work2.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
     if (type === 'mermaid') {
