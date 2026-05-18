@@ -199,6 +199,54 @@ body[data-starfield] .app-container {
   background: transparent;
 }
 
+/* 花火テーマ — 夏祭りの夜空 */
+body[data-fireworks] {
+  background-color: #0a0a1f;
+  background-image:
+    radial-gradient(ellipse 90% 60% at 50% 110%, rgba(80,60,150,0.30) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 50% at 15% 10%, rgba(150,50,110,0.16) 0%, transparent 60%),
+    radial-gradient(ellipse 100% 80% at 50% 50%, rgba(20,18,55,0.55) 0%, #0a0a1f 78%);
+}
+body[data-fireworks] .app-container {
+  background: transparent;
+}
+
+.fireworks-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+/* 各 .fw は中心の小さな点 + 12方向の box-shadow パーティクル。
+   scale(0→1) で放射状に開き、フェードアウトして花火に見せる。 */
+.fireworks-overlay .fw {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: 0;
+  box-shadow:
+    80px 0, 69px -40px, 40px -69px, 0 -80px, -40px -69px, -69px -40px,
+    -80px 0, -69px 40px, -40px 69px, 0 80px, 40px 69px, 69px 40px;
+  animation: fw-burst 3.4s ease-out infinite;
+}
+@keyframes fw-burst {
+  0%   { transform: scale(0.1); opacity: 0; }
+  6%   { opacity: 1; }
+  45%  { transform: scale(1); opacity: 1; }
+  72%  { transform: scale(1.18); opacity: 0; }
+  100% { transform: scale(1.18); opacity: 0; }
+}
+.fireworks-overlay .fw1 { left: 20%; top: 28%; color: #ff6f9c; animation-delay: 0s; }
+.fireworks-overlay .fw2 { left: 72%; top: 22%; color: #5fb8ff; animation-delay: 0.9s; transform-origin: center; }
+.fireworks-overlay .fw3 { left: 48%; top: 40%; color: #ffd45f; animation-delay: 1.7s; }
+.fireworks-overlay .fw4 { left: 32%; top: 56%; color: #b98cff; animation-delay: 2.4s; }
+.fireworks-overlay .fw5 { left: 82%; top: 50%; color: #5fe0b0; animation-delay: 3.0s; }
+@media (prefers-reduced-motion: reduce) {
+  .fireworks-overlay .fw { animation: none; opacity: 0.5; transform: scale(1); }
+}
+
 /* Dark mode: ensure all text is readable */
 [data-theme='dark'] input,
 [data-theme='dark'] textarea,

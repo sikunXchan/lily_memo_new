@@ -150,7 +150,8 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
           background: var(--background);
         }
         .settings-header {
-          margin-bottom: 40px;
+          max-width: 600px;
+          margin: 0 auto 40px;
         }
         .settings-header h2 {
           font-size: 1.8rem;
@@ -158,6 +159,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         }
         .settings-sections {
           max-width: 600px;
+          margin: 0 auto;
           display: flex;
           flex-direction: column;
           gap: 40px;
