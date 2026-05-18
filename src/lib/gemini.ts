@@ -15,7 +15,6 @@ const GEMINI_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
-  'gemini-1.5-flash',
 ];
 
 export interface ChatOptions {
@@ -145,7 +144,7 @@ export const LILY_CHAT_SYSTEM_PROMPT = `
     "datasets": [{
       "label": "データ名",
       "data": [10, 20, 30],
-      "backgroundColor": ["rgba(255,182,193,0.7)", "rgba(135,206,250,0.7)", "rgba(144,238,144,0.7)"]
+      "backgroundColor": ["rgba(255,99,132,0.75)","rgba(54,162,235,0.75)","rgba(255,206,86,0.75)","rgba(75,192,192,0.75)","rgba(153,102,255,0.75)","rgba(255,159,64,0.75)"]
     }]
   },
   "options": {
