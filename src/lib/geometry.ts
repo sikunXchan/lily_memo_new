@@ -180,25 +180,58 @@ export function renderGeometrySvg(spec: GeometrySpec): string {
   const DEF = '#e84393';
   const dot = (x: number, y: number, color: string) =>
     `<circle cx="${X(x)}" cy="${Y(y)}" r="3.5" fill="${color}"/>`;
-  const lbl = (x: number, y: number, text: string, color: string) =>
-    `<text x="${X(x) + 6}" y="${Y(y) - 6}" font-size="13" font-weight="600" fill="${color}">${esc(text)}</text>`;
+
+  // Direction-aware label: offset CW-perpendicular to the motion direction.
+  // svgDx/svgDy = direction vector already in SVG pixel space (y-down).
+  const smartLbl = (
+    svgTipX: number, svgTipY: number,
+    svgDx: number, svgDy: number,
+    text: string, color: string,
+    extraAlong = 10
+  ) => {
+    const len = Math.sqrt(svgDx * svgDx + svgDy * svgDy) || 1;
+    const udx = svgDx / len, udy = svgDy / len;
+    // CW perpendicular in SVG coords: (udy, -udx)
+    const px = udy, py = -udx;
+    const lx = (svgTipX + udx * extraAlong + px * 14).toFixed(1);
+    const ly = (svgTipY + udy * extraAlong + py * 14).toFixed(1);
+    const anchor = px < -0.25 ? 'end' : px > 0.25 ? 'start' : 'middle';
+    return `<text x="${lx}" y="${ly}" font-size="13" font-weight="600" fill="${color}" text-anchor="${anchor}" dominant-baseline="middle">${esc(text)}</text>`;
+  };
+
+  // Simple fixed label for midpoints (segments, circles, etc.)
+  const lbl = (svgX: number, svgY: number, text: string, color: string, anchor = 'start') =>
+    `<text x="${(svgX + 8).toFixed(1)}" y="${(svgY - 8).toFixed(1)}" font-size="13" font-weight="600" fill="${color}" text-anchor="${anchor}" dominant-baseline="auto">${esc(text)}</text>`;
 
   for (const el of spec.elements ?? []) {
     const color = ('color' in el && el.color) || DEF;
     if (el.type === 'point') {
       parts.push(dot(el.x, el.y, color));
-      if (el.label) parts.push(lbl(el.x, el.y, el.label, color));
+      if (el.label) {
+        // Offset away from origin to avoid overlap
+        const offX = el.x >= 0 ? 8 : -8;
+        const offY = el.y >= 0 ? -10 : 12;
+        const anchor = el.x >= 0 ? 'start' : 'end';
+        parts.push(`<text x="${(X(el.x) + offX).toFixed(1)}" y="${(Y(el.y) + offY).toFixed(1)}" font-size="13" font-weight="600" fill="${color}" text-anchor="${anchor}" dominant-baseline="auto">${esc(el.label)}</text>`);
+      }
     } else if (el.type === 'segment') {
       parts.push(`<line x1="${X(el.from[0])}" y1="${Y(el.from[1])}" x2="${X(el.to[0])}" y2="${Y(el.to[1])}" stroke="${color}" stroke-width="2"${el.dashed ? ' stroke-dasharray="5 4"' : ''}/>`);
       if (el.label) {
-        const mx = (el.from[0] + el.to[0]) / 2, my = (el.from[1] + el.to[1]) / 2;
-        parts.push(lbl(mx, my, el.label, color));
+        const mx = (X(el.from[0]) + X(el.to[0])) / 2;
+        const my = (Y(el.from[1]) + Y(el.to[1])) / 2;
+        const svgDx = X(el.to[0]) - X(el.from[0]);
+        const svgDy = Y(el.to[1]) - Y(el.from[1]);
+        parts.push(smartLbl(mx, my, svgDx, svgDy, el.label, color, 0));
       }
     } else if (el.type === 'vector') {
       const id = `arr${Math.random().toString(36).slice(2, 7)}`;
-      parts.push(`<defs><marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="${color}"/></marker></defs>`);
+      parts.push(`<defs><marker id="${id}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M0 1L9 5L0 9z" fill="${color}"/></marker></defs>`);
       parts.push(`<line x1="${X(el.from[0])}" y1="${Y(el.from[1])}" x2="${X(el.to[0])}" y2="${Y(el.to[1])}" stroke="${color}" stroke-width="2" marker-end="url(#${id})"/>`);
-      if (el.label) parts.push(lbl(el.to[0], el.to[1], el.label, color));
+      if (el.label) {
+        const svgDx = X(el.to[0]) - X(el.from[0]);
+        const svgDy = Y(el.to[1]) - Y(el.from[1]);
+        parts.push(smartLbl(X(el.to[0]), Y(el.to[1]), svgDx, svgDy, el.label, color, 8));
+      }
     } else if (el.type === 'line') {
       let p1: Pt, p2: Pt;
       if (el.from && el.to) {
@@ -211,22 +244,30 @@ export function renderGeometrySvg(spec: GeometrySpec): string {
         else { const xv = -c / a; p1 = [xv, yMin]; p2 = [xv, yMax]; }
       }
       parts.push(`<line x1="${X(p1[0])}" y1="${Y(p1[1])}" x2="${X(p2[0])}" y2="${Y(p2[1])}" stroke="${color}" stroke-width="2"/>`);
-      if (el.label && el.to) parts.push(lbl(el.to[0], el.to[1], el.label, color));
+      if (el.label && el.to) parts.push(lbl(X(el.to[0]), Y(el.to[1]), el.label, color));
     } else if (el.type === 'circle') {
       parts.push(`<ellipse cx="${X(el.center[0])}" cy="${Y(el.center[1])}" rx="${el.r * sx}" ry="${el.r * sy}" stroke="${color}" stroke-width="2" fill="${el.fill || 'none'}"/>`);
-      if (el.label) parts.push(lbl(el.center[0], el.center[1] + el.r, el.label, color));
+      if (el.label) parts.push(lbl(X(el.center[0]), Y(el.center[1] + el.r), el.label, color));
     } else if (el.type === 'polygon') {
       const pts = el.points.map(p => `${X(p[0])},${Y(p[1])}`).join(' ');
       parts.push(`<polygon points="${pts}" stroke="${color}" stroke-width="2" fill="${el.fill || 'rgba(232,67,147,0.12)'}"/>`);
-      if (el.label && el.points[0]) parts.push(lbl(el.points[0][0], el.points[0][1], el.label, color));
+      if (el.label && el.points[0]) parts.push(lbl(X(el.points[0][0]), Y(el.points[0][1]), el.label, color));
     } else if (el.type === 'angle') {
-      const r = 0.6;
+      const r = 0.5;
       const a1 = Math.atan2(el.from[1] - el.at[1], el.from[0] - el.at[0]);
       const a2 = Math.atan2(el.to[1] - el.at[1], el.to[0] - el.at[0]);
       const p1x = el.at[0] + r * Math.cos(a1), p1y = el.at[1] + r * Math.sin(a1);
       const p2x = el.at[0] + r * Math.cos(a2), p2y = el.at[1] + r * Math.sin(a2);
-      parts.push(`<path d="M ${X(p1x)} ${Y(p1y)} A ${r * sx} ${r * sy} 0 0 0 ${X(p2x)} ${Y(p2y)}" stroke="${color}" stroke-width="1.5" fill="none"/>`);
-      if (el.label) parts.push(lbl(el.at[0] + r, el.at[1] + r, el.label, color));
+      // Sweep from a1 to a2 going in the positive (counterclockwise in math) direction
+      const sweep = ((a2 - a1) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) > Math.PI ? 1 : 0;
+      parts.push(`<path d="M ${X(p1x)} ${Y(p1y)} A ${r * sx} ${r * sy} 0 0 ${sweep} ${X(p2x)} ${Y(p2y)}" stroke="${color}" stroke-width="1.5" fill="none"/>`);
+      if (el.label) {
+        // Place label between the two angle arms, slightly outward
+        const amid = (a1 + a2) / 2;
+        const lx = X(el.at[0] + (r + 0.3) * Math.cos(amid));
+        const ly = Y(el.at[1] + (r + 0.3) * Math.sin(amid));
+        parts.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="12" font-weight="600" fill="${color}" text-anchor="middle" dominant-baseline="middle">${esc(el.label)}</text>`);
+      }
     } else if (el.type === 'function') {
       try {
         const f = compile(el.expr.toLowerCase());
@@ -251,10 +292,10 @@ export function renderGeometrySvg(spec: GeometrySpec): string {
   }
 
   const titleSvg = spec.title
-    ? `<text x="${W / 2}" y="18" font-size="13" font-weight="700" fill="#333" text-anchor="middle">${esc(spec.title)}</text>`
+    ? `<text x="${W / 2}" y="20" font-size="14" font-weight="700" fill="#222" text-anchor="middle">${esc(spec.title)}</text>`
     : '';
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui,sans-serif"><rect width="${W}" height="${H}" fill="#ffffff"/>${titleSvg}${parts.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui,sans-serif" overflow="visible"><rect width="${W}" height="${H}" fill="#ffffff"/>${titleSvg}${parts.join('')}</svg>`;
 }
 
 export function parseGeometry(code: string): GeometrySpec {
