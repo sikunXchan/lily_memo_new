@@ -154,6 +154,28 @@ export const THEME_STORAGE_KEY = 'lily-memo-theme';
 
 export const DEFAULT_THEME_ID = 'cream';
 
+// ── User-selectable font (settings tab) ──────────────────────────
+// Uses fonts already loaded (next/font) or system stacks so it works
+// offline. `value: ''` means "follow the theme's own fonts".
+export const FONT_STORAGE_KEY = 'lily-memo-font';
+
+export interface FontOption {
+  id: string;
+  name: string;
+  value: string;
+}
+
+export const FONT_OPTIONS: FontOption[] = [
+  { id: 'default', name: 'テーマ標準', value: '' },
+  { id: 'rounded', name: '丸ゴシック', value: 'var(--font-m-plus-rounded), "Noto Sans JP", sans-serif' },
+  { id: 'gothic', name: 'ゴシック', value: 'system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' },
+  { id: 'mincho', name: '明朝', value: '"Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif' },
+  { id: 'outfit', name: 'モダン', value: 'var(--font-outfit), "Noto Sans JP", sans-serif' },
+  { id: 'mono', name: '等幅', value: 'ui-monospace, "SF Mono", "JetBrains Mono", monospace' },
+];
+
+export const DEFAULT_FONT_ID = 'default';
+
 // Maps theme tokens onto the CSS custom properties the existing UI already
 // uses, so every component restyles for all 5 themes without a rewrite.
 export function themeCssVars(t: Theme): Record<string, string> {
@@ -173,6 +195,8 @@ export function themeCssVars(t: Theme): Record<string, string> {
     '--shadow-lg': t.shadow,
 
     '--surface': t.surface,
+    // Cards are translucent on the starry theme so the sky shows through.
+    '--card-bg': t.starfield ? 'rgba(13,20,38,0.62)' : t.surface,
     '--surface-alt': t.surfaceAlt,
     '--surface-deep': t.surfaceDeep,
     '--fg-muted': t.fgMuted,

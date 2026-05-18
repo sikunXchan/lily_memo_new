@@ -1,8 +1,10 @@
 'use client';
 
-import { Download, Upload } from 'lucide-react';
+import { Download, Upload, Type, Palette } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { buildBackupJson, restoreBackupFromJson } from '@/lib/backup';
+import { useTheme } from './ThemeContext';
+import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -11,6 +13,7 @@ interface SettingsModalProps {
 export default function SettingsModal({ onClose: _onClose }: SettingsModalProps) {
   void _onClose;
   const [isPersisted, setIsPersisted] = useState(false);
+  const { fontId, setFontId, themeId, setThemeId } = useTheme();
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
@@ -57,6 +60,61 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
       </header>
 
       <div className="settings-sections">
+        <section className="settings-section">
+          <div className="section-title">
+            <Palette size={20} />
+            <h3>テーマ</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">アプリ全体の配色を切り替えます。「夜空」は星空の背景になります。</p>
+            <div className="option-grid">
+              {THEME_LIST.map(id => {
+                const t = THEMES[id];
+                return (
+                  <button
+                    key={id}
+                    className={`option-card ${themeId === id ? 'selected' : ''}`}
+                    onClick={() => setThemeId(id)}
+                  >
+                    <span className="swatch" style={{ background: t.bg, borderColor: t.border }}>
+                      <span className="swatch-dot" style={{ background: t.primary }} />
+                    </span>
+                    <span className="option-name">{t.name}</span>
+                    <span className="option-tag">{t.tag}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Type size={20} />
+            <h3>フォント</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">アプリ全体の文字の書体を選べます。</p>
+            <div className="option-grid">
+              {FONT_OPTIONS.map(f => (
+                <button
+                  key={f.id}
+                  className={`option-card ${fontId === f.id ? 'selected' : ''}`}
+                  onClick={() => setFontId(f.id)}
+                >
+                  <span
+                    className="font-preview"
+                    style={{ fontFamily: f.value || 'inherit' }}
+                  >
+                    あA
+                  </span>
+                  <span className="option-name">{f.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className="settings-section">
           <div className="section-title">
             <Download size={20} />
@@ -121,6 +179,65 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
           margin: 0;
           font-size: 1.1rem;
         }
+        .option-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+          gap: 10px;
+        }
+        .option-card {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 4px;
+          padding: 12px;
+          background: var(--surface, var(--background));
+          border: 2px solid var(--border);
+          border-radius: 12px;
+          cursor: pointer;
+          transition: border-color 0.15s, transform 0.15s;
+          text-align: left;
+        }
+        .option-card:hover {
+          transform: translateY(-1px);
+        }
+        .option-card.selected {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+        }
+        .swatch {
+          width: 100%;
+          height: 38px;
+          border-radius: 8px;
+          border: 1px solid;
+          position: relative;
+          margin-bottom: 4px;
+        }
+        .swatch-dot {
+          position: absolute;
+          right: 6px;
+          bottom: 6px;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
+        .font-preview {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: var(--foreground);
+          margin-bottom: 2px;
+        }
+        .option-name {
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: var(--foreground);
+        }
+        .option-tag {
+          font-size: 0.65rem;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          color: var(--fg-faint);
+        }
         .status-badge {
           display: flex;
           align-items: center;
@@ -128,13 +245,13 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
           margin-bottom: 8px;
           font-size: 0.8rem;
           font-weight: 600;
-          color: #666;
+          color: var(--fg-muted);
         }
         .dot {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: #ccc;
+          background: var(--fg-faint);
         }
         .dot.persisted {
           background: #22863a;
@@ -142,7 +259,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         }
         .desc {
           font-size: 0.85rem;
-          color: #888;
+          color: var(--fg-muted);
           margin-bottom: 20px;
           line-height: 1.6;
         }

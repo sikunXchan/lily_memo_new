@@ -19,7 +19,6 @@ type TabType = 'memos' | 'pdf' | 'sketch' | 'settings';
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<TabType>('memos');
-  const [mobileMemoView, setMobileMemoView] = useState<'home' | 'list'>('home');
   const [sidebarViewMode, setSidebarViewMode] = useState<'tree' | 'graph'>('tree');
   const [highlightFolderReq, setHighlightFolderReq] = useState<{ id: number; seq: number } | null>(null);
   const highlightSeq = useRef(0);
@@ -53,8 +52,9 @@ export default function Home() {
     window.addEventListener('focusin', handleFocus);
     window.addEventListener('focusout', handleBlur);
 
-    // Restore sidebar view mode.
+    // Restore sidebar view mode (after mount to avoid hydration mismatch).
     const savedViewMode = localStorage.getItem('sidebarViewMode');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (savedViewMode === 'graph' || savedViewMode === 'tree') setSidebarViewMode(savedViewMode);
 
     if (navigator.storage && navigator.storage.persist) {
@@ -99,17 +99,15 @@ export default function Home() {
     localStorage.setItem('sidebarViewMode', mode);
   };
 
-  // Called from HomeHero's Connection tile.
+  // Desktop dashboard → switch the Sidebar to graph view.
   const openConnection = () => {
     changeSidebarViewMode('graph');
-    if (!isDesktopLayout) setMobileMemoView('list');
   };
 
-  // Called from HomeHero's Folder chips.
+  // Desktop dashboard → expand/highlight a folder in the Sidebar.
   const selectFolder = (id: number) => {
     highlightSeq.current += 1;
     setHighlightFolderReq({ id, seq: highlightSeq.current });
-    if (!isDesktopLayout) setMobileMemoView('list');
   };
 
   return (
@@ -145,31 +143,12 @@ export default function Home() {
             )}
             {activeTab !== 'settings' && (
               <div className="tab-content">
-                {/* Mobile portrait — home (Hero) or list (Sidebar) */}
-                {isMobile && !isLandscape && activeTab === 'memos' && mobileMemoView === 'home' && (
+                {/* Mobile portrait — self-contained Hero home */}
+                {isMobile && !isLandscape && activeTab === 'memos' && (
                   <HomeHero
                     onSelectNote={(id) => setActiveNoteId(id)}
-                    onOpenConnection={openConnection}
-                    onSelectFolder={selectFolder}
                     onOpenSketch={openSketch}
-                    onOpenAllNotes={() => setMobileMemoView('list')}
                     isDesktop={false}
-                  />
-                )}
-                {isMobile && !isLandscape && activeTab === 'memos' && mobileMemoView === 'list' && (
-                  <Sidebar
-                    activeNoteId={activeNoteId}
-                    onSelectNote={setActiveNoteId}
-                    onOpenSettings={openSettings}
-                    onOpenPDF={openPDF}
-                    onOpenSketch={openSketch}
-                    isMobileOpen={true}
-                    onToggleMobile={() => {}}
-                    onActiveNoteDeleted={() => setActiveNoteId(undefined)}
-                    onBackToHome={() => setMobileMemoView('home')}
-                    viewModeProp={sidebarViewMode}
-                    onViewModeChangeProp={changeSidebarViewMode}
-                    highlightFolderReq={highlightFolderReq}
                   />
                 )}
                 {activeTab === 'pdf' && (
@@ -196,7 +175,7 @@ export default function Home() {
 
       {isMobile && !isLandscape && !isInputFocused && !activeNoteId && (
         <nav className="bottom-nav">
-          <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); setMobileMemoView('home'); }}>
+          <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
             <span>メモ</span>
           </button>

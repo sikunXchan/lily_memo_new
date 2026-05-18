@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
   THEMES, THEME_LIST, THEME_STORAGE_KEY, DEFAULT_THEME_ID,
+  FONT_OPTIONS, FONT_STORAGE_KEY, DEFAULT_FONT_ID,
   themeCssVars, type Theme,
 } from '@/lib/themes';
 
@@ -12,6 +13,8 @@ interface ThemeContextValue {
   setThemeId: (id: string) => void;
   cycleTheme: () => void;
   nextThemeName: string;
+  fontId: string;
+  setFontId: (id: string) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -20,7 +23,19 @@ const ThemeContext = createContext<ThemeContextValue>({
   setThemeId: () => {},
   cycleTheme: () => {},
   nextThemeName: '',
+  fontId: DEFAULT_FONT_ID,
+  setFontId: () => {},
 });
+
+function applyFont(fontId: string) {
+  const opt = FONT_OPTIONS.find(f => f.id === fontId);
+  const root = document.documentElement;
+  if (opt && opt.value) {
+    root.style.setProperty('--app-font', opt.value);
+  } else {
+    root.style.removeProperty('--app-font');
+  }
+}
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
@@ -40,6 +55,7 @@ function applyTheme(theme: Theme) {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeId, setThemeIdState] = useState<string>(DEFAULT_THEME_ID);
+  const [fontId, setFontIdState] = useState<string>(DEFAULT_FONT_ID);
 
   useEffect(() => {
     let initial = DEFAULT_THEME_ID;
@@ -55,11 +71,31 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* localStorage unavailable */
     }
-    // Read the persisted theme only after mount so server and client
-    // render the same default (avoids a hydration mismatch).
+    let initialFont = DEFAULT_FONT_ID;
+    try {
+      const savedFont = localStorage.getItem(FONT_STORAGE_KEY);
+      if (savedFont && FONT_OPTIONS.some(f => f.id === savedFont)) initialFont = savedFont;
+    } catch {
+      /* localStorage unavailable */
+    }
+    // Read persisted prefs only after mount so server and client render
+    // the same default (avoids a hydration mismatch).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setThemeIdState(initial);
+    setFontIdState(initialFont);
     applyTheme(THEMES[initial]);
+    applyFont(initialFont);
+  }, []);
+
+  const setFontId = useCallback((id: string) => {
+    if (!FONT_OPTIONS.some(f => f.id === id)) return;
+    setFontIdState(id);
+    applyFont(id);
+    try {
+      localStorage.setItem(FONT_STORAGE_KEY, id);
+    } catch {
+      /* localStorage unavailable */
+    }
   }, []);
 
   const setThemeId = useCallback((id: string) => {
@@ -92,7 +128,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const nextThemeName = THEMES[THEME_LIST[nextIdx]].name;
 
   return (
-    <ThemeContext.Provider value={{ theme, themeId, setThemeId, cycleTheme, nextThemeName }}>
+    <ThemeContext.Provider value={{ theme, themeId, setThemeId, cycleTheme, nextThemeName, fontId, setFontId }}>
       {theme.starfield && <div className="starfield-overlay" aria-hidden="true" />}
       {children}
     </ThemeContext.Provider>
