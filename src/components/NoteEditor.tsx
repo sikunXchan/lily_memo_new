@@ -16,13 +16,13 @@ import {
   ArrowLeft, Trash2, Type,
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
-  Undo, Redo, Image as ImageIcon, Loader2, BookOpen,
+  Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
   Search, ChevronUp, ChevronDown, SquareCheck
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
 
-import { MermaidExtension, ChartExtension, QAExtension } from '@/lib/extensions';
+import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension } from '@/lib/extensions';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 
 const lowlight = createLowlight(common);
@@ -165,6 +165,7 @@ export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEd
       MermaidExtension,
       ChartExtension,
       QAExtension,
+      GeometryExtension,
       TaskList,
       CustomTaskItem.configure({ nested: true }),
       ResizableImageExtension,
@@ -569,6 +570,28 @@ export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEd
     });
   };
 
+  const insertGeometry = () => {
+    insertWithoutFocus({
+      type: 'geometry',
+      attrs: {
+        code: JSON.stringify({
+          title: '幾何の図',
+          xRange: [-4, 4],
+          yRange: [-3, 3],
+          elements: [
+            { type: 'vector', from: [0, 0], to: [3, 1], label: 'a', color: '#e84393' },
+            { type: 'vector', from: [0, 0], to: [1, 2], label: 'b', color: '#2196f3' },
+            { type: 'segment', from: [3, 1], to: [4, 3], color: '#2196f3', dashed: true },
+            { type: 'segment', from: [1, 2], to: [4, 3], color: '#e84393', dashed: true },
+            { type: 'vector', from: [0, 0], to: [4, 3], label: 'a+b', color: '#4caf50' },
+            { type: 'point', x: 0, y: 0, label: 'O', color: '#333' },
+          ],
+        }, null, 2),
+        width: '100%',
+      },
+    });
+  };
+
 
 
 
@@ -610,6 +633,7 @@ export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEd
                 <button className="btn-tool" onClick={insertMermaid} title="図解"><GitBranch size={18} /></button>
                 <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
                 <button className="btn-tool" onClick={insertQA} title="Q&A"><BookOpen size={18} /></button>
+                <button className="btn-tool" onClick={insertGeometry} title="幾何の図"><Compass size={18} /></button>
                 <div className="header-divider" />
               </>
             )}

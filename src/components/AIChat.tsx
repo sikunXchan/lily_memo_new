@@ -203,9 +203,7 @@ function blockToHtml(block: InsertableBlock): string {
     return `<div data-pairs="${escHtmlAttr(JSON.stringify(pairs))}" data-type="qa"></div>`;
   }
   if (block.type === 'geometry') {
-    const svg = renderGeometrySvg(parseGeometry(block.rawCode));
-    const dataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
-    return `<img src="${dataUrl}" alt="数学の図" />`;
+    return `<div data-type="geometry" data-code="${escHtmlAttr(block.rawCode)}" data-width="100%"></div>`;
   }
   if (block.type === 'file') {
     return `<pre><code>${escHtmlAttr(block.rawCode)}</code></pre>`;
