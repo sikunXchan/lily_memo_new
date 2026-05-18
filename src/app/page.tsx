@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
 import { Book, Settings as SettingsIcon, FileText, Brush } from 'lucide-react';
@@ -12,12 +12,16 @@ const NoteEditor = dynamic(() => import('@/components/NoteEditor'), { ssr: false
 const SettingsModal = dynamic(() => import('@/components/SettingsModal'), { ssr: false });
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
+const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
 
 type TabType = 'memos' | 'pdf' | 'sketch' | 'settings';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<TabType>('memos');
+  const [sidebarViewMode, setSidebarViewMode] = useState<'tree' | 'graph'>('tree');
+  const [highlightFolderReq, setHighlightFolderReq] = useState<{ id: number; seq: number } | null>(null);
+  const highlightSeq = useRef(0);
   const [isMobile, setIsMobile] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -47,6 +51,11 @@ export default function Home() {
 
     window.addEventListener('focusin', handleFocus);
     window.addEventListener('focusout', handleBlur);
+
+    // Restore sidebar view mode (after mount to avoid hydration mismatch).
+    const savedViewMode = localStorage.getItem('sidebarViewMode');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (savedViewMode === 'graph' || savedViewMode === 'tree') setSidebarViewMode(savedViewMode);
 
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist();
@@ -85,6 +94,22 @@ export default function Home() {
     setActiveNoteId(undefined);
   };
 
+  const changeSidebarViewMode = (mode: 'tree' | 'graph') => {
+    setSidebarViewMode(mode);
+    localStorage.setItem('sidebarViewMode', mode);
+  };
+
+  // Desktop dashboard → switch the Sidebar to graph view.
+  const openConnection = () => {
+    changeSidebarViewMode('graph');
+  };
+
+  // Desktop dashboard → expand/highlight a folder in the Sidebar.
+  const selectFolder = (id: number) => {
+    highlightSeq.current += 1;
+    setHighlightFolderReq({ id, seq: highlightSeq.current });
+  };
+
   return (
     <div className={`app-container ${isMobile && !isLandscape ? 'mobile-mode' : ''} ${isLandscape && isDesktopLayout ? 'landscape-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${isMobile && isLandscape && !!activeNoteId ? 'mobile-landscape-note' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
       {isDesktopLayout && activeTab !== 'sketch' && (
@@ -97,6 +122,9 @@ export default function Home() {
           isMobileOpen={false}
           onToggleMobile={() => {}}
           onActiveNoteDeleted={() => setActiveNoteId(undefined)}
+          viewModeProp={sidebarViewMode}
+          onViewModeChangeProp={changeSidebarViewMode}
+          highlightFolderReq={highlightFolderReq}
         />
       )}
 
@@ -115,16 +143,12 @@ export default function Home() {
             )}
             {activeTab !== 'settings' && (
               <div className="tab-content">
+                {/* Mobile portrait — self-contained Hero home */}
                 {isMobile && !isLandscape && activeTab === 'memos' && (
-                  <Sidebar
-                    activeNoteId={activeNoteId}
-                    onSelectNote={setActiveNoteId}
-                    onOpenSettings={openSettings}
-                    onOpenPDF={openPDF}
+                  <HomeHero
+                    onSelectNote={(id) => setActiveNoteId(id)}
                     onOpenSketch={openSketch}
-                    isMobileOpen={true}
-                    onToggleMobile={() => {}}
-                    onActiveNoteDeleted={() => setActiveNoteId(undefined)}
+                    isDesktop={false}
                   />
                 )}
                 {activeTab === 'pdf' && (
@@ -133,14 +157,15 @@ export default function Home() {
                 {activeTab === 'sketch' && (
                   <SketchTab onClose={() => setActiveTab('memos')} />
                 )}
+                {/* Desktop / iPad / iPhone landscape — Hero in main content area */}
                 {isDesktopLayout && activeTab === 'memos' && (
-                  <div className="empty-state">
-                    <div className="empty-content">
-                      <img src="/logo.png" alt="Lily Memo Logo" className="empty-logo" />
-                      <h2>メモを開くか、新しく作成してください</h2>
-                      <p>左のサイドバーから整理を始めましょう ✨</p>
-                    </div>
-                  </div>
+                  <HomeHero
+                    onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
+                    onOpenConnection={openConnection}
+                    onSelectFolder={selectFolder}
+                    onOpenSketch={openSketch}
+                    isDesktop={true}
+                  />
                 )}
               </div>
             )}
@@ -214,38 +239,19 @@ export default function Home() {
           min-height: 0;
         }
 
-        .empty-state {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          background: var(--accent);
-          border-radius: var(--radius) 0 0 var(--radius);
-        }
-
-        .empty-logo {
-          width: 100px;
-          opacity: 0.5;
-          margin-bottom: 20px;
-        }
-
         .bottom-nav {
           position: fixed;
           bottom: 0;
           left: 0;
           right: 0;
           height: calc(60px + env(safe-area-inset-bottom));
-          background: rgba(255, 255, 255, 0.9);
+          background: var(--glass-tint, rgba(255, 255, 255, 0.9));
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           display: flex;
           border-top: 1px solid var(--border);
           padding-bottom: env(safe-area-inset-bottom);
           z-index: 3000;
-        }
-        :global([data-theme='dark']) .bottom-nav {
-          background: rgba(26, 26, 26, 0.92);
         }
         /* Sketch tab is a full-screen overlay — hide bottom nav so the
            sketch toolbar isn't covered. */
@@ -261,7 +267,7 @@ export default function Home() {
           justify-content: center;
           gap: 4px;
           background: transparent;
-          color: #999;
+          color: var(--fg-muted);
           transition: all 0.2s;
         }
 
@@ -274,11 +280,6 @@ export default function Home() {
           font-weight: 600;
         }
 
-        @media (max-width: 1023px) and (orientation: portrait) {
-          .empty-state {
-            display: none;
-          }
-        }
       `}</style>
     </div>
   );

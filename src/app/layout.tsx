@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, M_PLUS_Rounded_1c } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/ThemeContext";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -46,8 +47,8 @@ export default function RootLayout({
     <html lang="ja" className={`${outfit.variable} ${mPlusRounded.variable}`}>
       <body className="antialiased">
         {/* テーマをReact hydration前に適用してFOUC防止 */}
-        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('theme');if(t)document.body.setAttribute('data-theme',t);}catch(e){}` }} />
-        {children}
+        <script dangerouslySetInnerHTML={{ __html: `try{var id=localStorage.getItem('lily-memo-theme');if(!id){var l=localStorage.getItem('theme');if(l==='dark')id='night';}var dark=(id==='night'||id==='starry');document.body.setAttribute('data-theme',dark?'dark':'light');if(id)document.body.setAttribute('data-theme-id',id);if(id==='starry')document.body.setAttribute('data-starfield','true');}catch(e){}` }} />
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );
