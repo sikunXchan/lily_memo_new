@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search, Eye, EyeOff,
-  FileDown, Wand2, Download,
+  FileDown, Wand2, Download, Pencil,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -518,14 +518,153 @@ function InsertableBlockCard({
   );
 }
 
+function ClarifyBottomSheet({
+  question,
+  onAnswer,
+  onDismiss,
+  disabled,
+}: {
+  question: ClarifyQuestion;
+  onAnswer: (text: string) => void;
+  onDismiss: () => void;
+  disabled: boolean;
+}) {
+  const [freeText, setFreeText] = useState('');
+
+  const handleOption = (opt: string) => {
+    if (disabled) return;
+    onAnswer(opt);
+  };
+
+  const handleFreeSubmit = () => {
+    const t = freeText.trim();
+    if (!t || disabled) return;
+    onAnswer(t);
+    setFreeText('');
+  };
+
+  return (
+    <div className="clarify-overlay" onClick={onDismiss}>
+      <div className="clarify-sheet" onClick={e => e.stopPropagation()}>
+        <div className="clarify-header">
+          <span className="clarify-question">{question.question}</span>
+          <button className="clarify-close" onClick={onDismiss} title="閉じる">
+            <X size={16} />
+          </button>
+        </div>
+        {question.options.length > 0 && (
+          <div className="clarify-options">
+            {question.options.map((opt, i) => (
+              <button
+                key={i}
+                className="clarify-opt-row"
+                onClick={() => handleOption(opt)}
+                disabled={disabled}
+              >
+                <span className="clarify-opt-num">{i + 1}</span>
+                <span className="clarify-opt-label">{opt}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="clarify-footer">
+          <Pencil size={15} className="clarify-pencil" />
+          <input
+            className="clarify-input"
+            placeholder="回答を入力..."
+            value={freeText}
+            onChange={e => setFreeText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleFreeSubmit(); }}
+            disabled={disabled}
+            autoFocus
+          />
+          {freeText.trim() && (
+            <button className="clarify-send" onClick={handleFreeSubmit} disabled={disabled}>
+              <Send size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+      <style jsx>{`
+        .clarify-overlay {
+          position: fixed; inset: 0; z-index: 200;
+          background: rgba(0,0,0,0.45);
+          display: flex; align-items: flex-end;
+          animation: clarify-fade 0.18s ease;
+        }
+        @keyframes clarify-fade { from { opacity: 0; } to { opacity: 1; } }
+        .clarify-sheet {
+          width: 100%; max-width: 640px; margin: 0 auto;
+          background: var(--background);
+          border-radius: 20px 20px 0 0;
+          box-shadow: 0 -6px 40px rgba(0,0,0,0.18);
+          animation: clarify-up 0.22s cubic-bezier(0.32,0.72,0,1);
+          overflow: hidden;
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+        @keyframes clarify-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .clarify-header {
+          display: flex; align-items: flex-start; justify-content: space-between;
+          gap: 12px; padding: 18px 16px 14px;
+          border-bottom: 1px solid var(--border);
+        }
+        .clarify-question {
+          font-size: 0.95rem; font-weight: 700;
+          color: var(--foreground); line-height: 1.45; flex: 1;
+        }
+        .clarify-close {
+          flex-shrink: 0; background: var(--accent); border: none; border-radius: 50%;
+          width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+          cursor: pointer; color: var(--fg-muted); transition: background 0.15s;
+        }
+        .clarify-close:hover { background: var(--border); }
+        .clarify-options { display: flex; flex-direction: column; max-height: 55vh; overflow-y: auto; }
+        .clarify-opt-row {
+          display: flex; align-items: center; gap: 14px;
+          padding: 14px 16px; background: transparent; border: none;
+          border-bottom: 1px solid var(--border); cursor: pointer;
+          text-align: left; transition: background 0.1s; width: 100%;
+        }
+        .clarify-opt-row:last-child { border-bottom: none; }
+        .clarify-opt-row:hover:not(:disabled) { background: var(--accent); }
+        .clarify-opt-row:disabled { cursor: default; opacity: 0.5; }
+        .clarify-opt-num {
+          flex-shrink: 0; width: 28px; height: 28px;
+          background: color-mix(in srgb, var(--primary) 12%, transparent);
+          color: var(--primary); border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 0.8rem; font-weight: 700;
+        }
+        .clarify-opt-label { font-size: 0.9rem; color: var(--foreground); line-height: 1.4; }
+        .clarify-footer {
+          display: flex; align-items: center; gap: 10px;
+          padding: 12px 16px;
+          border-top: 1px solid var(--border);
+          background: var(--accent);
+        }
+        .clarify-footer :global(.clarify-pencil) { color: var(--fg-muted); flex-shrink: 0; }
+        .clarify-input {
+          flex: 1; background: transparent; border: none; outline: none;
+          font-size: 0.9rem; color: var(--foreground); font-family: inherit;
+        }
+        .clarify-input::placeholder { color: var(--fg-muted); }
+        .clarify-send {
+          flex-shrink: 0; background: var(--primary); color: white; border: none;
+          border-radius: 8px; padding: 6px 8px; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .clarify-send:disabled { opacity: 0.5; cursor: default; }
+      `}</style>
+    </div>
+  );
+}
+
 function LilyBubble({
-  message, allNotes, selectedNoteId, onAnswer, disabled,
+  message, allNotes, selectedNoteId,
 }: {
   message: ChatMessage;
   allNotes: Note[];
   selectedNoteId?: number;
-  onAnswer: (text: string) => void;
-  disabled: boolean;
 }) {
   return (
     <div className="lily-bubble-row">
@@ -540,27 +679,7 @@ function LilyBubble({
           ))}
         </div>
         {message.questions && message.questions.length > 0 && (
-          <div className="ask-list">
-            {message.questions.map(q => (
-              <div key={q.id} className="ask-card">
-                <div className="ask-q">❓ {q.question}</div>
-                {q.options.length > 0 && (
-                  <div className="ask-opts">
-                    {q.options.map((o, i) => (
-                      <button
-                        key={i}
-                        className="ask-opt"
-                        disabled={disabled}
-                        onClick={() => onAnswer(o)}
-                      >
-                        {o}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+          <div className="ask-asked-hint">❓ {message.questions.length}件の質問をしたよ</div>
         )}
         {message.extractedBlocks && message.extractedBlocks.length > 0 && (
           <div className="block-list">
@@ -577,13 +696,7 @@ function LilyBubble({
         .lily-bubble-wrap { flex: 1; min-width: 0; }
         .lily-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
         .block-list { margin-top: 4px; }
-        .ask-list { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
-        .ask-card { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
-        .ask-q { font-size: 0.85rem; font-weight: 700; color: var(--foreground); margin-bottom: 8px; }
-        .ask-opts { display: flex; flex-wrap: wrap; gap: 6px; }
-        .ask-opt { background: color-mix(in srgb, var(--primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent); color: var(--primary); border-radius: 16px; padding: 5px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-        .ask-opt:hover:not(:disabled) { background: var(--primary); color: white; }
-        .ask-opt:disabled { opacity: 0.5; cursor: default; }
+        .ask-asked-hint { margin-top: 6px; font-size: 0.78rem; color: var(--fg-muted); display: flex; align-items: center; gap: 4px; }
       `}</style>
     </div>
   );
@@ -667,6 +780,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
   const [fileError, setFileError] = useState('');
   const [webSearch, setWebSearch] = useState(false);
+  const [activeQuestion, setActiveQuestion] = useState<ClarifyQuestion | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -679,6 +793,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
   useEffect(() => {
     setApiKey(localStorage.getItem('lily_gemini_api_key') || '');
   }, []);
+
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (last?.role === 'lily' && last.questions && last.questions.length > 0) {
+      setActiveQuestion(last.questions[0]);
+    }
+  }, [messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -925,8 +1046,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
               message={msg}
               allNotes={allNotes ?? []}
               selectedNoteId={selectedNoteId}
-              onAnswer={(t) => sendMessage(t)}
-              disabled={isLoading}
             />
           )
         )}
@@ -1008,6 +1127,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
           <Send size={20} />
         </button>
       </div>
+
+      {activeQuestion && (
+        <ClarifyBottomSheet
+          question={activeQuestion}
+          onAnswer={(t) => { setActiveQuestion(null); sendMessage(t); }}
+          onDismiss={() => setActiveQuestion(null)}
+          disabled={isLoading}
+        />
+      )}
 
       <style jsx>{`
         .ai-chat-container { display: flex; flex-direction: column; height: 100%; background: var(--background); overflow: hidden; position: relative; }
