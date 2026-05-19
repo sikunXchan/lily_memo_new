@@ -4,12 +4,8 @@ import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'neutral',
-  securityLevel: 'loose',
-  suppressErrors: true,
-});
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose', suppressErrors: true } as any);
 
 export default function MermaidComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const [svg, setSvg] = useState('');

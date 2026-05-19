@@ -25,6 +25,13 @@ const nextConfig: NextConfig = {
       os: false,
       path: false,
     };
+    // @imgly/background-removal uses WASM + web workers at runtime (loaded
+    // from CDN). Enable async WebAssembly so webpack doesn't choke on the
+    // .wasm imports inside onnxruntime-web.
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+    };
     return config;
   },
 };
