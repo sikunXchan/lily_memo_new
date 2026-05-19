@@ -206,79 +206,110 @@ function buildMasters(p: PInstance, t: Theme) {
 
 interface Ctx { p: PInstance; t: Theme; deck: SlideDeck; n: number; total: number }
 
+const SHADOW = { type: 'outer', color: '7A7A7A', blur: 8, offset: 3, angle: 90, opacity: 0.16 };
+const NO_FILL = { type: 'none' };
+
+// Faint geometric depth shapes — added first so content sits on top.
+function decor(s: PSlide, t: Theme) {
+  s.addShape('ellipse', { x: W - 2.5, y: -1.5, w: 3.6, h: 3.6, fill: FILL(t.accent, 93) });
+  s.addShape('ellipse', { x: W - 1.7, y: -0.8, w: 2.0, h: 2.0, fill: NO_FILL, line: { color: t.accent, width: 1, transparency: 80 } });
+  s.addShape('roundRect', { x: -0.7, y: H - 1.2, w: 2.4, h: 2.4, rectRadius: 0.25, fill: FILL(t.accent2, 95) });
+}
+
 function heading(s: PSlide, t: Theme, text: string, lead?: string) {
+  s.addShape('roundRect', { x: 0.85, y: 0.6, w: 0.14, h: 0.74, rectRadius: 0.07, fill: FILL(t.accent) });
   s.addText(text || '', {
-    x: 0.85, y: 0.55, w: 11.6, h: 0.95, fontFace: FONT,
-    fontSize: 28, bold: true, color: t.ink, valign: 'top',
+    x: 1.14, y: 0.5, w: 11.3, h: 0.95, fontFace: FONT,
+    fontSize: 30, bold: true, color: t.ink, valign: 'middle',
   });
-  s.addShape('roundRect', {
-    x: 0.87, y: 1.52, w: 2.2, h: 0.07, rectRadius: 0.04, fill: FILL(t.accent),
-  });
+  const dividerY = lead ? 2.05 : 1.6;
   if (lead) {
     s.addText(lead, {
-      x: 0.87, y: 1.72, w: 11.5, h: 0.5, fontFace: FONT,
-      fontSize: 14, italic: true, color: t.muted,
+      x: 1.16, y: 1.5, w: 11.3, h: 0.5, fontFace: FONT,
+      fontSize: 14, color: t.muted,
     });
   }
+  s.addShape('rect', { x: 1.16, y: dividerY, w: 11.32, h: 0.018, fill: FILL(t.muted, 72) });
 }
 
 function footerTitle(s: PSlide, ctx: Ctx) {
+  s.addShape('ellipse', { x: 0.85, y: H - 0.4, w: 0.12, h: 0.12, fill: FILL(ctx.t.accent) });
   s.addText(ctx.deck.title, {
-    x: 0.85, y: H - 0.46, w: 8, h: 0.32, fontFace: FONT,
+    x: 1.05, y: H - 0.46, w: 8, h: 0.32, fontFace: FONT,
     fontSize: 9, color: ctx.t.muted,
   });
 }
 
 function card(s: PSlide, t: Theme, x: number, y: number, w: number, h: number, fill?: string) {
   s.addShape('roundRect', {
-    x, y, w, h, rectRadius: 0.08,
-    fill: FILL(fill ?? t.panel),
+    x, y, w, h, rectRadius: 0.09, fill: FILL(fill ?? 'FFFFFF'),
+    line: { color: t.muted, width: 0.5, transparency: 82 }, shadow: SHADOW,
   });
 }
 
-function bulletList(s: PSlide, t: Theme, items: string[], x: number, y: number, w: number, h: number, color?: string, size = 16) {
+function numChip(s: PSlide, x: number, y: number, d: number, n: number | string, color: string) {
+  s.addShape('roundRect', { x, y, w: d, h: d, rectRadius: 0.16, fill: FILL(color) });
+  s.addText(String(n), {
+    x, y, w: d, h: d, fontFace: FONT,
+    fontSize: 17, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle',
+  });
+}
+
+// Bullet items rendered as Gamma-style stacked cards with number chips.
+function itemCards(s: PSlide, t: Theme, items: string[], top: number, accent: string) {
   if (items.length === 0) return;
-  s.addText(
-    items.map(it => ({
-      text: it,
-      options: { bullet: { code: '25AA', indent: 16 }, breakLine: true, paraSpaceAfter: 10 },
-    })),
-    { x, y, w, h, fontFace: FONT, fontSize: size, color: color ?? t.ink, valign: 'top', lineSpacingMultiple: 1.15 },
-  );
+  const bottom = H - 0.65;
+  const gap = 0.16;
+  const n = items.length;
+  const rowH = Math.min(1.1, (bottom - top - gap * (n - 1)) / n);
+  items.forEach((it, i) => {
+    const y = top + i * (rowH + gap);
+    card(s, t, 0.85, y, 11.63, rowH, t.panel);
+    const cd = Math.min(0.5, rowH - 0.18);
+    numChip(s, 1.05, y + (rowH - cd) / 2, cd, i + 1, accent);
+    s.addText(it, {
+      x: 1.05 + cd + 0.25, y, w: 11.63 - (cd + 0.55) - 0.3, h: rowH,
+      fontFace: FONT, fontSize: 15, color: t.ink, valign: 'middle',
+    });
+  });
 }
 
 // ---- per-type renderers ---------------------------------------------
 
 function renderCover(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t, deck } = c;
-  s.addShape('roundRect', { x: 1.1, y: 2.35, w: 0.9, h: 0.1, rectRadius: 0.05, fill: FILL(t.accent) });
+  s.addShape('ellipse', { x: 9.0, y: 3.6, w: 5.2, h: 5.2, fill: NO_FILL, line: { color: t.onDark, width: 1, transparency: 86 } });
+  s.addShape('roundRect', { x: 1.12, y: 2.05, w: 1.5, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || deck.title, {
-    x: 1.1, y: 2.6, w: 10.8, h: 2.0, fontFace: FONT,
-    fontSize: 44, bold: true, color: t.onDark, valign: 'top',
+    x: 1.1, y: 2.4, w: 10.8, h: 2.4, fontFace: FONT,
+    fontSize: 46, bold: true, color: t.onDark, valign: 'top',
   });
   if (d.subtitle || deck.subtitle) {
     s.addText(d.subtitle || deck.subtitle || '', {
-      x: 1.12, y: 4.7, w: 10.5, h: 0.9, fontFace: FONT, fontSize: 18, color: t.onDarkMuted,
+      x: 1.14, y: 4.85, w: 10.5, h: 0.9, fontFace: FONT, fontSize: 18, color: t.onDarkMuted,
     });
   }
-  s.addText('🐶  Presented with Lily', {
-    x: 1.12, y: H - 0.85, w: 6, h: 0.4, fontFace: FONT, fontSize: 11, color: t.onDarkMuted,
+  s.addShape('ellipse', { x: 1.14, y: H - 0.84, w: 0.16, h: 0.16, fill: FILL(t.accent2) });
+  s.addText('Presented with Lily', {
+    x: 1.4, y: H - 0.9, w: 6, h: 0.4, fontFace: FONT, fontSize: 11, color: t.onDarkMuted,
   });
 }
 
 function renderClosing(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  s.addShape('ellipse', { x: W / 2 - 2.6, y: 1.4, w: 5.2, h: 5.2, fill: NO_FILL, line: { color: t.onDark, width: 1, transparency: 88 } });
+  s.addShape('roundRect', { x: W / 2 - 0.7, y: 2.45, w: 1.4, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || 'ありがとうございました', {
-    x: 1, y: 2.7, w: 11.3, h: 1.6, fontFace: FONT,
+    x: 1, y: 2.85, w: 11.3, h: 1.5, fontFace: FONT,
     fontSize: 40, bold: true, color: t.onDark, align: 'center',
   });
   if (d.subtitle) {
     s.addText(d.subtitle, {
-      x: 1, y: 4.4, w: 11.3, h: 0.8, fontFace: FONT,
+      x: 1, y: 4.45, w: 11.3, h: 0.8, fontFace: FONT,
       fontSize: 18, color: t.onDarkMuted, align: 'center',
     });
   }
-  s.addText('🐶  Made with Lily', {
+  s.addText('Made with Lily 🐶', {
     x: 0, y: H - 0.8, w: W, h: 0.4, fontFace: FONT,
     fontSize: 11, color: t.onDarkMuted, align: 'center',
   });
@@ -286,108 +317,106 @@ function renderClosing(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderSection(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
-  s.addShape('roundRect', { x: 6.07, y: 2.85, w: 1.2, h: 0.1, rectRadius: 0.05, fill: FILL(t.accent) });
+  s.addText(String(c.n).padStart(2, '0'), {
+    x: 1, y: 1.7, w: 4, h: 1.3, fontFace: FONT,
+    fontSize: 56, bold: true, color: t.accent2, valign: 'top',
+  });
+  s.addShape('roundRect', { x: 1.04, y: 3.05, w: 1.2, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || '', {
-    x: 1, y: 3.05, w: 11.3, h: 1.5, fontFace: FONT,
-    fontSize: 34, bold: true, color: t.onDark, align: 'center',
+    x: 1, y: 3.3, w: 11.3, h: 1.6, fontFace: FONT,
+    fontSize: 36, bold: true, color: t.onDark, valign: 'top',
   });
   if (d.subtitle) {
     s.addText(d.subtitle, {
-      x: 1, y: 4.6, w: 11.3, h: 0.7, fontFace: FONT,
-      fontSize: 16, color: t.onDarkMuted, align: 'center',
+      x: 1.02, y: 5.0, w: 11.3, h: 0.8, fontFace: FONT,
+      fontSize: 16, color: t.onDarkMuted, valign: 'top',
     });
   }
 }
 
 function renderBullets(d: DeckSlide, s: PSlide, c: Ctx) {
+  decor(s, c.t);
   heading(s, c.t, d.heading || '', d.lead);
-  bulletList(s, c.t, d.items ?? [], 0.9, d.lead ? 2.35 : 2.05, 11.5, 4.6);
+  itemCards(s, c.t, d.items ?? [], d.lead ? 2.3 : 1.85, c.t.accent);
   footerTitle(s, c);
 }
 
 function renderAgenda(d: DeckSlide, s: PSlide, c: Ctx) {
-  const { t } = c;
-  heading(s, t, d.heading || 'アジェンダ');
-  const items = d.items ?? [];
-  const top = 2.15;
-  const rowH = Math.min(0.95, (H - 1.0 - top) / Math.max(items.length, 1));
-  items.forEach((it, i) => {
-    const y = top + i * rowH;
-    s.addShape('ellipse', { x: 0.95, y: y + 0.04, w: 0.5, h: 0.5, fill: FILL(t.accent) });
-    s.addText(String(i + 1), {
-      x: 0.95, y: y + 0.04, w: 0.5, h: 0.5, fontFace: FONT,
-      fontSize: 16, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle',
-    });
-    s.addText(it, {
-      x: 1.7, y, w: 10.6, h: rowH, fontFace: FONT,
-      fontSize: 17, color: t.ink, valign: 'middle',
-    });
-  });
+  decor(s, c.t);
+  heading(s, c.t, d.heading || 'アジェンダ');
+  itemCards(s, c.t, d.items ?? [], 1.95, c.t.accent2);
   footerTitle(s, c);
+}
+
+function colCard(s: PSlide, t: Theme, col: Col | undefined, x: number, y: number, w: number, h: number, ac: string) {
+  card(s, t, x, y, w, h);
+  s.addShape('roundRect', { x, y, w, h: 0.78, rectRadius: 0.09, fill: FILL(ac) });
+  s.addShape('rect', { x, y: y + 0.6, w, h: 0.18, fill: FILL(ac) });
+  s.addText(col?.heading || '', {
+    x: x + 0.3, y, w: w - 0.6, h: 0.78, fontFace: FONT,
+    fontSize: 16, bold: true, color: 'FFFFFF', valign: 'middle',
+  });
+  const items = col?.items ?? [];
+  s.addText(
+    items.map(it => ({
+      text: it,
+      options: { bullet: { code: '25CF', indent: 14 }, breakLine: true, paraSpaceAfter: 9 },
+    })),
+    { x: x + 0.35, y: y + 1.0, w: w - 0.7, h: h - 1.2, fontFace: FONT, fontSize: 14, color: t.ink, valign: 'top', lineSpacingMultiple: 1.12 },
+  );
 }
 
 function renderTwoCol(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  decor(s, t);
   heading(s, t, d.heading || '');
-  const cols: [Col | undefined, string][] = [[d.left, t.accent], [d.right, t.accent2]];
-  const y = 2.05, h = 4.6, w = 5.7;
-  cols.forEach(([col, ac], i) => {
-    const x = 0.85 + i * (w + 0.33);
-    card(s, t, x, y, w, h);
-    s.addText(col?.heading || '', {
-      x: x + 0.35, y: y + 0.3, w: w - 0.7, h: 0.55, fontFace: FONT,
-      fontSize: 17, bold: true, color: ac,
-    });
-    bulletList(s, t, col?.items ?? [], x + 0.35, y + 0.95, w - 0.7, h - 1.25, t.ink, 15);
-  });
+  const y = 2.05, h = 4.55, w = 5.68;
+  colCard(s, t, d.left, 0.85, y, w, h, t.accent);
+  colCard(s, t, d.right, 0.85 + w + 0.35, y, w, h, t.accent2);
   footerTitle(s, c);
 }
 
 function renderCompare(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  decor(s, t);
   heading(s, t, d.heading || '');
   const cols = d.cols ?? [];
   const n = Math.max(cols.length, 1);
-  const gap = 0.3;
-  const w = (11.6 - gap * (n - 1)) / n;
-  const y = 2.05, h = 4.6;
+  const gap = 0.32;
+  const w = (11.63 - gap * (n - 1)) / n;
+  const y = 2.05, h = 4.55;
   cols.forEach((col, i) => {
-    const x = 0.87 + i * (w + gap);
-    const ac = i === 0 ? t.accent : t.accent2;
-    s.addShape('roundRect', { x, y, w, h: 0.7, rectRadius: 0.08, fill: FILL(ac) });
-    s.addText(col.heading || '', {
-      x, y, w, h: 0.7, fontFace: FONT, fontSize: 16, bold: true,
-      color: 'FFFFFF', align: 'center', valign: 'middle',
-    });
-    card(s, t, x, y + 0.82, w, h - 0.82);
-    bulletList(s, t, col.items, x + 0.3, y + 1.12, w - 0.6, h - 1.4, t.ink, 14);
+    colCard(s, t, col, 0.85 + i * (w + gap), y, w, h, i === 0 ? t.accent : t.accent2);
   });
   footerTitle(s, c);
 }
 
 function renderStats(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  decor(s, t);
   heading(s, t, d.heading || '');
   const kpis = d.kpis ?? [];
   const n = Math.max(kpis.length, 1);
-  const gap = 0.3;
-  const w = (11.6 - gap * (n - 1)) / n;
-  const y = 2.5, h = 3.0;
+  const gap = 0.32;
+  const w = (11.63 - gap * (n - 1)) / n;
+  const y = 2.45, h = 3.4;
   kpis.forEach((k, i) => {
-    const x = 0.87 + i * (w + gap);
+    const x = 0.85 + i * (w + gap);
+    const ac = i % 2 === 0 ? t.accent : t.accent2;
     card(s, t, x, y, w, h);
-    s.addShape('roundRect', { x: x + 0.3, y: y + 0.35, w: 0.7, h: 0.08, rectRadius: 0.04, fill: FILL(t.accent) });
+    s.addShape('rect', { x, y, w, h: 0.14, fill: FILL(ac) });
+    s.addShape('ellipse', { x: x + w / 2 - 0.7, y: y + 0.42, w: 1.4, h: 1.4, fill: FILL(ac, 88) });
     s.addText(k.value, {
-      x, y: y + 0.5, w, h: 1.2, fontFace: FONT,
-      fontSize: 40, bold: true, color: t.accent, align: 'center',
+      x, y: y + 0.6, w, h: 1.05, fontFace: FONT,
+      fontSize: 38, bold: true, color: ac, align: 'center', valign: 'middle',
     });
     s.addText(k.label, {
-      x: x + 0.2, y: y + 1.75, w: w - 0.4, h: 0.5, fontFace: FONT,
+      x: x + 0.2, y: y + 1.95, w: w - 0.4, h: 0.55, fontFace: FONT,
       fontSize: 14, bold: true, color: t.ink, align: 'center',
     });
     if (k.detail) {
       s.addText(k.detail, {
-        x: x + 0.2, y: y + 2.25, w: w - 0.4, h: 0.55, fontFace: FONT,
+        x: x + 0.2, y: y + 2.5, w: w - 0.4, h: 0.75, fontFace: FONT,
         fontSize: 10, color: t.muted, align: 'center',
       });
     }
@@ -397,17 +426,20 @@ function renderStats(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderQuote(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  decor(s, t);
+  s.addShape('roundRect', { x: 0.85, y: 1.4, w: 11.63, h: 4.7, rectRadius: 0.1, fill: FILL(t.panel), shadow: SHADOW });
+  s.addShape('roundRect', { x: 0.85, y: 1.4, w: 0.16, h: 4.7, rectRadius: 0.04, fill: FILL(t.accent) });
   s.addText('“', {
-    x: 0.7, y: 0.3, w: 2, h: 1.8, fontFace: 'Georgia',
-    fontSize: 120, bold: true, color: t.accent, valign: 'top',
+    x: 1.25, y: 1.35, w: 2, h: 1.6, fontFace: 'Georgia',
+    fontSize: 110, bold: true, color: t.accent, valign: 'top',
   });
   s.addText(d.quote || d.heading || '', {
-    x: 1.6, y: 2.2, w: 10.1, h: 3.0, fontFace: FONT,
-    fontSize: 26, color: t.ink, valign: 'top',
+    x: 1.7, y: 2.65, w: 9.9, h: 2.3, fontFace: FONT,
+    fontSize: 25, bold: true, color: t.ink, valign: 'top',
   });
   if (d.by) {
-    s.addText(`— ${d.by}`, {
-      x: 1.62, y: 5.45, w: 10, h: 0.5, fontFace: FONT,
+    s.addText(`—  ${d.by}`, {
+      x: 1.72, y: 5.2, w: 10, h: 0.5, fontFace: FONT,
       fontSize: 14, color: t.muted,
     });
   }
@@ -416,30 +448,29 @@ function renderQuote(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderProcess(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  decor(s, t);
   heading(s, t, d.heading || '');
   const steps = d.steps ?? [];
   const n = Math.max(steps.length, 1);
-  const gap = 0.3;
-  const w = (11.6 - gap * (n - 1)) / n;
-  const cy = 2.65;
+  const gap = 0.32;
+  const w = (11.63 - gap * (n - 1)) / n;
+  const top = 2.3, h = 4.0;
+  const cd = 0.74;
   steps.forEach((st, i) => {
-    const x = 0.87 + i * (w + gap);
+    const x = 0.85 + i * (w + gap);
     if (i < steps.length - 1) {
-      s.addShape('rect', { x: x + w * 0.5, y: cy + 0.27, w: w + gap, h: 0.05, fill: FILL(t.accent2, 45) });
+      s.addShape('rect', { x: x + w - gap * 0.1, y: top + cd / 2 - 0.025, w: gap + 0.2, h: 0.05, fill: FILL(t.accent2, 35) });
     }
-    s.addShape('ellipse', { x: x + w * 0.5 - 0.32, y: cy, w: 0.64, h: 0.64, fill: FILL(t.accent) });
-    s.addText(String(i + 1), {
-      x: x + w * 0.5 - 0.32, y: cy, w: 0.64, h: 0.64, fontFace: FONT,
-      fontSize: 18, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle',
-    });
+    card(s, t, x, top, w, h, t.panel);
+    numChip(s, x + w / 2 - cd / 2, top + 0.32, cd, i + 1, i % 2 === 0 ? t.accent : t.accent2);
     s.addText(st.heading, {
-      x, y: cy + 0.85, w, h: 0.6, fontFace: FONT,
+      x: x + 0.15, y: top + cd + 0.45, w: w - 0.3, h: 0.7, fontFace: FONT,
       fontSize: 15, bold: true, color: t.ink, align: 'center',
     });
     if (st.detail) {
       s.addText(st.detail, {
-        x: x + 0.1, y: cy + 1.45, w: w - 0.2, h: 1.4, fontFace: FONT,
-        fontSize: 11, color: t.muted, align: 'center',
+        x: x + 0.2, y: top + cd + 1.15, w: w - 0.4, h: h - cd - 1.3, fontFace: FONT,
+        fontSize: 11, color: t.muted, align: 'center', valign: 'top',
       });
     }
   });
