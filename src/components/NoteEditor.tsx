@@ -17,7 +17,7 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck
+  Search, ChevronUp, ChevronDown, SquareCheck, Link2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
@@ -131,6 +131,8 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
+  const [showNotePicker, setShowNotePicker] = useState(false);
+  const [notePickerQuery, setNotePickerQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
@@ -143,6 +145,10 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
   // フォルダ一覧（移動機能用）
   const folders = useLiveQuery(() => db.folders.toArray());
+  // 全メモ一覧（リンク挿入用）
+  const allNotes = useLiveQuery(() =>
+    db.notes.filter(n => !n.deletedAt && n.id !== noteId).toArray()
+  , [noteId]);
 
   const editor = useEditor({
     extensions: [
@@ -663,6 +669,51 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                 <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
                 <button className="btn-tool" onClick={insertQA} title="Q&A"><BookOpen size={18} /></button>
                 <button className="btn-tool" onClick={insertGeometry} title="幾何の図"><Compass size={18} /></button>
+                <div className="note-picker-wrap">
+                  <button
+                    className={`btn-tool${showNotePicker ? ' active' : ''}`}
+                    onClick={() => { setShowNotePicker(p => !p); setNotePickerQuery(''); }}
+                    title="メモリンクを挿入 [[メモ名]]"
+                  >
+                    <Link2 size={18} />
+                  </button>
+                  {showNotePicker && (
+                    <div className="note-picker-dropdown">
+                      <input
+                        className="note-picker-input"
+                        placeholder="メモ名で絞り込み..."
+                        value={notePickerQuery}
+                        onChange={e => setNotePickerQuery(e.target.value)}
+                        autoFocus
+                      />
+                      <div className="note-picker-list">
+                        {(allNotes ?? [])
+                          .filter(n => !notePickerQuery || (n.title || '').toLowerCase().includes(notePickerQuery.toLowerCase()))
+                          .slice(0, 30)
+                          .map(n => (
+                            <button
+                              key={n.id}
+                              className="note-picker-item"
+                              onClick={() => {
+                                editor?.chain().focus().insertContent({
+                                  type: 'noteLink',
+                                  attrs: { title: n.title || '無題', noteId: n.id ?? null },
+                                }).run();
+                                setShowNotePicker(false);
+                                setNotePickerQuery('');
+                              }}
+                            >
+                              {n.title || '無題のメモ'}
+                            </button>
+                          ))
+                        }
+                        {(allNotes ?? []).filter(n => !notePickerQuery || (n.title || '').toLowerCase().includes(notePickerQuery.toLowerCase())).length === 0 && (
+                          <div className="note-picker-empty">メモが見つかりません</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="header-divider" />
               </>
             )}
@@ -1069,6 +1120,48 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           .content-title-input { font-size: 1.3rem; margin-top: 8px; }
           .editor-content-wrapper { padding: 0; }
         }
+
+        /* ===== リンク挿入ピッカー ===== */
+        .note-picker-wrap { position: relative; }
+        .note-picker-dropdown {
+          position: absolute;
+          top: calc(100% + 4px);
+          left: 0;
+          z-index: 200;
+          background: var(--background);
+          border: 1.5px solid var(--border);
+          border-radius: 10px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+          min-width: 220px;
+          max-width: 300px;
+          overflow: hidden;
+        }
+        .note-picker-input {
+          width: 100%;
+          padding: 8px 12px;
+          border: none;
+          border-bottom: 1px solid var(--border);
+          background: var(--accent);
+          font-size: 0.82rem;
+          outline: none;
+        }
+        .note-picker-list { max-height: 220px; overflow-y: auto; }
+        .note-picker-item {
+          display: block;
+          width: 100%;
+          text-align: left;
+          padding: 8px 14px;
+          background: none;
+          border: none;
+          font-size: 0.85rem;
+          color: var(--foreground);
+          cursor: pointer;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .note-picker-item:hover { background: var(--accent); }
+        .note-picker-empty { padding: 10px 14px; font-size: 0.82rem; color: var(--fg-muted); }
 
         /* ===== メモ間リンク ===== */
         .note-link {

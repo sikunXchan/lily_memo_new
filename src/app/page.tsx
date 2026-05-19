@@ -149,6 +149,7 @@ export default function Home() {
           onOpenPDF={openPDF}
           onOpenSketch={openSketch}
           onOpenAI={openAI}
+          onOpenSearch={() => setShowSearch(true)}
           isMobileOpen={false}
           onToggleMobile={() => {}}
           onActiveNoteDeleted={() => setActiveNoteId(undefined)}
