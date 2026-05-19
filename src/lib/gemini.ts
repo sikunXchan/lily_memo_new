@@ -10,12 +10,17 @@ export interface ChatTurn {
 }
 
 // Free-tier quotas differ per model and Google changes them over time, so we
-// try models in order and fall back to the next one on a 429 (quota) error.
+// try models in order and fall back to the next one on transient errors.
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-1.5-flash',
 ];
+
+// Status codes that are transient — retry with the next model.
+const RETRY_STATUSES = new Set([429, 500, 503, 529]);
 
 export interface ChatOptions {
   webSearch?: boolean;
@@ -87,9 +92,9 @@ export async function callGeminiChat(
     const error = await response.json().catch(() => null);
     lastError = error?.error?.message || lastError;
 
-    // 429 = quota exceeded for this model → try the next one.
-    // Any other error (bad key, bad request) won't be fixed by retrying.
-    if (response.status !== 429) {
+    // Transient errors (quota, overload) → try the next model.
+    // Hard errors (bad key, bad request) won't be fixed by retrying.
+    if (!RETRY_STATUSES.has(response.status)) {
       throw new Error(lastError);
     }
   }
