@@ -32,11 +32,15 @@ export const NoteLinkExtension = Node.create({
     return [
       new InputRule({
         find: /\[\[([^\[\]\n]+)\]\]$/,
-        handler: ({ state, range, match }) => {
+        handler: ({ state, range, match, chain }) => {
           const title = match[1].trim();
           if (!title) return null;
-          const node = state.schema.nodes.noteLink.create({ title });
-          return state.tr.replaceWith(range.from, range.to, node);
+          chain()
+            .command(({ tr }) => {
+              tr.replaceWith(range.from, range.to, state.schema.nodes.noteLink.create({ title }));
+              return true;
+            })
+            .run();
         },
       }),
     ];
