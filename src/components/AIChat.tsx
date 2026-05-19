@@ -917,20 +917,32 @@ function LilyBubble({
         .lily-bubble-header { display: flex; align-items: flex-start; gap: 6px; }
         .lily-bubble-header:hover :global(.copy-btn) { opacity: 1; }
         .lily-bubble { flex: 1; min-width: 0; background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
-        .rt-body :global(p) { margin: 0 0 0.5em; }
+        .rt-body :global(p) { margin: 0 0 0.6em; }
         .rt-body :global(p:last-child) { margin-bottom: 0; }
-        .rt-body :global(h1), .rt-body :global(h2), .rt-body :global(h3) { font-size: 1rem; font-weight: 800; margin: 0.6em 0 0.3em; color: var(--primary); }
-        .rt-body :global(ul), .rt-body :global(ol) { margin: 0.3em 0; padding-left: 1.3em; }
-        .rt-body :global(li) { margin: 0.15em 0; }
-        .rt-body :global(strong) { font-weight: 800; }
-        .rt-body :global(a) { color: var(--primary); text-decoration: underline; }
-        .rt-body :global(table) { border-collapse: collapse; margin: 0.4em 0; font-size: 0.85rem; }
-        .rt-body :global(th), .rt-body :global(td) { border: 1px solid var(--border); padding: 4px 8px; }
-        .rt-body :global(.rt-code) { background: var(--background); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 0.84em; font-family: 'Fira Code','Consolas',monospace; }
-        .rt-body :global(.rt-pre) { background: var(--background); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; margin: 0.5em 0; }
-        .rt-body :global(.rt-pre code) { font-size: 0.8rem; font-family: 'Fira Code','Consolas',monospace; white-space: pre; }
+        .rt-body :global(h1) { font-size: 1.15rem; font-weight: 800; margin: 0.9em 0 0.35em; color: var(--primary); border-bottom: 2px solid var(--primary); padding-bottom: 2px; }
+        .rt-body :global(h2) { font-size: 1.05rem; font-weight: 700; margin: 0.75em 0 0.3em; color: var(--primary); }
+        .rt-body :global(h3) { font-size: 0.95rem; font-weight: 700; margin: 0.6em 0 0.25em; color: var(--primary); opacity: 0.85; }
+        .rt-body :global(ul) { margin: 0.35em 0; padding-left: 0; list-style: none; }
+        .rt-body :global(ul li) { margin: 0.25em 0; padding-left: 1.3em; position: relative; }
+        .rt-body :global(ul li::before) { content: "•"; position: absolute; left: 0.3em; color: var(--primary); font-weight: 700; }
+        .rt-body :global(ol) { margin: 0.35em 0; padding-left: 1.5em; }
+        .rt-body :global(ol li) { margin: 0.25em 0; }
+        .rt-body :global(li) { line-height: 1.6; }
+        .rt-body :global(strong) { font-weight: 800; color: var(--foreground); }
+        .rt-body :global(em) { font-style: italic; opacity: 0.9; }
+        .rt-body :global(a) { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+        .rt-body :global(blockquote) { border-left: 3px solid var(--primary); margin: 0.6em 0; padding: 0.3em 0.8em; background: rgba(var(--primary-rgb, 236,72,153),0.06); border-radius: 0 6px 6px 0; color: var(--foreground); opacity: 0.9; font-style: italic; }
+        .rt-body :global(hr) { border: none; border-top: 1px solid var(--border); margin: 0.8em 0; }
+        .rt-body :global(table) { border-collapse: collapse; margin: 0.6em 0; font-size: 0.85rem; width: 100%; }
+        .rt-body :global(thead tr) { background: var(--primary); color: white; }
+        .rt-body :global(th) { border: 1px solid var(--primary); padding: 5px 10px; font-weight: 700; text-align: left; }
+        .rt-body :global(td) { border: 1px solid var(--border); padding: 4px 10px; }
+        .rt-body :global(tbody tr:nth-child(even)) { background: rgba(0,0,0,0.03); }
+        .rt-body :global(.rt-code) { background: rgba(0,0,0,0.07); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 0.83em; font-family: 'Fira Code','Consolas',monospace; color: var(--primary); }
+        .rt-body :global(.rt-pre) { background: #1a1a2e; border: none; border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 0.6em 0; }
+        .rt-body :global(.rt-pre code) { font-size: 0.8rem; font-family: 'Fira Code','Consolas',monospace; white-space: pre; color: #e2e8f0; }
         .rt-body :global(.katex) { font-size: 1.05em; }
-        .rt-body :global(.katex-display) { margin: 0.5em 0; overflow-x: auto; overflow-y: hidden; }
+        .rt-body :global(.katex-display) { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; background: rgba(var(--primary-rgb,236,72,153),0.04); border-radius: 6px; padding: 6px 10px; }
         .block-list { margin-top: 4px; }
         .ask-asked-hint { margin-top: 6px; font-size: 0.78rem; color: var(--fg-muted); display: flex; align-items: center; gap: 4px; }
       `}</style>
