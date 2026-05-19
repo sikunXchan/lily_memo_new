@@ -41,8 +41,16 @@ function parseNumberedText(text: string): string[] {
   return matches.map(m => m[1].trim()).filter(Boolean);
 }
 
+const KIND_LABEL: Record<string, string> = {
+  qa: 'Q&A',
+  fill: '穴埋め問題',
+  order: '並べ替え問題',
+};
+
 export default function QAComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const pairs: QAPair[] = attrs.pairs || [];
+  const kind: string = attrs.kind || 'qa';
+  const kindLabel = KIND_LABEL[kind] || 'Q&A';
   const [isEditing, setIsEditing] = useState(pairs.length === 0);
   const [qText, setQText] = useState('');
   const [aText, setAText] = useState('');
@@ -87,7 +95,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
     return (
       <NodeViewWrapper className="qa-wrapper">
         <div className="qa-editor" contentEditable={false}>
-          <div className="qa-editor-header">Q&amp;A 読み込み</div>
+          <div className="qa-editor-header">{kindLabel} 読み込み</div>
           <div className="qa-editor-body">
             <label className="qa-label">問題をペースト</label>
             <textarea
@@ -204,7 +212,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
     <NodeViewWrapper className="qa-wrapper">
       <div className="qa-block" contentEditable={false}>
         <div className="qa-block-header">
-          <span className="qa-block-title">Q&amp;A <span className="qa-count">{pairs.length}問</span></span>
+          <span className="qa-block-title">{kindLabel} <span className="qa-count">{pairs.length}問</span></span>
           <div className="qa-block-header-actions">
             <button className="qa-action-btn" onClick={toggleRevealAll}>
               {revealAll ? '全て隠す' : '全て表示'}

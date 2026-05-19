@@ -127,6 +127,13 @@ export const QAExtension = Node.create({
           'data-pairs': JSON.stringify(attributes.pairs || []),
         }),
       },
+      kind: {
+        default: 'qa',
+        parseHTML: (element) => element.getAttribute('data-kind') || 'qa',
+        renderHTML: (attributes) => ({
+          'data-kind': attributes.kind || 'qa',
+        }),
+      },
     };
   },
   parseHTML() {
