@@ -253,42 +253,39 @@ function parseAIResponse(text: string): {
     return '';
   }).trim();
 
-  // Fallback: the model sometimes ignores the `ask` block rule and asks
-  // in plain prose. If Lily produced no deliverables and the reply is
-  // clearly a question, surface it as a clarify form anyway.
+  // Fallback: if Lily ignores the `ask` block rule and asks in plain prose,
+  // surface it as a clarify form. Very conservative — false positives
+  // (turning a real answer into a form) are worse than missing a form.
+  // Only trigger when the ENTIRE reply is a short, standalone question.
   if (questions.length === 0 && blocks.length === 0) {
     const t = textContent.trim();
-    // Lily often lists choices as **bold** items (e.g. a format menu).
-    const bold = [...t.matchAll(/\*\*\s*(.+?)\s*\*\*/g)]
-      .map(m => cleanAsk(m[1]))
-      .filter(s => s.length > 0 && s.length <= 30);
-    // A genuine clarify is short and *ends* on a question mark. A finished
-    // answer that merely contains "どうかな？" mid-text, or signs off with
-    // "声をかけてね！", must NOT be turned into a form.
-    const tail = t.replace(/[\s。.!！~〜♪☺︎\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+$/u, '');
+    // Strip trailing emoji/punctuation to test what the reply really ends on.
+    const tail = t.replace(/[\s。.!！~〜♪\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+$/u, '');
     const endsOnQuestion = /[?？]$/.test(tail);
-    const signOff = /(声をかけて|気軽に|いつでも|聞いてね|参考に|役に立て|できたよ|完成|してみた|してみたよ|まとめた|まとめてみた|作ってみた|書いてみた|訳してみた|翻訳してみた|以上|楽しんで|またね|どうぞ)/.test(t);
-    const isFormatMenu = bold.length >= 2 || /@@\w+\s*:/.test(t);
-    const looksLikeQuestion =
-      isFormatMenu || (endsOnQuestion && t.length <= 220 && !signOff);
-    if (t.length > 0 && t.length <= 1200 && looksLikeQuestion) {
+    // Sign-off phrases mean this is a completed task, not a real question.
+    const signOff = /(声をかけて|気軽に|いつでも|聞いてね|参考に|役に立て|できたよ|完成|してみた|まとめた|作ってみた|書いてみた|訳してみた|翻訳してみた|楽しんで|またね|どうぞ)/.test(t);
+    // A genuine standalone question is short, ends on ？, and has no
+    // substantive answer content (no bullets, no numbered lists, no colons
+    // introducing sections — those are all signs of a real answer).
+    const hasAnswerContent = /^[-*・]\s|\n[-*・]\s|^\d+[.)]\s|\n\d+[.)]\s|：\s*\n|:\s*\n/.test(t);
+    if (
+      t.length > 0 &&
+      t.length <= 120 &&
+      endsOnQuestion &&
+      !signOff &&
+      !hasAnswerContent
+    ) {
+      // Try to extract parenthetical options like (A／B／C)
+      const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
       let options: string[] = [];
-      if (bold.length >= 2) {
-        options = [...new Set(bold)];
-      } else {
-        const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
-        if (paren) {
-          options = paren[1]
-            .split(/[、,／/]|または|\bor\b/)
-            .map(s => cleanAsk(s))
-            .filter(s => s.length > 0 && s.length <= 24);
-        }
+      if (paren) {
+        options = paren[1]
+          .split(/[、,／/]|または|\bor\b/)
+          .map(s => cleanAsk(s))
+          .filter(s => s.length > 0 && s.length <= 24);
+        if (options.length < 2) options = [];
       }
-      if (options.length < 2) options = [];
-      // Question = text before the first bold/option list, cleaned.
-      const head = t.split(/\*\*|[（(]\s*@@/)[0];
-      const question = cleanAsk(head && head.trim().length >= 4 ? head : t);
-      questions.push({ id: crypto.randomUUID(), question, options });
+      questions.push({ id: crypto.randomUUID(), question: cleanAsk(t), options });
     }
   }
 
