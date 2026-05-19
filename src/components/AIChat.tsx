@@ -1396,7 +1396,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
           );
           setSikunProgress('');
-        } else {
+        } else if (activeMode === 'slides') {
           setSikunProgress('構成を設計中...');
           aiText = await callSikunLilyChat(
             history,
@@ -1405,6 +1405,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             (p: SikunLilyProgress) => setSikunProgress(p.label),
           );
           setSikunProgress('');
+        } else {
+          // モード未選択 → 通常会話（高速・シングルステージ）
+          aiText = await callGeminiChat(
+            history,
+            buildSikunSystemPrompt(contextNotes),
+            apiKey,
+          );
         }
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
