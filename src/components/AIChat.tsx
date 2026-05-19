@@ -98,13 +98,17 @@ function detectChartLabel(code: string): string {
   } catch { return 'グラフ'; }
 }
 
-type QAKind = 'qa' | 'fill' | 'order';
+type QAKind = 'qa' | 'fill' | 'order' | 'choice' | 'truefalse' | 'flash';
 
 function parseQAKind(code: string): QAKind {
   const m = code.match(/^\s*@@kind\s*:\s*(\w+)/im);
   const v = m?.[1]?.toLowerCase();
-  if (v === 'fill' || /穴埋め|fill[-_ ]?in/i.test(code.split('\n')[0] || '')) return 'fill';
-  if (v === 'order' || /並べ替え|並べかえ|reorder|sort/i.test(code.split('\n')[0] || '')) return 'order';
+  const head = code.split('\n')[0] || '';
+  if (v === 'fill' || /穴埋め|fill[-_ ]?in/i.test(head)) return 'fill';
+  if (v === 'order' || /並べ替え|並べかえ|reorder|sort/i.test(head)) return 'order';
+  if (v === 'choice' || /多肢選択|選択問題|四択|4択|3択|multiple[-_ ]?choice/i.test(head)) return 'choice';
+  if (v === 'truefalse' || v === 'tf' || /○×|まるばつ|正誤|true[-_ ]?false/i.test(head)) return 'truefalse';
+  if (v === 'flash' || v === 'flashcard' || /単語カード|暗記カード|フラッシュ|flash[-_ ]?card/i.test(head)) return 'flash';
   return 'qa';
 }
 
@@ -112,6 +116,9 @@ const QA_KIND_LABEL: Record<QAKind, string> = {
   qa: 'Q&A',
   fill: '穴埋め問題',
   order: '並べ替え問題',
+  choice: '選択問題',
+  truefalse: '○×問題',
+  flash: '単語カード',
 };
 
 function parseQAPairs(code: string): { q: string; a: string }[] {
