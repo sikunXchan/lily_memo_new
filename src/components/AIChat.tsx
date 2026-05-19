@@ -258,12 +258,14 @@ function parseAIResponse(text: string): {
   // clearly a question, surface it as a clarify form anyway.
   if (questions.length === 0 && blocks.length === 0) {
     const t = textContent.trim();
-    if (t.length > 0 && t.length <= 600 && /[?？]/.test(t)) {
+    // Lily often lists choices as **bold** items (e.g. a format menu).
+    const bold = [...t.matchAll(/\*\*\s*(.+?)\s*\*\*/g)]
+      .map(m => cleanAsk(m[1]))
+      .filter(s => s.length > 0 && s.length <= 30);
+    const looksLikeQuestion =
+      /[?？]/.test(t) || bold.length >= 2 || /@@\w+\s*:/.test(t);
+    if (t.length > 0 && t.length <= 1200 && looksLikeQuestion) {
       let options: string[] = [];
-      // Lily often lists choices as **bold** items (e.g. a format menu).
-      const bold = [...t.matchAll(/\*\*\s*(.+?)\s*\*\*/g)]
-        .map(m => cleanAsk(m[1]))
-        .filter(s => s.length > 0 && s.length <= 30);
       if (bold.length >= 2) {
         options = [...new Set(bold)];
       } else {
@@ -283,7 +285,15 @@ function parseAIResponse(text: string): {
     }
   }
 
-  return { textContent, blocks, questions };
+  // Never let internal directives leak into the visible chat bubble.
+  const cleanText = textContent
+    .replace(/[（(]\s*@@[^）)]*[）)]/g, '')
+    .replace(/@@\w+\s*:\s*[^\s、,）)]*/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+
+  return { textContent: cleanText, blocks, questions };
 }
 
 const CHART_PALETTE = [
