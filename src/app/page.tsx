@@ -10,6 +10,7 @@ import { Book, Settings as SettingsIcon, FileText, Brush, Sparkles } from 'lucid
 // running out of memory ("This page couldn't load").
 const NoteEditor = dynamic(() => import('@/components/NoteEditor'), { ssr: false });
 const SettingsModal = dynamic(() => import('@/components/SettingsModal'), { ssr: false });
+const SearchModal = dynamic(() => import('@/components/SearchModal'), { ssr: false });
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
 const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
@@ -20,6 +21,7 @@ type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai';
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
   const [activeTab, setActiveTab] = useState<TabType>('memos');
+  const [showSearch, setShowSearch] = useState(false);
   const [sidebarViewMode, setSidebarViewMode] = useState<'tree' | 'graph'>('tree');
   const [highlightFolderReq, setHighlightFolderReq] = useState<{ id: number; seq: number } | null>(null);
   const highlightSeq = useRef(0);
@@ -77,6 +79,17 @@ export default function Home() {
     }
   }, []);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowSearch(s => !s);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   if (!mounted) return null;
 
   const isDesktopLayout = !isMobile;
@@ -117,8 +130,17 @@ export default function Home() {
     setHighlightFolderReq({ id, seq: highlightSeq.current });
   };
 
+  const handleSelectNote = (id: number) => { setActiveNoteId(id); setActiveTab('memos'); };
+
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
+      {showSearch && (
+        <SearchModal
+          isOpen={showSearch}
+          onClose={() => setShowSearch(false)}
+          onSelectNote={handleSelectNote}
+        />
+      )}
       {isDesktopLayout && activeTab !== 'sketch' && (
         <Sidebar
           activeNoteId={activeNoteId}
@@ -141,6 +163,7 @@ export default function Home() {
           <NoteEditor
             noteId={activeNoteId}
             onClose={() => setActiveNoteId(undefined)}
+            onSelectNote={handleSelectNote}
           />
         ) : (
           <>

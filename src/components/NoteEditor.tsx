@@ -24,6 +24,7 @@ import HandwritingCanvas from './HandwritingCanvas';
 
 import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension } from '@/lib/extensions';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
+import { NoteLinkExtension } from '@/lib/noteLinkExtension';
 
 const lowlight = createLowlight(common);
 
@@ -110,13 +111,14 @@ const CustomTaskItem = TaskItem.extend({
 interface NoteEditorProps {
   noteId: number;
   onClose?: () => void;
+  onSelectNote?: (id: number) => void;
   // When true, render constrained to the parent (no position:fixed
   // on container/header). Used by the sketch tab's split panel so the
   // editor doesn't escape its pane.
   embedded?: boolean;
 }
 
-export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEditorProps) {
+export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = false }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [hwDoc, setHwDoc] = useState<HandwritingDoc>(EMPTY_HANDWRITING);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -172,6 +174,7 @@ export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEd
       Link,
       Placeholder.configure({ placeholder: 'アイデアを書き留めましょう...' }),
       InMemoSearchExtension,
+      NoteLinkExtension,
     ],
     content: '',
     immediatelyRender: false,
@@ -205,6 +208,32 @@ export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEd
     if (!editor) return;
     editor.setEditable(isEditMode);
   }, [editor, isEditMode]);
+
+  // [[note]] リンクのクリックでメモを開く
+  useEffect(() => {
+    if (!editor || !onSelectNote) return;
+    const dom = editor.view.dom;
+    const handleClick = async (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest('[data-note-link]') as HTMLElement | null;
+      if (!target) return;
+      e.preventDefault();
+      const title = target.getAttribute('data-note-title') || '';
+      const rawId = target.getAttribute('data-note-id');
+      if (rawId) {
+        const id = parseInt(rawId);
+        if (!isNaN(id)) { onSelectNote(id); return; }
+      }
+      if (title) {
+        const { db } = await import('@/lib/db');
+        const note = await db.notes
+          .filter(n => !n.deletedAt && (n.title || '').toLowerCase() === title.toLowerCase())
+          .first();
+        if (note?.id) onSelectNote(note.id);
+      }
+    };
+    dom.addEventListener('click', handleClick);
+    return () => dom.removeEventListener('click', handleClick);
+  }, [editor, onSelectNote]);
 
   // チェックボックスタップ時のキーボード抑制（iOS対応）
   useEffect(() => {
@@ -1040,6 +1069,22 @@ export default function NoteEditor({ noteId, onClose, embedded = false }: NoteEd
           .content-title-input { font-size: 1.3rem; margin-top: 8px; }
           .editor-content-wrapper { padding: 0; }
         }
+
+        /* ===== メモ間リンク ===== */
+        .note-link {
+          display: inline-flex;
+          align-items: center;
+          background: color-mix(in srgb, var(--primary) 12%, transparent);
+          color: var(--primary);
+          border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+          border-radius: 4px;
+          padding: 1px 6px;
+          font-size: 0.88em;
+          cursor: pointer;
+          user-select: none;
+          transition: background 0.15s;
+        }
+        .note-link:hover { background: color-mix(in srgb, var(--primary) 22%, transparent); }
 
         /* ===== ProseMirror ===== */
         .ProseMirror {
