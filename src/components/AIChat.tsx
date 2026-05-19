@@ -19,10 +19,10 @@ import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import {
-  callGeminiChat, callSikunLilyChat, callDeepResearch,
+  callGeminiChat, callDeepResearch,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
 } from '@/lib/gemini';
-import type { ChatTurn, ChatAttachment, SikunLilyProgress } from '@/lib/gemini';
+import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseSlides, exportSlidesToPptx } from '@/lib/slides';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
@@ -429,6 +429,11 @@ function buildSystemPrompt(contextNotes: Note[]): string {
 }
 
 const SIKU_MODE_PROMPTS: Record<string, string> = {
+  code: `
+【現在のモード: コード構築】
+複数ファイルにまたがる大規模プロジェクト全体を設計・実装することに全力を注げ。
+非機能要件（性能・セキュリティ・保守性・スケーラビリティ）を複合的に考慮し、アーキテクチャ全体を最適化せよ。
+コードブロック形式で各ファイルを明示し、ディレクトリ構成も提示すること。`,
   organize: `
 【現在のモード: メモ整理】
 提供されたメモ群を横断的に分析し、以下を行え:
@@ -437,16 +442,27 @@ const SIKU_MODE_PROMPTS: Record<string, string> = {
 3. フォルダ分類・タグ付けの提案を行う
 4. 孤立したメモや未整理コンテンツを指摘する
 結果は箇条書きで、具体的なメモ名・セクション名を挙げて説明すること。`,
+  analysis: `
+【現在のモード: データ解析】
+PDF・画像・音声・動画・手書きメモ・Webページなど、あらゆる形式の非構造化データから関連する情報・概念・感情・意図を抽出し、統合的に分析せよ。
+単なるキーワード抽出に留まらず、文脈全体を理解し、意味のある洞察を導き出すこと。
+膨大なデータの中から人間には発見しにくい複雑な相関関係・隠れたパターン・異常な振る舞いを検知し、過去データに基づく将来予測とシミュレーション結果も提示すること。`,
+  research: `
+【現在のモード: 調査・検証】
+複数の情報源から得られたデータについて、信頼性・鮮度を評価し相互の整合性を確認せよ。
+矛盾する情報が存在する場合はその原因を特定し、より信頼性の高い情報を優先して提示すること。
+貴殿から与えられた目標に対し、必要な情報収集・計画立案・複数ツールの連携を自律的に行い、進捗と結果を報告せよ。
+市場調査や競合分析など抽象的な指示も具体的なステップに分解して実行すること。`,
 };
 
 function buildSikunSystemPrompt(contextNotes: Note[], mode?: string): string {
-  const modeDirective = mode && SIKU_MODE_PROMPTS[mode] ? SIKU_MODE_PROMPTS[mode] : '';
-  const base = modeDirective ? `${SIKUNLILY_CHAT_SYSTEM_PROMPT}\n${modeDirective}` : SIKUNLILY_CHAT_SYSTEM_PROMPT;
-  if (contextNotes.length === 0) return base;
+  const base = SIKUNLILY_CHAT_SYSTEM_PROMPT;
+  const modePrompt = mode ? (SIKU_MODE_PROMPTS[mode] ?? '') : '';
+  if (contextNotes.length === 0) return `${base}${modePrompt}`;
   const context = contextNotes
     .map(n => `## ${n.title || '無題'}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
     .join('\n\n---\n\n');
-  return `${base}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
+  return `${base}${modePrompt}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
 
 /* ───────────── Block previews ───────────── */
@@ -1418,15 +1434,31 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
           );
           setSikunProgress('');
+        } else if (activeMode === 'analysis') {
+          setSikunProgress('データを解析中...');
+          aiText = await callGeminiChat(
+            history,
+            buildSikunSystemPrompt(contextNotes, 'analysis'),
+            apiKey,
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+          );
+          setSikunProgress('');
+        } else if (activeMode === 'research') {
+          setSikunProgress('調査・検証中...');
+          aiText = await callGeminiChat(
+            history,
+            buildSikunSystemPrompt(contextNotes, 'research'),
+            apiKey,
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+          );
+          setSikunProgress('');
         } else {
-          setSikunProgress('構成を設計中...');
-          aiText = await callSikunLilyChat(
+          // モード未選択 → 通常会話（高速・シングルステージ）
+          aiText = await callGeminiChat(
             history,
             buildSikunSystemPrompt(contextNotes),
             apiKey,
-            (p: SikunLilyProgress) => setSikunProgress(p.label),
           );
-          setSikunProgress('');
         }
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
@@ -1647,7 +1679,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       )}
 
       {activeModel === 'sikunlily' ? (
-        /* sikunlily: コード構築モードトグル */
+        /* sikunlily: 専門モードトグル */
         <div className="quick-actions mode-row">
           <span className="qa-label">モード</span>
           <button
@@ -1663,6 +1695,20 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             title="メモ整理モード: メモ間の関連性分析・リンク提案・フォルダ整理提案"
           >
             🗂️ メモ整理{activeMode === 'organize' ? ' ✓' : ''}
+          </button>
+          <button
+            className={`quick-chip mode-chip siku-mode${activeMode === 'analysis' ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === 'analysis' ? null : 'analysis'))}
+            title="データ解析モード: 非構造化データの統合解析・パターン認識・将来予測"
+          >
+            📊 データ解析{activeMode === 'analysis' ? ' ✓' : ''}
+          </button>
+          <button
+            className={`quick-chip mode-chip siku-mode${activeMode === 'research' ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === 'research' ? null : 'research'))}
+            title="調査・検証モード: 情報源の信頼性評価・矛盾検出・自律的な課題解決"
+          >
+            🔬 調査・検証{activeMode === 'research' ? ' ✓' : ''}
           </button>
         </div>
       ) : (
