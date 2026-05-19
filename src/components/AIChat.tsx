@@ -19,7 +19,7 @@ import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import {
-  callGeminiChat, callSikunLilyChat, callNanobanana, analyzeSlideImages,
+  callGeminiChat, callSikunLilyChat, callNanobanana, analyzeSlideImages, callDeepResearch,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment, SikunLilyProgress, SlideImageRequest } from '@/lib/gemini';
@@ -1194,6 +1194,13 @@ const SUGGESTIONS = [
   'この数式をグラフで解説して',
 ];
 
+const SIKUNLILY_SUGGESTIONS = [
+  'このメモをプレゼン用スライドにして',
+  '複数ファイルのコードプロジェクトを作って',
+  'このドキュメントを分析してまとめて',
+  'スライドのテーマと構成を提案して',
+];
+
 // Tone/style modes: tapping toggles the mode ON; while ON, every message
 // you send is answered in that style (until you tap it off).
 const MODES: { id: string; label: string; directive: string }[] = [
@@ -1227,6 +1234,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
   const [activeModel, setActiveModel] = useState<'lily' | 'sikunlily'>('lily');
   const [sikunProgress, setSikunProgress] = useState<string>('');
+  const [deepResearch, setDeepResearch] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1360,15 +1368,33 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       });
 
       let aiText: string;
-      if (activeModel === 'sikunlily') {
-        setSikunProgress('構成を設計中...');
-        aiText = await callSikunLilyChat(
-          history,
-          buildSikunSystemPrompt(contextNotes),
+      if (deepResearch) {
+        aiText = await callDeepResearch(
+          history[history.length - 1]?.text ?? input,
           apiKey,
-          (p: SikunLilyProgress) => setSikunProgress(p.label),
+          (msg) => setSikunProgress(msg),
         );
         setSikunProgress('');
+      } else if (activeModel === 'sikunlily') {
+        if (activeMode === 'code') {
+          setSikunProgress('コードを設計中...');
+          aiText = await callGeminiChat(
+            history,
+            buildSikunSystemPrompt(contextNotes),
+            apiKey,
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+          );
+          setSikunProgress('');
+        } else {
+          setSikunProgress('構成を設計中...');
+          aiText = await callSikunLilyChat(
+            history,
+            buildSikunSystemPrompt(contextNotes),
+            apiKey,
+            (p: SikunLilyProgress) => setSikunProgress(p.label),
+          );
+          setSikunProgress('');
+        }
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
       }
@@ -1397,7 +1423,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel]);
+  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch]);
 
   const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
 
@@ -1470,6 +1496,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <span className="web-label">ネット検索</span>
             <span className="web-state">{webSearch ? 'ON' : 'OFF'}</span>
           </button>
+          <button
+            className={`web-toggle deep-research-toggle ${deepResearch ? 'on' : ''}`}
+            onClick={() => setDeepResearch(p => !p)}
+            title="Deep Research Pro Preview: 数分かけて深くリサーチしてレポートを作成するよ"
+          >
+            <Sparkles size={13} />
+            <span className="web-label">Deep Research</span>
+            <span className="web-state">{deepResearch ? 'ON' : 'OFF'}</span>
+          </button>
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
             {selectedNote ? (
               <span className="context-chip selected">
@@ -1516,14 +1551,31 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           <div className="welcome-screen">
             <div className="welcome-lily-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/lily-character.png" alt="Lily" className="welcome-lily" />
+              <img
+                src={activeModel === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png'}
+                alt={activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}
+                className="welcome-lily"
+              />
             </div>
-            <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフ・スライドまで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
-            <div className="suggestions">
-              {SUGGESTIONS.map(s => (
-                <button key={s} className="suggestion-chip" onClick={() => sendMessage(s)}>{s}</button>
-              ))}
-            </div>
+            {activeModel === 'sikunlily' ? (
+              <>
+                <p className="welcome-text">sikunlily だ ⚔️🐕<br />スライド作成と大規模コード構築が得意だ。<br />スライドはヘッダーのトグルでコード構築に切り替えられる。</p>
+                <div className="suggestions">
+                  {SIKUNLILY_SUGGESTIONS.map(s => (
+                    <button key={s} className="suggestion-chip siku" onClick={() => sendMessage(s)}>{s}</button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフ・スライドまで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
+                <div className="suggestions">
+                  {SUGGESTIONS.map(s => (
+                    <button key={s} className="suggestion-chip" onClick={() => sendMessage(s)}>{s}</button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
         {messages.map(msg =>
@@ -1559,30 +1611,53 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </nav>
       )}
 
-      {/* Tone modes (tap to toggle ON — affects every message you send) */}
-      <div className="quick-actions mode-row">
-        <span className="qa-label">トーン</span>
-        {MODES.map(mo => (
+      {activeModel === 'sikunlily' ? (
+        /* sikunlily: コード構築モードトグル */
+        <div className="quick-actions mode-row">
+          <span className="qa-label">モード</span>
           <button
-            key={mo.id}
-            className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
-            title="タップでON。次に送るメッセージからこのトーンで答えてくれるよ"
+            className={`quick-chip mode-chip siku-mode${activeMode === 'code' ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === 'code' ? null : 'code'))}
+            title="大規模コード構築モード: gemini-2.5-proで複数ファイルを跨ぐプロジェクトを生成"
           >
-            {mo.label}{activeMode === mo.id ? ' ✓' : ''}
+            ⚙️ コード構築{activeMode === 'code' ? ' ✓' : ''}
           </button>
-        ))}
-      </div>
+          <button
+            className={`quick-chip mode-chip siku-mode${activeMode === 'slides' ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === 'slides' ? null : 'slides'))}
+            title="スライド作成モード（デフォルト）"
+          >
+            🖼️ スライド{activeMode === 'slides' ? ' ✓' : ''}
+          </button>
+        </div>
+      ) : (
+        /* Lily: トーンモード */
+        <div className="quick-actions mode-row">
+          <span className="qa-label">トーン</span>
+          {MODES.map(mo => (
+            <button
+              key={mo.id}
+              className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
+              onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
+              title="タップでON。次に送るメッセージからこのトーンで答えてくれるよ"
+            >
+              {mo.label}{activeMode === mo.id ? ' ✓' : ''}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Quick actions (Lily's wish-list) */}
-      <div className="quick-actions">
-        <Wand2 size={14} className="qa-wand" />
-        {QUICK_ACTIONS.map(a => (
-          <button key={a.label} className="quick-chip" onClick={() => sendMessage(a.prompt)} disabled={isLoading}>
-            {a.label}
-          </button>
-        ))}
-      </div>
+      {/* Quick actions (Lily only) */}
+      {activeModel === 'lily' && (
+        <div className="quick-actions">
+          <Wand2 size={14} className="qa-wand" />
+          {QUICK_ACTIONS.map(a => (
+            <button key={a.label} className="quick-chip" onClick={() => sendMessage(a.prompt)} disabled={isLoading}>
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {(attachments.length > 0 || fileError) && (
         <div className="att-bar">

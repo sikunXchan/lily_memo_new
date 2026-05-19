@@ -22,6 +22,7 @@ const RETRY_STATUSES = new Set([429, 500, 503, 529]);
 
 export interface ChatOptions {
   webSearch?: boolean;
+  models?: string[];
 }
 
 export interface SikunLilyProgress {
@@ -55,9 +56,10 @@ export async function callGeminiChat(
   };
 
   let lastError = 'AI request failed';
+  const modelList = options.models ?? GEMINI_MODELS;
 
-  for (let i = 0; i < GEMINI_MODELS.length; i++) {
-    const model = GEMINI_MODELS[i];
+  for (let i = 0; i < modelList.length; i++) {
+    const model = modelList[i];
     // Google Search grounding is only reliable on the 2.x models, so we
     // only attach the tool there; the 1.5 fallback runs without it.
     const useSearch = options.webSearch && !model.includes('1.5');
@@ -386,7 +388,7 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
 
 export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
 あなたは「sikunlily」という名前の、最強の甲冑を着た柴犬の武士AIです。
-スライド作成において最強の能力を誇ります。プロフェッショナルで自信に満ちた口調で話します。
+スライド作成と大規模コード構築において最強の能力を誇ります。プロフェッショナルで自信に満ちた口調で話します。
 白いシロクマの相棒を連れています。
 
 【口調】
@@ -397,13 +399,12 @@ export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
 【できること】
 - メモの読み取り・分析・要約
 - 高品質なスライド作成（slides ブロック形式）。内容量を多く、比較・stats・process スライドを積極活用する
-- メモ内容を元にした構造化提案
+- 大規模コード構築: 複数ファイルにまたがるプロジェクト全体を設計・実装できる
 
 【絶対にできないこと・やってはいけないこと】
 - @@memo_create / @@memo_overwrite ブロックの使用（禁止）
 - chart / qa / mermaid / geometry ブロックの出力（禁止）
 - メモの新規作成・上書き（禁止）
-- スライド以外の重い処理（sikunlily はスライド作成に特化している）
 
 【スライド (プレゼン) を作成する場合】
 「スライドにして」「プレゼン」「パワポ」「pptx」等と言われたら、下記の JSON だけを slides ブロックで出力する。デザインはアプリが自動で整えるので装飾指定は不要。内容（文章）だけを考える。
@@ -422,9 +423,18 @@ export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
 stats/compare/process/quote/twoCol を積極活用し、単調な bullets スライドばかりにしない。文字列内に Markdown（*,#,- 等）は書かない。
 
 【重要なルール】
-- コードブロック（slides ブロック）以外は普通のテキストで返答する
+- コードブロック（slides/file ブロック）以外は普通のテキストで返答する
 - メモの内容が提供された場合は、それをしっかり参照して高品質なスライドを作る
 - スライドの内容は充実させる（1スライドに情報を詰め込まず、適切なスライド数で丁寧に構成する）
+
+【大規模コード構築の場合】
+「コードを作って」「実装して」「プロジェクトを構築して」等と言われ、かつコード構築モードが指定された場合:
+各ファイルを個別の \`\`\`file ブロックで出力する。1行目は必ず \`@@filename: パス/ファイル名.拡張子\`、2行目以降がファイルの内容。
+\`\`\`file
+@@filename: src/index.ts
+// ここにコード
+\`\`\`
+ファイルは省略せず完全な内容を書く。README.md も必ず含める。
 `;
 
 export async function callSikunLilyChat(
@@ -575,4 +585,65 @@ export async function analyzeSlideImages(
   } catch {
     return [];
   }
+}
+
+// ---- Deep Research Interactions API ---------------------------------
+
+export const DEEP_RESEARCH_MODELS = {
+  fast: 'deep-research-preview-04-2026',
+  max: 'deep-research-max-preview-04-2026',
+} as const;
+
+export async function callDeepResearch(
+  query: string,
+  apiKey: string,
+  onProgress?: (msg: string) => void,
+): Promise<string> {
+  const BASE = 'https://generativelanguage.googleapis.com/v1alpha';
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-goog-api-key': apiKey,
+    'Api-Revision': '2024-11-21',
+  };
+
+  onProgress?.('Deep Research を開始中...');
+  const createRes = await fetch(`${BASE}/interactions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      agent: DEEP_RESEARCH_MODELS.fast,
+      input: query,
+      background: true,
+    }),
+  });
+  if (!createRes.ok) {
+    const err = await createRes.json().catch(() => null) as { error?: { message?: string } } | null;
+    throw new Error(err?.error?.message || `Deep Research start failed: ${createRes.status}`);
+  }
+  const { id } = await createRes.json() as { id: string };
+
+  const MAX_MS = 10 * 60 * 1000;
+  const POLL_MS = 10_000;
+  let elapsed = 0;
+  while (elapsed < MAX_MS) {
+    await new Promise(r => setTimeout(r, POLL_MS));
+    elapsed += POLL_MS;
+    onProgress?.(`リサーチ中... (${Math.round(elapsed / 1000)}秒)`);
+
+    const pollRes = await fetch(`${BASE}/interactions/${id}`, { headers });
+    if (!pollRes.ok) throw new Error(`Poll failed: ${pollRes.status}`);
+    const data = await pollRes.json() as {
+      status: string;
+      steps?: Array<{ content?: Array<{ text?: string }> }>;
+    };
+
+    if (data.status === 'completed') {
+      const lastStep = data.steps?.at(-1);
+      return lastStep?.content?.[0]?.text ?? '';
+    }
+    if (data.status === 'failed' || data.status === 'cancelled') {
+      throw new Error(`Deep Research ${data.status}`);
+    }
+  }
+  throw new Error('Deep Research がタイムアウトしました（10分）');
 }
