@@ -766,7 +766,6 @@ function ClarifyBottomSheet({
             onChange={e => setFreeText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleFreeSubmit(); }}
             disabled={disabled}
-            autoFocus
           />
           {freeText.trim() && (
             <button className="clarify-send" onClick={handleFreeSubmit} disabled={disabled}>
@@ -1181,7 +1180,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: textContent || (questions.length > 0 ? 'いくつか教えてほしいな！🐶' : '...'),
+        text: textContent || (
+          questions.length > 0
+            ? `${questions.map(q => q.question).join('\n')}\n\n下のフォームから教えてね！🐶`
+            : '...'
+        ),
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
