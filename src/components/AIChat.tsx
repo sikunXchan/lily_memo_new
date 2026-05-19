@@ -1201,13 +1201,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
     }
   }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
   const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
 
   if (!apiKey) {
@@ -1407,10 +1400,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         <textarea
           ref={textareaRef}
           className="chat-input"
-          placeholder="Lily に話しかける..."
+          placeholder="Lily に話しかける...（Enter で改行 / 送信はボタン）"
           value={input}
           onChange={e => { setInput(e.target.value); autoResizeTextarea(); }}
-          onKeyDown={handleKeyDown}
           rows={1}
           disabled={isLoading}
         />
