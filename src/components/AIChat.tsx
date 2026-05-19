@@ -19,14 +19,12 @@ import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import {
-  callGeminiChat, callSikunLilyChat, callNanobanana, analyzeSlideImages, callDeepResearch,
+  callGeminiChat, callSikunLilyChat, callDeepResearch,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
 } from '@/lib/gemini';
-import type { ChatTurn, ChatAttachment, SikunLilyProgress, SlideImageRequest } from '@/lib/gemini';
+import type { ChatTurn, ChatAttachment, SikunLilyProgress } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseSlides, exportSlidesToPptx } from '@/lib/slides';
-import type { GeneratedImages } from '@/lib/slides';
-import { removeImageBackground } from '@/lib/bgRemoval';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
 import {
@@ -746,7 +744,6 @@ function InsertableBlockCard({
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading'>('idle');
-  const [pptxProgress, setPptxProgress] = useState('');
   const [showMemoModal, setShowMemoModal] = useState(false);
 
   const baseName = `lily-${block.type}-${block.id.slice(0, 6)}`;
@@ -782,41 +779,11 @@ function InsertableBlockCard({
     setPdfStatus('loading');
     try {
       const deck = parseSlides(block.rawCode);
-      let images: GeneratedImages | undefined;
-
-      if (isPremium) {
-        const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
-        if (apiKey) {
-          setPptxProgress('スライドを分析中...');
-          let requests: SlideImageRequest[] = [];
-          try { requests = await analyzeSlideImages(block.rawCode, apiKey); } catch { /* skip on failure */ }
-
-          if (requests.length > 0) {
-            images = {};
-            for (let i = 0; i < requests.length; i++) {
-              const req = requests[i];
-              try {
-                setPptxProgress(`🎨 画像を生成中... (${i + 1}/${requests.length})`);
-                const b64 = await callNanobanana(req.prompt, apiKey, req.quality);
-                setPptxProgress(`✂️ 背景を除去中... (${i + 1}/${requests.length})`);
-                images[req.slideIndex] = await removeImageBackground(b64);
-              } catch (imgErr) {
-                console.warn('Nanobanana/BG-removal failed for slide', req.slideIndex, imgErr);
-                setPptxProgress(`⚠️ 画像スキップ (${i + 1}/${requests.length}): ${imgErr instanceof Error ? imgErr.message : '不明なエラー'}`);
-                await new Promise(r => setTimeout(r, 1200));
-              }
-            }
-          }
-        }
-      }
-
-      setPptxProgress('PPTXを組み立て中...');
-      await exportSlidesToPptx(deck, isPremium ? 'premium' : 'standard', images);
+      await exportSlidesToPptx(deck, isPremium ? 'premium' : 'standard');
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'PowerPointの作成に失敗しちゃった');
     } finally {
       setPdfStatus('idle');
-      setPptxProgress('');
     }
   };
 
@@ -841,7 +808,7 @@ function InsertableBlockCard({
       {block.type === 'slides' && (
         <button className="pdf-btn" onClick={handlePptx} disabled={pdfStatus === 'loading'}>
           <FileDown size={14} />
-          {pdfStatus === 'loading' ? (pptxProgress || 'PowerPoint作成中...') : 'PowerPoint(.pptx)で保存'}
+          {pdfStatus === 'loading' ? 'PowerPoint作成中...' : 'PowerPoint(.pptx)で保存'}
         </button>
       )}
 
