@@ -757,11 +757,15 @@ function InsertableBlockCard({
             for (let i = 0; i < requests.length; i++) {
               const req = requests[i];
               try {
-                setPptxProgress(`画像を生成中... (${i + 1}/${requests.length})`);
+                setPptxProgress(`🎨 画像を生成中... (${i + 1}/${requests.length})`);
                 const b64 = await callNanobanana(req.prompt, apiKey, req.quality);
-                setPptxProgress(`背景を除去中... (${i + 1}/${requests.length})`);
+                setPptxProgress(`✂️ 背景を除去中... (${i + 1}/${requests.length})`);
                 images[req.slideIndex] = await removeImageBackground(b64);
-              } catch { /* image failure is non-fatal */ }
+              } catch (imgErr) {
+                console.warn('Nanobanana/BG-removal failed for slide', req.slideIndex, imgErr);
+                setPptxProgress(`⚠️ 画像スキップ (${i + 1}/${requests.length}): ${imgErr instanceof Error ? imgErr.message : '不明なエラー'}`);
+                await new Promise(r => setTimeout(r, 1200));
+              }
             }
           }
         }
@@ -1190,7 +1194,6 @@ const SUGGESTIONS = [
   '会議の議事録をまとめて',
   '旅行の持ち物リストを作って',
   '考えを図（マインドマップ）にして',
-  'プレゼン用のスライドにして',
   'この数式をグラフで解説して',
 ];
 
@@ -1470,7 +1473,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           />
           <div>
             <div className="header-title">{activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}</div>
-            <div className="header-sub">{activeModel === 'sikunlily' ? '最強スライド武士 ⚔️' : 'AIアシスタント ✨'}</div>
+            <div className="header-sub">{activeModel === 'sikunlily' ? '開発者用AIアシスタント 🛠️' : 'AIアシスタント ✨'}</div>
           </div>
         </div>
         <div className="header-right">
@@ -1478,6 +1481,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             className={`model-toggle ${activeModel === 'sikunlily' ? 'siku' : 'lily'}`}
             onClick={() => {
               setActiveModel(p => p === 'lily' ? 'sikunlily' : 'lily');
+              setMessages([]);
               setQuestionQueue([]);
               setCollectedAnswers([]);
             }}
@@ -1496,15 +1500,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <span className="web-label">ネット検索</span>
             <span className="web-state">{webSearch ? 'ON' : 'OFF'}</span>
           </button>
-          <button
-            className={`web-toggle deep-research-toggle ${deepResearch ? 'on' : ''}`}
-            onClick={() => setDeepResearch(p => !p)}
-            title="Deep Research Pro Preview: 数分かけて深くリサーチしてレポートを作成するよ"
-          >
-            <Sparkles size={13} />
-            <span className="web-label">Deep Research</span>
-            <span className="web-state">{deepResearch ? 'ON' : 'OFF'}</span>
-          </button>
+          {activeModel === 'sikunlily' && (
+            <button
+              className={`web-toggle deep-research-toggle ${deepResearch ? 'on' : ''}`}
+              onClick={() => setDeepResearch(p => !p)}
+              title="Deep Research Pro Preview: 数分かけて深くリサーチしてレポートを作成するよ"
+            >
+              <Sparkles size={13} />
+              <span className="web-label">Deep Research</span>
+              <span className="web-state">{deepResearch ? 'ON' : 'OFF'}</span>
+            </button>
+          )}
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
             {selectedNote ? (
               <span className="context-chip selected">
@@ -1697,7 +1703,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         <textarea
           ref={textareaRef}
           className="chat-input"
-          placeholder="Lily に話しかける...（Enter で改行 / 送信はボタン）"
+          placeholder={activeModel === 'sikunlily' ? 'sikunlily に話しかける...（Enter で改行 / 送信はボタン）' : 'Lily に話しかける...（Enter で改行 / 送信はボタン）'}
           value={input}
           onChange={e => { setInput(e.target.value); autoResizeTextarea(); }}
           rows={1}

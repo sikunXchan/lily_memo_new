@@ -408,7 +408,8 @@ export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
 
 【スライド (プレゼン) を作成する場合】
 「スライドにして」「プレゼン」「パワポ」「pptx」等と言われたら、下記の JSON だけを slides ブロックで出力する。デザインはアプリが自動で整えるので装飾指定は不要。内容（文章）だけを考える。
-形式: \`{"t":"全体タイトル","sub":"任意サブ","th":"business|education|creative","s":[ ...スライド ]}\`
+形式: \`{"t":"全体タイトル","sub":"任意サブ","th":"tech|business|education|creative","s":[ ...スライド ]}\`
+※ デフォルトは "tech"（ダークテック配色）。ビジネス系は "business"、教育系は "education"、クリエイティブ系は "creative"。
 各スライドは \`ty\`（種類）＋その種類に必要な文字だけを書く:
 - \`{"ty":"cover","h":"表紙タイトル","sub":"任意"}\` … 表紙（必ず先頭）
 - \`{"ty":"agenda","h":"目次","items":["項目",…]}\` … 目次
