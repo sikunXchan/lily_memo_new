@@ -349,12 +349,24 @@ function blockToHtml(block: InsertableBlock): string {
     const deck = parseSlides(block.rawCode);
     return deck.slides
       .map(s => {
-        const h = `<h2>${escHtmlAttr(s.title)}</h2>`;
-        const ul = s.bullets.length
-          ? `<ul>${s.bullets.map(b => `<li>${escHtmlAttr(b)}</li>`).join('')}</ul>`
+        const lines: string[] = [];
+        if (s.subtitle) lines.push(s.subtitle);
+        if (s.lead) lines.push(s.lead);
+        if (s.quote) lines.push(`"${s.quote}"${s.by ? ` — ${s.by}` : ''}`);
+        const bullets = [
+          ...(s.items ?? []),
+          ...(s.left?.items ?? []),
+          ...(s.right?.items ?? []),
+          ...(s.cols?.flatMap(c => c.items) ?? []),
+          ...(s.kpis?.map(k => `${k.value} — ${k.label}${k.detail ? ` (${k.detail})` : ''}`) ?? []),
+          ...(s.steps?.map(st => `${st.heading}${st.detail ? `: ${st.detail}` : ''}`) ?? []),
+        ];
+        const h = s.heading ? `<h2>${escHtmlAttr(s.heading)}</h2>` : '';
+        const body = lines.map(p => `<p>${escHtmlAttr(p)}</p>`).join('');
+        const ul = bullets.length
+          ? `<ul>${bullets.map(b => `<li>${escHtmlAttr(b)}</li>`).join('')}</ul>`
           : '';
-        const body = s.body.map(p => `<p>${escHtmlAttr(p)}</p>`).join('');
-        return h + ul + body;
+        return h + body + ul;
       })
       .join('');
   }
@@ -565,7 +577,7 @@ function SlidesPreview({ code }: { code: string }) {
       {deck.slides.map((s, i) => (
         <div key={i} className="sl-item">
           <span className="sl-no">{i === 0 ? '表紙' : i}</span>
-          <span className="sl-title">{s.title}</span>
+          <span className="sl-title">{s.heading || s.quote || s.subtitle || `(${s.type})`}</span>
         </div>
       ))}
       <style jsx>{`

@@ -1,570 +1,489 @@
-// Parses Lily's ```slides``` block and exports it as a real .pptx
-// (Office Open XML) file. PPTX is just a ZIP of XML parts, so we build
-// the ZIP ourselves (STORE / no compression) — no extra dependencies,
-// and unlike html-to-canvas PDF it never renders blank.
+// Parses Lily's ```slides``` block (content-only JSON) and renders a
+// polished, "Gamma-level" .pptx via pptxgenjs. Lily only supplies text +
+// a slide `type`; all design (theme, layout, typography, accents) is
+// controlled here. pptxgenjs is loaded dynamically so it stays out of
+// the main bundle.
 
-import { triggerDownload } from './fileGen';
+import { triggerDownload, sanitizeFilename } from './fileGen';
 
-export type SlideLayout = 'title' | 'section' | 'content';
-export type DeckStyle = 'modern' | 'simple';
+export type ThemeName = 'business' | 'education' | 'creative';
+export type SlideType =
+  | 'cover' | 'agenda' | 'section' | 'bullets' | 'twoCol'
+  | 'stats' | 'quote' | 'compare' | 'process' | 'closing';
 
-export interface Slide {
-  title: string;
-  bullets: string[];
-  body: string[];
-  layout?: SlideLayout;
+export interface Col { heading?: string; items: string[] }
+export interface Kpi { value: string; label: string; detail?: string }
+export interface Step { heading: string; detail?: string }
+
+export interface DeckSlide {
+  type: SlideType;
+  heading?: string;
+  subtitle?: string;
+  lead?: string;
+  items?: string[];
+  left?: Col;
+  right?: Col;
+  cols?: Col[];
+  kpis?: Kpi[];
+  steps?: Step[];
+  quote?: string;
+  by?: string;
 }
 
 export interface SlideDeck {
   title: string;
-  slides: Slide[];
-  style: DeckStyle;
-  accent?: string; // hex without '#', overrides accent rotation
-  bg?: string;     // hex without '#', content background
-  accents?: string[]; // themed accent rotation palette
+  subtitle?: string;
+  theme: ThemeName;
+  slides: DeckSlide[];
 }
 
-// Purpose-built presets the user can pick with `@@theme:`.
-// Each sets a base style + an accent rotation palette (+ optional bg).
-const THEMES: Record<string, { style: DeckStyle; accents: string[]; bg?: string }> = {
-  business: { style: 'simple', accents: ['1F4E79', '2E75B6', '548235', '7F7F7F', 'C55A11'], bg: 'FFFFFF' },
-  education: { style: 'modern', accents: ['2E8B57', 'E8A33D', '4A90D9', 'D9534F', '7E57C2'] },
-  creative: { style: 'modern', accents: ['E040A0', '7C4DFF', '00BFA5', 'FF6D00', '2979FF'] },
+// ---- Theme palette (hex without '#', pptxgenjs format) ---------------
+
+interface Theme {
+  ink: string; muted: string; accent: string; accent2: string;
+  panel: string; dark: string; onDark: string; onDarkMuted: string;
+}
+
+const THEMES: Record<ThemeName, Theme> = {
+  business: {
+    ink: '1B2430', muted: '6B7280', accent: '2E5FE8', accent2: '7BA0F4',
+    panel: 'F1F4FB', dark: '14213D', onDark: 'FFFFFF', onDarkMuted: 'C6CFE6',
+  },
+  education: {
+    ink: '1F2A24', muted: '6B7B70', accent: '1F9D6B', accent2: 'F2A33C',
+    panel: 'EAF6F0', dark: '123A2C', onDark: 'FFFFFF', onDarkMuted: 'C2DBCF',
+  },
+  creative: {
+    ink: '221A2E', muted: '7A6E88', accent: '7C4DFF', accent2: 'FF4D9D',
+    panel: 'F4EEFF', dark: '1E1330', onDark: 'FFFFFF', onDarkMuted: 'D8CCEC',
+  },
 };
 
-function resolveThemeName(val: string): keyof typeof THEMES | undefined {
-  const v = val.toLowerCase();
-  if (/business|ビジネス|企業|プロフェッショナル|professional/.test(v)) return 'business';
-  if (/education|教育|学習|授業|academic/.test(v)) return 'education';
-  if (/creative|クリエイティブ|creative|デザイン|colorful|カラフル/.test(v)) return 'creative';
-  return THEMES[v] ? (v as keyof typeof THEMES) : undefined;
+function resolveThemeName(val: string): ThemeName {
+  const v = (val || '').toLowerCase();
+  if (/business|ビジネス|企業|プロフェッショナル|professional|会議/.test(v)) return 'business';
+  if (/education|教育|学習|授業|研修|academic/.test(v)) return 'education';
+  if (/creative|クリエイティブ|デザイン|colorful|カラフル/.test(v)) return 'creative';
+  return v === 'education' || v === 'creative' ? v : 'business';
 }
 
-const HEX6 = /^#?[0-9a-fA-F]{6}$/;
-const normHex = (c: string) => c.replace(/^#/, '').trim().toUpperCase();
+// ---- Parse content JSON ---------------------------------------------
+
+const arr = (v: unknown, max: number): string[] =>
+  Array.isArray(v) ? v.map(x => String(x)).filter(Boolean).slice(0, max) : [];
+
+const str = (v: unknown): string | undefined =>
+  v == null ? undefined : String(v).trim() || undefined;
+
+function normCol(v: Record<string, unknown> | undefined): Col | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  return { heading: str(v.h ?? v.heading), items: arr(v.items, 6) };
+}
+
+const TYPES: SlideType[] = [
+  'cover', 'agenda', 'section', 'bullets', 'twoCol',
+  'stats', 'quote', 'compare', 'process', 'closing',
+];
+
+function normSlide(raw: Record<string, unknown>): DeckSlide {
+  const ty = String(raw.ty ?? raw.type ?? '').trim() as SlideType;
+  const type: SlideType = TYPES.includes(ty) ? ty : 'bullets';
+  const s: DeckSlide = {
+    type,
+    heading: str(raw.h ?? raw.heading),
+    subtitle: str(raw.sub ?? raw.subtitle),
+    lead: str(raw.lead),
+  };
+  if (type === 'bullets' || type === 'agenda') s.items = arr(raw.items, 6);
+  if (type === 'twoCol') {
+    s.left = normCol(raw.l as Record<string, unknown>) ?? { items: [] };
+    s.right = normCol(raw.r as Record<string, unknown>) ?? { items: [] };
+  }
+  if (type === 'compare' && Array.isArray(raw.cols)) {
+    s.cols = (raw.cols as Record<string, unknown>[])
+      .map(normCol).filter((c): c is Col => !!c).slice(0, 3);
+  }
+  if (type === 'stats' && Array.isArray(raw.kpis)) {
+    s.kpis = (raw.kpis as Record<string, unknown>[]).slice(0, 4).map(k => ({
+      value: String(k.v ?? k.value ?? ''),
+      label: String(k.l ?? k.label ?? ''),
+      detail: str(k.d ?? k.detail),
+    }));
+  }
+  if (type === 'process' && Array.isArray(raw.steps)) {
+    s.steps = (raw.steps as Record<string, unknown>[]).slice(0, 5).map(st => ({
+      heading: String(st.h ?? st.heading ?? ''),
+      detail: str(st.d ?? st.detail),
+    }));
+  }
+  if (type === 'quote') {
+    s.quote = str(raw.q ?? raw.quote);
+    s.by = str(raw.by);
+  }
+  return s;
+}
+
+const ERROR_DECK: SlideDeck = {
+  title: '再生成が必要です',
+  theme: 'business',
+  slides: [{
+    type: 'section',
+    heading: 'このスライドは旧形式だよ',
+    subtitle: 'お手数だけど、もう一度「スライドにして」とお願いしてね 🐶',
+  }],
+};
 
 export function parseSlides(raw: string): SlideDeck {
-  let style: DeckStyle = 'modern';
-  let accent: string | undefined;
-  let bg: string | undefined;
-  let accents: string[] | undefined;
-  let styleExplicit = false;
+  try {
+    const first = raw.indexOf('{');
+    const last = raw.lastIndexOf('}');
+    if (first < 0 || last <= first) return ERROR_DECK;
+    const obj = JSON.parse(raw.slice(first, last + 1)) as Record<string, unknown>;
+    const slidesRaw = (obj.s ?? obj.slides) as Record<string, unknown>[] | undefined;
+    if (!Array.isArray(slidesRaw) || slidesRaw.length === 0) return ERROR_DECK;
+    const slides = slidesRaw.map(normSlide);
+    return {
+      title: str(obj.t ?? obj.title) || 'プレゼンテーション',
+      subtitle: str(obj.sub ?? obj.subtitle),
+      theme: resolveThemeName(String(obj.th ?? obj.theme ?? '')),
+      slides,
+    };
+  } catch {
+    return ERROR_DECK;
+  }
+}
 
-  // Pull deck-level directives (@@theme / @@style / @@accent / @@bg) from
-  // anywhere and strip them so they never show up as slide text.
-  const cleaned = raw
-    .split('\n')
-    .filter(line => {
-      const m = line.match(/^\s*@@(theme|style|accent|bg)\s*:\s*(.+?)\s*$/i);
-      if (!m) return true;
-      const key = m[1].toLowerCase();
-      const val = m[2].trim();
-      if (key === 'theme') {
-        const name = resolveThemeName(val);
-        if (name) {
-          const t = THEMES[name];
-          accents = t.accents;
-          if (t.bg && bg == null) bg = t.bg;
-          if (!styleExplicit) style = t.style;
-        }
-      } else if (key === 'style') {
-        style = /simple|plain|minimal|シンプル|プレーン|普通|標準/i.test(val) ? 'simple' : 'modern';
-        styleExplicit = true;
-      } else if (key === 'accent' && HEX6.test(val)) {
-        accent = normHex(val);
-      } else if (key === 'bg' && HEX6.test(val)) {
-        bg = normHex(val);
-      }
-      return false;
-    })
-    .join('\n');
+// ---- pptxgenjs rendering --------------------------------------------
 
-  const sections = cleaned
-    .split(/^\s*---\s*$/m)
-    .map(s => s.trim())
-    .filter(Boolean);
+// Minimal structural types so we don't depend on the lib's d.ts shape
+// and don't pull it into the type graph at module load.
+interface PSlide {
+  background: { color: string };
+  addText: (t: unknown, o: Record<string, unknown>) => void;
+  addShape: (s: string, o: Record<string, unknown>) => void;
+}
+interface PInstance {
+  defineLayout: (o: { name: string; width: number; height: number }) => void;
+  layout: string;
+  defineSlideMaster: (o: Record<string, unknown>) => void;
+  addSlide: (o?: { masterName?: string }) => PSlide;
+  write: (o: { outputType: 'blob' }) => Promise<Blob | string>;
+}
+interface PClass {
+  new (): PInstance;
+}
 
-  let deckTitle = 'スライド';
-  const slides: Slide[] = [];
+const W = 13.333;
+const H = 7.5;
+const FONT = 'Yu Gothic UI';
 
-  sections.forEach((section, idx) => {
-    const lines = section.split('\n').map(l => l.trim()).filter(Boolean);
-    let title = '';
-    let layout: SlideLayout | undefined;
-    const bullets: string[] = [];
-    const body: string[] = [];
+const BASE = 'LILY_BASE';
+const DARK = 'LILY_DARK';
 
-    for (const line of lines) {
-      const lay = line.match(/^@@layout\s*:\s*(title|section|content)\s*$/i);
-      const h = line.match(/^#{1,6}\s+(.*)/);
-      const b = line.match(/^[-*・]\s+(.*)/);
-      if (lay) {
-        layout = lay[1].toLowerCase() as SlideLayout;
-      } else if (h && !title) {
-        title = h[1].trim();
-      } else if (b) {
-        bullets.push(b[1].trim());
-      } else {
-        body.push(line.replace(/^#{1,6}\s+/, '').trim());
-      }
-    }
+const FILL = (color: string, transparency?: number) =>
+  transparency == null ? { color } : { color, transparency };
 
-    if (idx === 0 && layout == null && bullets.length === 0 && body.length <= 1) {
-      layout = 'title';
-    }
-    if (layout === 'title') {
-      deckTitle = title || body[0] || deckTitle;
-    }
-    slides.push({
-      title: title || (layout === 'title' ? deckTitle : `スライド ${idx + 1}`),
-      bullets,
-      body,
-      layout,
+function buildMasters(p: PInstance, t: Theme) {
+  p.defineSlideMaster({
+    title: BASE,
+    background: { color: 'FFFFFF' },
+    objects: [
+      // soft corner glow (two faint accent ellipses, bottom-right)
+      { rect: { x: W - 3.4, y: H - 2.7, w: 3.4, h: 2.7, fill: FILL(t.accent, 94) } },
+      { rect: { x: 0, y: H - 0.06, w: W, h: 0.06, fill: FILL(t.accent) } },
+    ],
+    slideNumber: { x: W - 1.0, y: H - 0.46, w: 0.7, h: 0.32, color: t.muted, fontSize: 9, align: 'right', fontFace: FONT },
+  });
+  p.defineSlideMaster({
+    title: DARK,
+    background: { color: t.dark },
+    objects: [
+      { ellipse: { x: W - 5.0, y: -2.6, w: 7.4, h: 7.4, fill: FILL(t.accent, 86) } },
+      { ellipse: { x: -2.4, y: H - 3.4, w: 5.6, h: 5.6, fill: FILL(t.accent2, 90) } },
+    ],
+  });
+}
+
+interface Ctx { p: PInstance; t: Theme; deck: SlideDeck; n: number; total: number }
+
+function heading(s: PSlide, t: Theme, text: string, lead?: string) {
+  s.addText(text || '', {
+    x: 0.85, y: 0.55, w: 11.6, h: 0.95, fontFace: FONT,
+    fontSize: 28, bold: true, color: t.ink, valign: 'top',
+  });
+  s.addShape('roundRect', {
+    x: 0.87, y: 1.52, w: 2.2, h: 0.07, rectRadius: 0.04, fill: FILL(t.accent),
+  });
+  if (lead) {
+    s.addText(lead, {
+      x: 0.87, y: 1.72, w: 11.5, h: 0.5, fontFace: FONT,
+      fontSize: 14, italic: true, color: t.muted,
+    });
+  }
+}
+
+function footerTitle(s: PSlide, ctx: Ctx) {
+  s.addText(ctx.deck.title, {
+    x: 0.85, y: H - 0.46, w: 8, h: 0.32, fontFace: FONT,
+    fontSize: 9, color: ctx.t.muted,
+  });
+}
+
+function card(s: PSlide, t: Theme, x: number, y: number, w: number, h: number, fill?: string) {
+  s.addShape('roundRect', {
+    x, y, w, h, rectRadius: 0.08,
+    fill: FILL(fill ?? t.panel),
+  });
+}
+
+function bulletList(s: PSlide, t: Theme, items: string[], x: number, y: number, w: number, h: number, color?: string, size = 16) {
+  if (items.length === 0) return;
+  s.addText(
+    items.map(it => ({
+      text: it,
+      options: { bullet: { code: '25AA', indent: 16 }, breakLine: true, paraSpaceAfter: 10 },
+    })),
+    { x, y, w, h, fontFace: FONT, fontSize: size, color: color ?? t.ink, valign: 'top', lineSpacingMultiple: 1.15 },
+  );
+}
+
+// ---- per-type renderers ---------------------------------------------
+
+function renderCover(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t, deck } = c;
+  s.addShape('roundRect', { x: 1.1, y: 2.35, w: 0.9, h: 0.1, rectRadius: 0.05, fill: FILL(t.accent) });
+  s.addText(d.heading || deck.title, {
+    x: 1.1, y: 2.6, w: 10.8, h: 2.0, fontFace: FONT,
+    fontSize: 44, bold: true, color: t.onDark, valign: 'top',
+  });
+  if (d.subtitle || deck.subtitle) {
+    s.addText(d.subtitle || deck.subtitle || '', {
+      x: 1.12, y: 4.7, w: 10.5, h: 0.9, fontFace: FONT, fontSize: 18, color: t.onDarkMuted,
+    });
+  }
+  s.addText('🐶  Presented with Lily', {
+    x: 1.12, y: H - 0.85, w: 6, h: 0.4, fontFace: FONT, fontSize: 11, color: t.onDarkMuted,
+  });
+}
+
+function renderClosing(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t } = c;
+  s.addText(d.heading || 'ありがとうございました', {
+    x: 1, y: 2.7, w: 11.3, h: 1.6, fontFace: FONT,
+    fontSize: 40, bold: true, color: t.onDark, align: 'center',
+  });
+  if (d.subtitle) {
+    s.addText(d.subtitle, {
+      x: 1, y: 4.4, w: 11.3, h: 0.8, fontFace: FONT,
+      fontSize: 18, color: t.onDarkMuted, align: 'center',
+    });
+  }
+  s.addText('🐶  Made with Lily', {
+    x: 0, y: H - 0.8, w: W, h: 0.4, fontFace: FONT,
+    fontSize: 11, color: t.onDarkMuted, align: 'center',
+  });
+}
+
+function renderSection(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t } = c;
+  s.addShape('roundRect', { x: 6.07, y: 2.85, w: 1.2, h: 0.1, rectRadius: 0.05, fill: FILL(t.accent) });
+  s.addText(d.heading || '', {
+    x: 1, y: 3.05, w: 11.3, h: 1.5, fontFace: FONT,
+    fontSize: 34, bold: true, color: t.onDark, align: 'center',
+  });
+  if (d.subtitle) {
+    s.addText(d.subtitle, {
+      x: 1, y: 4.6, w: 11.3, h: 0.7, fontFace: FONT,
+      fontSize: 16, color: t.onDarkMuted, align: 'center',
+    });
+  }
+}
+
+function renderBullets(d: DeckSlide, s: PSlide, c: Ctx) {
+  heading(s, c.t, d.heading || '', d.lead);
+  bulletList(s, c.t, d.items ?? [], 0.9, d.lead ? 2.35 : 2.05, 11.5, 4.6);
+  footerTitle(s, c);
+}
+
+function renderAgenda(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t } = c;
+  heading(s, t, d.heading || 'アジェンダ');
+  const items = d.items ?? [];
+  const top = 2.15;
+  const rowH = Math.min(0.95, (H - 1.0 - top) / Math.max(items.length, 1));
+  items.forEach((it, i) => {
+    const y = top + i * rowH;
+    s.addShape('ellipse', { x: 0.95, y: y + 0.04, w: 0.5, h: 0.5, fill: FILL(t.accent) });
+    s.addText(String(i + 1), {
+      x: 0.95, y: y + 0.04, w: 0.5, h: 0.5, fontFace: FONT,
+      fontSize: 16, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle',
+    });
+    s.addText(it, {
+      x: 1.7, y, w: 10.6, h: rowH, fontFace: FONT,
+      fontSize: 17, color: t.ink, valign: 'middle',
     });
   });
-
-  if (slides.length === 0) {
-    slides.push({ title: deckTitle, bullets: [], body: [], layout: 'title' });
-  }
-  return { title: deckTitle, slides, style, accent, bg, accents };
+  footerTitle(s, c);
 }
 
-/* ───────────── minimal ZIP (STORE) writer ───────────── */
-
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
-
-function crc32(bytes: Uint8Array): number {
-  let c = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-interface ZipEntry { name: string; data: Uint8Array; }
-
-function zipStore(entries: ZipEntry[]): Blob {
-  const chunks: Uint8Array[] = [];
-  const central: Uint8Array[] = [];
-  let offset = 0;
-  const enc = new TextEncoder();
-
-  const u16 = (n: number) => new Uint8Array([n & 0xff, (n >>> 8) & 0xff]);
-  const u32 = (n: number) =>
-    new Uint8Array([n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff]);
-  const push = (arr: Uint8Array[], parts: Uint8Array[]) => {
-    for (const p of parts) arr.push(p);
-  };
-
-  for (const e of entries) {
-    const nameBytes = enc.encode(e.name);
-    const crc = crc32(e.data);
-    const size = e.data.length;
-
-    const local: Uint8Array[] = [];
-    push(local, [
-      u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
-      u32(crc), u32(size), u32(size), u16(nameBytes.length), u16(0),
-      nameBytes, e.data,
-    ]);
-    const localSize = local.reduce((s, p) => s + p.length, 0);
-    for (const p of local) chunks.push(p);
-
-    push(central, [
-      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0),
-      u32(crc), u32(size), u32(size), u16(nameBytes.length),
-      u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), nameBytes,
-    ]);
-    offset += localSize;
-  }
-
-  const cdStart = offset;
-  let cdSize = 0;
-  for (const p of central) { chunks.push(p); cdSize += p.length; }
-
-  chunks.push(
-    u32(0x06054b50), u16(0), u16(0),
-    u16(entries.length), u16(entries.length),
-    u32(cdSize), u32(cdStart), u16(0)
-  );
-
-  return new Blob(chunks as BlobPart[], {
-    type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+function renderTwoCol(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t } = c;
+  heading(s, t, d.heading || '');
+  const cols: [Col | undefined, string][] = [[d.left, t.accent], [d.right, t.accent2]];
+  const y = 2.05, h = 4.6, w = 5.7;
+  cols.forEach(([col, ac], i) => {
+    const x = 0.85 + i * (w + 0.33);
+    card(s, t, x, y, w, h);
+    s.addText(col?.heading || '', {
+      x: x + 0.35, y: y + 0.3, w: w - 0.7, h: 0.55, fontFace: FONT,
+      fontSize: 17, bold: true, color: ac,
+    });
+    bulletList(s, t, col?.items ?? [], x + 0.35, y + 0.95, w - 0.7, h - 1.25, t.ink, 15);
   });
+  footerTitle(s, c);
 }
 
-/* ───────────── PPTX XML parts ───────────── */
-
-function xmlEsc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+function renderCompare(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t } = c;
+  heading(s, t, d.heading || '');
+  const cols = d.cols ?? [];
+  const n = Math.max(cols.length, 1);
+  const gap = 0.3;
+  const w = (11.6 - gap * (n - 1)) / n;
+  const y = 2.05, h = 4.6;
+  cols.forEach((col, i) => {
+    const x = 0.87 + i * (w + gap);
+    const ac = i === 0 ? t.accent : t.accent2;
+    s.addShape('roundRect', { x, y, w, h: 0.7, rectRadius: 0.08, fill: FILL(ac) });
+    s.addText(col.heading || '', {
+      x, y, w, h: 0.7, fontFace: FONT, fontSize: 16, bold: true,
+      color: 'FFFFFF', align: 'center', valign: 'middle',
+    });
+    card(s, t, x, y + 0.82, w, h - 0.82);
+    bulletList(s, t, col.items, x + 0.3, y + 1.12, w - 0.6, h - 1.4, t.ink, 14);
+  });
+  footerTitle(s, c);
 }
 
-const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
-const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
-const P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main';
-const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-
-const SLIDE_W = 12192000;
-const SLIDE_H = 6858000;
-
-/* ── modern design system ── */
-
-const INK = '241F33';        // near-black text
-const MUTED = '8A8499';      // muted captions / footer
-const PAPER = 'FFFFFF';      // content background
-const DARK1 = '1E1B2E';      // title bg gradient start
-const DARK2 = '4A3A5C';      // title bg gradient end
-// accent rotation gives each content slide its own rhythm
-const ACCENTS = ['E26A8D', '8AB6D6', '9AD0C2', 'F6C28B', 'B79CE0'];
-
-function clr(hex: string, alpha?: number): string {
-  return alpha == null
-    ? `<a:srgbClr val="${hex}"/>`
-    : `<a:srgbClr val="${hex}"><a:alpha val="${alpha}"/></a:srgbClr>`;
-}
-const solid = (hex: string, alpha?: number) => `<a:solidFill>${clr(hex, alpha)}</a:solidFill>`;
-function grad(c1: string, c2: string, ang = 2700000): string {
-  return `<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0">${clr(c1)}</a:gs><a:gs pos="100000">${clr(c2)}</a:gs></a:gsLst><a:lin ang="${ang}" scaled="0"/></a:gradFill>`;
-}
-const NO_LN = '<a:ln><a:noFill/></a:ln>';
-const EMPTY_TX = '<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="ja-JP"/></a:p></p:txBody>';
-
-function shape(
-  id: number, name: string, geom: string,
-  x: number, y: number, cx: number, cy: number,
-  fill: string, txBody = EMPTY_TX, line = NO_LN
-): string {
-  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${geom}"><a:avLst/></a:prstGeom>${fill}${line}</p:spPr>${txBody}</p:sp>`;
+function renderStats(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t } = c;
+  heading(s, t, d.heading || '');
+  const kpis = d.kpis ?? [];
+  const n = Math.max(kpis.length, 1);
+  const gap = 0.3;
+  const w = (11.6 - gap * (n - 1)) / n;
+  const y = 2.5, h = 3.0;
+  kpis.forEach((k, i) => {
+    const x = 0.87 + i * (w + gap);
+    card(s, t, x, y, w, h);
+    s.addShape('roundRect', { x: x + 0.3, y: y + 0.35, w: 0.7, h: 0.08, rectRadius: 0.04, fill: FILL(t.accent) });
+    s.addText(k.value, {
+      x, y: y + 0.5, w, h: 1.2, fontFace: FONT,
+      fontSize: 40, bold: true, color: t.accent, align: 'center',
+    });
+    s.addText(k.label, {
+      x: x + 0.2, y: y + 1.75, w: w - 0.4, h: 0.5, fontFace: FONT,
+      fontSize: 14, bold: true, color: t.ink, align: 'center',
+    });
+    if (k.detail) {
+      s.addText(k.detail, {
+        x: x + 0.2, y: y + 2.25, w: w - 0.4, h: 0.55, fontFace: FONT,
+        fontSize: 10, color: t.muted, align: 'center',
+      });
+    }
+  });
+  footerTitle(s, c);
 }
 
-function run(text: string, size: number, color: string, bold = false): string {
-  return `<a:r><a:rPr lang="ja-JP" altLang="en-US" sz="${size}"${bold ? ' b="1"' : ''} dirty="0">${solid(color)}</a:rPr><a:t>${xmlEsc(text)}</a:t></a:r>`;
-}
-
-function para(
-  text: string, size: number, color: string,
-  opts: { bold?: boolean; align?: string; bulletColor?: string; bulletChar?: string } = {}
-): string {
-  const bul = opts.bulletColor
-    ? `<a:buClr>${clr(opts.bulletColor)}</a:buClr><a:buSzPct val="80000"/><a:buFont typeface="Arial"/><a:buChar char="${xmlEsc(opts.bulletChar || '▸')}"/>`
-    : '<a:buNone/>';
-  const marL = opts.bulletColor ? ' marL="285750" indent="-285750"' : '';
-  const pPr = `<a:pPr${marL}${opts.align ? ` algn="${opts.align}"` : ''}><a:spcBef><a:spcPts val="700"/></a:spcBef><a:spcAft><a:spcPts val="300"/></a:spcAft>${bul}</a:pPr>`;
-  return `<a:p>${pPr}${run(text, size, color, opts.bold)}</a:p>`;
-}
-
-function txBox(
-  id: number, name: string,
-  x: number, y: number, cx: number, cy: number,
-  paras: string, anchor = 't'
-): string {
-  const tx = `<p:txBody><a:bodyPr wrap="square" anchor="${anchor}"><a:normAutofit/></a:bodyPr><a:lstStyle/>${paras}</p:txBody>`;
-  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>${tx}</p:sp>`;
-}
-
-function wrap(shapes: string): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}">
-<p:cSld><p:spTree>
-<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
-${shapes}
-</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
-</p:sld>`;
-}
-
-interface RenderCtx {
-  layout: SlideLayout;
-  number: number;
-  total: number;
-  deckTitle: string;
-  accent: string;
-  paper: string;
-}
-
-/* ── modern (shape-heavy) renderers ── */
-
-function modernTitle(slide: Slide, c: RenderCtx): string {
-  const subtitle = slide.body[0] || slide.bullets[0] || '';
-  const s: string[] = [];
-  s.push(shape(2, 'bg', 'rect', 0, 0, SLIDE_W, SLIDE_H, grad(DARK1, DARK2, 2700000)));
-  s.push(shape(3, 'glow1', 'ellipse', 8200000, -1700000, 6200000, 6200000, solid(c.accent, 16000)));
-  s.push(shape(4, 'glow2', 'ellipse', -1500000, 4200000, 4400000, 4400000, solid(ACCENTS[1], 13000)));
-  s.push(shape(5, 'ring', 'ellipse', 9700000, 4600000, 1900000, 1900000, '<a:noFill/>',
-    EMPTY_TX, `<a:ln w="19050">${solid(c.accent, 40000)}</a:ln>`));
-  s.push(shape(6, 'bar', 'roundRect', 1219200, 2360000, 760000, 84000, solid(c.accent)));
-  s.push(txBox(7, 'title', 1219200, 2520000, 9750000, 2050000,
-    para(slide.title || c.deckTitle, 5400, PAPER, { bold: true }), 't'));
-  if (subtitle) {
-    s.push(txBox(8, 'subtitle', 1219200, 4560000, 9750000, 760000,
-      para(subtitle, 2000, 'D9CFE6'), 't'));
+function renderQuote(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t } = c;
+  s.addText('“', {
+    x: 0.7, y: 0.3, w: 2, h: 1.8, fontFace: 'Georgia',
+    fontSize: 120, bold: true, color: t.accent, valign: 'top',
+  });
+  s.addText(d.quote || d.heading || '', {
+    x: 1.6, y: 2.2, w: 10.1, h: 3.0, fontFace: FONT,
+    fontSize: 26, color: t.ink, valign: 'top',
+  });
+  if (d.by) {
+    s.addText(`— ${d.by}`, {
+      x: 1.62, y: 5.45, w: 10, h: 0.5, fontFace: FONT,
+      fontSize: 14, color: t.muted,
+    });
   }
-  s.push(txBox(9, 'tag', 1219200, 6020000, 6000000, 500000,
-    para('🐶  Presented with Lily', 1200, MUTED), 't'));
-  return wrap(s.join(''));
+  footerTitle(s, c);
 }
 
-function modernSection(slide: Slide, c: RenderCtx): string {
-  const s: string[] = [];
-  s.push(shape(2, 'bg', 'rect', 0, 0, SLIDE_W, SLIDE_H, grad(DARK1, DARK2, 2700000)));
-  s.push(shape(3, 'glow', 'ellipse', -1800000, -1800000, 5600000, 5600000, solid(c.accent, 16000)));
-  s.push(shape(4, 'bar', 'roundRect', 4716000, 2780000, 760000, 84000, solid(c.accent)));
-  s.push(txBox(5, 'title', 1219200, 2960000, 9750000, 1400000,
-    para(slide.title, 4400, PAPER, { bold: true, align: 'ctr' }), 'ctr'));
-  if (slide.body[0]) {
-    s.push(txBox(6, 'sub', 1219200, 4360000, 9750000, 700000,
-      para(slide.body[0], 1800, 'D9CFE6', { align: 'ctr' }), 't'));
-  }
-  return wrap(s.join(''));
+function renderProcess(d: DeckSlide, s: PSlide, c: Ctx) {
+  const { t } = c;
+  heading(s, t, d.heading || '');
+  const steps = d.steps ?? [];
+  const n = Math.max(steps.length, 1);
+  const gap = 0.3;
+  const w = (11.6 - gap * (n - 1)) / n;
+  const cy = 2.65;
+  steps.forEach((st, i) => {
+    const x = 0.87 + i * (w + gap);
+    if (i < steps.length - 1) {
+      s.addShape('rect', { x: x + w * 0.5, y: cy + 0.27, w: w + gap, h: 0.05, fill: FILL(t.accent2, 45) });
+    }
+    s.addShape('ellipse', { x: x + w * 0.5 - 0.32, y: cy, w: 0.64, h: 0.64, fill: FILL(t.accent) });
+    s.addText(String(i + 1), {
+      x: x + w * 0.5 - 0.32, y: cy, w: 0.64, h: 0.64, fontFace: FONT,
+      fontSize: 18, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle',
+    });
+    s.addText(st.heading, {
+      x, y: cy + 0.85, w, h: 0.6, fontFace: FONT,
+      fontSize: 15, bold: true, color: t.ink, align: 'center',
+    });
+    if (st.detail) {
+      s.addText(st.detail, {
+        x: x + 0.1, y: cy + 1.45, w: w - 0.2, h: 1.4, fontFace: FONT,
+        fontSize: 11, color: t.muted, align: 'center',
+      });
+    }
+  });
+  footerTitle(s, c);
 }
 
-function modernContent(slide: Slide, c: RenderCtx): string {
-  const num = String(c.number).padStart(2, '0');
-  const s: string[] = [];
-  s.push(shape(2, 'bg', 'rect', 0, 0, SLIDE_W, SLIDE_H, solid(c.paper)));
-  s.push(shape(3, 'deco1', 'ellipse', 10700000, 5250000, 2200000, 2200000, solid(c.accent, 10000)));
-  s.push(shape(4, 'deco2', 'ellipse', 11500000, 5950000, 1300000, 1300000, solid(c.accent, 14000)));
-  s.push(shape(5, 'badge', 'roundRect', 838200, 560000, 760000, 760000, solid(c.accent),
-    `<p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/>${para(num, 2400, PAPER, { bold: true, align: 'ctr' })}</p:txBody>`));
-  s.push(txBox(6, 'title', 1740000, 560000, 9600000, 800000,
-    para(slide.title, 3000, INK, { bold: true }), 'ctr'));
-  s.push(shape(7, 'divider', 'roundRect', 845000, 1500000, 2300000, 50000, solid(c.accent)));
-  s.push(shape(8, 'divider2', 'rect', 3145000, 1512000, 8200000, 26000, solid('ECE8F0')));
-  const paras = [
-    ...slide.bullets.map(b => para(b, 2000, INK, { bulletColor: c.accent })),
-    ...slide.body.map(p => para(p, 1800, '5A5468')),
-  ].join('') || para(' ', 1800, INK);
-  s.push(txBox(9, 'body', 845000, 1820000, 10500000, 4150000, paras, 't'));
-  s.push(shape(10, 'footdot', 'ellipse', 845000, 6420000, 90000, 90000, solid(c.accent)));
-  s.push(txBox(11, 'footL', 1000000, 6330000, 7000000, 360000,
-    para(c.deckTitle, 1000, MUTED), 't'));
-  s.push(txBox(12, 'footR', 9500000, 6330000, 1850000, 360000,
-    para(`${c.number} / ${c.total}`, 1000, MUTED, { align: 'r' }), 't'));
-  return wrap(s.join(''));
-}
+type Renderer = (d: DeckSlide, s: PSlide, c: Ctx) => void;
 
-/* ── simple (clean, no decoration) renderers — used when the user
-      asks for a plain / specific format ── */
+const RENDER: Record<SlideType, Renderer> = {
+  cover: renderCover,
+  closing: renderClosing,
+  section: renderSection,
+  bullets: renderBullets,
+  agenda: renderAgenda,
+  twoCol: renderTwoCol,
+  compare: renderCompare,
+  stats: renderStats,
+  quote: renderQuote,
+  process: renderProcess,
+};
 
-function simpleTitle(slide: Slide, c: RenderCtx): string {
-  const subtitle = slide.body[0] || slide.bullets[0] || '';
-  const s: string[] = [];
-  s.push(shape(2, 'bg', 'rect', 0, 0, SLIDE_W, SLIDE_H, solid(c.paper)));
-  s.push(txBox(3, 'title', 838200, 2550000, 10515600, 1500000,
-    para(slide.title || c.deckTitle, 4000, INK, { bold: true, align: 'ctr' }), 'b'));
-  s.push(shape(4, 'rule', 'rect', 5486400, 4180000, 1219200, 24000, solid(c.accent)));
-  if (subtitle) {
-    s.push(txBox(5, 'subtitle', 838200, 4320000, 10515600, 700000,
-      para(subtitle, 1800, MUTED, { align: 'ctr' }), 't'));
-  }
-  return wrap(s.join(''));
-}
-
-function simpleSection(slide: Slide, c: RenderCtx): string {
-  const s: string[] = [];
-  s.push(shape(2, 'bg', 'rect', 0, 0, SLIDE_W, SLIDE_H, solid(c.paper)));
-  s.push(shape(3, 'rule', 'rect', 838200, 3300000, 10515600, 12000, solid('D8D4DF')));
-  s.push(txBox(4, 'title', 838200, 2700000, 10515600, 1100000,
-    para(slide.title, 3600, INK, { bold: true, align: 'ctr' }), 'b'));
-  return wrap(s.join(''));
-}
-
-function simpleContent(slide: Slide, c: RenderCtx): string {
-  const s: string[] = [];
-  s.push(shape(2, 'bg', 'rect', 0, 0, SLIDE_W, SLIDE_H, solid(c.paper)));
-  s.push(txBox(3, 'title', 838200, 520000, 10515600, 900000,
-    para(slide.title, 3200, INK, { bold: true }), 'ctr'));
-  s.push(shape(4, 'rule', 'rect', 838200, 1480000, 10515600, 18000, solid(c.accent)));
-  const paras = [
-    ...slide.bullets.map(b => para(b, 2000, INK, { bulletColor: '4A4A55', bulletChar: '•' })),
-    ...slide.body.map(p => para(p, 1800, '5A5468')),
-  ].join('') || para(' ', 1800, INK);
-  s.push(txBox(5, 'body', 900000, 1800000, 10400000, 4350000, paras, 't'));
-  s.push(txBox(6, 'footR', 9500000, 6330000, 1850000, 360000,
-    para(`${c.number} / ${c.total}`, 1000, MUTED, { align: 'r' }), 't'));
-  return wrap(s.join(''));
-}
-
-function slideXml(slide: Slide, style: DeckStyle, c: RenderCtx): string {
-  if (style === 'simple') {
-    if (c.layout === 'title') return simpleTitle(slide, c);
-    if (c.layout === 'section') return simpleSection(slide, c);
-    return simpleContent(slide, c);
-  }
-  if (c.layout === 'title') return modernTitle(slide, c);
-  if (c.layout === 'section') return modernSection(slide, c);
-  return modernContent(slide, c);
-}
-
-const THEME_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme xmlns:a="${A_NS}" name="Lily">
-<a:themeElements>
-<a:clrScheme name="Lily">
-<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>
-<a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>
-<a:dk2><a:srgbClr val="2B2B3A"/></a:dk2>
-<a:lt2><a:srgbClr val="FDF2F6"/></a:lt2>
-<a:accent1><a:srgbClr val="E26A8D"/></a:accent1>
-<a:accent2><a:srgbClr val="F2A6C2"/></a:accent2>
-<a:accent3><a:srgbClr val="C98AA3"/></a:accent3>
-<a:accent4><a:srgbClr val="8AB6D6"/></a:accent4>
-<a:accent5><a:srgbClr val="9AD0C2"/></a:accent5>
-<a:accent6><a:srgbClr val="F6C28B"/></a:accent6>
-<a:hlink><a:srgbClr val="0563C1"/></a:hlink>
-<a:folHlink><a:srgbClr val="954F72"/></a:folHlink>
-</a:clrScheme>
-<a:fontScheme name="Lily">
-<a:majorFont><a:latin typeface="Segoe UI Semibold"/><a:ea typeface="Yu Gothic UI"/><a:cs typeface=""/></a:majorFont>
-<a:minorFont><a:latin typeface="Segoe UI"/><a:ea typeface="Yu Gothic UI"/><a:cs typeface=""/></a:minorFont>
-</a:fontScheme>
-<a:fmtScheme name="Lily">
-<a:fillStyleLst>
-<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-</a:fillStyleLst>
-<a:lnStyleLst>
-<a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>
-<a:ln w="12700"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>
-<a:ln w="19050"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln>
-</a:lnStyleLst>
-<a:effectStyleLst>
-<a:effectStyle><a:effectLst/></a:effectStyle>
-<a:effectStyle><a:effectLst/></a:effectStyle>
-<a:effectStyle><a:effectLst/></a:effectStyle>
-</a:effectStyleLst>
-<a:bgFillStyleLst>
-<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-</a:bgFillStyleLst>
-</a:fmtScheme>
-</a:themeElements>
-</a:theme>`;
-
-const SLIDE_LAYOUT_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sldLayout xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}" type="blank" preserve="1">
-<p:cSld name="Blank"><p:spTree>
-<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
-</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
-</p:sldLayout>`;
-
-const SLIDE_MASTER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sldMaster xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}">
-<p:cSld><p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg><p:spTree>
-<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
-</p:spTree></p:cSld>
-<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
-<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
-<p:txStyles>
-<p:titleStyle><a:lvl1pPr><a:defRPr sz="4400"/></a:lvl1pPr></p:titleStyle>
-<p:bodyStyle><a:lvl1pPr><a:defRPr sz="2000"/></a:lvl1pPr></p:bodyStyle>
-<p:otherStyle/>
-</p:txStyles>
-</p:sldMaster>`;
+const DARK_TYPES = new Set<SlideType>(['cover', 'section', 'closing']);
 
 export async function exportSlidesToPptx(deck: SlideDeck): Promise<void> {
-  const enc = new TextEncoder();
-  const files: ZipEntry[] = [];
-  const add = (name: string, content: string) =>
-    files.push({ name, data: enc.encode(content) });
+  const mod = await import('pptxgenjs');
+  const PptxGenJS = (mod.default ?? mod) as unknown as PClass;
+  const p = new PptxGenJS();
+  const t = THEMES[deck.theme] ?? THEMES.business;
 
-  const n = deck.slides.length;
-  const slideOverrides = deck.slides
-    .map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`)
-    .join('');
+  p.defineLayout({ name: 'LILY', width: W, height: H });
+  p.layout = 'LILY';
+  buildMasters(p, t);
 
-  add('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
-<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
-<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
-<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
-${slideOverrides}
-</Types>`);
-
-  add('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="${REL_NS}">
-<Relationship Id="rId1" Type="${R_NS}/officeDocument" Target="ppt/presentation.xml"/>
-</Relationships>`);
-
-  const sldIds = deck.slides
-    .map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 2}"/>`)
-    .join('');
-  add('ppt/presentation.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:presentation xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:p="${P_NS}">
-<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
-<p:sldIdLst>${sldIds}</p:sldIdLst>
-<p:sldSz cx="${SLIDE_W}" cy="${SLIDE_H}"/>
-<p:notesSz cx="6858000" cy="9144000"/>
-</p:presentation>`);
-
-  const presRels = [
-    `<Relationship Id="rId1" Type="${R_NS}/slideMaster" Target="slideMasters/slideMaster1.xml"/>`,
-    ...deck.slides.map((_, i) =>
-      `<Relationship Id="rId${i + 2}" Type="${R_NS}/slide" Target="slides/slide${i + 1}.xml"/>`),
-    `<Relationship Id="rId${n + 2}" Type="${R_NS}/theme" Target="theme/theme1.xml"/>`,
-  ].join('');
-  add('ppt/_rels/presentation.xml.rels',
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${REL_NS}">${presRels}</Relationships>`);
-
-  add('ppt/theme/theme1.xml', THEME_XML);
-
-  add('ppt/slideMasters/slideMaster1.xml', SLIDE_MASTER_XML);
-  add('ppt/slideMasters/_rels/slideMaster1.xml.rels',
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="${REL_NS}">
-<Relationship Id="rId1" Type="${R_NS}/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
-<Relationship Id="rId2" Type="${R_NS}/theme" Target="../theme/theme1.xml"/>
-</Relationships>`);
-
-  add('ppt/slideLayouts/slideLayout1.xml', SLIDE_LAYOUT_XML);
-  add('ppt/slideLayouts/_rels/slideLayout1.xml.rels',
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="${REL_NS}">
-<Relationship Id="rId1" Type="${R_NS}/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
-</Relationships>`);
-
-  const layoutOf = (sl: Slide): SlideLayout => sl.layout ?? 'content';
-  const contentTotal = deck.slides.filter(sl => layoutOf(sl) === 'content').length;
-  const paper = deck.bg || PAPER;
-  let contentNo = 0;
-  deck.slides.forEach((slide, i) => {
-    const layout = layoutOf(slide);
-    if (layout === 'content') contentNo++;
-    const palette = deck.accents && deck.accents.length > 0 ? deck.accents : ACCENTS;
-    const accent = deck.accent || palette[(contentNo - 1 + palette.length) % palette.length];
-    add(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, deck.style, {
-      layout,
-      number: contentNo,
-      total: contentTotal || 1,
-      deckTitle: deck.title,
-      accent,
-      paper,
-    }));
-    add(`ppt/slides/_rels/slide${i + 1}.xml.rels`,
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="${REL_NS}">
-<Relationship Id="rId1" Type="${R_NS}/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
-</Relationships>`);
+  const total = deck.slides.length;
+  deck.slides.forEach((d, i) => {
+    const dark = DARK_TYPES.has(d.type);
+    const s = p.addSlide({ masterName: dark ? DARK : BASE });
+    const ctx: Ctx = { p, t, deck, n: i + 1, total };
+    (RENDER[d.type] ?? renderBullets)(d, s, ctx);
   });
 
-  const blob = zipStore(files);
-  const safe = (deck.title || 'lily-slides').replace(/[\\/:*?"<>|]+/g, '_');
-  triggerDownload(blob, `${safe}.pptx`);
+  const blob = await p.write({ outputType: 'blob' });
+  triggerDownload(
+    blob as Blob,
+    sanitizeFilename(`${deck.title || 'slides'}.pptx`),
+  );
 }
