@@ -6,6 +6,7 @@ import { useState } from 'react';
 interface QAPair {
   q: string;
   a: string;
+  opts?: string[];
   checked?: boolean;
 }
 
@@ -70,11 +71,6 @@ function parseChoice(q: string): { stem: string; options: { label: string; text:
   return { stem, options };
 }
 
-function answerLabel(a: string): string | null {
-  const m = a.trim().match(/^([A-DＡ-Ｄa-d1-4１-４①-④ア-エ])/);
-  return m ? m[1] : null;
-}
-
 // true / false / unknown from an answer string like "○（…）" or "×（…）"
 function answerBool(a: string): boolean | null {
   const t = a.trim();
@@ -129,37 +125,58 @@ function QACard({
 
   // ── multiple choice ──
   if (kind === 'choice') {
-    const { options } = parseChoice(pair.q);
+    const LBL = 'ABCDEFGH';
+    const stripMark = (s: string) =>
+      s.replace(/^\s*(?:[A-Ha-hア-ク①-⑧]|[0-9０-９]+)\s*[.)）.、:：]\s*/, '').trim();
+    const raw = (pair.opts && pair.opts.length >= 2)
+      ? pair.opts
+      : parseChoice(pair.q).options.map(o => `${o.label}. ${o.text}`);
+    const options = raw.map(stripMark).filter(Boolean);
     if (options.length >= 2) {
-      const correct = answerLabel(pair.a);
+      const a = pair.a.trim();
+      const lblIdx = (() => {
+        const m = a.match(/^\s*([A-Ha-h])\b/);
+        if (m) return LBL.indexOf(m[1].toUpperCase());
+        const nm = a.match(/^\s*([0-9０-９]+)/);
+        if (nm) return Number(nm[1].replace(/[０-９]/g, d => String('０１２３４５６７８９'.indexOf(d)))) - 1;
+        return -1;
+      })();
+      let correctIdx = lblIdx >= 0 && lblIdx < options.length ? lblIdx : -1;
+      if (correctIdx < 0) {
+        correctIdx = options.findIndex(o =>
+          norm(o) === norm(a) ||
+          (norm(a).length >= 2 && (norm(o).includes(norm(a)) || norm(a).includes(norm(o)))));
+      }
+      const pickedIdx = picked == null ? -1 : Number(picked);
+      const done = pickedIdx >= 0 || show;
       return (
         <div className={`qa-card ${pair.checked ? 'qa-card-checked' : ''}`}>
           {header}
           <div className="qa-opts">
-            {options.map(o => {
-              const isPicked = picked === o.label;
-              const isCorrect = correct != null && norm(o.label) === norm(correct);
-              const state = (show || picked)
-                ? isCorrect ? 'correct' : isPicked ? 'wrong' : ''
-                : '';
+            {options.map((o, oi) => {
+              const isPicked = pickedIdx === oi;
+              const isCorrect = correctIdx === oi;
+              const state = done ? (isCorrect ? 'correct' : isPicked ? 'wrong' : '') : '';
               return (
                 <button
-                  key={o.label}
+                  key={oi}
                   className={`qa-opt ${state} ${isPicked ? 'picked' : ''}`}
-                  disabled={picked != null || revealAll}
-                  onClick={() => setPicked(o.label)}
+                  disabled={pickedIdx >= 0 || revealAll}
+                  onClick={() => setPicked(String(oi))}
                 >
-                  <b>{o.label}.</b> {o.text}
+                  <b>{LBL[oi]}.</b> {o}
                 </button>
               );
             })}
           </div>
-          {(picked || show) && (
+          {done && (
             <div className="qa-feedback">
-              {picked && (norm(picked) === norm(correct || '')
+              {pickedIdx >= 0 && (pickedIdx === correctIdx
                 ? <span className="ok">正解！🎉</span>
                 : <span className="ng">不正解…</span>)}
-              <span className="qa-ans">答え: {pair.a}</span>
+              <span className="qa-ans">
+                答え: {correctIdx >= 0 ? `${LBL[correctIdx]}. ${options[correctIdx]}` : pair.a}
+              </span>
             </div>
           )}
           <CardStyles />
@@ -254,8 +271,25 @@ function QACard({
 
   // ── reorder ──
   if (kind === 'order') {
-    const items = splitItems(pair.q);
-    const answerSeq = splitItems(pair.a);
+    const stripMark = (s: string) =>
+      s.replace(/^\s*(?:[A-Ha-hア-ク①-⑧]|[0-9０-９]+)\s*[.)）.、:：]\s*/, '').trim();
+    const items = (pair.opts && pair.opts.length >= 2)
+      ? pair.opts.map(stripMark).filter(Boolean)
+      : splitItems(pair.q);
+    const rawSeq = splitItems(pair.a).map(stripMark);
+    // answer may reference items by number/label instead of repeating text
+    const answerSeq = rawSeq.map(tok => {
+      const n = tok.match(/^([0-9０-９]+)$/);
+      if (n) {
+        const idx = Number(tok.replace(/[０-９]/g, d => String('０１２３４５６７８９'.indexOf(d)))) - 1;
+        if (idx >= 0 && idx < items.length) return items[idx];
+      }
+      if (/^[A-Ha-h]$/.test(tok)) {
+        const idx = 'ABCDEFGH'.indexOf(tok.toUpperCase());
+        if (idx >= 0 && idx < items.length) return items[idx];
+      }
+      return tok;
+    });
     if (items.length >= 2) {
       const built = ordSel.map(i => items[i]);
       const correct =

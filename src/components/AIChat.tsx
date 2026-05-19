@@ -121,21 +121,48 @@ const QA_KIND_LABEL: Record<QAKind, string> = {
   flash: '単語カード',
 };
 
-function parseQAPairs(code: string): { q: string; a: string }[] {
+interface QAPairParsed { q: string; a: string; opts?: string[] }
+
+function parseQAPairs(code: string): QAPairParsed[] {
   const lines = code.split('\n').map(l => l.trim())
     .filter(l => l && !/^@@\w+\s*:/.test(l));
-  const pairs: { q: string; a: string }[] = [];
-  let pendingQ: string | null = null;
+  const pairs: QAPairParsed[] = [];
+  let cur: QAPairParsed | null = null;
   for (const line of lines) {
-    const qm = line.match(/^[Qq]\d*[:.：]\s*(.*)/);
-    const am = line.match(/^[Aa]\d*[:.：]\s*(.*)/);
-    if (qm) pendingQ = qm[1];
-    else if (am && pendingQ !== null) {
-      pairs.push({ q: pendingQ, a: am[1] });
-      pendingQ = null;
+    const qm = line.match(/^[Qq]\s*\d*\s*[:.：]\s*(.*)/);
+    const am = line.match(/^[Aa]\s*\d*\s*[:.：]\s*(.*)/);
+    const om = line.match(/^(?:[-*・>‣–—]|[0-9０-９]+[.)）]|[A-Da-dア-エ①-④][.)）])\s+(.*)/);
+    if (qm) {
+      if (cur && cur.a !== undefined && cur.q) pairs.push(cur);
+      cur = { q: qm[1].trim(), a: '' };
+    } else if (am && cur) {
+      cur.a = am[1].trim();
+      pairs.push(cur);
+      cur = null;
+    } else if (om && cur && !cur.a) {
+      (cur.opts ||= []).push(om[1].trim());
+    } else if (cur && !cur.a && cur.opts === undefined && line) {
+      // continuation of a multi-line question
+      cur.q += ' ' + line;
     }
   }
-  return pairs;
+  if (cur && cur.q && cur.a) pairs.push(cur);
+  return pairs.filter(p => p.q);
+}
+
+// Strip markdown emphasis and internal directives so a question never
+// shows raw `**bold**` / `@@kind:` / fences to the user.
+function cleanAsk(s: string): string {
+  return s
+    .replace(/[（(]\s*@@[^）)]*[）)]/g, '')
+    .replace(/@@\w+\s*:\s*[^\s、,）)]*/g, '')
+    .replace(/`+/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/[*_]/g, '')
+    .replace(/^\s*[-・>‣–—]\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function parseAIResponse(text: string): {
@@ -159,7 +186,9 @@ function parseAIResponse(text: string): {
       else if (om) options.push(om[1].trim());
       else if (!question) question = line;
     }
-    if (question) questions.push({ id: crypto.randomUUID(), question, options });
+    question = cleanAsk(question);
+    const cleanOpts = options.map(cleanAsk).filter(Boolean);
+    if (question) questions.push({ id: crypto.randomUUID(), question, options: cleanOpts });
     return '';
   });
 
@@ -229,21 +258,42 @@ function parseAIResponse(text: string): {
   // clearly a question, surface it as a clarify form anyway.
   if (questions.length === 0 && blocks.length === 0) {
     const t = textContent.trim();
-    if (t.length > 0 && t.length <= 400 && /[?？]/.test(t)) {
+    // Lily often lists choices as **bold** items (e.g. a format menu).
+    const bold = [...t.matchAll(/\*\*\s*(.+?)\s*\*\*/g)]
+      .map(m => cleanAsk(m[1]))
+      .filter(s => s.length > 0 && s.length <= 30);
+    const looksLikeQuestion =
+      /[?？]/.test(t) || bold.length >= 2 || /@@\w+\s*:/.test(t);
+    if (t.length > 0 && t.length <= 1200 && looksLikeQuestion) {
       let options: string[] = [];
-      const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
-      if (paren) {
-        options = paren[1]
-          .split(/[、,／/]|または|\bor\b/)
-          .map(s => s.trim())
-          .filter(s => s.length > 0 && s.length <= 24);
+      if (bold.length >= 2) {
+        options = [...new Set(bold)];
+      } else {
+        const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
+        if (paren) {
+          options = paren[1]
+            .split(/[、,／/]|または|\bor\b/)
+            .map(s => cleanAsk(s))
+            .filter(s => s.length > 0 && s.length <= 24);
+        }
       }
       if (options.length < 2) options = [];
-      questions.push({ id: crypto.randomUUID(), question: t, options });
+      // Question = text before the first bold/option list, cleaned.
+      const head = t.split(/\*\*|[（(]\s*@@/)[0];
+      const question = cleanAsk(head && head.trim().length >= 4 ? head : t);
+      questions.push({ id: crypto.randomUUID(), question, options });
     }
   }
 
-  return { textContent, blocks, questions };
+  // Never let internal directives leak into the visible chat bubble.
+  const cleanText = textContent
+    .replace(/[（(]\s*@@[^）)]*[）)]/g, '')
+    .replace(/@@\w+\s*:\s*[^\s、,）)]*/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+
+  return { textContent: cleanText, blocks, questions };
 }
 
 const CHART_PALETTE = [
