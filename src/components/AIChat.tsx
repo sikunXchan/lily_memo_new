@@ -428,12 +428,25 @@ function buildSystemPrompt(contextNotes: Note[]): string {
   return `${LILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
 
-function buildSikunSystemPrompt(contextNotes: Note[]): string {
-  if (contextNotes.length === 0) return SIKUNLILY_CHAT_SYSTEM_PROMPT;
+const SIKU_MODE_PROMPTS: Record<string, string> = {
+  organize: `
+【現在のモード: メモ整理】
+提供されたメモ群を横断的に分析し、以下を行え:
+1. メモ間の関連性・重複・矛盾を検出して報告する
+2. 関連するメモ同士をリンクすべき箇所を [[メモタイトル]] 記法で提案する
+3. フォルダ分類・タグ付けの提案を行う
+4. 孤立したメモや未整理コンテンツを指摘する
+結果は箇条書きで、具体的なメモ名・セクション名を挙げて説明すること。`,
+};
+
+function buildSikunSystemPrompt(contextNotes: Note[], mode?: string): string {
+  const modeDirective = mode && SIKU_MODE_PROMPTS[mode] ? SIKU_MODE_PROMPTS[mode] : '';
+  const base = modeDirective ? `${SIKUNLILY_CHAT_SYSTEM_PROMPT}\n${modeDirective}` : SIKUNLILY_CHAT_SYSTEM_PROMPT;
+  if (contextNotes.length === 0) return base;
   const context = contextNotes
     .map(n => `## ${n.title || '無題'}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
     .join('\n\n---\n\n');
-  return `${SIKUNLILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
+  return `${base}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
 
 /* ───────────── Block previews ───────────── */
@@ -1207,10 +1220,10 @@ const SUGGESTIONS = [
 ];
 
 const SIKUNLILY_SUGGESTIONS = [
-  'このメモをプレゼン用スライドにして',
   '複数ファイルのコードプロジェクトを作って',
   'このドキュメントを分析してまとめて',
-  'スライドのテーマと構成を提案して',
+  'このデータのパターンと異常を検出して',
+  '情報源を比較して信頼性を評価して',
 ];
 
 // Tone/style modes: tapping toggles the mode ON; while ON, every message
@@ -1391,7 +1404,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           setSikunProgress('コードを設計中...');
           aiText = await callGeminiChat(
             history,
-            buildSikunSystemPrompt(contextNotes),
+            buildSikunSystemPrompt(contextNotes, 'code'),
+            apiKey,
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+          );
+          setSikunProgress('');
+        } else if (activeMode === 'organize') {
+          setSikunProgress('メモを分析中...');
+          aiText = await callGeminiChat(
+            history,
+            buildSikunSystemPrompt(contextNotes, 'organize'),
             apiKey,
             { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
           );
@@ -1500,9 +1522,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           </button>
           <button
             className={`web-toggle ${webSearch ? 'on' : ''}`}
-            onClick={() => activeModel !== 'sikunlily' && setWebSearch(p => !p)}
-            title={activeModel === 'sikunlily' ? 'sikunlilyはネット検索未対応' : 'ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ'}
-            disabled={activeModel === 'sikunlily'}
+            onClick={() => setWebSearch(p => !p)}
+            title="ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ"
           >
             <Search size={13} />
             <span className="web-label">ネット検索</span>
@@ -1573,7 +1594,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             </div>
             {activeModel === 'sikunlily' ? (
               <>
-                <p className="welcome-text">sikunlily だ ⚔️🐕<br />スライド作成と大規模コード構築が得意だ。<br />スライドはヘッダーのトグルでコード構築に切り替えられる。</p>
+                <p className="welcome-text">sikunlily だ ⚔️🐕<br />lilyのペット「sikun」と「lily」が合わさった柴犬の武士だ。<br />コード構築・データ解析・調査検証・メモ整理が得意だ。</p>
                 <div className="suggestions">
                   {SIKUNLILY_SUGGESTIONS.map(s => (
                     <button key={s} className="suggestion-chip siku" onClick={() => sendMessage(s)}>{s}</button>
@@ -1637,11 +1658,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             ⚙️ コード構築{activeMode === 'code' ? ' ✓' : ''}
           </button>
           <button
-            className={`quick-chip mode-chip siku-mode${activeMode === 'slides' ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === 'slides' ? null : 'slides'))}
-            title="スライド作成モード（デフォルト）"
+            className={`quick-chip mode-chip siku-mode${activeMode === 'organize' ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === 'organize' ? null : 'organize'))}
+            title="メモ整理モード: メモ間の関連性分析・リンク提案・フォルダ整理提案"
           >
-            🖼️ スライド{activeMode === 'slides' ? ' ✓' : ''}
+            🗂️ メモ整理{activeMode === 'organize' ? ' ✓' : ''}
           </button>
         </div>
       ) : (
