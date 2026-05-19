@@ -45,6 +45,9 @@ const KIND_LABEL: Record<string, string> = {
   qa: 'Q&A',
   fill: '穴埋め問題',
   order: '並べ替え問題',
+  choice: '選択問題',
+  truefalse: '○×問題',
+  flash: '単語カード',
 };
 
 export default function QAComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
