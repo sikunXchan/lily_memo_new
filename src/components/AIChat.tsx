@@ -223,6 +223,26 @@ function parseAIResponse(text: string): {
     }
     return '';
   }).trim();
+
+  // Fallback: the model sometimes ignores the `ask` block rule and asks
+  // in plain prose. If Lily produced no deliverables and the reply is
+  // clearly a question, surface it as a clarify form anyway.
+  if (questions.length === 0 && blocks.length === 0) {
+    const t = textContent.trim();
+    if (t.length > 0 && t.length <= 400 && /[?？]/.test(t)) {
+      let options: string[] = [];
+      const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
+      if (paren) {
+        options = paren[1]
+          .split(/[、,／/]|または|\bor\b/)
+          .map(s => s.trim())
+          .filter(s => s.length > 0 && s.length <= 24);
+      }
+      if (options.length < 2) options = [];
+      questions.push({ id: crypto.randomUUID(), question: t, options });
+    }
+  }
+
   return { textContent, blocks, questions };
 }
 
