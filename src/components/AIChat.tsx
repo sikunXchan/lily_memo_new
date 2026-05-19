@@ -1361,14 +1361,32 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
       let aiText: string;
       if (activeModel === 'sikunlily') {
-        setSikunProgress('構成を設計中...');
-        aiText = await callSikunLilyChat(
-          history,
-          buildSikunSystemPrompt(contextNotes),
-          apiKey,
-          (p: SikunLilyProgress) => setSikunProgress(p.label),
-        );
-        setSikunProgress('');
+        if (activeMode === 'code') {
+          setSikunProgress('コードを設計中...');
+          aiText = await callGeminiChat(
+            history,
+            buildSikunSystemPrompt(contextNotes),
+            apiKey,
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+          );
+          setSikunProgress('');
+        } else if (activeMode === 'slides') {
+          setSikunProgress('構成を設計中...');
+          aiText = await callSikunLilyChat(
+            history,
+            buildSikunSystemPrompt(contextNotes),
+            apiKey,
+            (p: SikunLilyProgress) => setSikunProgress(p.label),
+          );
+          setSikunProgress('');
+        } else {
+          // モード未選択 → 通常会話（高速・シングルステージ）
+          aiText = await callGeminiChat(
+            history,
+            buildSikunSystemPrompt(contextNotes),
+            apiKey,
+          );
+        }
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
       }

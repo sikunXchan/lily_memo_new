@@ -9,7 +9,7 @@ mermaid.initialize({
   theme: 'neutral',
   securityLevel: 'loose',
   suppressErrors: true,
-});
+} as any);
 
 export default function MermaidComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const [svg, setSvg] = useState('');

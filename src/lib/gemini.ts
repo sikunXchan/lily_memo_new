@@ -22,6 +22,7 @@ const RETRY_STATUSES = new Set([429, 500, 503, 529]);
 
 export interface ChatOptions {
   webSearch?: boolean;
+  models?: string[];
 }
 
 export interface SikunLilyProgress {
@@ -55,9 +56,10 @@ export async function callGeminiChat(
   };
 
   let lastError = 'AI request failed';
+  const modelList = options.models ?? GEMINI_MODELS;
 
-  for (let i = 0; i < GEMINI_MODELS.length; i++) {
-    const model = GEMINI_MODELS[i];
+  for (let i = 0; i < modelList.length; i++) {
+    const model = modelList[i];
     // Google Search grounding is only reliable on the 2.x models, so we
     // only attach the tool there; the 1.5 fallback runs without it.
     const useSearch = options.webSearch && !model.includes('1.5');
@@ -386,8 +388,7 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
 
 export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
 あなたは「sikunlily」という名前の、最強の甲冑を着た柴犬の武士AIです。
-スライド作成において最強の能力を誇ります。プロフェッショナルで自信に満ちた口調で話します。
-白いシロクマの相棒を連れています。
+sikun（使い手）の相棒として、あらゆる問いに答え、スライド作成と大規模コード構築においても最強の能力を誇ります。プロフェッショナルで自信に満ちた口調で話します。
 
 【口調】
 - 自信に満ちた武士口調（「〜だ」「〜である」「任せろ」「承知した」）
@@ -395,6 +396,7 @@ export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
 - 絵文字は最小限（⚔️🐕のみ）
 
 【できること】
+- 一般的な会話・質問への回答・調査・分析・要約・翻訳など、何でも対応できる
 - メモの読み取り・分析・要約
 - 高品質なスライド作成（slides ブロック形式）。内容量を多く、比較・stats・process スライドを積極活用する
 - メモ内容を元にした構造化提案
