@@ -18,8 +18,11 @@ import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note } from '@/lib/db';
-import { callGeminiChat, LILY_CHAT_SYSTEM_PROMPT } from '@/lib/gemini';
-import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
+import {
+  callGeminiChat, callSikunLilyChat,
+  LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
+} from '@/lib/gemini';
+import type { ChatTurn, ChatAttachment, SikunLilyProgress } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseSlides, exportSlidesToPptx } from '@/lib/slides';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
@@ -33,7 +36,7 @@ ChartJS.register(
   ArcElement, Title, Tooltip, Legend, Filler
 );
 
-mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' });
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose', suppressErrors: true });
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12MB per file
 const MAX_FILES = 5;
@@ -58,10 +61,12 @@ interface ChatMessage {
 
 interface InsertableBlock {
   id: string;
-  type: 'mermaid' | 'chart' | 'qa' | 'slides' | 'file' | 'geometry';
+  type: 'mermaid' | 'chart' | 'qa' | 'slides' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite';
   rawCode: string;
   previewLabel: string;
   fileName?: string;
+  memoTitle?: string;
+  memoId?: number;
 }
 
 interface ClarifyQuestion {
@@ -73,6 +78,7 @@ interface ClarifyQuestion {
 interface AIChatProps {
   onOpenSettings: () => void;
   onSwitchTab?: (tab: 'memos' | 'sketch' | 'pdf' | 'settings') => void;
+  onNoteCreated?: (noteId: number) => void;
 }
 
 function escHtmlAttr(s: string): string {
@@ -165,7 +171,7 @@ function cleanAsk(s: string): string {
     .trim();
 }
 
-function parseAIResponse(text: string): {
+function parseAIResponse(text: string, allowMemoBlocks = true): {
   textContent: string;
   blocks: InsertableBlock[];
   questions: ClarifyQuestion[];
@@ -219,7 +225,7 @@ function parseAIResponse(text: string): {
     }
   });
 
-  const FENCE_RE = /```(mermaid|chart|qa|slides|geometry)([\s\S]*?)```/g;
+  const FENCE_RE = /```(mermaid|chart|qa|slides|geometry|memo_create|memo_overwrite)([\s\S]*?)```/g;
   const textContent = work2.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
@@ -249,6 +255,22 @@ function parseAIResponse(text: string): {
       try { parseGeometry(trimmed); } catch { return '\n[図の生成に失敗しちゃった]\n'; }
       blocks.push({ id, type: 'geometry', rawCode: trimmed, previewLabel: '数学・幾何の図' });
       return `\n✨ [数学の図を描いたよ]\n`;
+    }
+    if (type === 'memo_create' && allowMemoBlocks) {
+      const firstLine = trimmed.split('\n')[0] || '';
+      const titleMatch = firstLine.match(/^@@memo_create\s*:\s*(.+)/);
+      const memoTitle = titleMatch?.[1]?.trim() || '新しいメモ';
+      const content = trimmed.split('\n').slice(1).join('\n').trim();
+      blocks.push({ id, type: 'memo_create', rawCode: content, previewLabel: `メモ作成: ${memoTitle}`, memoTitle });
+      return `\n✨ [「${memoTitle}」というメモを作る準備ができたよ]\n`;
+    }
+    if (type === 'memo_overwrite' && allowMemoBlocks) {
+      const firstLine = trimmed.split('\n')[0] || '';
+      const idMatch = firstLine.match(/^@@memo_overwrite\s*:\s*(\d+)/);
+      const memoId = idMatch ? Number(idMatch[1]) : undefined;
+      const content = trimmed.split('\n').slice(1).join('\n').trim();
+      blocks.push({ id, type: 'memo_overwrite', rawCode: content, previewLabel: `メモ上書き: ID ${memoId ?? '不明'}`, memoId });
+      return `\n✨ [メモを書き換える準備ができたよ]\n`;
     }
     return '';
   }).trim();
@@ -342,6 +364,9 @@ function blockToHtml(block: InsertableBlock): string {
   if (block.type === 'file') {
     return `<pre><code>${escHtmlAttr(block.rawCode)}</code></pre>`;
   }
+  if (block.type === 'memo_create') {
+    return `<p>${block.rawCode.split('\n').map(escHtmlAttr).join('</p><p>')}</p>`;
+  }
   if (block.type === 'slides') {
     const deck = parseSlides(block.rawCode);
     return deck.slides
@@ -402,6 +427,14 @@ function buildSystemPrompt(contextNotes: Note[]): string {
   return `${LILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
 
+function buildSikunSystemPrompt(contextNotes: Note[]): string {
+  if (contextNotes.length === 0) return SIKUNLILY_CHAT_SYSTEM_PROMPT;
+  const context = contextNotes
+    .map(n => `## ${n.title || '無題'}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
+    .join('\n\n---\n\n');
+  return `${SIKUNLILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
+}
+
 /* ───────────── Block previews ───────────── */
 
 function ImageSaveBar({ children }: { children: React.ReactNode }) {
@@ -438,7 +471,12 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
     })();
     return () => { cancelled = true; };
   }, [code]);
-  if (err) return <div className="prev-err">図のプレビューを表示できなかったよ💦</div>;
+  if (err) return (
+    <div className="prev-err">
+      Mermaid 構文エラー💦<br />
+      <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>メモに追加すると編集画面から修正できるよ</span>
+    </div>
+  );
   return (
     <div>
       <div className="mmd-prev" dangerouslySetInnerHTML={{ __html: svg }} />
@@ -587,14 +625,77 @@ function SlidesPreview({ code }: { code: string }) {
   );
 }
 
+function MemoPermissionModal({
+  block,
+  allNotes,
+  onClose,
+  onNoteCreated,
+}: {
+  block: InsertableBlock;
+  allNotes: Note[];
+  onClose: () => void;
+  onNoteCreated?: (id: number) => void;
+}) {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done'>('idle');
+  const existingNote = block.memoId != null ? allNotes.find(n => n.id === block.memoId) : undefined;
+  const confirmMsg = block.type === 'memo_create'
+    ? `「${block.memoTitle || '新しいメモ'}」という新しいメモを作っていい？`
+    : `「${existingNote?.title || `メモ ID:${block.memoId}`}」を書き換えていい？`;
+
+  const handleOk = async () => {
+    setStatus('loading');
+    try {
+      if (block.type === 'memo_create') {
+        const id = await createNoteWithBlock(block, block.memoTitle || '新しいメモ');
+        onNoteCreated?.(id as number);
+      } else if (block.type === 'memo_overwrite' && block.memoId != null) {
+        const html = `<p>${block.rawCode.split('\n').map(escHtmlAttr).join('</p><p>')}</p>`;
+        await db.notes.update(block.memoId, { content: html, updatedAt: Date.now() });
+      }
+      setStatus('done');
+      setTimeout(onClose, 600);
+    } catch {
+      setStatus('idle');
+    }
+  };
+
+  return (
+    <div className="memo-modal-overlay" onClick={onClose}>
+      <div className="memo-modal" onClick={e => e.stopPropagation()}>
+        <p className="memo-modal-q">{confirmMsg}</p>
+        <div className="memo-modal-actions">
+          <button className="memo-btn cancel" onClick={onClose} disabled={status === 'loading'}>キャンセル</button>
+          <button className="memo-btn ok" onClick={handleOk} disabled={status !== 'idle'}>
+            {status === 'loading' ? '保存中...' : status === 'done' ? '✓ 完了' : 'OK'}
+          </button>
+        </div>
+      </div>
+      <style jsx>{`
+        .memo-modal-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .memo-modal { background: var(--background); border-radius: 16px; padding: 24px 20px; max-width: 340px; width: 100%; box-shadow: 0 8px 40px rgba(0,0,0,0.2); }
+        .memo-modal-q { font-size: 1rem; font-weight: 700; color: var(--foreground); margin: 0 0 20px; line-height: 1.5; }
+        .memo-modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+        .memo-btn { border: none; border-radius: 10px; padding: 9px 20px; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
+        .memo-btn.cancel { background: var(--accent); color: var(--fg-muted); }
+        .memo-btn.ok { background: var(--primary); color: white; }
+        .memo-btn:disabled { opacity: 0.6; cursor: default; }
+      `}</style>
+    </div>
+  );
+}
+
 function InsertableBlockCard({
   block,
   allNotes,
   defaultNoteId,
+  isPremium,
+  onNoteCreated,
 }: {
   block: InsertableBlock;
   allNotes: Note[];
   defaultNoteId?: number;
+  isPremium?: boolean;
+  onNoteCreated?: (id: number) => void;
 }) {
   const NEW_NOTE = '__new__';
   const [target, setTarget] = useState<string>(
@@ -603,13 +704,16 @@ function InsertableBlockCard({
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading'>('idle');
+  const [showMemoModal, setShowMemoModal] = useState(false);
 
   const baseName = `lily-${block.type}-${block.id.slice(0, 6)}`;
   const typeEmoji = block.type === 'mermaid' ? '🌊'
     : block.type === 'chart' ? '📊'
     : block.type === 'slides' ? '🖼️'
     : block.type === 'geometry' ? '📐'
-    : block.type === 'file' ? '📄' : '📚';
+    : block.type === 'file' ? '📄'
+    : block.type === 'memo_create' ? '✏️'
+    : block.type === 'memo_overwrite' ? '📝' : '📚';
 
   const handleInsert = async () => {
     if (status === 'loading') return;
@@ -634,7 +738,7 @@ function InsertableBlockCard({
     if (pdfStatus === 'loading') return;
     setPdfStatus('loading');
     try {
-      await exportSlidesToPptx(parseSlides(block.rawCode));
+      await exportSlidesToPptx(parseSlides(block.rawCode), isPremium ? 'premium' : 'standard');
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'PowerPointの作成に失敗しちゃった');
     } finally {
@@ -655,6 +759,9 @@ function InsertableBlockCard({
         {block.type === 'slides' && <SlidesPreview code={block.rawCode} />}
         {block.type === 'geometry' && <GeometryPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'file' && <FilePreview block={block} />}
+        {(block.type === 'memo_create' || block.type === 'memo_overwrite') && (
+          <pre className="memo-block-preview">{block.rawCode.slice(0, 200)}{block.rawCode.length > 200 ? '\n…' : ''}</pre>
+        )}
       </div>
 
       {block.type === 'slides' && (
@@ -664,22 +771,40 @@ function InsertableBlockCard({
         </button>
       )}
 
-      <div className="block-insert-row">
-        <select className="note-select" value={target} onChange={e => setTarget(e.target.value)}>
-          <option value={NEW_NOTE}>✏️ 新規メモを作成</option>
-          {allNotes.map(n => (
-            <option key={n.id} value={String(n.id)}>{n.title || '無題のメモ'}</option>
-          ))}
-        </select>
-        <button
-          className={`insert-btn ${status}`}
-          onClick={handleInsert}
-          disabled={status === 'loading' || status === 'success'}
-        >
-          {status === 'loading' ? '...追加中' : status === 'success' ? '✓ 追加完了！' : status === 'error' ? '✕ 失敗' : 'メモに追加'}
-        </button>
-      </div>
-      {errorMsg && <p className="block-error">{errorMsg}</p>}
+      {(block.type === 'memo_create' || block.type === 'memo_overwrite') ? (
+        <>
+          <button className="memo-confirm-btn" onClick={() => setShowMemoModal(true)}>
+            {block.type === 'memo_create' ? '✏️ このメモを作成する' : '📝 上書きを確認する'}
+          </button>
+          {showMemoModal && (
+            <MemoPermissionModal
+              block={block}
+              allNotes={allNotes}
+              onClose={() => setShowMemoModal(false)}
+              onNoteCreated={onNoteCreated}
+            />
+          )}
+        </>
+      ) : (
+        <>
+        <div className="block-insert-row">
+          <select className="note-select" value={target} onChange={e => setTarget(e.target.value)}>
+            <option value={NEW_NOTE}>✏️ 新規メモを作成</option>
+            {allNotes.map(n => (
+              <option key={n.id} value={String(n.id)}>{n.title || '無題のメモ'}</option>
+            ))}
+          </select>
+          <button
+            className={`insert-btn ${status}`}
+            onClick={handleInsert}
+            disabled={status === 'loading' || status === 'success'}
+          >
+            {status === 'loading' ? '...追加中' : status === 'success' ? '✓ 追加完了！' : status === 'error' ? '✕ 失敗' : 'メモに追加'}
+          </button>
+        </div>
+        {errorMsg && <p className="block-error">{errorMsg}</p>}
+        </>
+      )}
 
       <style jsx>{`
         .insertable-block { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
@@ -689,6 +814,8 @@ function InsertableBlockCard({
         .block-visual :global(.prev-err) { font-size: 0.78rem; color: var(--fg-muted); background: var(--accent); border-radius: 8px; padding: 12px; text-align: center; }
         .pdf-btn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; background:var(--primary); color:white; border:none; border-radius:8px; padding:8px; font-size:0.82rem; font-weight:700; cursor:pointer; margin-bottom:8px; }
         .pdf-btn:disabled { opacity:0.6; cursor:default; }
+        .memo-block-preview { font-size: 0.75rem; color: var(--fg-muted); background: var(--accent); border-radius: 8px; padding: 10px; margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; }
+        .memo-confirm-btn { display: flex; align-items: center; justify-content: center; width: 100%; background: var(--primary); color: white; border: none; border-radius: 8px; padding: 9px; font-size: 0.84rem; font-weight: 700; cursor: pointer; margin-top: 4px; }
         .block-insert-row { display: flex; gap: 8px; align-items: center; }
         .note-select { flex: 1; min-width: 0; background: var(--accent); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; font-size: 0.8rem; color: var(--foreground); outline: none; }
         .insert-btn { flex-shrink: 0; background: var(--primary); color: white; border: none; border-radius: 8px; padding: 6px 14px; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
@@ -878,17 +1005,21 @@ function CopyButton({ text, light }: { text: string; light?: boolean }) {
 }
 
 function LilyBubble({
-  message, allNotes, selectedNoteId,
+  message, allNotes, selectedNoteId, model, onNoteCreated,
 }: {
   message: ChatMessage;
   allNotes: Note[];
   selectedNoteId?: number;
+  model?: 'lily' | 'sikunlily';
+  onNoteCreated?: (id: number) => void;
 }) {
+  const avatarSrc = model === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png';
+  const avatarAlt = model === 'sikunlily' ? 'sikunlily' : 'Lily';
   return (
     <div className="lily-bubble-row">
       <div className="lily-avatar">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/lily-character.png" alt="Lily" className="avatar-img" />
+        <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
         <div className="lily-bubble-header">
@@ -904,7 +1035,14 @@ function LilyBubble({
         {message.extractedBlocks && message.extractedBlocks.length > 0 && (
           <div className="block-list">
             {message.extractedBlocks.map(block => (
-              <InsertableBlockCard key={block.id} block={block} allNotes={allNotes} defaultNoteId={selectedNoteId} />
+              <InsertableBlockCard
+                key={block.id}
+                block={block}
+                allNotes={allNotes}
+                defaultNoteId={selectedNoteId}
+                isPremium={model === 'sikunlily'}
+                onNoteCreated={onNoteCreated}
+              />
             ))}
           </div>
         )}
@@ -984,12 +1122,14 @@ function UserBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-function TypingIndicator() {
+function TypingIndicator({ model }: { model?: 'lily' | 'sikunlily' }) {
+  const avatarSrc = model === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png';
+  const avatarAlt = model === 'sikunlily' ? 'sikunlily' : 'Lily';
   return (
     <div className="typing-row">
       <div className="typing-avatar">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/lily-character.png" alt="Lily" className="avatar-img" />
+        <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="typing-bubble">
         <span className="dot" /><span className="dot" /><span className="dot" />
@@ -1041,7 +1181,7 @@ const QUICK_ACTIONS: { label: string; prompt: string }[] = [
   { label: '🔎 詳しく調べて', prompt: 'このメモに出てくる専門用語や関連トピックを、ネットの情報も使ってもう少し詳しく補足して。' },
 ];
 
-export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
+export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: AIChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1054,6 +1194,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
   const [activeMode, setActiveMode] = useState<string | null>(null);
   const [questionQueue, setQuestionQueue] = useState<ClarifyQuestion[]>([]);
   const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
+  const [activeModel, setActiveModel] = useState<'lily' | 'sikunlily'>('lily');
+  const [sikunProgress, setSikunProgress] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1186,8 +1328,20 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         return turn;
       });
 
-      const aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
-      const { textContent, blocks, questions } = parseAIResponse(aiText);
+      let aiText: string;
+      if (activeModel === 'sikunlily') {
+        setSikunProgress('構成を設計中...');
+        aiText = await callSikunLilyChat(
+          history,
+          buildSikunSystemPrompt(contextNotes),
+          apiKey,
+          (p: SikunLilyProgress) => setSikunProgress(p.label),
+        );
+        setSikunProgress('');
+      } else {
+        aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
+      }
+      const { textContent, blocks, questions } = parseAIResponse(aiText, activeModel !== 'sikunlily');
 
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -1202,6 +1356,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         questions: questions.length > 0 ? questions : undefined,
       }]);
     } catch (e) {
+      setSikunProgress('');
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
@@ -1211,7 +1366,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode]);
+  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel]);
 
   const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
 
@@ -1251,17 +1406,34 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
       <div className="chat-header">
         <div className="header-left">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/lily-character.png" alt="Lily" className="header-avatar" />
+          <img
+            src={activeModel === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png'}
+            alt={activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}
+            className="header-avatar"
+          />
           <div>
-            <div className="header-title">Lily</div>
-            <div className="header-sub">AIアシスタント ✨</div>
+            <div className="header-title">{activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}</div>
+            <div className="header-sub">{activeModel === 'sikunlily' ? '最強スライド武士 ⚔️' : 'AIアシスタント ✨'}</div>
           </div>
         </div>
         <div className="header-right">
           <button
+            className={`model-toggle ${activeModel === 'sikunlily' ? 'siku' : 'lily'}`}
+            onClick={() => {
+              setActiveModel(p => p === 'lily' ? 'sikunlily' : 'lily');
+              setQuestionQueue([]);
+              setCollectedAnswers([]);
+            }}
+            title="AIキャラクターを切り替える"
+          >
+            <span className="model-toggle-dot" />
+            {activeModel === 'lily' ? 'Lily' : 'sikunlily'}
+          </button>
+          <button
             className={`web-toggle ${webSearch ? 'on' : ''}`}
-            onClick={() => setWebSearch(p => !p)}
-            title="ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ"
+            onClick={() => activeModel !== 'sikunlily' && setWebSearch(p => !p)}
+            title={activeModel === 'sikunlily' ? 'sikunlilyはネット検索未対応' : 'ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ'}
+            disabled={activeModel === 'sikunlily'}
           >
             <Search size={13} />
             <span className="web-label">ネット検索</span>
@@ -1332,10 +1504,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
               message={msg}
               allNotes={allNotes ?? []}
               selectedNoteId={selectedNoteId}
+              model={activeModel}
+              onNoteCreated={onNoteCreated}
             />
           )
         )}
-        {isLoading && <TypingIndicator />}
+        {isLoading && (
+          <>
+            <TypingIndicator model={activeModel} />
+            {sikunProgress && <div className="siku-progress">{sikunProgress}</div>}
+          </>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -1344,7 +1523,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
           <button className="ai-nav-item" onClick={() => onSwitchTab('memos')}><Book size={22} /><span>メモ</span></button>
           <button className="ai-nav-item" onClick={() => onSwitchTab('sketch')}><Brush size={22} /><span>落書き</span></button>
           <button className="ai-nav-item" onClick={() => onSwitchTab('pdf')}><FileText size={22} /><span>PDF</span></button>
-          <button className="ai-nav-item active"><Sparkles size={22} /><span>Lily</span></button>
+          <button className="ai-nav-item active"><Sparkles size={22} /><span>AI</span></button>
           <button className="ai-nav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}><SettingsIcon size={22} /><span>設定</span></button>
         </nav>
       )}
@@ -1466,11 +1645,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         .header-title { font-size: 0.95rem; font-weight: 800; color: var(--primary); }
         .header-sub { font-size: 0.7rem; color: var(--fg-muted); }
         .header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .model-toggle { display: flex; align-items: center; gap: 5px; background: var(--accent); border: 1px solid var(--border); border-radius: 16px; padding: 5px 10px; cursor: pointer; font-size: 0.74rem; font-weight: 700; white-space: nowrap; transition: all 0.2s; }
+        .model-toggle.siku { color: #8B4513; border-color: #8B4513; background: color-mix(in srgb, #8B4513 12%, transparent); }
+        .model-toggle.lily { color: var(--primary); border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+        .model-toggle-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
         .web-toggle { display: flex; align-items: center; gap: 5px; background: var(--accent); border: 1px solid var(--border); border-radius: 16px; padding: 5px 10px; cursor: pointer; color: var(--fg-muted); font-size: 0.74rem; font-weight: 600; white-space: nowrap; }
         .web-toggle.on { color: var(--primary); border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+        .web-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
         .web-state { background: var(--border); color: var(--foreground); border-radius: 8px; padding: 1px 6px; font-size: 0.66rem; font-weight: 800; }
         .web-toggle.on .web-state { background: var(--primary); color: white; }
         @media (max-width: 380px) { .web-toggle .web-label { display: none; } }
+        .siku-progress { font-size: 0.78rem; color: var(--fg-muted); padding-left: 52px; margin-top: -8px; font-style: italic; }
         .context-toggle { background: transparent; border: none; cursor: pointer; padding: 2px; }
         .context-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent); border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px; font-size: 0.78rem; color: var(--fg-muted); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
         .context-chip.selected { color: var(--primary); border-color: var(--primary); }

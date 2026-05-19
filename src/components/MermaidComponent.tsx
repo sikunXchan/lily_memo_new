@@ -8,11 +8,13 @@ mermaid.initialize({
   startOnLoad: false,
   theme: 'neutral',
   securityLevel: 'loose',
+  suppressErrors: true,
 });
 
 export default function MermaidComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const [svg, setSvg] = useState('');
   const [editing, setEditing] = useState(false);
+  const [error, setError] = useState('');
   const renderRef = useRef<HTMLDivElement>(null);
   const [extraSpace, setExtraSpace] = useState(0);
   const widthNum = attrs.width ? parseInt(attrs.width as string) : 100;
@@ -20,17 +22,20 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
 
   useEffect(() => {
     if (editing) return;
+    let cancelled = false;
     const doRender = async () => {
       if (!attrs.content) return;
       try {
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
         const { svg: renderedSvg } = await mermaid.render(id, attrs.content as string);
-        setSvg(renderedSvg);
+        if (!cancelled) { setSvg(renderedSvg); setError(''); }
       } catch (err) {
         console.error('Mermaid render error:', err);
+        if (!cancelled) { setError('構文エラー'); setEditing(true); }
       }
     };
     void doRender();
+    return () => { cancelled = true; };
   }, [attrs.content, editing]);
 
   useEffect(() => {
@@ -75,7 +80,7 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
               <option value="200%">200%</option>
               <option value="300%">300%</option>
             </select>
-            <button className="btn-edit" onClick={() => setEditing(!editing)}>
+            <button className="btn-edit" onClick={() => { setError(''); setEditing(!editing); }}>
               {editing ? 'プレビュー表示' : 'コードを編集'}
             </button>
           </div>
@@ -92,6 +97,11 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
             className="mermaid-editor"
             placeholder="graph TD..."
         />
+      ) : error ? (
+        <div className="mermaid-error" contentEditable={false}>
+          <span className="mermaid-error-msg">Mermaid 構文エラー — コードを確認してね</span>
+          <button className="btn-edit" onClick={() => { setError(''); setEditing(true); }}>編集</button>
+        </div>
       ) : (
         <div
           ref={renderRef}
@@ -175,6 +185,19 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
         .mermaid-render :global(svg) {
           max-width: 100%;
           height: auto;
+        }
+        .mermaid-error {
+          padding: 16px 24px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          background: color-mix(in srgb, #cc0000 8%, var(--background));
+          border-top: 1px solid color-mix(in srgb, #cc0000 20%, transparent);
+        }
+        .mermaid-error-msg {
+          font-size: 0.82rem;
+          color: #cc0000;
+          font-weight: 600;
         }
       `}</style>
     </NodeViewWrapper>

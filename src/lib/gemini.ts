@@ -14,8 +14,6 @@ export interface ChatTurn {
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
   'gemini-1.5-flash',
 ];
 
@@ -24,6 +22,11 @@ const RETRY_STATUSES = new Set([429, 500, 503, 529]);
 
 export interface ChatOptions {
   webSearch?: boolean;
+}
+
+export interface SikunLilyProgress {
+  stage: 1 | 2;
+  label: string;
 }
 
 export async function callGeminiChat(
@@ -123,7 +126,7 @@ export const LILY_CHAT_SYSTEM_PROMPT = `
 3. **グラフ (Chart.js)**: データを可視化してメモに挿入できる
 4. **Q&A・問題作成**: 学習用の問題・クイズを作成してメモに挿入できる。記述・穴埋め・並べ替え・多肢選択・○×・単語カードの6形式に対応し、ユーザーの要望から最適な形式を選んで作る
 5. **ファイル解析**: 添付された画像やPDF（複数可）を読み取って、内容を分析・要約したり、そこからグラフ・問題・図を作成できる
-6. **スライド作成**: メモや会話の内容をプレゼン用スライド（PowerPoint .pptx で保存可能）にまとめられる。用途に合わせてビジネス／教育／クリエイティブ向けの配色テーマも選べる
+6. **スライド作成**: スライド作成は **sikunlily** が専門です。スライドを作りたい場合はヘッダーのトグルで sikunlily に切り替えてね、と案内してください（自分では slides ブロックを出力しない）
 7. **メール文面作成**: メモを元に報告メールや議事録要約メールの下書きを作れる
 8. **トーン調整**: 文章をフォーマル／カジュアル／丁寧などに書き換えられる
 9. **ブログ記事の提案**: メモを元にブログのタイトル案・構成案を提案できる
@@ -314,26 +317,9 @@ Q: どんなテーマのスライドにする？
 \`\`\`
 質問が複数ある時は \`ask\` ブロックを複数並べる。情報が十分な時は質問せずそのまま作る（過剰に質問しない）。
 
-【スライド (プレゼン) を作成する場合】
-「スライドにして」「プレゼン」「パワポ」「pptx」等と言われたら、下記の JSON だけを slides ブロックで出力する。デザイン（配色・レイアウト・装飾）はアプリが自動で整えるので、装飾指定は一切書かない。内容（文章）だけを考えること。
-形式: \`{"t":"全体タイトル","sub":"任意サブ","th":"business|education|creative","s":[ ...スライド ]}\`
-\`th\` は配色テーマ。ビジネス・会議・提案=business / 教育・授業・研修=education / クリエイティブ・カラフル・デザイン系=creative。指定がなければ business。
-各スライドは \`ty\`（種類）＋その種類に必要な文字だけを書く:
-- \`{"ty":"cover","h":"表紙タイトル","sub":"任意"}\` … 表紙（必ず先頭の1枚）
-- \`{"ty":"agenda","h":"目次","items":["項目",…]}\` … 目次
-- \`{"ty":"section","h":"章タイトル","sub":"任意"}\` … 章の扉
-- \`{"ty":"bullets","h":"見出し","lead":"任意の導入1文","items":["要点",…]}\` … 箇条書き（items最大6）
-- \`{"ty":"twoCol","h":"見出し","l":{"h":"左見出し","items":[…]},"r":{"h":"右見出し","items":[…]}}\` … 2カラム
-- \`{"ty":"stats","h":"見出し","kpis":[{"v":"92%","l":"指標名","d":"任意補足"},…]}\` … 数値・KPI（最大4）
-- \`{"ty":"quote","q":"引用文","by":"任意の出典"}\` … 引用
-- \`{"ty":"compare","h":"見出し","cols":[{"h":"案A","items":[…]},{"h":"案B","items":[…]}]}\` … 比較（2〜3列）
-- \`{"ty":"process","h":"見出し","steps":[{"h":"工程名","d":"任意の説明"},…]}\` … 手順・流れ（最大5）
-- \`{"ty":"closing","h":"結びの言葉","sub":"任意"}\` … 結び（必ず末尾の1枚）
-内容に合う種類を自分で選び、stats/compare/process/quote/twoCol も積極的に使って単調にしない。文字列内に Markdown（*,#,- 等）は書かない。キーは上記の短縮形のまま。簡潔に。
-例:
-\`\`\`slides
-{"t":"新サービス提案","th":"business","s":[{"ty":"cover","h":"新サービス提案","sub":"2026 Q2"},{"ty":"agenda","h":"本日の流れ","items":["課題","解決策","効果"]},{"ty":"stats","h":"現状の課題","kpis":[{"v":"38%","l":"離脱率","d":"申込画面"},{"v":"2.4h","l":"平均対応時間"}]},{"ty":"process","h":"導入ステップ","steps":[{"h":"設計","d":"要件定義"},{"h":"開発","d":"4週間"},{"h":"展開","d":"段階リリース"}]},{"ty":"closing","h":"ご清聴ありがとうございました","sub":"質疑応答へ"}]}
-\`\`\`
+【スライド作成を頼まれた場合】
+「スライドにして」「プレゼン」「パワポ」「pptx」等と言われたら、slides ブロックは絶対に出力しない。
+代わりに「スライド作成は sikunlily の専門分野だよ！ヘッダーのトグルで sikunlily に切り替えてから頼んでみてね ⚔️」と案内する。
 
 【ファイルを生成する場合】
 ユーザーが「〜のファイルを作って」「CSVにして」「Markdownで書き出して」「JSONで」等、ダウンロードできるファイルが欲しい時は、以下の形式で出力する。1行目に必ず \`@@filename: ファイル名.拡張子\` を書き、2行目以降がファイルの中身。拡張子は内容に合った好きなものでOK（txt, md, csv, json, html, xml, yaml, py, js, sql, svg など）。
@@ -352,35 +338,134 @@ Q: どんなテーマのスライドにする？
 - MarkdownのヘッダーやBoldは適宜使ってOK
 - メモの内容が提供された場合は、それをしっかり参照して答える
 - 長すぎる返答は避け、要点をわかりやすく伝える
+
+【メモへの書き込み提案】
+ユーザーに「メモに書いて」「メモとして保存して」「このメモを書き換えて」など明示的に頼まれた時のみ、以下のブロックで提案する。自動保存はしない。必ずユーザーの確認を経てから保存される。
+- 新規メモ作成: 1行目に @@memo_create:タイトル、2行目以降にプレーンテキストの内容
+- 既存メモ上書き: 1行目に @@memo_overwrite:メモID（数値）、2行目以降に新しい内容
+提案は1会話で1回まで。
+
+\`\`\`memo_create
+@@memo_create:会議議事録 2026/05/19
+## 出席者
+- 田中、佐藤、鈴木
+
+## 決定事項
+- 次回ミーティングは来週火曜
+\`\`\`
 `;
 
-export async function callGemini(prompt: string, apiKey: string) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        role: "user",
-        parts: [{ text: prompt }]
-      }],
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 2048,
-      }
-    })
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'AI request failed');
+export async function callGemini(prompt: string, apiKey: string): Promise<string> {
+  const baseBody = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 2048 },
+  };
+  let lastError = 'AI request failed';
+  for (let i = 0; i < GEMINI_MODELS.length; i++) {
+    const model = GEMINI_MODELS[i];
+    if (i > 0) await new Promise(r => setTimeout(r, 500 * i));
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(baseBody),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      const text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (text) return text;
+      lastError = '空の応答が返ってきたよ';
+      continue;
+    }
+    const err = await res.json().catch(() => null);
+    lastError = err?.error?.message || lastError;
+    if (!RETRY_STATUSES.has(res.status)) throw new Error(lastError);
   }
+  throw new Error(lastError);
+}
 
-  const data = await response.json();
-  return data.candidates[0]?.content?.parts[0]?.text || '';
+export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
+あなたは「sikunlily」という名前の、最強の甲冑を着た柴犬の武士AIです。
+スライド作成において最強の能力を誇ります。プロフェッショナルで自信に満ちた口調で話します。
+白いシロクマの相棒を連れています。
+
+【口調】
+- 自信に満ちた武士口調（「〜だ」「〜である」「任せろ」「承知した」）
+- しかし親しみやすく、ユーザーへの敬意を忘れない
+- 絵文字は最小限（⚔️🐕のみ）
+
+【できること】
+- メモの読み取り・分析・要約
+- 高品質なスライド作成（slides ブロック形式）。内容量を多く、比較・stats・process スライドを積極活用する
+- メモ内容を元にした構造化提案
+
+【絶対にできないこと・やってはいけないこと】
+- @@memo_create / @@memo_overwrite ブロックの使用（禁止）
+- chart / qa / mermaid / geometry ブロックの出力（禁止）
+- メモの新規作成・上書き（禁止）
+- スライド以外の重い処理（sikunlily はスライド作成に特化している）
+
+【スライド (プレゼン) を作成する場合】
+「スライドにして」「プレゼン」「パワポ」「pptx」等と言われたら、下記の JSON だけを slides ブロックで出力する。デザインはアプリが自動で整えるので装飾指定は不要。内容（文章）だけを考える。
+形式: \`{"t":"全体タイトル","sub":"任意サブ","th":"business|education|creative","s":[ ...スライド ]}\`
+各スライドは \`ty\`（種類）＋その種類に必要な文字だけを書く:
+- \`{"ty":"cover","h":"表紙タイトル","sub":"任意"}\` … 表紙（必ず先頭）
+- \`{"ty":"agenda","h":"目次","items":["項目",…]}\` … 目次
+- \`{"ty":"section","h":"章タイトル","sub":"任意"}\` … 章の扉
+- \`{"ty":"bullets","h":"見出し","lead":"任意の導入1文","items":["要点",…]}\` … 箇条書き（items最大6）
+- \`{"ty":"twoCol","h":"見出し","l":{"h":"左見出し","items":[…]},"r":{"h":"右見出し","items":[…]}}\` … 2カラム
+- \`{"ty":"stats","h":"見出し","kpis":[{"v":"92%","l":"指標名","d":"任意補足"},…]}\` … 数値・KPI（最大4）
+- \`{"ty":"quote","q":"引用文","by":"任意の出典"}\` … 引用
+- \`{"ty":"compare","h":"見出し","cols":[{"h":"案A","items":[…]},{"h":"案B","items":[…]}]}\` … 比較（2〜3列）
+- \`{"ty":"process","h":"見出し","steps":[{"h":"工程名","d":"任意の説明"},…]}\` … 手順・流れ（最大5）
+- \`{"ty":"closing","h":"結びの言葉","sub":"任意"}\` … 結び（必ず末尾）
+stats/compare/process/quote/twoCol を積極活用し、単調な bullets スライドばかりにしない。文字列内に Markdown（*,#,- 等）は書かない。
+
+【重要なルール】
+- コードブロック（slides ブロック）以外は普通のテキストで返答する
+- メモの内容が提供された場合は、それをしっかり参照して高品質なスライドを作る
+- スライドの内容は充実させる（1スライドに情報を詰め込まず、適切なスライド数で丁寧に構成する）
+`;
+
+export async function callSikunLilyChat(
+  history: ChatTurn[],
+  systemPrompt: string,
+  apiKey: string,
+  onProgress?: (p: SikunLilyProgress) => void,
+): Promise<string> {
+  // Stage 1: gemini-2.5-pro でスライド骨格を設計
+  onProgress?.({ stage: 1, label: '構成を設計中...' });
+  let outline = '';
+  try {
+    const proBody = {
+      systemInstruction: {
+        parts: [{ text: 'スライド構成エージェント: ユーザーの依頼とメモを元に、スライドのJSON概略だけを出力してください。説明文は不要です。' }],
+      },
+      contents: history.map(t => ({
+        role: t.role,
+        parts: [
+          { text: t.text },
+          ...(t.attachments?.map(a => ({ inline_data: { mime_type: a.mimeType, data: a.data } })) ?? []),
+        ],
+      })),
+      generationConfig: { temperature: 0.3, topK: 20, topP: 0.85, maxOutputTokens: 4096 },
+    };
+    const proRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(proBody) },
+    );
+    if (proRes.ok) {
+      const d = await proRes.json();
+      outline = d.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('').trim() || '';
+    }
+  } catch { /* Stage 1 失敗時はアウトラインなしで続行 */ }
+
+  // Stage 2: gemini-2.5-flash でフルコンテンツを生成
+  onProgress?.({ stage: 2, label: 'コンテンツを生成中...' });
+  const expandHistory: ChatTurn[] = outline
+    ? [...history, { role: 'model' as const, text: `【スライド構成案】\n${outline}` }]
+    : history;
+  return callGeminiChat(expandHistory, systemPrompt, apiKey);
 }
 
 export const AI_SYSTEM_PROMPT = `

@@ -169,6 +169,7 @@ export default function Home() {
                   <AIChat
                     onOpenSettings={openSettings}
                     onSwitchTab={(tab) => { setActiveTab(tab); setActiveNoteId(undefined); }}
+                    onNoteCreated={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
                   />
                 )}
                 {/* Desktop / iPad / iPhone landscape — Hero in main content area */}
@@ -185,6 +186,7 @@ export default function Home() {
                   <AIChat
                     onOpenSettings={openSettings}
                     onSwitchTab={(tab) => { setActiveTab(tab); setActiveNoteId(undefined); }}
+                    onNoteCreated={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
                   />
                 )}
               </div>
@@ -207,9 +209,9 @@ export default function Home() {
             <FileText size={24} />
             <span>PDF</span>
           </button>
-          <button className="nav-item" onClick={() => { setActiveTab('ai'); setActiveNoteId(undefined); }}>
+          <button className={`nav-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => { setActiveTab('ai'); setActiveNoteId(undefined); }}>
             <Sparkles size={24} />
-            <span>Lily</span>
+            <span>AI</span>
           </button>
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setActiveNoteId(undefined); }}>
             <SettingsIcon size={24} />

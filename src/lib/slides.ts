@@ -204,7 +204,30 @@ function buildMasters(p: PInstance, t: Theme) {
   });
 }
 
-interface Ctx { p: PInstance; t: Theme; deck: SlideDeck; n: number; total: number }
+function buildPremiumMasters(p: PInstance, t: Theme) {
+  p.defineSlideMaster({
+    title: BASE,
+    background: { color: 'FFFFFF' },
+    objects: [
+      { rect: { x: W - 3.4, y: H - 2.7, w: 3.4, h: 2.7, fill: FILL(t.accent, 94) } },
+      { rect: { x: W - 2.0, y: H - 1.8, w: 2.0, h: 1.8, fill: FILL(t.accent2, 92) } },
+      { rect: { x: 0, y: 0, w: 0.08, h: H, fill: FILL(t.accent, 85) } },
+      { rect: { x: 0, y: H - 0.09, w: W, h: 0.09, fill: FILL(t.accent) } },
+    ],
+    slideNumber: { x: W - 1.0, y: H - 0.52, w: 0.7, h: 0.32, color: t.muted, fontSize: 9, align: 'right', fontFace: FONT },
+  });
+  p.defineSlideMaster({
+    title: DARK,
+    background: { color: t.dark },
+    objects: [
+      { ellipse: { x: W - 5.5, y: -3.0, w: 8.5, h: 8.5, fill: FILL(t.accent, 82) } },
+      { ellipse: { x: -3.0, y: H - 4.0, w: 6.5, h: 6.5, fill: FILL(t.accent2, 86) } },
+      { ellipse: { x: W - 2.5, y: H - 2.5, w: 3.0, h: 3.0, fill: FILL(t.accent, 78) } },
+    ],
+  });
+}
+
+interface Ctx { p: PInstance; t: Theme; deck: SlideDeck; n: number; total: number; quality?: 'standard' | 'premium' }
 
 const SHADOW = { type: 'outer', color: '7A7A7A', blur: 8, offset: 3, angle: 90, opacity: 0.16 };
 const NO_FILL = { type: 'none' };
@@ -278,11 +301,12 @@ function itemCards(s: PSlide, t: Theme, items: string[], top: number, accent: st
 
 function renderCover(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t, deck } = c;
+  const premium = c.quality === 'premium';
   s.addShape('ellipse', { x: 9.0, y: 3.6, w: 5.2, h: 5.2, fill: NO_FILL, line: { color: t.onDark, width: 1, transparency: 86 } });
   s.addShape('roundRect', { x: 1.12, y: 2.05, w: 1.5, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || deck.title, {
     x: 1.1, y: 2.4, w: 10.8, h: 2.4, fontFace: FONT,
-    fontSize: 46, bold: true, color: t.onDark, valign: 'top',
+    fontSize: premium ? 48 : 46, bold: true, color: t.onDark, valign: 'top',
   });
   if (d.subtitle || deck.subtitle) {
     s.addText(d.subtitle || deck.subtitle || '', {
@@ -393,6 +417,7 @@ function renderCompare(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderStats(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  const premium = c.quality === 'premium';
   decor(s, t);
   heading(s, t, d.heading || '');
   const kpis = d.kpis ?? [];
@@ -408,7 +433,7 @@ function renderStats(d: DeckSlide, s: PSlide, c: Ctx) {
     s.addShape('ellipse', { x: x + w / 2 - 0.7, y: y + 0.42, w: 1.4, h: 1.4, fill: FILL(ac, 88) });
     s.addText(k.value, {
       x, y: y + 0.6, w, h: 1.05, fontFace: FONT,
-      fontSize: 38, bold: true, color: ac, align: 'center', valign: 'middle',
+      fontSize: premium ? 40 : 38, bold: true, color: ac, align: 'center', valign: 'middle',
     });
     s.addText(k.label, {
       x: x + 0.2, y: y + 1.95, w: w - 0.4, h: 0.55, fontFace: FONT,
@@ -494,7 +519,7 @@ const RENDER: Record<SlideType, Renderer> = {
 
 const DARK_TYPES = new Set<SlideType>(['cover', 'section', 'closing']);
 
-export async function exportSlidesToPptx(deck: SlideDeck): Promise<void> {
+export async function exportSlidesToPptx(deck: SlideDeck, quality: 'standard' | 'premium' = 'standard'): Promise<void> {
   const mod = await import('pptxgenjs');
   const PptxGenJS = (mod.default ?? mod) as unknown as PClass;
   const p = new PptxGenJS();
@@ -502,13 +527,17 @@ export async function exportSlidesToPptx(deck: SlideDeck): Promise<void> {
 
   p.defineLayout({ name: 'LILY', width: W, height: H });
   p.layout = 'LILY';
-  buildMasters(p, t);
+  if (quality === 'premium') {
+    buildPremiumMasters(p, t);
+  } else {
+    buildMasters(p, t);
+  }
 
   const total = deck.slides.length;
   deck.slides.forEach((d, i) => {
     const dark = DARK_TYPES.has(d.type);
     const s = p.addSlide({ masterName: dark ? DARK : BASE });
-    const ctx: Ctx = { p, t, deck, n: i + 1, total };
+    const ctx: Ctx = { p, t, deck, n: i + 1, total, quality };
     (RENDER[d.type] ?? renderBullets)(d, s, ctx);
   });
 
