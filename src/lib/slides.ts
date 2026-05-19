@@ -167,7 +167,7 @@ interface PInstance {
   layout: string;
   defineSlideMaster: (o: Record<string, unknown>) => void;
   addSlide: (o?: { masterName?: string }) => PSlide;
-  write: (o: { outputType: 'blob' }) => Promise<Blob | string>;
+  write: (o: { outputType: string }) => Promise<unknown>;
 }
 interface PClass {
   new (): PInstance;
@@ -481,9 +481,10 @@ export async function exportSlidesToPptx(deck: SlideDeck): Promise<void> {
     (RENDER[d.type] ?? renderBullets)(d, s, ctx);
   });
 
-  const blob = await p.write({ outputType: 'blob' });
-  triggerDownload(
-    blob as Blob,
-    sanitizeFilename(`${deck.title || 'slides'}.pptx`),
-  );
+  // Use arraybuffer → manual Blob so we control the MIME type and avoid
+  // any environment-specific quirks in pptxgenjs's blob creation path.
+  const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  const ab = await p.write({ outputType: 'arraybuffer' }) as unknown as ArrayBuffer;
+  const blob = new Blob([ab], { type: PPTX_MIME });
+  triggerDownload(blob, sanitizeFilename(`${deck.title || 'slides'}.pptx`));
 }
