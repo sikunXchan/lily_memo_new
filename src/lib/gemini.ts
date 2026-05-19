@@ -501,3 +501,78 @@ export const AI_SYSTEM_PROMPT = `
 ユーザーの現在のノートの内容や、ユーザーからの直接の指示（例：「シーケンス図を作って」「最近のデータをグラフにして」）に基づいて、最適な図解や分析を提供してください。
 口調は丁寧で、ユーザーを応援するような親しみやすい雰囲気（「〜ですね！✨」「お手伝いします！」など）でお願いします。
 `;
+
+// ---- Nanobanana image generation ------------------------------------
+
+export async function callNanobanana(
+  prompt: string,
+  apiKey: string,
+  quality: 'pro' | 'flash' = 'flash',
+): Promise<string> {
+  const model = quality === 'pro'
+    ? 'gemini-3-pro-image-preview'
+    : 'gemini-3.1-flash-image-preview';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseModalities: ['IMAGE'] },
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error((err as { error?: { message?: string } })?.error?.message || `Nanobanana error ${res.status}`);
+  }
+  const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string } }> } }> };
+  for (const part of (data.candidates?.[0]?.content?.parts ?? [])) {
+    if (part.inlineData?.data) return part.inlineData.data;
+  }
+  throw new Error('画像が返ってこなかったよ');
+}
+
+export interface SlideImageRequest {
+  slideIndex: number;
+  slideType: string;
+  quality: 'pro' | 'flash';
+  prompt: string;
+}
+
+const SLIDE_ART_SYSTEM = `You are a slide art director. Given a slide deck JSON, output a JSON array describing decorative images to generate for key slides using AI image generation.
+Only include cover, section, and closing slide types. Maximum 5 images total.
+For each image:
+- "slideIndex": 0-based index of the slide in the deck
+- "slideType": the slide type string
+- "quality": "pro" for cover slides, "flash" for section/closing
+- "prompt": detailed English image generation prompt
+
+Image prompt requirements:
+- Pure white background ONLY (critical for background removal)
+- Professional minimal vector-art illustration style
+- NO text, NO letters, NO UI elements
+- Thematic to the slide content and deck subject
+- Describe shapes, colors, composition, style explicitly
+- Example: "A minimalist golden samurai sword crossed with a paintbrush, clean vector illustration, pure white background, professional, no text"
+
+Output ONLY a valid JSON array. No explanation, no markdown, no other text.`;
+
+export async function analyzeSlideImages(
+  deckJson: string,
+  apiKey: string,
+): Promise<SlideImageRequest[]> {
+  const text = await callGeminiChat(
+    [{ role: 'user', text: `Slide deck JSON:\n${deckJson}\n\nOutput the JSON array only.` }],
+    SLIDE_ART_SYSTEM,
+    apiKey,
+  );
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[0]) as SlideImageRequest[];
+    return Array.isArray(parsed) ? parsed.slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+}

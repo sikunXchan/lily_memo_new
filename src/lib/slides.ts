@@ -37,6 +37,8 @@ export interface SlideDeck {
   slides: DeckSlide[];
 }
 
+export type GeneratedImages = Record<number, string>; // 0-based slide index → base64 PNG
+
 // ---- Theme palette (hex without '#', pptxgenjs format) ---------------
 
 interface Theme {
@@ -161,6 +163,7 @@ interface PSlide {
   background: { color: string };
   addText: (t: unknown, o: Record<string, unknown>) => void;
   addShape: (s: string, o: Record<string, unknown>) => void;
+  addImage: (o: Record<string, unknown>) => void;
 }
 interface PInstance {
   defineLayout: (o: { name: string; width: number; height: number }) => void;
@@ -227,7 +230,7 @@ function buildPremiumMasters(p: PInstance, t: Theme) {
   });
 }
 
-interface Ctx { p: PInstance; t: Theme; deck: SlideDeck; n: number; total: number; quality?: 'standard' | 'premium' }
+interface Ctx { p: PInstance; t: Theme; deck: SlideDeck; n: number; total: number; quality?: 'standard' | 'premium'; images?: GeneratedImages }
 
 const SHADOW = { type: 'outer', color: '7A7A7A', blur: 8, offset: 3, angle: 90, opacity: 0.16 };
 const NO_FILL = { type: 'none' };
@@ -302,15 +305,19 @@ function itemCards(s: PSlide, t: Theme, items: string[], top: number, accent: st
 function renderCover(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t, deck } = c;
   const premium = c.quality === 'premium';
+  const img = c.images?.[c.n - 1];
+  if (img) {
+    s.addImage({ data: `data:image/png;base64,${img}`, x: 7.8, y: 0, w: 5.533, h: 7.5 });
+  }
   s.addShape('ellipse', { x: 9.0, y: 3.6, w: 5.2, h: 5.2, fill: NO_FILL, line: { color: t.onDark, width: 1, transparency: 86 } });
   s.addShape('roundRect', { x: 1.12, y: 2.05, w: 1.5, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || deck.title, {
-    x: 1.1, y: 2.4, w: 10.8, h: 2.4, fontFace: FONT,
+    x: 1.1, y: 2.4, w: img ? 6.5 : 10.8, h: 2.4, fontFace: FONT,
     fontSize: premium ? 48 : 46, bold: true, color: t.onDark, valign: 'top',
   });
   if (d.subtitle || deck.subtitle) {
     s.addText(d.subtitle || deck.subtitle || '', {
-      x: 1.14, y: 4.85, w: 10.5, h: 0.9, fontFace: FONT, fontSize: 18, color: t.onDarkMuted,
+      x: 1.14, y: 4.85, w: img ? 6.3 : 10.5, h: 0.9, fontFace: FONT, fontSize: 18, color: t.onDarkMuted,
     });
   }
   s.addShape('ellipse', { x: 1.14, y: H - 0.84, w: 0.16, h: 0.16, fill: FILL(t.accent2) });
@@ -321,6 +328,10 @@ function renderCover(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderClosing(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  const img = c.images?.[c.n - 1];
+  if (img) {
+    s.addImage({ data: `data:image/png;base64,${img}`, x: 4.7, y: 1.2, w: 3.9, h: 3.9 });
+  }
   s.addShape('ellipse', { x: W / 2 - 2.6, y: 1.4, w: 5.2, h: 5.2, fill: NO_FILL, line: { color: t.onDark, width: 1, transparency: 88 } });
   s.addShape('roundRect', { x: W / 2 - 0.7, y: 2.45, w: 1.4, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || 'ありがとうございました', {
@@ -341,18 +352,22 @@ function renderClosing(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderSection(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
+  const img = c.images?.[c.n - 1];
+  if (img) {
+    s.addImage({ data: `data:image/png;base64,${img}`, x: 8.5, y: 3.2, w: 4.833, h: 4.3 });
+  }
   s.addText(String(c.n).padStart(2, '0'), {
     x: 1, y: 1.7, w: 4, h: 1.3, fontFace: FONT,
     fontSize: 56, bold: true, color: t.accent2, valign: 'top',
   });
   s.addShape('roundRect', { x: 1.04, y: 3.05, w: 1.2, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || '', {
-    x: 1, y: 3.3, w: 11.3, h: 1.6, fontFace: FONT,
+    x: 1, y: 3.3, w: img ? 7.3 : 11.3, h: 1.6, fontFace: FONT,
     fontSize: 36, bold: true, color: t.onDark, valign: 'top',
   });
   if (d.subtitle) {
     s.addText(d.subtitle, {
-      x: 1.02, y: 5.0, w: 11.3, h: 0.8, fontFace: FONT,
+      x: 1.02, y: 5.0, w: img ? 7.3 : 11.3, h: 0.8, fontFace: FONT,
       fontSize: 16, color: t.onDarkMuted, valign: 'top',
     });
   }
@@ -519,7 +534,11 @@ const RENDER: Record<SlideType, Renderer> = {
 
 const DARK_TYPES = new Set<SlideType>(['cover', 'section', 'closing']);
 
-export async function exportSlidesToPptx(deck: SlideDeck, quality: 'standard' | 'premium' = 'standard'): Promise<void> {
+export async function exportSlidesToPptx(
+  deck: SlideDeck,
+  quality: 'standard' | 'premium' = 'standard',
+  images?: GeneratedImages,
+): Promise<void> {
   const mod = await import('pptxgenjs');
   const PptxGenJS = (mod.default ?? mod) as unknown as PClass;
   const p = new PptxGenJS();
@@ -537,7 +556,7 @@ export async function exportSlidesToPptx(deck: SlideDeck, quality: 'standard' | 
   deck.slides.forEach((d, i) => {
     const dark = DARK_TYPES.has(d.type);
     const s = p.addSlide({ masterName: dark ? DARK : BASE });
-    const ctx: Ctx = { p, t, deck, n: i + 1, total, quality };
+    const ctx: Ctx = { p, t, deck, n: i + 1, total, quality, images };
     (RENDER[d.type] ?? renderBullets)(d, s, ctx);
   });
 
