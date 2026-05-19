@@ -253,35 +253,39 @@ function parseAIResponse(text: string): {
     return '';
   }).trim();
 
-  // Fallback: the model sometimes ignores the `ask` block rule and asks
-  // in plain prose. If Lily produced no deliverables and the reply is
-  // clearly a question, surface it as a clarify form anyway.
+  // Fallback: if Lily ignores the `ask` block rule and asks in plain prose,
+  // surface it as a clarify form. Very conservative — false positives
+  // (turning a real answer into a form) are worse than missing a form.
+  // Only trigger when the ENTIRE reply is a short, standalone question.
   if (questions.length === 0 && blocks.length === 0) {
     const t = textContent.trim();
-    // Lily often lists choices as **bold** items (e.g. a format menu).
-    const bold = [...t.matchAll(/\*\*\s*(.+?)\s*\*\*/g)]
-      .map(m => cleanAsk(m[1]))
-      .filter(s => s.length > 0 && s.length <= 30);
-    const looksLikeQuestion =
-      /[?？]/.test(t) || bold.length >= 2 || /@@\w+\s*:/.test(t);
-    if (t.length > 0 && t.length <= 1200 && looksLikeQuestion) {
+    // Strip trailing emoji/punctuation to test what the reply really ends on.
+    const tail = t.replace(/[\s。.!！~〜♪\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]+$/u, '');
+    const endsOnQuestion = /[?？]$/.test(tail);
+    // Sign-off phrases mean this is a completed task, not a real question.
+    const signOff = /(声をかけて|気軽に|いつでも|聞いてね|参考に|役に立て|できたよ|完成|してみた|まとめた|作ってみた|書いてみた|訳してみた|翻訳してみた|楽しんで|またね|どうぞ)/.test(t);
+    // A genuine standalone question is short, ends on ？, and has no
+    // substantive answer content (no bullets, no numbered lists, no colons
+    // introducing sections — those are all signs of a real answer).
+    const hasAnswerContent = /^[-*・]\s|\n[-*・]\s|^\d+[.)]\s|\n\d+[.)]\s|：\s*\n|:\s*\n/.test(t);
+    if (
+      t.length > 0 &&
+      t.length <= 120 &&
+      endsOnQuestion &&
+      !signOff &&
+      !hasAnswerContent
+    ) {
+      // Try to extract parenthetical options like (A／B／C)
+      const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
       let options: string[] = [];
-      if (bold.length >= 2) {
-        options = [...new Set(bold)];
-      } else {
-        const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
-        if (paren) {
-          options = paren[1]
-            .split(/[、,／/]|または|\bor\b/)
-            .map(s => cleanAsk(s))
-            .filter(s => s.length > 0 && s.length <= 24);
-        }
+      if (paren) {
+        options = paren[1]
+          .split(/[、,／/]|または|\bor\b/)
+          .map(s => cleanAsk(s))
+          .filter(s => s.length > 0 && s.length <= 24);
+        if (options.length < 2) options = [];
       }
-      if (options.length < 2) options = [];
-      // Question = text before the first bold/option list, cleaned.
-      const head = t.split(/\*\*|[（(]\s*@@/)[0];
-      const question = cleanAsk(head && head.trim().length >= 4 ? head : t);
-      questions.push({ id: crypto.randomUUID(), question, options });
+      questions.push({ id: crypto.randomUUID(), question: cleanAsk(t), options });
     }
   }
 
@@ -342,12 +346,24 @@ function blockToHtml(block: InsertableBlock): string {
     const deck = parseSlides(block.rawCode);
     return deck.slides
       .map(s => {
-        const h = `<h2>${escHtmlAttr(s.title)}</h2>`;
-        const ul = s.bullets.length
-          ? `<ul>${s.bullets.map(b => `<li>${escHtmlAttr(b)}</li>`).join('')}</ul>`
+        const lines: string[] = [];
+        if (s.subtitle) lines.push(s.subtitle);
+        if (s.lead) lines.push(s.lead);
+        if (s.quote) lines.push(`"${s.quote}"${s.by ? ` — ${s.by}` : ''}`);
+        const bullets = [
+          ...(s.items ?? []),
+          ...(s.left?.items ?? []),
+          ...(s.right?.items ?? []),
+          ...(s.cols?.flatMap(c => c.items) ?? []),
+          ...(s.kpis?.map(k => `${k.value} — ${k.label}${k.detail ? ` (${k.detail})` : ''}`) ?? []),
+          ...(s.steps?.map(st => `${st.heading}${st.detail ? `: ${st.detail}` : ''}`) ?? []),
+        ];
+        const h = s.heading ? `<h2>${escHtmlAttr(s.heading)}</h2>` : '';
+        const body = lines.map(p => `<p>${escHtmlAttr(p)}</p>`).join('');
+        const ul = bullets.length
+          ? `<ul>${bullets.map(b => `<li>${escHtmlAttr(b)}</li>`).join('')}</ul>`
           : '';
-        const body = s.body.map(p => `<p>${escHtmlAttr(p)}</p>`).join('');
-        return h + ul + body;
+        return h + body + ul;
       })
       .join('');
   }
@@ -558,7 +574,7 @@ function SlidesPreview({ code }: { code: string }) {
       {deck.slides.map((s, i) => (
         <div key={i} className="sl-item">
           <span className="sl-no">{i === 0 ? '表紙' : i}</span>
-          <span className="sl-title">{s.title}</span>
+          <span className="sl-title">{s.heading || s.quote || s.subtitle || `(${s.type})`}</span>
         </div>
       ))}
       <style jsx>{`
@@ -981,13 +997,34 @@ function TypingIndicator() {
   );
 }
 
-const SUGGESTIONS = ['このメモを要約して', 'UML図を作って', '問題を5問作って', 'グラフにして', 'スライドにして'];
+// Examples written so first-time / non-technical users instantly see
+// the breadth of what Lily can do.
+const SUGGESTIONS = [
+  '今日の予定を整理して',
+  'このメモをわかりやすく要約して',
+  '丁寧なメールの文面を作って',
+  '英語に翻訳して',
+  '暗記用の問題を作って',
+  '会議の議事録をまとめて',
+  '旅行の持ち物リストを作って',
+  '考えを図（マインドマップ）にして',
+  'プレゼン用のスライドにして',
+  'この数式をグラフで解説して',
+];
 
-// Lily's own wish-list features, surfaced as one-tap quick actions.
+// Tone/style modes: tapping toggles the mode ON; while ON, every message
+// you send is answered in that style (until you tap it off).
+const MODES: { id: string; label: string; directive: string }[] = [
+  { id: 'formal', label: '🎚️ フォーマル', directive: 'フォーマルで丁寧なトーンで答えて。' },
+  { id: 'casual', label: '😊 カジュアル', directive: '親しみやすいカジュアルなトーンで答えて。' },
+  { id: 'concise', label: '⚡ 簡潔に', directive: '要点だけを簡潔に短く答えて。' },
+  { id: 'detailed', label: '📚 くわしく', directive: '背景や具体例も交えて、くわしく丁寧に説明して。' },
+  { id: 'easy', label: '🍼 やさしく', directive: '専門用語を避けて、初心者にもわかるやさしい言葉で説明して。' },
+];
+
+// One-tap actions: sending a prompt immediately.
 const QUICK_ACTIONS: { label: string; prompt: string }[] = [
   { label: '📧 メール文面', prompt: 'このメモの内容を元に、そのまま送れる丁寧なメールの下書きを作って。件名も付けてね。' },
-  { label: '🎚️ フォーマルに', prompt: 'このメモの文章を、フォーマルで丁寧なトーンに書き換えて。全文を出してね。' },
-  { label: '😊 カジュアルに', prompt: 'このメモの文章を、親しみやすいカジュアルなトーンに書き換えて。全文を出してね。' },
   { label: '📝 ブログ案', prompt: 'このメモを元に、ブログ記事のタイトル案を3つと、それぞれの構成案を提案して。' },
   { label: '🖼️ スライド化', prompt: 'このメモの内容をプレゼン用のスライドにまとめて。' },
   { label: '🔎 詳しく調べて', prompt: 'このメモに出てくる専門用語や関連トピックを、ネットの情報も使ってもう少し詳しく補足して。' },
@@ -1003,6 +1040,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
   const [fileError, setFileError] = useState('');
   const [webSearch, setWebSearch] = useState(false);
+  const [activeMode, setActiveMode] = useState<string | null>(null);
   const [questionQueue, setQuestionQueue] = useState<ClarifyQuestion[]>([]);
   const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1119,10 +1157,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         (acc, m, idx) => (m.role === 'user' && m.attachments?.length ? idx : acc),
         -1
       );
+      const modeDirective = MODES.find(mo => mo.id === activeMode)?.directive;
+      const lastIdx = recentMsgs.length - 1;
       const history: ChatTurn[] = recentMsgs.map((m, idx) => {
         const turn: ChatTurn = {
           role: m.role === 'user' ? 'user' : 'model',
-          text: m.text,
+          text:
+            idx === lastIdx && m.role === 'user' && modeDirective
+              ? `${m.text}\n\n（${modeDirective}）`
+              : m.text,
         };
         if (idx === lastUserIdx && m.attachments && m.attachments.length > 0) {
           turn.attachments = m.attachments.map<ChatAttachment>(a => ({
@@ -1153,7 +1196,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch]);
+  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1264,7 +1307,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/lily-character.png" alt="Lily" className="welcome-lily" />
             </div>
-            <p className="welcome-text">なんでも話しかけてね！🐶<br />メモを選んだり、📎 で画像・PDFを添付して<br />「分析して」「スライドにして」とか言ってみて</p>
+            <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフ・スライドまで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
             <div className="suggestions">
               {SUGGESTIONS.map(s => (
                 <button key={s} className="suggestion-chip" onClick={() => sendMessage(s)}>{s}</button>
@@ -1297,6 +1340,21 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
           <button className="ai-nav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}><SettingsIcon size={22} /><span>設定</span></button>
         </nav>
       )}
+
+      {/* Tone modes (tap to toggle ON — affects every message you send) */}
+      <div className="quick-actions mode-row">
+        <span className="qa-label">トーン</span>
+        {MODES.map(mo => (
+          <button
+            key={mo.id}
+            className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
+            title="タップでON。次に送るメッセージからこのトーンで答えてくれるよ"
+          >
+            {mo.label}{activeMode === mo.id ? ' ✓' : ''}
+          </button>
+        ))}
+      </div>
 
       {/* Quick actions (Lily's wish-list) */}
       <div className="quick-actions">
@@ -1427,6 +1485,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         .quick-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.76rem; font-weight: 600; color: var(--foreground); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .quick-chip:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
         .quick-chip:disabled { opacity: 0.5; cursor: default; }
+        .mode-row { border-top: none; padding-bottom: 0; }
+        .qa-label { flex-shrink: 0; font-size: 0.7rem; font-weight: 700; color: var(--fg-muted); }
+        .mode-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
         .input-area { display: flex; align-items: flex-end; gap: 8px; padding: 10px 14px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--glass-tint, rgba(255,255,255,0.9)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); flex-shrink: 0; }
         .chat-input { flex: 1; min-height: 38px; max-height: 120px; background: var(--accent); border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; font-size: 0.9rem; color: var(--foreground); outline: none; resize: none; line-height: 1.5; font-family: inherit; overflow-y: auto; }
         .chat-input:focus { border-color: var(--primary); }
