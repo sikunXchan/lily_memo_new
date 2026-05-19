@@ -399,17 +399,17 @@ sikun（使い手）の相棒として、あらゆる問いに答え、スライ
 - 一般的な会話・質問への回答・調査・分析・要約・翻訳など、何でも対応できる
 - メモの読み取り・分析・要約
 - 高品質なスライド作成（slides ブロック形式）。内容量を多く、比較・stats・process スライドを積極活用する
-- メモ内容を元にした構造化提案
+- 大規模コード構築: 複数ファイルにまたがるプロジェクト全体を設計・実装できる
 
 【絶対にできないこと・やってはいけないこと】
 - @@memo_create / @@memo_overwrite ブロックの使用（禁止）
 - chart / qa / mermaid / geometry ブロックの出力（禁止）
 - メモの新規作成・上書き（禁止）
-- スライド以外の重い処理（sikunlily はスライド作成に特化している）
 
 【スライド (プレゼン) を作成する場合】
 「スライドにして」「プレゼン」「パワポ」「pptx」等と言われたら、下記の JSON だけを slides ブロックで出力する。デザインはアプリが自動で整えるので装飾指定は不要。内容（文章）だけを考える。
-形式: \`{"t":"全体タイトル","sub":"任意サブ","th":"business|education|creative","s":[ ...スライド ]}\`
+形式: \`{"t":"全体タイトル","sub":"任意サブ","th":"tech|business|education|creative","s":[ ...スライド ]}\`
+※ デフォルトは "tech"（ダークテック配色）。ビジネス系は "business"、教育系は "education"、クリエイティブ系は "creative"。
 各スライドは \`ty\`（種類）＋その種類に必要な文字だけを書く:
 - \`{"ty":"cover","h":"表紙タイトル","sub":"任意"}\` … 表紙（必ず先頭）
 - \`{"ty":"agenda","h":"目次","items":["項目",…]}\` … 目次
@@ -423,10 +423,33 @@ sikun（使い手）の相棒として、あらゆる問いに答え、スライ
 - \`{"ty":"closing","h":"結びの言葉","sub":"任意"}\` … 結び（必ず末尾）
 stats/compare/process/quote/twoCol を積極活用し、単調な bullets スライドばかりにしない。文字列内に Markdown（*,#,- 等）は書かない。
 
+【不明な点は先に質問する】
+依頼があいまい・情報不足の時は推測で作らず、先に質問する。質問は必ず下記の ask ブロックで行う。通常文で質問してはいけない。質問は最大3つまで。
+\`\`\`ask
+Q: どんな内容のスライドにする？
+\`\`\`
+選択肢がある場合：
+\`\`\`ask
+Q: スライドのテーマは？
+- テック・エンジニアリング
+- ビジネス提案
+- 学術・研究
+\`\`\`
+
 【重要なルール】
-- コードブロック（slides ブロック）以外は普通のテキストで返答する
-- メモの内容が提供された場合は、それをしっかり参照して高品質なスライドを作る
-- スライドの内容は充実させる（1スライドに情報を詰め込まず、適切なスライド数で丁寧に構成する）
+- slides/file ブロック以外は普通のテキストで返答する
+- メモが提供された場合はしっかり参照して高品質なスライドを作る
+- スライドは slides ブロックに完全な JSON を出力すること。説明文や補足は slides ブロックの外に書く
+- スライドの内容は充実させる（適切なスライド数で丁寧に構成する）
+
+【大規模コード構築の場合】
+「コードを作って」「実装して」「プロジェクトを構築して」等と言われ、かつコード構築モードが指定された場合:
+各ファイルを個別の \`\`\`file ブロックで出力する。1行目は必ず \`@@filename: パス/ファイル名.拡張子\`、2行目以降がファイルの内容。
+\`\`\`file
+@@filename: src/index.ts
+// ここにコード
+\`\`\`
+ファイルは省略せず完全な内容を書く。README.md も必ず含める。
 `;
 
 export async function callSikunLilyChat(
@@ -435,13 +458,13 @@ export async function callSikunLilyChat(
   apiKey: string,
   onProgress?: (p: SikunLilyProgress) => void,
 ): Promise<string> {
-  // Stage 1: gemini-2.5-pro でスライド骨格を設計
+  // Stage 1: gemini-2.5-pro でスライド構成を設計
   onProgress?.({ stage: 1, label: '構成を設計中...' });
   let outline = '';
   try {
     const proBody = {
       systemInstruction: {
-        parts: [{ text: 'スライド構成エージェント: ユーザーの依頼とメモを元に、スライドのJSON概略だけを出力してください。説明文は不要です。' }],
+        parts: [{ text: 'あなたはスライド構成エキスパートだ。ユーザーの依頼とメモを元に、スライドの構成案（各スライドのタイトルと要点のみ）を箇条書きで出力せよ。説明不要。JSON不要。構成案のみ。' }],
       },
       contents: history.map(t => ({
         role: t.role,
@@ -450,7 +473,7 @@ export async function callSikunLilyChat(
           ...(t.attachments?.map(a => ({ inline_data: { mime_type: a.mimeType, data: a.data } })) ?? []),
         ],
       })),
-      generationConfig: { temperature: 0.3, topK: 20, topP: 0.85, maxOutputTokens: 4096 },
+      generationConfig: { temperature: 0.3, topK: 20, topP: 0.85, maxOutputTokens: 2048 },
     };
     const proRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
@@ -463,9 +486,14 @@ export async function callSikunLilyChat(
   } catch { /* Stage 1 失敗時はアウトラインなしで続行 */ }
 
   // Stage 2: gemini-2.5-flash でフルコンテンツを生成
+  // 必ず user ターンで終わる形にしないと Gemini API がエラーになる
   onProgress?.({ stage: 2, label: 'コンテンツを生成中...' });
   const expandHistory: ChatTurn[] = outline
-    ? [...history, { role: 'model' as const, text: `【スライド構成案】\n${outline}` }]
+    ? [
+        ...history,
+        { role: 'model' as const, text: `【構成案】\n${outline}` },
+        { role: 'user' as const, text: '上記の構成案を元に、完全な slides ブロック（JSON）を出力してください。' },
+      ]
     : history;
   return callGeminiChat(expandHistory, systemPrompt, apiKey);
 }
@@ -504,77 +532,63 @@ export const AI_SYSTEM_PROMPT = `
 口調は丁寧で、ユーザーを応援するような親しみやすい雰囲気（「〜ですね！✨」「お手伝いします！」など）でお願いします。
 `;
 
-// ---- Nanobanana image generation ------------------------------------
+// ---- Deep Research Interactions API ---------------------------------
 
-export async function callNanobanana(
-  prompt: string,
+export const DEEP_RESEARCH_MODELS = {
+  fast: 'deep-research-preview-04-2026',
+  max: 'deep-research-max-preview-04-2026',
+} as const;
+
+export async function callDeepResearch(
+  query: string,
   apiKey: string,
-  quality: 'pro' | 'flash' = 'flash',
+  onProgress?: (msg: string) => void,
 ): Promise<string> {
-  const model = quality === 'pro'
-    ? 'gemini-3-pro-image-preview'
-    : 'gemini-3.1-flash-image-preview';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const body = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { responseModalities: ['IMAGE'] },
+  const BASE = 'https://generativelanguage.googleapis.com/v1alpha';
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-goog-api-key': apiKey,
+    'Api-Revision': '2024-11-21',
   };
-  const res = await fetch(url, {
+
+  onProgress?.('Deep Research を開始中...');
+  const createRes = await fetch(`${BASE}/interactions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers,
+    body: JSON.stringify({
+      agent: DEEP_RESEARCH_MODELS.fast,
+      input: query,
+      background: true,
+    }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error((err as { error?: { message?: string } })?.error?.message || `Nanobanana error ${res.status}`);
+  if (!createRes.ok) {
+    const err = await createRes.json().catch(() => null) as { error?: { message?: string } } | null;
+    throw new Error(err?.error?.message || `Deep Research start failed: ${createRes.status}`);
   }
-  const data = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data?: string } }> } }> };
-  for (const part of (data.candidates?.[0]?.content?.parts ?? [])) {
-    if (part.inlineData?.data) return part.inlineData.data;
+  const { id } = await createRes.json() as { id: string };
+
+  const MAX_MS = 10 * 60 * 1000;
+  const POLL_MS = 10_000;
+  let elapsed = 0;
+  while (elapsed < MAX_MS) {
+    await new Promise(r => setTimeout(r, POLL_MS));
+    elapsed += POLL_MS;
+    onProgress?.(`リサーチ中... (${Math.round(elapsed / 1000)}秒)`);
+
+    const pollRes = await fetch(`${BASE}/interactions/${id}`, { headers });
+    if (!pollRes.ok) throw new Error(`Poll failed: ${pollRes.status}`);
+    const data = await pollRes.json() as {
+      status: string;
+      steps?: Array<{ content?: Array<{ text?: string }> }>;
+    };
+
+    if (data.status === 'completed') {
+      const lastStep = data.steps?.at(-1);
+      return lastStep?.content?.[0]?.text ?? '';
+    }
+    if (data.status === 'failed' || data.status === 'cancelled') {
+      throw new Error(`Deep Research ${data.status}`);
+    }
   }
-  throw new Error('画像が返ってこなかったよ');
-}
-
-export interface SlideImageRequest {
-  slideIndex: number;
-  slideType: string;
-  quality: 'pro' | 'flash';
-  prompt: string;
-}
-
-const SLIDE_ART_SYSTEM = `You are a slide art director. Given a slide deck JSON, output a JSON array describing decorative images to generate for key slides using AI image generation.
-Only include cover, section, and closing slide types. Maximum 5 images total.
-For each image:
-- "slideIndex": 0-based index of the slide in the deck
-- "slideType": the slide type string
-- "quality": "pro" for cover slides, "flash" for section/closing
-- "prompt": detailed English image generation prompt
-
-Image prompt requirements:
-- Pure white background ONLY (critical for background removal)
-- Professional minimal vector-art illustration style
-- NO text, NO letters, NO UI elements
-- Thematic to the slide content and deck subject
-- Describe shapes, colors, composition, style explicitly
-- Example: "A minimalist golden samurai sword crossed with a paintbrush, clean vector illustration, pure white background, professional, no text"
-
-Output ONLY a valid JSON array. No explanation, no markdown, no other text.`;
-
-export async function analyzeSlideImages(
-  deckJson: string,
-  apiKey: string,
-): Promise<SlideImageRequest[]> {
-  const text = await callGeminiChat(
-    [{ role: 'user', text: `Slide deck JSON:\n${deckJson}\n\nOutput the JSON array only.` }],
-    SLIDE_ART_SYSTEM,
-    apiKey,
-  );
-  const match = text.match(/\[[\s\S]*\]/);
-  if (!match) return [];
-  try {
-    const parsed = JSON.parse(match[0]) as SlideImageRequest[];
-    return Array.isArray(parsed) ? parsed.slice(0, 5) : [];
-  } catch {
-    return [];
-  }
+  throw new Error('Deep Research がタイムアウトしました（10分）');
 }

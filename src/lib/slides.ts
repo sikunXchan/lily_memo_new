@@ -6,7 +6,7 @@
 
 import { triggerDownload, sanitizeFilename } from './fileGen';
 
-export type ThemeName = 'business' | 'education' | 'creative';
+export type ThemeName = 'business' | 'education' | 'creative' | 'tech';
 export type SlideType =
   | 'cover' | 'agenda' | 'section' | 'bullets' | 'twoCol'
   | 'stats' | 'quote' | 'compare' | 'process' | 'closing';
@@ -37,8 +37,6 @@ export interface SlideDeck {
   slides: DeckSlide[];
 }
 
-export type GeneratedImages = Record<number, string>; // 0-based slide index → base64 PNG
-
 // ---- Theme palette (hex without '#', pptxgenjs format) ---------------
 
 interface Theme {
@@ -59,10 +57,15 @@ const THEMES: Record<ThemeName, Theme> = {
     ink: '221A2E', muted: '7A6E88', accent: '7C4DFF', accent2: 'FF4D9D',
     panel: 'F4EEFF', dark: '1E1330', onDark: 'FFFFFF', onDarkMuted: 'D8CCEC',
   },
+  tech: {
+    ink: '0D1117', muted: '8B949E', accent: '00D4AA', accent2: '58A6FF',
+    panel: 'E8F8F5', dark: '010409', onDark: 'E6EDF3', onDarkMuted: '8B949E',
+  },
 };
 
 function resolveThemeName(val: string): ThemeName {
   const v = (val || '').toLowerCase();
+  if (/tech|テック|technology|エンジニア|開発|developer|code|コード|dark|ダーク|cyber|サイバー/.test(v)) return 'tech';
   if (/business|ビジネス|企業|プロフェッショナル|professional|会議/.test(v)) return 'business';
   if (/education|教育|学習|授業|研修|academic/.test(v)) return 'education';
   if (/creative|クリエイティブ|デザイン|colorful|カラフル/.test(v)) return 'creative';
@@ -208,10 +211,18 @@ function buildMasters(p: PInstance, t: Theme) {
 }
 
 function buildPremiumMasters(p: PInstance, t: Theme) {
+  // Tech theme: dark charcoal BASE slides with grid-line accent details
+  const isTech = t.ink === '0D1117';
   p.defineSlideMaster({
     title: BASE,
-    background: { color: 'FFFFFF' },
-    objects: [
+    background: { color: isTech ? '0D1117' : 'FFFFFF' },
+    objects: isTech ? [
+      { rect: { x: 0, y: 0, w: W, h: 0.05, fill: FILL(t.accent) } },
+      { rect: { x: 0, y: H - 0.05, w: W, h: 0.05, fill: FILL(t.accent) } },
+      { rect: { x: 0, y: 0, w: 0.05, h: H, fill: FILL(t.accent, 70) } },
+      { rect: { x: W - 3.0, y: H - 2.5, w: 3.0, h: 2.5, fill: FILL(t.accent2, 94) } },
+      { rect: { x: W - 1.6, y: H - 1.6, w: 1.6, h: 1.6, fill: FILL(t.accent, 92) } },
+    ] : [
       { rect: { x: W - 3.4, y: H - 2.7, w: 3.4, h: 2.7, fill: FILL(t.accent, 94) } },
       { rect: { x: W - 2.0, y: H - 1.8, w: 2.0, h: 1.8, fill: FILL(t.accent2, 92) } },
       { rect: { x: 0, y: 0, w: 0.08, h: H, fill: FILL(t.accent, 85) } },
@@ -222,7 +233,12 @@ function buildPremiumMasters(p: PInstance, t: Theme) {
   p.defineSlideMaster({
     title: DARK,
     background: { color: t.dark },
-    objects: [
+    objects: isTech ? [
+      { rect: { x: 0, y: 0, w: W, h: 0.07, fill: FILL(t.accent) } },
+      { rect: { x: 0, y: H - 0.07, w: W, h: 0.07, fill: FILL(t.accent) } },
+      { ellipse: { x: W - 6.0, y: -3.5, w: 9.0, h: 9.0, fill: FILL(t.accent, 89) } },
+      { ellipse: { x: -3.5, y: H - 4.5, w: 7.0, h: 7.0, fill: FILL(t.accent2, 91) } },
+    ] : [
       { ellipse: { x: W - 5.5, y: -3.0, w: 8.5, h: 8.5, fill: FILL(t.accent, 82) } },
       { ellipse: { x: -3.0, y: H - 4.0, w: 6.5, h: 6.5, fill: FILL(t.accent2, 86) } },
       { ellipse: { x: W - 2.5, y: H - 2.5, w: 3.0, h: 3.0, fill: FILL(t.accent, 78) } },
@@ -230,7 +246,12 @@ function buildPremiumMasters(p: PInstance, t: Theme) {
   });
 }
 
-interface Ctx { p: PInstance; t: Theme; deck: SlideDeck; n: number; total: number; quality?: 'standard' | 'premium'; images?: GeneratedImages }
+interface Ctx { p: PInstance; t: Theme; deck: SlideDeck; n: number; total: number; premium: boolean }
+
+// For tech theme the BASE master is dark, so use light text on non-dark slides too.
+function inkColor(t: Theme) { return t.ink === '0D1117' ? t.onDark : t.ink; }
+function mutedColor(t: Theme) { return t.ink === '0D1117' ? t.onDarkMuted : t.muted; }
+function panelColor(t: Theme) { return t.ink === '0D1117' ? '1C2526' : t.panel; }
 
 const SHADOW = { type: 'outer', color: '7A7A7A', blur: 8, offset: 3, angle: 90, opacity: 0.16 };
 const NO_FILL = { type: 'none' };
@@ -242,34 +263,101 @@ function decor(s: PSlide, t: Theme) {
   s.addShape('roundRect', { x: -0.7, y: H - 1.2, w: 2.4, h: 2.4, rectRadius: 0.25, fill: FILL(t.accent2, 95) });
 }
 
+// Premium decorative elements for BASE (content) slides — replaces decor().
+function premiumBaseDecor(s: PSlide, t: Theme) {
+  const isTech = t.ink === '0D1117';
+  const isCreative = t.accent === '7C4DFF';
+  const isEducation = t.accent === '1F9D6B';
+  if (isTech) {
+    // Circuit board traces (top-right)
+    s.addShape('rect', { x: W-4.1, y: 0.62, w: 2.1, h: 0.032, fill: FILL(t.accent, 68) });
+    s.addShape('rect', { x: W-2.03, y: 0.62, w: 0.032, h: 0.88, fill: FILL(t.accent, 68) });
+    s.addShape('rect', { x: W-3.4, y: 0.62, w: 0.032, h: 0.88, fill: FILL(t.accent, 68) });
+    s.addShape('rect', { x: W-3.4, y: 1.47, w: 1.4, h: 0.032, fill: FILL(t.accent2, 68) });
+    s.addShape('ellipse', { x: W-4.118, y: 0.604, w: 0.064, h: 0.064, fill: FILL(t.accent) });
+    s.addShape('ellipse', { x: W-3.418, y: 0.604, w: 0.064, h: 0.064, fill: FILL(t.accent) });
+    s.addShape('ellipse', { x: W-2.048, y: 0.604, w: 0.064, h: 0.064, fill: FILL(t.accent) });
+    s.addShape('ellipse', { x: W-3.418, y: 1.454, w: 0.064, h: 0.064, fill: FILL(t.accent2) });
+    s.addShape('ellipse', { x: W-2.014, y: 1.454, w: 0.064, h: 0.064, fill: FILL(t.accent2) });
+    // Background block top-right
+    s.addShape('rect', { x: W-2.9, y: -0.1, w: 2.9, h: 2.5, fill: FILL(t.accent2, 96) });
+    // Bottom-left bracket [ shape
+    s.addShape('rect', { x: 0.36, y: H-1.95, w: 0.036, h: 1.05, fill: FILL(t.accent2, 60) });
+    s.addShape('rect', { x: 0.36, y: H-1.95, w: 0.38, h: 0.036, fill: FILL(t.accent2, 60) });
+    s.addShape('rect', { x: 0.36, y: H-0.936, w: 0.38, h: 0.036, fill: FILL(t.accent2, 60) });
+  } else if (isCreative) {
+    s.addShape('ellipse', { x: -1.0, y: -1.0, w: 2.6, h: 2.6, fill: FILL(t.accent, 88) });
+    s.addShape('ellipse', { x: -0.3, y: -0.3, w: 1.4, h: 1.4, fill: FILL(t.accent2, 84) });
+    s.addShape('ellipse', { x: W-2.6, y: H-2.6, w: 3.2, h: 3.2, fill: FILL(t.accent2, 91) });
+    s.addShape('ellipse', { x: W-1.7, y: H-1.7, w: 2.0, h: 2.0, fill: FILL(t.accent, 88) });
+    s.addShape('ellipse', { x: W-0.85, y: H-0.85, w: 1.0, h: 1.0, fill: FILL(t.accent2, 82) });
+  } else if (isEducation) {
+    s.addShape('ellipse', { x: W-3.5, y: -1.5, w: 4.4, h: 4.4, fill: FILL(t.accent, 91) });
+    s.addShape('ellipse', { x: W-2.3, y: -0.7, w: 2.6, h: 2.6, fill: FILL(t.accent2, 88) });
+    s.addShape('roundRect', { x: -0.8, y: H-1.7, w: 2.4, h: 2.4, rectRadius: 0.3, fill: FILL(t.accent2, 93) });
+    s.addShape('roundRect', { x: -0.4, y: H-1.3, w: 1.5, h: 1.5, rectRadius: 0.2, fill: FILL(t.accent, 89) });
+  } else {
+    // Business: geometric corner blocks + left border
+    s.addShape('rect', { x: W-3.5, y: H-2.9, w: 3.5, h: 2.9, fill: FILL(t.accent, 93) });
+    s.addShape('rect', { x: W-2.1, y: H-1.9, w: 2.1, h: 1.9, fill: FILL(t.accent2, 91) });
+    s.addShape('rect', { x: 0.0, y: 0, w: 0.09, h: H, fill: FILL(t.accent, 80) });
+    s.addShape('ellipse', { x: W-4.2, y: -2.0, w: 4.0, h: 4.0, fill: FILL(t.accent, 94) });
+  }
+}
+
+// Premium decorative elements for DARK slides (cover/section/closing).
+function premiumDarkDecor(s: PSlide, t: Theme) {
+  const isTech = t.ink === '0D1117';
+  const isCreative = t.accent === '7C4DFF';
+  if (isTech) {
+    // Right-side layered stripe panel for depth
+    s.addShape('rect', { x: W-3.3, y: 0, w: 3.3, h: H, fill: FILL(t.accent, 94) });
+    s.addShape('rect', { x: W-2.1, y: 0, w: 2.1, h: H, fill: FILL(t.accent2, 93) });
+    s.addShape('rect', { x: W-1.1, y: 0, w: 1.1, h: H, fill: FILL(t.accent, 90) });
+    // Circuit nodes on right panel
+    s.addShape('ellipse', { x: W-2.75, y: 1.75, w: 0.28, h: 0.28, fill: FILL(t.accent2, 68) });
+    s.addShape('ellipse', { x: W-1.9, y: 3.1, w: 0.28, h: 0.28, fill: FILL(t.accent, 68) });
+    s.addShape('rect', { x: W-2.75, y: 1.89, w: 1.3, h: 0.036, fill: FILL(t.accent2, 68) });
+    s.addShape('rect', { x: W-1.88, y: 1.89, w: 0.036, h: 1.21, fill: FILL(t.accent2, 68) });
+  } else if (isCreative) {
+    s.addShape('ellipse', { x: W-4.2, y: 0.4, w: 5.0, h: 5.0, fill: FILL(t.accent2, 86) });
+    s.addShape('ellipse', { x: W-3.1, y: 1.1, w: 3.4, h: 3.4, fill: FILL(t.accent, 83) });
+    s.addShape('ellipse', { x: W-2.0, y: 1.9, w: 2.0, h: 2.0, fill: FILL(t.accent2, 79) });
+  } else {
+    // Business / Education: abstract rounded panel right
+    s.addShape('roundRect', { x: W-3.6, y: 0.6, w: 2.9, h: H-1.2, rectRadius: 0.25, fill: FILL(t.accent2, 88) });
+    s.addShape('roundRect', { x: W-2.6, y: 1.2, w: 1.9, h: H-2.4, rectRadius: 0.2, fill: FILL(t.accent, 84) });
+  }
+}
+
 function heading(s: PSlide, t: Theme, text: string, lead?: string) {
   s.addShape('roundRect', { x: 0.85, y: 0.6, w: 0.14, h: 0.74, rectRadius: 0.07, fill: FILL(t.accent) });
   s.addText(text || '', {
     x: 1.14, y: 0.5, w: 11.3, h: 0.95, fontFace: FONT,
-    fontSize: 30, bold: true, color: t.ink, valign: 'middle',
+    fontSize: 30, bold: true, color: inkColor(t), valign: 'middle',
   });
   const dividerY = lead ? 2.05 : 1.6;
   if (lead) {
     s.addText(lead, {
       x: 1.16, y: 1.5, w: 11.3, h: 0.5, fontFace: FONT,
-      fontSize: 14, color: t.muted,
+      fontSize: 14, color: mutedColor(t),
     });
   }
-  s.addShape('rect', { x: 1.16, y: dividerY, w: 11.32, h: 0.018, fill: FILL(t.muted, 72) });
+  s.addShape('rect', { x: 1.16, y: dividerY, w: 11.32, h: 0.018, fill: FILL(mutedColor(t), 72) });
 }
 
 function footerTitle(s: PSlide, ctx: Ctx) {
   s.addShape('ellipse', { x: 0.85, y: H - 0.4, w: 0.12, h: 0.12, fill: FILL(ctx.t.accent) });
   s.addText(ctx.deck.title, {
     x: 1.05, y: H - 0.46, w: 8, h: 0.32, fontFace: FONT,
-    fontSize: 9, color: ctx.t.muted,
+    fontSize: 9, color: mutedColor(ctx.t),
   });
 }
 
 function card(s: PSlide, t: Theme, x: number, y: number, w: number, h: number, fill?: string) {
   s.addShape('roundRect', {
-    x, y, w, h, rectRadius: 0.09, fill: FILL(fill ?? 'FFFFFF'),
-    line: { color: t.muted, width: 0.5, transparency: 82 }, shadow: SHADOW,
+    x, y, w, h, rectRadius: 0.09, fill: FILL(fill ?? panelColor(t)),
+    line: { color: mutedColor(t), width: 0.5, transparency: 82 }, shadow: SHADOW,
   });
 }
 
@@ -290,12 +378,12 @@ function itemCards(s: PSlide, t: Theme, items: string[], top: number, accent: st
   const rowH = Math.min(1.1, (bottom - top - gap * (n - 1)) / n);
   items.forEach((it, i) => {
     const y = top + i * (rowH + gap);
-    card(s, t, 0.85, y, 11.63, rowH, t.panel);
+    card(s, t, 0.85, y, 11.63, rowH, panelColor(t));
     const cd = Math.min(0.5, rowH - 0.18);
     numChip(s, 1.05, y + (rowH - cd) / 2, cd, i + 1, accent);
     s.addText(it, {
       x: 1.05 + cd + 0.25, y, w: 11.63 - (cd + 0.55) - 0.3, h: rowH,
-      fontFace: FONT, fontSize: 15, color: t.ink, valign: 'middle',
+      fontFace: FONT, fontSize: 15, color: inkColor(t), valign: 'middle',
     });
   });
 }
@@ -304,34 +392,27 @@ function itemCards(s: PSlide, t: Theme, items: string[], top: number, accent: st
 
 function renderCover(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t, deck } = c;
-  const premium = c.quality === 'premium';
-  const img = c.images?.[c.n - 1];
-  if (img) {
-    s.addImage({ data: `data:image/png;base64,${img}`, x: 7.8, y: 0, w: 5.533, h: 7.5 });
-  }
+  if (c.premium) premiumDarkDecor(s, t);
   s.addShape('ellipse', { x: 9.0, y: 3.6, w: 5.2, h: 5.2, fill: NO_FILL, line: { color: t.onDark, width: 1, transparency: 86 } });
   s.addShape('roundRect', { x: 1.12, y: 2.05, w: 1.5, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || deck.title, {
-    x: 1.1, y: 2.4, w: img ? 6.5 : 10.8, h: 2.4, fontFace: FONT,
-    fontSize: premium ? 48 : 46, bold: true, color: t.onDark, valign: 'top',
+    x: 1.1, y: 2.4, w: c.premium ? 8.0 : 10.8, h: 2.4, fontFace: FONT,
+    fontSize: c.premium ? 48 : 46, bold: true, color: t.onDark, valign: 'top',
   });
   if (d.subtitle || deck.subtitle) {
     s.addText(d.subtitle || deck.subtitle || '', {
-      x: 1.14, y: 4.85, w: img ? 6.3 : 10.5, h: 0.9, fontFace: FONT, fontSize: 18, color: t.onDarkMuted,
+      x: 1.14, y: 4.85, w: c.premium ? 7.8 : 10.5, h: 0.9, fontFace: FONT, fontSize: 18, color: t.onDarkMuted,
     });
   }
   s.addShape('ellipse', { x: 1.14, y: H - 0.84, w: 0.16, h: 0.16, fill: FILL(t.accent2) });
-  s.addText('Presented with Lily', {
-    x: 1.4, y: H - 0.9, w: 6, h: 0.4, fontFace: FONT, fontSize: 11, color: t.onDarkMuted,
+  s.addText('Presented with sikunlily ⚔️', {
+    x: 1.4, y: H - 0.9, w: 8, h: 0.4, fontFace: FONT, fontSize: 11, color: t.onDarkMuted,
   });
 }
 
 function renderClosing(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
-  const img = c.images?.[c.n - 1];
-  if (img) {
-    s.addImage({ data: `data:image/png;base64,${img}`, x: 4.7, y: 1.2, w: 3.9, h: 3.9 });
-  }
+  if (c.premium) premiumDarkDecor(s, t);
   s.addShape('ellipse', { x: W / 2 - 2.6, y: 1.4, w: 5.2, h: 5.2, fill: NO_FILL, line: { color: t.onDark, width: 1, transparency: 88 } });
   s.addShape('roundRect', { x: W / 2 - 0.7, y: 2.45, w: 1.4, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || 'ありがとうございました', {
@@ -344,7 +425,7 @@ function renderClosing(d: DeckSlide, s: PSlide, c: Ctx) {
       fontSize: 18, color: t.onDarkMuted, align: 'center',
     });
   }
-  s.addText('Made with Lily 🐶', {
+  s.addText(c.premium ? 'Made with sikunlily ⚔️' : 'Made with Lily 🐶', {
     x: 0, y: H - 0.8, w: W, h: 0.4, fontFace: FONT,
     fontSize: 11, color: t.onDarkMuted, align: 'center',
   });
@@ -352,36 +433,33 @@ function renderClosing(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderSection(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
-  const img = c.images?.[c.n - 1];
-  if (img) {
-    s.addImage({ data: `data:image/png;base64,${img}`, x: 8.5, y: 3.2, w: 4.833, h: 4.3 });
-  }
+  if (c.premium) premiumDarkDecor(s, t);
   s.addText(String(c.n).padStart(2, '0'), {
     x: 1, y: 1.7, w: 4, h: 1.3, fontFace: FONT,
     fontSize: 56, bold: true, color: t.accent2, valign: 'top',
   });
   s.addShape('roundRect', { x: 1.04, y: 3.05, w: 1.2, h: 0.12, rectRadius: 0.06, fill: FILL(t.accent2) });
   s.addText(d.heading || '', {
-    x: 1, y: 3.3, w: img ? 7.3 : 11.3, h: 1.6, fontFace: FONT,
+    x: 1, y: 3.3, w: c.premium ? 7.8 : 11.3, h: 1.6, fontFace: FONT,
     fontSize: 36, bold: true, color: t.onDark, valign: 'top',
   });
   if (d.subtitle) {
     s.addText(d.subtitle, {
-      x: 1.02, y: 5.0, w: img ? 7.3 : 11.3, h: 0.8, fontFace: FONT,
+      x: 1.02, y: 5.0, w: c.premium ? 7.8 : 11.3, h: 0.8, fontFace: FONT,
       fontSize: 16, color: t.onDarkMuted, valign: 'top',
     });
   }
 }
 
 function renderBullets(d: DeckSlide, s: PSlide, c: Ctx) {
-  decor(s, c.t);
+  if (c.premium) premiumBaseDecor(s, c.t); else decor(s, c.t);
   heading(s, c.t, d.heading || '', d.lead);
   itemCards(s, c.t, d.items ?? [], d.lead ? 2.3 : 1.85, c.t.accent);
   footerTitle(s, c);
 }
 
 function renderAgenda(d: DeckSlide, s: PSlide, c: Ctx) {
-  decor(s, c.t);
+  if (c.premium) premiumBaseDecor(s, c.t); else decor(s, c.t);
   heading(s, c.t, d.heading || 'アジェンダ');
   itemCards(s, c.t, d.items ?? [], 1.95, c.t.accent2);
   footerTitle(s, c);
@@ -401,13 +479,13 @@ function colCard(s: PSlide, t: Theme, col: Col | undefined, x: number, y: number
       text: it,
       options: { bullet: { code: '25CF', indent: 14 }, breakLine: true, paraSpaceAfter: 9 },
     })),
-    { x: x + 0.35, y: y + 1.0, w: w - 0.7, h: h - 1.2, fontFace: FONT, fontSize: 14, color: t.ink, valign: 'top', lineSpacingMultiple: 1.12 },
+    { x: x + 0.35, y: y + 1.0, w: w - 0.7, h: h - 1.2, fontFace: FONT, fontSize: 14, color: inkColor(t), valign: 'top', lineSpacingMultiple: 1.12 },
   );
 }
 
 function renderTwoCol(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
-  decor(s, t);
+  if (c.premium) premiumBaseDecor(s, t); else decor(s, t);
   heading(s, t, d.heading || '');
   const y = 2.05, h = 4.55, w = 5.68;
   colCard(s, t, d.left, 0.85, y, w, h, t.accent);
@@ -417,7 +495,7 @@ function renderTwoCol(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderCompare(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
-  decor(s, t);
+  if (c.premium) premiumBaseDecor(s, t); else decor(s, t);
   heading(s, t, d.heading || '');
   const cols = d.cols ?? [];
   const n = Math.max(cols.length, 1);
@@ -432,8 +510,7 @@ function renderCompare(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderStats(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
-  const premium = c.quality === 'premium';
-  decor(s, t);
+  if (c.premium) premiumBaseDecor(s, t); else decor(s, t);
   heading(s, t, d.heading || '');
   const kpis = d.kpis ?? [];
   const n = Math.max(kpis.length, 1);
@@ -448,16 +525,16 @@ function renderStats(d: DeckSlide, s: PSlide, c: Ctx) {
     s.addShape('ellipse', { x: x + w / 2 - 0.7, y: y + 0.42, w: 1.4, h: 1.4, fill: FILL(ac, 88) });
     s.addText(k.value, {
       x, y: y + 0.6, w, h: 1.05, fontFace: FONT,
-      fontSize: premium ? 40 : 38, bold: true, color: ac, align: 'center', valign: 'middle',
+      fontSize: c.premium ? 40 : 38, bold: true, color: ac, align: 'center', valign: 'middle',
     });
     s.addText(k.label, {
       x: x + 0.2, y: y + 1.95, w: w - 0.4, h: 0.55, fontFace: FONT,
-      fontSize: 14, bold: true, color: t.ink, align: 'center',
+      fontSize: 14, bold: true, color: inkColor(t), align: 'center',
     });
     if (k.detail) {
       s.addText(k.detail, {
         x: x + 0.2, y: y + 2.5, w: w - 0.4, h: 0.75, fontFace: FONT,
-        fontSize: 10, color: t.muted, align: 'center',
+        fontSize: 10, color: mutedColor(t), align: 'center',
       });
     }
   });
@@ -466,8 +543,8 @@ function renderStats(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderQuote(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
-  decor(s, t);
-  s.addShape('roundRect', { x: 0.85, y: 1.4, w: 11.63, h: 4.7, rectRadius: 0.1, fill: FILL(t.panel), shadow: SHADOW });
+  if (c.premium) premiumBaseDecor(s, t); else decor(s, t);
+  s.addShape('roundRect', { x: 0.85, y: 1.4, w: 11.63, h: 4.7, rectRadius: 0.1, fill: FILL(panelColor(t)), shadow: SHADOW });
   s.addShape('roundRect', { x: 0.85, y: 1.4, w: 0.16, h: 4.7, rectRadius: 0.04, fill: FILL(t.accent) });
   s.addText('“', {
     x: 1.25, y: 1.35, w: 2, h: 1.6, fontFace: 'Georgia',
@@ -475,12 +552,12 @@ function renderQuote(d: DeckSlide, s: PSlide, c: Ctx) {
   });
   s.addText(d.quote || d.heading || '', {
     x: 1.7, y: 2.65, w: 9.9, h: 2.3, fontFace: FONT,
-    fontSize: 25, bold: true, color: t.ink, valign: 'top',
+    fontSize: 25, bold: true, color: inkColor(t), valign: 'top',
   });
   if (d.by) {
     s.addText(`—  ${d.by}`, {
       x: 1.72, y: 5.2, w: 10, h: 0.5, fontFace: FONT,
-      fontSize: 14, color: t.muted,
+      fontSize: 14, color: mutedColor(t),
     });
   }
   footerTitle(s, c);
@@ -488,7 +565,7 @@ function renderQuote(d: DeckSlide, s: PSlide, c: Ctx) {
 
 function renderProcess(d: DeckSlide, s: PSlide, c: Ctx) {
   const { t } = c;
-  decor(s, t);
+  if (c.premium) premiumBaseDecor(s, t); else decor(s, t);
   heading(s, t, d.heading || '');
   const steps = d.steps ?? [];
   const n = Math.max(steps.length, 1);
@@ -501,16 +578,16 @@ function renderProcess(d: DeckSlide, s: PSlide, c: Ctx) {
     if (i < steps.length - 1) {
       s.addShape('rect', { x: x + w - gap * 0.1, y: top + cd / 2 - 0.025, w: gap + 0.2, h: 0.05, fill: FILL(t.accent2, 35) });
     }
-    card(s, t, x, top, w, h, t.panel);
+    card(s, t, x, top, w, h);
     numChip(s, x + w / 2 - cd / 2, top + 0.32, cd, i + 1, i % 2 === 0 ? t.accent : t.accent2);
     s.addText(st.heading, {
       x: x + 0.15, y: top + cd + 0.45, w: w - 0.3, h: 0.7, fontFace: FONT,
-      fontSize: 15, bold: true, color: t.ink, align: 'center',
+      fontSize: 15, bold: true, color: inkColor(t), align: 'center',
     });
     if (st.detail) {
       s.addText(st.detail, {
         x: x + 0.2, y: top + cd + 1.15, w: w - 0.4, h: h - cd - 1.3, fontFace: FONT,
-        fontSize: 11, color: t.muted, align: 'center', valign: 'top',
+        fontSize: 11, color: mutedColor(t), align: 'center', valign: 'top',
       });
     }
   });
@@ -537,7 +614,6 @@ const DARK_TYPES = new Set<SlideType>(['cover', 'section', 'closing']);
 export async function exportSlidesToPptx(
   deck: SlideDeck,
   quality: 'standard' | 'premium' = 'standard',
-  images?: GeneratedImages,
 ): Promise<void> {
   const mod = await import('pptxgenjs');
   const PptxGenJS = (mod.default ?? mod) as unknown as PClass;
@@ -546,7 +622,8 @@ export async function exportSlidesToPptx(
 
   p.defineLayout({ name: 'LILY', width: W, height: H });
   p.layout = 'LILY';
-  if (quality === 'premium') {
+  const premium = quality === 'premium';
+  if (premium) {
     buildPremiumMasters(p, t);
   } else {
     buildMasters(p, t);
@@ -556,7 +633,7 @@ export async function exportSlidesToPptx(
   deck.slides.forEach((d, i) => {
     const dark = DARK_TYPES.has(d.type);
     const s = p.addSlide({ masterName: dark ? DARK : BASE });
-    const ctx: Ctx = { p, t, deck, n: i + 1, total, quality, images };
+    const ctx: Ctx = { p, t, deck, n: i + 1, total, premium };
     (RENDER[d.type] ?? renderBullets)(d, s, ctx);
   });
 

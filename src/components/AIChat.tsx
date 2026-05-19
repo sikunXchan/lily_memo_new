@@ -19,14 +19,12 @@ import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import {
-  callGeminiChat, callSikunLilyChat, callNanobanana, analyzeSlideImages,
+  callGeminiChat, callSikunLilyChat, callDeepResearch,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
 } from '@/lib/gemini';
-import type { ChatTurn, ChatAttachment, SikunLilyProgress, SlideImageRequest } from '@/lib/gemini';
+import type { ChatTurn, ChatAttachment, SikunLilyProgress } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseSlides, exportSlidesToPptx } from '@/lib/slides';
-import type { GeneratedImages } from '@/lib/slides';
-import { removeImageBackground } from '@/lib/bgRemoval';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
 import {
@@ -687,6 +685,45 @@ function MemoPermissionModal({
   );
 }
 
+function ZipDownloadButton({ blocks }: { blocks: InsertableBlock[] }) {
+  const [status, setStatus] = useState<'idle' | 'loading'>('idle');
+  const handleZip = async () => {
+    if (status === 'loading') return;
+    setStatus('loading');
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      for (const b of blocks) {
+        if (b.fileName && b.rawCode != null) {
+          zip.file(b.fileName, b.rawCode);
+        }
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'project.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('ZIP error', e);
+    } finally {
+      setStatus('idle');
+    }
+  };
+  return (
+    <button className="zip-download-btn" onClick={handleZip} disabled={status === 'loading'}>
+      <span>📦</span>
+      {status === 'loading' ? 'ZIPを作成中...' : `${blocks.length}ファイルをまとめてZIPダウンロード`}
+      <style jsx>{`
+        .zip-download-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 15%, transparent), color-mix(in srgb, var(--primary) 8%, transparent)); border: 1.5px dashed var(--primary); border-radius: 10px; color: var(--primary); font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all 0.15s; margin-top: 4px; }
+        .zip-download-btn:hover:not(:disabled) { background: var(--primary); color: white; }
+        .zip-download-btn:disabled { opacity: 0.6; cursor: default; }
+      `}</style>
+    </button>
+  );
+}
+
 function InsertableBlockCard({
   block,
   allNotes,
@@ -707,7 +744,6 @@ function InsertableBlockCard({
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading'>('idle');
-  const [pptxProgress, setPptxProgress] = useState('');
   const [showMemoModal, setShowMemoModal] = useState(false);
 
   const baseName = `lily-${block.type}-${block.id.slice(0, 6)}`;
@@ -743,37 +779,11 @@ function InsertableBlockCard({
     setPdfStatus('loading');
     try {
       const deck = parseSlides(block.rawCode);
-      let images: GeneratedImages | undefined;
-
-      if (isPremium) {
-        const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
-        if (apiKey) {
-          setPptxProgress('スライドを分析中...');
-          let requests: SlideImageRequest[] = [];
-          try { requests = await analyzeSlideImages(block.rawCode, apiKey); } catch { /* skip on failure */ }
-
-          if (requests.length > 0) {
-            images = {};
-            for (let i = 0; i < requests.length; i++) {
-              const req = requests[i];
-              try {
-                setPptxProgress(`画像を生成中... (${i + 1}/${requests.length})`);
-                const b64 = await callNanobanana(req.prompt, apiKey, req.quality);
-                setPptxProgress(`背景を除去中... (${i + 1}/${requests.length})`);
-                images[req.slideIndex] = await removeImageBackground(b64);
-              } catch { /* image failure is non-fatal */ }
-            }
-          }
-        }
-      }
-
-      setPptxProgress('PPTXを組み立て中...');
-      await exportSlidesToPptx(deck, isPremium ? 'premium' : 'standard', images);
+      await exportSlidesToPptx(deck, isPremium ? 'premium' : 'standard');
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'PowerPointの作成に失敗しちゃった');
     } finally {
       setPdfStatus('idle');
-      setPptxProgress('');
     }
   };
 
@@ -798,7 +808,7 @@ function InsertableBlockCard({
       {block.type === 'slides' && (
         <button className="pdf-btn" onClick={handlePptx} disabled={pdfStatus === 'loading'}>
           <FileDown size={14} />
-          {pdfStatus === 'loading' ? (pptxProgress || 'PowerPoint作成中...') : 'PowerPoint(.pptx)で保存'}
+          {pdfStatus === 'loading' ? 'PowerPoint作成中...' : 'PowerPoint(.pptx)で保存'}
         </button>
       )}
 
@@ -1075,6 +1085,9 @@ function LilyBubble({
                 onNoteCreated={onNoteCreated}
               />
             ))}
+            {message.extractedBlocks.filter(b => b.type === 'file').length >= 2 && (
+              <ZipDownloadButton blocks={message.extractedBlocks.filter(b => b.type === 'file')} />
+            )}
           </div>
         )}
       </div>
@@ -1190,8 +1203,14 @@ const SUGGESTIONS = [
   '会議の議事録をまとめて',
   '旅行の持ち物リストを作って',
   '考えを図（マインドマップ）にして',
-  'プレゼン用のスライドにして',
   'この数式をグラフで解説して',
+];
+
+const SIKUNLILY_SUGGESTIONS = [
+  'このメモをプレゼン用スライドにして',
+  '複数ファイルのコードプロジェクトを作って',
+  'このドキュメントを分析してまとめて',
+  'スライドのテーマと構成を提案して',
 ];
 
 // Tone/style modes: tapping toggles the mode ON; while ON, every message
@@ -1208,7 +1227,6 @@ const MODES: { id: string; label: string; directive: string }[] = [
 const QUICK_ACTIONS: { label: string; prompt: string }[] = [
   { label: '📧 メール文面', prompt: 'このメモの内容を元に、そのまま送れる丁寧なメールの下書きを作って。件名も付けてね。' },
   { label: '📝 ブログ案', prompt: 'このメモを元に、ブログ記事のタイトル案を3つと、それぞれの構成案を提案して。' },
-  { label: '🖼️ スライド化', prompt: 'このメモの内容をプレゼン用のスライドにまとめて。' },
   { label: '🔎 詳しく調べて', prompt: 'このメモに出てくる専門用語や関連トピックを、ネットの情報も使ってもう少し詳しく補足して。' },
 ];
 
@@ -1227,6 +1245,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
   const [activeModel, setActiveModel] = useState<'lily' | 'sikunlily'>('lily');
   const [sikunProgress, setSikunProgress] = useState<string>('');
+  const [deepResearch, setDeepResearch] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1360,7 +1379,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       });
 
       let aiText: string;
-      if (activeModel === 'sikunlily') {
+      if (deepResearch) {
+        aiText = await callDeepResearch(
+          history[history.length - 1]?.text ?? input,
+          apiKey,
+          (msg) => setSikunProgress(msg),
+        );
+        setSikunProgress('');
+      } else if (activeModel === 'sikunlily') {
         if (activeMode === 'code') {
           setSikunProgress('コードを設計中...');
           aiText = await callGeminiChat(
@@ -1415,7 +1441,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel]);
+  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch]);
 
   const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
 
@@ -1462,7 +1488,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           />
           <div>
             <div className="header-title">{activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}</div>
-            <div className="header-sub">{activeModel === 'sikunlily' ? '最強スライド武士 ⚔️' : 'AIアシスタント ✨'}</div>
+            <div className="header-sub">{activeModel === 'sikunlily' ? '開発者用AIアシスタント 🛠️' : 'AIアシスタント ✨'}</div>
           </div>
         </div>
         <div className="header-right">
@@ -1470,6 +1496,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             className={`model-toggle ${activeModel === 'sikunlily' ? 'siku' : 'lily'}`}
             onClick={() => {
               setActiveModel(p => p === 'lily' ? 'sikunlily' : 'lily');
+              setMessages([]);
               setQuestionQueue([]);
               setCollectedAnswers([]);
             }}
@@ -1488,6 +1515,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <span className="web-label">ネット検索</span>
             <span className="web-state">{webSearch ? 'ON' : 'OFF'}</span>
           </button>
+          {activeModel === 'sikunlily' && (
+            <button
+              className={`web-toggle deep-research-toggle ${deepResearch ? 'on' : ''}`}
+              onClick={() => setDeepResearch(p => !p)}
+              title="Deep Research Pro Preview: 数分かけて深くリサーチしてレポートを作成するよ"
+            >
+              <Sparkles size={13} />
+              <span className="web-label">Deep Research</span>
+              <span className="web-state">{deepResearch ? 'ON' : 'OFF'}</span>
+            </button>
+          )}
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
             {selectedNote ? (
               <span className="context-chip selected">
@@ -1534,14 +1572,31 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           <div className="welcome-screen">
             <div className="welcome-lily-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/lily-character.png" alt="Lily" className="welcome-lily" />
+              <img
+                src={activeModel === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png'}
+                alt={activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}
+                className="welcome-lily"
+              />
             </div>
-            <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフ・スライドまで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
-            <div className="suggestions">
-              {SUGGESTIONS.map(s => (
-                <button key={s} className="suggestion-chip" onClick={() => sendMessage(s)}>{s}</button>
-              ))}
-            </div>
+            {activeModel === 'sikunlily' ? (
+              <>
+                <p className="welcome-text">sikunlily だ ⚔️🐕<br />スライド作成と大規模コード構築が得意だ。<br />スライドはヘッダーのトグルでコード構築に切り替えられる。</p>
+                <div className="suggestions">
+                  {SIKUNLILY_SUGGESTIONS.map(s => (
+                    <button key={s} className="suggestion-chip siku" onClick={() => sendMessage(s)}>{s}</button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフ・スライドまで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
+                <div className="suggestions">
+                  {SUGGESTIONS.map(s => (
+                    <button key={s} className="suggestion-chip" onClick={() => sendMessage(s)}>{s}</button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
         {messages.map(msg =>
@@ -1577,30 +1632,53 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </nav>
       )}
 
-      {/* Tone modes (tap to toggle ON — affects every message you send) */}
-      <div className="quick-actions mode-row">
-        <span className="qa-label">トーン</span>
-        {MODES.map(mo => (
+      {activeModel === 'sikunlily' ? (
+        /* sikunlily: コード構築モードトグル */
+        <div className="quick-actions mode-row">
+          <span className="qa-label">モード</span>
           <button
-            key={mo.id}
-            className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
-            title="タップでON。次に送るメッセージからこのトーンで答えてくれるよ"
+            className={`quick-chip mode-chip siku-mode${activeMode === 'code' ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === 'code' ? null : 'code'))}
+            title="大規模コード構築モード: gemini-2.5-proで複数ファイルを跨ぐプロジェクトを生成"
           >
-            {mo.label}{activeMode === mo.id ? ' ✓' : ''}
+            ⚙️ コード構築{activeMode === 'code' ? ' ✓' : ''}
           </button>
-        ))}
-      </div>
+          <button
+            className={`quick-chip mode-chip siku-mode${activeMode === 'slides' ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === 'slides' ? null : 'slides'))}
+            title="スライド作成モード（デフォルト）"
+          >
+            🖼️ スライド{activeMode === 'slides' ? ' ✓' : ''}
+          </button>
+        </div>
+      ) : (
+        /* Lily: トーンモード */
+        <div className="quick-actions mode-row">
+          <span className="qa-label">トーン</span>
+          {MODES.map(mo => (
+            <button
+              key={mo.id}
+              className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
+              onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
+              title="タップでON。次に送るメッセージからこのトーンで答えてくれるよ"
+            >
+              {mo.label}{activeMode === mo.id ? ' ✓' : ''}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Quick actions (Lily's wish-list) */}
-      <div className="quick-actions">
-        <Wand2 size={14} className="qa-wand" />
-        {QUICK_ACTIONS.map(a => (
-          <button key={a.label} className="quick-chip" onClick={() => sendMessage(a.prompt)} disabled={isLoading}>
-            {a.label}
-          </button>
-        ))}
-      </div>
+      {/* Quick actions (Lily only) */}
+      {activeModel === 'lily' && (
+        <div className="quick-actions">
+          <Wand2 size={14} className="qa-wand" />
+          {QUICK_ACTIONS.map(a => (
+            <button key={a.label} className="quick-chip" onClick={() => sendMessage(a.prompt)} disabled={isLoading}>
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {(attachments.length > 0 || fileError) && (
         <div className="att-bar">
@@ -1640,7 +1718,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         <textarea
           ref={textareaRef}
           className="chat-input"
-          placeholder="Lily に話しかける...（Enter で改行 / 送信はボタン）"
+          placeholder={activeModel === 'sikunlily' ? 'sikunlily に話しかける...（Enter で改行 / 送信はボタン）' : 'Lily に話しかける...（Enter で改行 / 送信はボタン）'}
           value={input}
           onChange={e => { setInput(e.target.value); autoResizeTextarea(); }}
           rows={1}
@@ -1714,7 +1792,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
         .welcome-screen { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 0; text-align: center; }
-        .welcome-lily-wrap { width: 120px; height: 120px; animation: float 3s ease-in-out infinite; }
+        .welcome-lily-wrap { width: 180px; height: 180px; animation: float 3s ease-in-out infinite; }
         .welcome-lily { width: 100%; height: 100%; object-fit: contain; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .welcome-text { font-size: 0.9rem; color: var(--fg-muted); line-height: 1.6; margin: 0; }
