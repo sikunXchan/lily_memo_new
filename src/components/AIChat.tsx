@@ -150,6 +150,21 @@ function parseQAPairs(code: string): QAPairParsed[] {
   return pairs.filter(p => p.q);
 }
 
+// Strip markdown emphasis and internal directives so a question never
+// shows raw `**bold**` / `@@kind:` / fences to the user.
+function cleanAsk(s: string): string {
+  return s
+    .replace(/[（(]\s*@@[^）)]*[）)]/g, '')
+    .replace(/@@\w+\s*:\s*[^\s、,）)]*/g, '')
+    .replace(/`+/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/[*_]/g, '')
+    .replace(/^\s*[-・>‣–—]\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseAIResponse(text: string): {
   textContent: string;
   blocks: InsertableBlock[];
@@ -171,7 +186,9 @@ function parseAIResponse(text: string): {
       else if (om) options.push(om[1].trim());
       else if (!question) question = line;
     }
-    if (question) questions.push({ id: crypto.randomUUID(), question, options });
+    question = cleanAsk(question);
+    const cleanOpts = options.map(cleanAsk).filter(Boolean);
+    if (question) questions.push({ id: crypto.randomUUID(), question, options: cleanOpts });
     return '';
   });
 
@@ -241,17 +258,28 @@ function parseAIResponse(text: string): {
   // clearly a question, surface it as a clarify form anyway.
   if (questions.length === 0 && blocks.length === 0) {
     const t = textContent.trim();
-    if (t.length > 0 && t.length <= 400 && /[?？]/.test(t)) {
+    if (t.length > 0 && t.length <= 600 && /[?？]/.test(t)) {
       let options: string[] = [];
-      const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
-      if (paren) {
-        options = paren[1]
-          .split(/[、,／/]|または|\bor\b/)
-          .map(s => s.trim())
-          .filter(s => s.length > 0 && s.length <= 24);
+      // Lily often lists choices as **bold** items (e.g. a format menu).
+      const bold = [...t.matchAll(/\*\*\s*(.+?)\s*\*\*/g)]
+        .map(m => cleanAsk(m[1]))
+        .filter(s => s.length > 0 && s.length <= 30);
+      if (bold.length >= 2) {
+        options = [...new Set(bold)];
+      } else {
+        const paren = t.match(/[（(]([^（）()]*(?:[、,／/]|または|or)[^（）()]*)[）)]/);
+        if (paren) {
+          options = paren[1]
+            .split(/[、,／/]|または|\bor\b/)
+            .map(s => cleanAsk(s))
+            .filter(s => s.length > 0 && s.length <= 24);
+        }
       }
       if (options.length < 2) options = [];
-      questions.push({ id: crypto.randomUUID(), question: t, options });
+      // Question = text before the first bold/option list, cleaned.
+      const head = t.split(/\*\*|[（(]\s*@@/)[0];
+      const question = cleanAsk(head && head.trim().length >= 4 ? head : t);
+      questions.push({ id: crypto.randomUUID(), question, options });
     }
   }
 
