@@ -687,6 +687,45 @@ function MemoPermissionModal({
   );
 }
 
+function ZipDownloadButton({ blocks }: { blocks: InsertableBlock[] }) {
+  const [status, setStatus] = useState<'idle' | 'loading'>('idle');
+  const handleZip = async () => {
+    if (status === 'loading') return;
+    setStatus('loading');
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      for (const b of blocks) {
+        if (b.fileName && b.rawCode != null) {
+          zip.file(b.fileName, b.rawCode);
+        }
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'project.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('ZIP error', e);
+    } finally {
+      setStatus('idle');
+    }
+  };
+  return (
+    <button className="zip-download-btn" onClick={handleZip} disabled={status === 'loading'}>
+      <span>📦</span>
+      {status === 'loading' ? 'ZIPを作成中...' : `${blocks.length}ファイルをまとめてZIPダウンロード`}
+      <style jsx>{`
+        .zip-download-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 15%, transparent), color-mix(in srgb, var(--primary) 8%, transparent)); border: 1.5px dashed var(--primary); border-radius: 10px; color: var(--primary); font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all 0.15s; margin-top: 4px; }
+        .zip-download-btn:hover:not(:disabled) { background: var(--primary); color: white; }
+        .zip-download-btn:disabled { opacity: 0.6; cursor: default; }
+      `}</style>
+    </button>
+  );
+}
+
 function InsertableBlockCard({
   block,
   allNotes,
@@ -1079,6 +1118,9 @@ function LilyBubble({
                 onNoteCreated={onNoteCreated}
               />
             ))}
+            {message.extractedBlocks.filter(b => b.type === 'file').length >= 2 && (
+              <ZipDownloadButton blocks={message.extractedBlocks.filter(b => b.type === 'file')} />
+            )}
           </div>
         )}
       </div>
@@ -1218,7 +1260,6 @@ const MODES: { id: string; label: string; directive: string }[] = [
 const QUICK_ACTIONS: { label: string; prompt: string }[] = [
   { label: '📧 メール文面', prompt: 'このメモの内容を元に、そのまま送れる丁寧なメールの下書きを作って。件名も付けてね。' },
   { label: '📝 ブログ案', prompt: 'このメモを元に、ブログ記事のタイトル案を3つと、それぞれの構成案を提案して。' },
-  { label: '🖼️ スライド化', prompt: 'このメモの内容をプレゼン用のスライドにまとめて。' },
   { label: '🔎 詳しく調べて', prompt: 'このメモに出てくる専門用語や関連トピックを、ネットの情報も使ってもう少し詳しく補足して。' },
 ];
 
@@ -1777,7 +1818,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
         .welcome-screen { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 0; text-align: center; }
-        .welcome-lily-wrap { width: 120px; height: 120px; animation: float 3s ease-in-out infinite; }
+        .welcome-lily-wrap { width: 180px; height: 180px; animation: float 3s ease-in-out infinite; }
         .welcome-lily { width: 100%; height: 100%; object-fit: contain; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .welcome-text { font-size: 0.9rem; color: var(--fg-muted); line-height: 1.6; margin: 0; }

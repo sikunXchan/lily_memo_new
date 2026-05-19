@@ -423,10 +423,24 @@ export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
 - \`{"ty":"closing","h":"結びの言葉","sub":"任意"}\` … 結び（必ず末尾）
 stats/compare/process/quote/twoCol を積極活用し、単調な bullets スライドばかりにしない。文字列内に Markdown（*,#,- 等）は書かない。
 
+【不明な点は先に質問する】
+依頼があいまい・情報不足の時は推測で作らず、先に質問する。質問は必ず下記の ask ブロックで行う。通常文で質問してはいけない。質問は最大3つまで。
+\`\`\`ask
+Q: どんな内容のスライドにする？
+\`\`\`
+選択肢がある場合：
+\`\`\`ask
+Q: スライドのテーマは？
+- テック・エンジニアリング
+- ビジネス提案
+- 学術・研究
+\`\`\`
+
 【重要なルール】
-- コードブロック（slides/file ブロック）以外は普通のテキストで返答する
-- メモの内容が提供された場合は、それをしっかり参照して高品質なスライドを作る
-- スライドの内容は充実させる（1スライドに情報を詰め込まず、適切なスライド数で丁寧に構成する）
+- slides/file ブロック以外は普通のテキストで返答する
+- メモが提供された場合はしっかり参照して高品質なスライドを作る
+- スライドは slides ブロックに完全な JSON を出力すること。説明文や補足は slides ブロックの外に書く
+- スライドの内容は充実させる（適切なスライド数で丁寧に構成する）
 
 【大規模コード構築の場合】
 「コードを作って」「実装して」「プロジェクトを構築して」等と言われ、かつコード構築モードが指定された場合:
@@ -444,13 +458,13 @@ export async function callSikunLilyChat(
   apiKey: string,
   onProgress?: (p: SikunLilyProgress) => void,
 ): Promise<string> {
-  // Stage 1: gemini-2.5-pro でスライド骨格を設計
+  // Stage 1: gemini-2.5-pro でスライド構成を設計
   onProgress?.({ stage: 1, label: '構成を設計中...' });
   let outline = '';
   try {
     const proBody = {
       systemInstruction: {
-        parts: [{ text: 'スライド構成エージェント: ユーザーの依頼とメモを元に、スライドのJSON概略だけを出力してください。説明文は不要です。' }],
+        parts: [{ text: 'あなたはスライド構成エキスパートだ。ユーザーの依頼とメモを元に、スライドの構成案（各スライドのタイトルと要点のみ）を箇条書きで出力せよ。説明不要。JSON不要。構成案のみ。' }],
       },
       contents: history.map(t => ({
         role: t.role,
@@ -459,7 +473,7 @@ export async function callSikunLilyChat(
           ...(t.attachments?.map(a => ({ inline_data: { mime_type: a.mimeType, data: a.data } })) ?? []),
         ],
       })),
-      generationConfig: { temperature: 0.3, topK: 20, topP: 0.85, maxOutputTokens: 4096 },
+      generationConfig: { temperature: 0.3, topK: 20, topP: 0.85, maxOutputTokens: 2048 },
     };
     const proRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
@@ -472,9 +486,14 @@ export async function callSikunLilyChat(
   } catch { /* Stage 1 失敗時はアウトラインなしで続行 */ }
 
   // Stage 2: gemini-2.5-flash でフルコンテンツを生成
+  // 必ず user ターンで終わる形にしないと Gemini API がエラーになる
   onProgress?.({ stage: 2, label: 'コンテンツを生成中...' });
   const expandHistory: ChatTurn[] = outline
-    ? [...history, { role: 'model' as const, text: `【スライド構成案】\n${outline}` }]
+    ? [
+        ...history,
+        { role: 'model' as const, text: `【構成案】\n${outline}` },
+        { role: 'user' as const, text: '上記の構成案を元に、完全な slides ブロック（JSON）を出力してください。' },
+      ]
     : history;
   return callGeminiChat(expandHistory, systemPrompt, apiKey);
 }
