@@ -344,52 +344,58 @@ function QACard({
 
 function CardStyles() {
   return (
-    <style jsx>{`
-      .qa-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--background); }
-      .qa-card-checked { opacity: 0.5; }
+    <style jsx global>{`
+      .qa-card { border: 1px solid color-mix(in srgb, var(--border) 60%, transparent); border-radius: 14px; overflow: hidden; background: var(--background); box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 14px rgba(0,0,0,0.05); transition: box-shadow 0.18s, transform 0.18s; }
+      .qa-card:hover { box-shadow: 0 2px 4px rgba(0,0,0,0.05), 0 8px 22px rgba(0,0,0,0.07); }
+      .qa-card-checked { opacity: 0.55; }
       .qa-card-checked .qa-question-text { text-decoration: line-through; }
-      .qa-question { padding: 10px 12px; display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; line-height: 1.6; }
-      .qa-checkbox { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; }
-      .qa-num { font-weight: 700; color: var(--primary); min-width: 1.2em; flex-shrink: 0; }
-      .qa-question-text { color: var(--foreground); }
-      .qa-answer-btn { width: 100%; padding: 8px 12px; border: none; border-top: 1px solid var(--border); background: var(--muted); color: var(--foreground); font-size: 0.875rem; text-align: left; cursor: pointer; opacity: 0.6; transition: opacity 0.15s; font-family: inherit; line-height: 1.6; }
-      .qa-answer-btn.revealed { opacity: 1; background: var(--accent); font-weight: 500; }
-      .qa-answer-btn:hover { opacity: 1; }
-      .qa-opts { display: flex; flex-direction: column; gap: 6px; padding: 0 12px 10px; }
-      .qa-opt { text-align: left; padding: 8px 11px; border: 1px solid var(--border); border-radius: 7px; background: var(--background); color: var(--foreground); font-size: 0.875rem; cursor: pointer; font-family: inherit; line-height: 1.5; transition: all 0.12s; }
-      .qa-opt:hover:not(:disabled) { border-color: var(--primary); }
+      .qa-question { padding: 14px 16px; display: flex; gap: 10px; align-items: flex-start; font-size: 0.95rem; line-height: 1.65; }
+      .qa-checkbox { margin-top: 2px; width: 18px; height: 18px; border-radius: 6px; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; }
+      .qa-num { font-weight: 800; color: #fff; background: var(--primary); width: 1.5rem; height: 1.5rem; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; flex-shrink: 0; }
+      .qa-question-text { color: var(--foreground); font-weight: 600; padding-top: 1px; }
+      .qa-answer-btn { width: 100%; padding: 13px 16px; border: none; border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--foreground); font-size: 0.9rem; text-align: left; cursor: pointer; transition: background 0.15s; font-family: inherit; line-height: 1.6; }
+      .qa-answer-btn:not(.revealed) { color: var(--primary); font-weight: 700; }
+      .qa-answer-btn.revealed { background: var(--accent); font-weight: 600; }
+      .qa-answer-btn:hover { background: var(--accent); }
+      .qa-opts { display: flex; flex-direction: column; gap: 8px; padding: 0 16px 14px; }
+      .qa-opt { text-align: left; padding: 11px 14px; border: 1.5px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 12px; background: var(--background); color: var(--foreground); font-size: 0.9rem; cursor: pointer; font-family: inherit; line-height: 1.5; transition: border-color 0.14s, background 0.14s, transform 0.1s; }
+      .qa-opt:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--accent) 50%, transparent); transform: translateY(-1px); }
       .qa-opt.picked { border-color: var(--primary); }
-      .qa-opt.correct { background: #e7f6ec; border-color: #3aa76d; color: #1c6b41; }
-      .qa-opt.wrong { background: #fdeaea; border-color: #d9534f; color: #a02b27; }
+      .qa-opt.correct { background: #e8f7ee; border-color: #36b37e; color: #1a7a4d; }
+      .qa-opt.wrong { background: #fdebeb; border-color: #e0584f; color: #b02a25; }
       .qa-opt:disabled { cursor: default; }
-      .qa-tf { display: flex; gap: 10px; padding: 0 12px 10px; }
-      .qa-tf-btn { flex: 1; padding: 12px 0; font-size: 1.4rem; font-weight: 700; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--foreground); cursor: pointer; transition: all 0.12s; }
-      .qa-tf-btn:hover:not(:disabled) { border-color: var(--primary); }
-      .qa-tf-btn.correct { background: #e7f6ec; border-color: #3aa76d; color: #1c6b41; }
-      .qa-tf-btn.wrong { background: #fdeaea; border-color: #d9534f; color: #a02b27; }
+      .qa-tf { display: flex; gap: 12px; padding: 4px 16px 16px; }
+      .qa-tf-btn { flex: 1; padding: 18px 0; font-size: 1.7rem; font-weight: 800; border: 1.5px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 14px; background: var(--background); color: var(--foreground); cursor: pointer; transition: border-color 0.14s, background 0.14s, transform 0.1s; }
+      .qa-tf-btn:hover:not(:disabled) { border-color: var(--primary); transform: translateY(-1px); }
+      .qa-tf-btn.correct { background: #e8f7ee; border-color: #36b37e; color: #1a7a4d; }
+      .qa-tf-btn.wrong { background: #fdebeb; border-color: #e0584f; color: #b02a25; }
       .qa-tf-btn:disabled { cursor: default; }
-      .qa-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--border); background: var(--muted); font-size: 0.85rem; }
-      .qa-feedback .ok { color: #1c6b41; font-weight: 700; }
-      .qa-feedback .ng { color: #a02b27; font-weight: 700; }
-      .qa-ans { color: var(--foreground); opacity: 0.85; }
-      .qa-mini-btn { padding: 4px 12px; border-radius: 6px; border: none; background: var(--primary); color: #fff; font-size: 0.8rem; font-weight: 600; cursor: pointer; font-family: inherit; }
-      .qa-mini-btn.ghost { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+      .qa-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 11px 16px; border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: color-mix(in srgb, var(--accent) 45%, transparent); font-size: 0.88rem; }
+      .qa-feedback .ok { color: #1a7a4d; font-weight: 800; }
+      .qa-feedback .ng { color: #b02a25; font-weight: 800; }
+      .qa-ans { color: var(--foreground); font-weight: 600; }
+      .qa-mini-btn { padding: 6px 16px; border-radius: 999px; border: none; background: var(--primary); color: #fff; font-size: 0.82rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.14s; }
+      .qa-mini-btn:hover { opacity: 0.88; }
+      .qa-mini-btn.ghost { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
       .qa-fill-line { display: inline; }
-      .qa-fill-input { display: inline-block; width: 7em; margin: 0 3px; padding: 2px 6px; border: none; border-bottom: 2px solid var(--primary); background: var(--accent); color: var(--foreground); font-size: 0.875rem; font-family: inherit; outline: none; }
-      .qa-fill-input.correct { border-color: #3aa76d; color: #1c6b41; }
-      .qa-fill-input.wrong { border-color: #d9534f; color: #a02b27; }
-      .qa-order-tray { min-height: 38px; margin: 0 12px 6px; padding: 6px; border: 1px dashed var(--border); border-radius: 7px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-      .qa-order-hint { color: var(--fg-muted); font-size: 0.8rem; padding: 0 4px; }
-      .qa-order-pool { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
-      .qa-order-chip { padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); color: var(--foreground); font-size: 0.85rem; cursor: pointer; font-family: inherit; }
-      .qa-order-chip:hover:not(:disabled) { border-color: var(--primary); }
-      .qa-order-chip:disabled { opacity: 0.35; cursor: default; }
-      .qa-order-chip.filled { background: var(--accent); border-color: var(--primary); cursor: default; }
-      .qa-flash-head { padding: 8px 12px 0; display: flex; gap: 8px; align-items: center; }
-      .qa-flash { width: 100%; min-height: 90px; padding: 18px 14px; border: none; border-top: 1px solid var(--border); background: var(--background); color: var(--foreground); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font-family: inherit; transition: background 0.15s; }
-      .qa-flash.open { background: var(--accent); }
-      .qa-flash-face { font-size: 1.05rem; font-weight: 700; text-align: center; line-height: 1.5; }
-      .qa-flash-tag { font-size: 0.72rem; color: var(--fg-muted); }
+      .qa-fill-input { display: inline-block; width: 7em; margin: 0 4px; padding: 3px 8px; border: none; border-bottom: 2px solid var(--primary); border-radius: 6px 6px 0 0; background: color-mix(in srgb, var(--accent) 60%, transparent); color: var(--foreground); font-size: 0.9rem; font-family: inherit; outline: none; transition: background 0.14s; }
+      .qa-fill-input:focus { background: var(--accent); }
+      .qa-fill-input.correct { border-color: #36b37e; color: #1a7a4d; }
+      .qa-fill-input.wrong { border-color: #e0584f; color: #b02a25; }
+      .qa-order-tray { min-height: 44px; margin: 4px 16px 8px; padding: 8px; border: 1.5px dashed color-mix(in srgb, var(--primary) 45%, transparent); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .qa-order-hint { color: var(--fg-muted); font-size: 0.82rem; padding: 0 6px; }
+      .qa-order-pool { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 14px; }
+      .qa-order-chip { padding: 8px 14px; border: 1.5px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 999px; background: var(--background); color: var(--foreground); font-size: 0.88rem; cursor: pointer; font-family: inherit; transition: border-color 0.14s, transform 0.1s; }
+      .qa-order-chip:hover:not(:disabled) { border-color: var(--primary); transform: translateY(-1px); }
+      .qa-order-chip:disabled { opacity: 0.3; cursor: default; }
+      .qa-order-chip.filled { background: var(--primary); border-color: var(--primary); color: #fff; cursor: default; font-weight: 700; }
+      .qa-flash-head { padding: 12px 16px 0; display: flex; gap: 10px; align-items: center; }
+      .qa-flash { width: 100%; min-height: 120px; padding: 26px 18px; border: none; border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent) 75%, transparent)); color: var(--foreground); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-family: inherit; transition: background 0.2s, transform 0.12s; }
+      .qa-flash:hover { transform: scale(1.005); }
+      .qa-flash.open { background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 14%, var(--background)), color-mix(in srgb, var(--primary) 26%, var(--background))); }
+      .qa-flash-face { font-size: 1.2rem; font-weight: 800; text-align: center; line-height: 1.55; color: var(--foreground); }
+      .qa-flash.open .qa-flash-face { color: var(--primary); }
+      .qa-flash-tag { font-size: 0.72rem; color: var(--fg-muted); letter-spacing: 0.3px; text-transform: uppercase; font-weight: 700; }
     `}</style>
   );
 }
@@ -581,48 +587,57 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
           margin: 1.5rem auto;
         }
         .qa-block {
-          border: 1px solid var(--border);
-          border-radius: 12px;
+          border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+          border-radius: 18px;
           overflow: hidden;
-          background: var(--accent);
+          background: color-mix(in srgb, var(--accent) 45%, var(--background));
+          box-shadow: 0 4px 20px rgba(0,0,0,0.06);
         }
         .qa-block-header {
-          padding: 8px 14px;
-          background: var(--muted);
-          border-bottom: 1px solid var(--border);
+          padding: 14px 18px;
+          background: transparent;
+          border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
           display: flex;
           align-items: center;
           justify-content: space-between;
+          gap: 10px;
         }
         .qa-block-title {
-          font-size: 0.75rem;
-          font-weight: 700;
+          font-size: 0.95rem;
+          font-weight: 800;
           color: var(--primary);
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.2px;
         }
         .qa-count {
-          font-weight: 400;
-          opacity: 0.7;
+          font-size: 0.8rem;
+          font-weight: 600;
+          opacity: 0.65;
+          margin-left: 4px;
         }
         .qa-block-header-actions {
           display: flex;
-          gap: 6px;
+          gap: 8px;
         }
         .qa-action-btn {
-          padding: 3px 10px;
-          border-radius: 6px;
-          border: 1px solid var(--border);
+          padding: 6px 14px;
+          border-radius: 999px;
+          border: 1.5px solid color-mix(in srgb, var(--primary) 35%, transparent);
           background: var(--background);
-          color: var(--foreground);
-          font-size: 0.75rem;
+          color: var(--primary);
+          font-size: 0.8rem;
+          font-weight: 700;
           cursor: pointer;
+          transition: background 0.14s, transform 0.1s;
+        }
+        .qa-action-btn:hover {
+          background: var(--accent);
+          transform: translateY(-1px);
         }
         .qa-cards {
-          padding: 10px 14px;
+          padding: 14px;
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 12px;
         }
       `}</style>
     </NodeViewWrapper>
