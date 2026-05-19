@@ -21,6 +21,23 @@ export interface SlideDeck {
   style: DeckStyle;
   accent?: string; // hex without '#', overrides accent rotation
   bg?: string;     // hex without '#', content background
+  accents?: string[]; // themed accent rotation palette
+}
+
+// Purpose-built presets the user can pick with `@@theme:`.
+// Each sets a base style + an accent rotation palette (+ optional bg).
+const THEMES: Record<string, { style: DeckStyle; accents: string[]; bg?: string }> = {
+  business: { style: 'simple', accents: ['1F4E79', '2E75B6', '548235', '7F7F7F', 'C55A11'], bg: 'FFFFFF' },
+  education: { style: 'modern', accents: ['2E8B57', 'E8A33D', '4A90D9', 'D9534F', '7E57C2'] },
+  creative: { style: 'modern', accents: ['E040A0', '7C4DFF', '00BFA5', 'FF6D00', '2979FF'] },
+};
+
+function resolveThemeName(val: string): keyof typeof THEMES | undefined {
+  const v = val.toLowerCase();
+  if (/business|ビジネス|企業|プロフェッショナル|professional/.test(v)) return 'business';
+  if (/education|教育|学習|授業|academic/.test(v)) return 'education';
+  if (/creative|クリエイティブ|creative|デザイン|colorful|カラフル/.test(v)) return 'creative';
+  return THEMES[v] ? (v as keyof typeof THEMES) : undefined;
 }
 
 const HEX6 = /^#?[0-9a-fA-F]{6}$/;
@@ -30,18 +47,29 @@ export function parseSlides(raw: string): SlideDeck {
   let style: DeckStyle = 'modern';
   let accent: string | undefined;
   let bg: string | undefined;
+  let accents: string[] | undefined;
+  let styleExplicit = false;
 
-  // Pull deck-level directives (@@style / @@accent / @@bg) from anywhere
-  // and strip them so they never show up as slide text.
+  // Pull deck-level directives (@@theme / @@style / @@accent / @@bg) from
+  // anywhere and strip them so they never show up as slide text.
   const cleaned = raw
     .split('\n')
     .filter(line => {
-      const m = line.match(/^\s*@@(style|accent|bg)\s*:\s*(.+?)\s*$/i);
+      const m = line.match(/^\s*@@(theme|style|accent|bg)\s*:\s*(.+?)\s*$/i);
       if (!m) return true;
       const key = m[1].toLowerCase();
       const val = m[2].trim();
-      if (key === 'style') {
+      if (key === 'theme') {
+        const name = resolveThemeName(val);
+        if (name) {
+          const t = THEMES[name];
+          accents = t.accents;
+          if (t.bg && bg == null) bg = t.bg;
+          if (!styleExplicit) style = t.style;
+        }
+      } else if (key === 'style') {
         style = /simple|plain|minimal|シンプル|プレーン|普通|標準/i.test(val) ? 'simple' : 'modern';
+        styleExplicit = true;
       } else if (key === 'accent' && HEX6.test(val)) {
         accent = normHex(val);
       } else if (key === 'bg' && HEX6.test(val)) {
@@ -98,7 +126,7 @@ export function parseSlides(raw: string): SlideDeck {
   if (slides.length === 0) {
     slides.push({ title: deckTitle, bullets: [], body: [], layout: 'title' });
   }
-  return { title: deckTitle, slides, style, accent, bg };
+  return { title: deckTitle, slides, style, accent, bg, accents };
 }
 
 /* ───────────── minimal ZIP (STORE) writer ───────────── */
@@ -519,7 +547,8 @@ ${slideOverrides}
   deck.slides.forEach((slide, i) => {
     const layout = layoutOf(slide);
     if (layout === 'content') contentNo++;
-    const accent = deck.accent || ACCENTS[(contentNo - 1 + ACCENTS.length) % ACCENTS.length];
+    const palette = deck.accents && deck.accents.length > 0 ? deck.accents : ACCENTS;
+    const accent = deck.accent || palette[(contentNo - 1 + palette.length) % palette.length];
     add(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, deck.style, {
       layout,
       number: contentNo,

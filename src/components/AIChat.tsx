@@ -85,6 +85,7 @@ function detectMermaidLabel(code: string): string {
   if (/gantt/i.test(code)) return 'ガントチャート';
   if (/pie/i.test(code)) return '円グラフ(Mermaid)';
   if (/erDiagram/i.test(code)) return 'ER図';
+  if (/^\s*mindmap/im.test(code)) return 'マインドマップ';
   if (/graph|flowchart/i.test(code)) return 'フローチャート';
   return 'Mermaid図';
 }
@@ -97,8 +98,25 @@ function detectChartLabel(code: string): string {
   } catch { return 'グラフ'; }
 }
 
+type QAKind = 'qa' | 'fill' | 'order';
+
+function parseQAKind(code: string): QAKind {
+  const m = code.match(/^\s*@@kind\s*:\s*(\w+)/im);
+  const v = m?.[1]?.toLowerCase();
+  if (v === 'fill' || /穴埋め|fill[-_ ]?in/i.test(code.split('\n')[0] || '')) return 'fill';
+  if (v === 'order' || /並べ替え|並べかえ|reorder|sort/i.test(code.split('\n')[0] || '')) return 'order';
+  return 'qa';
+}
+
+const QA_KIND_LABEL: Record<QAKind, string> = {
+  qa: 'Q&A',
+  fill: '穴埋め問題',
+  order: '並べ替え問題',
+};
+
 function parseQAPairs(code: string): { q: string; a: string }[] {
-  const lines = code.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = code.split('\n').map(l => l.trim())
+    .filter(l => l && !/^@@\w+\s*:/.test(l));
   const pairs: { q: string; a: string }[] = [];
   let pendingQ: string | null = null;
   for (const line of lines) {
@@ -181,7 +199,7 @@ function parseAIResponse(text: string): {
     if (type === 'qa') {
       const pairs = parseQAPairs(trimmed);
       if (pairs.length === 0) return '\n[Q&Aの解析に失敗しちゃった]\n';
-      const label = `${pairs.length}問のQ&A`;
+      const label = `${pairs.length}問の${QA_KIND_LABEL[parseQAKind(trimmed)]}`;
       blocks.push({ id, type: 'qa', rawCode: trimmed, previewLabel: label });
       return `\n✨ [${label}を作ったよ]\n`;
     }
@@ -235,7 +253,7 @@ function blockToHtml(block: InsertableBlock): string {
   if (block.type === 'qa') {
     const pairs = parseQAPairs(block.rawCode);
     if (pairs.length === 0) throw new Error('Q&Aの解析に失敗しました');
-    return `<div data-pairs="${escHtmlAttr(JSON.stringify(pairs))}" data-type="qa"></div>`;
+    return `<div data-pairs="${escHtmlAttr(JSON.stringify(pairs))}" data-kind="${parseQAKind(block.rawCode)}" data-type="qa"></div>`;
   }
   if (block.type === 'geometry') {
     return `<div data-type="geometry" data-code="${escHtmlAttr(block.rawCode)}" data-width="100%"></div>`;
@@ -744,9 +762,10 @@ function CopyButton({ text, light }: { text: string; light?: boolean }) {
         {copied ? '✓' : '⎘'}
       </button>
       <style jsx>{`
-        .copy-btn { opacity: 0; transition: opacity 0.15s; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; font-size: 0.75rem; cursor: pointer; color: var(--fg-muted); flex-shrink: 0; }
-        .copy-btn-light { border-color: rgba(255,255,255,0.5); color: rgba(255,255,255,0.8); }
-        .copy-btn:hover { opacity: 1 !important; background: var(--accent); }
+        .copy-btn { opacity: 0.75; transition: opacity 0.15s, background 0.15s, color 0.15s; background: var(--background); border: 1px solid var(--primary); border-radius: 6px; padding: 3px 8px; font-size: 0.78rem; cursor: pointer; color: var(--primary); flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+        .copy-btn-light { background: #fff; border-color: #fff; color: var(--primary); }
+        .copy-btn:hover { opacity: 1 !important; background: var(--primary); color: #fff; }
+        .copy-btn-light:hover { background: #fff; color: var(--primary); }
       `}</style>
     </>
   );
