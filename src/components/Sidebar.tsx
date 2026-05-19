@@ -19,6 +19,7 @@ interface SidebarProps {
   onOpenPDF?: () => void;
   onOpenSketch?: () => void;
   onOpenAI?: () => void;
+  onOpenSearch?: () => void;
   isMobileOpen: boolean;
   onToggleMobile: () => void;
   onActiveNoteDeleted?: () => void;
@@ -45,7 +46,7 @@ interface DeletingFolderState {
 }
 
 export default function Sidebar({
-  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, onOpenAI,
+  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, onOpenAI, onOpenSearch,
   isMobileOpen, onToggleMobile, onActiveNoteDeleted, onBackToHome,
   viewModeProp, onViewModeChangeProp, highlightFolderReq,
 }: SidebarProps) {
@@ -188,11 +189,16 @@ export default function Sidebar({
           <Search size={15} className="search-icon" />
           <input
             type="text"
-            placeholder="メモを検索..."
+            placeholder="タイトルで絞り込み..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input"
           />
+          {onOpenSearch && (
+            <button className="btn-fulltext-search" onClick={onOpenSearch} title="全文検索 (⌘K)">
+              全文
+            </button>
+          )}
         </div>
 
         <div className="sidebar-actions">
@@ -452,7 +458,7 @@ export default function Sidebar({
           }
           .search-input {
             width: 100%;
-            padding: 9px 14px 9px 36px;
+            padding: 9px 44px 9px 36px;
             background: var(--accent);
             border: 1.5px solid transparent;
             font-size: 0.875rem;
@@ -463,6 +469,23 @@ export default function Sidebar({
             border-color: var(--primary);
             box-shadow: 0 0 0 3px rgba(128,128,128,0.15);
           }
+          .btn-fulltext-search {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 20px;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            cursor: pointer;
+            opacity: 0.85;
+            transition: opacity 0.15s;
+          }
+          .btn-fulltext-search:hover { opacity: 1; }
           .sidebar-actions {
             display: flex;
             gap: 8px;
