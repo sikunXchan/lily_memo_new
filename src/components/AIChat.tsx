@@ -121,21 +121,33 @@ const QA_KIND_LABEL: Record<QAKind, string> = {
   flash: '単語カード',
 };
 
-function parseQAPairs(code: string): { q: string; a: string }[] {
+interface QAPairParsed { q: string; a: string; opts?: string[] }
+
+function parseQAPairs(code: string): QAPairParsed[] {
   const lines = code.split('\n').map(l => l.trim())
     .filter(l => l && !/^@@\w+\s*:/.test(l));
-  const pairs: { q: string; a: string }[] = [];
-  let pendingQ: string | null = null;
+  const pairs: QAPairParsed[] = [];
+  let cur: QAPairParsed | null = null;
   for (const line of lines) {
-    const qm = line.match(/^[Qq]\d*[:.：]\s*(.*)/);
-    const am = line.match(/^[Aa]\d*[:.：]\s*(.*)/);
-    if (qm) pendingQ = qm[1];
-    else if (am && pendingQ !== null) {
-      pairs.push({ q: pendingQ, a: am[1] });
-      pendingQ = null;
+    const qm = line.match(/^[Qq]\s*\d*\s*[:.：]\s*(.*)/);
+    const am = line.match(/^[Aa]\s*\d*\s*[:.：]\s*(.*)/);
+    const om = line.match(/^(?:[-*・>‣–—]|[0-9０-９]+[.)）]|[A-Da-dア-エ①-④][.)）])\s+(.*)/);
+    if (qm) {
+      if (cur && cur.a !== undefined && cur.q) pairs.push(cur);
+      cur = { q: qm[1].trim(), a: '' };
+    } else if (am && cur) {
+      cur.a = am[1].trim();
+      pairs.push(cur);
+      cur = null;
+    } else if (om && cur && !cur.a) {
+      (cur.opts ||= []).push(om[1].trim());
+    } else if (cur && !cur.a && cur.opts === undefined && line) {
+      // continuation of a multi-line question
+      cur.q += ' ' + line;
     }
   }
-  return pairs;
+  if (cur && cur.q && cur.a) pairs.push(cur);
+  return pairs.filter(p => p.q);
 }
 
 function parseAIResponse(text: string): {

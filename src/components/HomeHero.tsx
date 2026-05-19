@@ -358,7 +358,7 @@ export default function HomeHero({
         .folder-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
         .folder-dot.lg { width: 12px; height: 12px; }
 
-        .home-hero.mobile { overflow-y: auto; padding-bottom: calc(60px + env(safe-area-inset-bottom) + 16px); }
+        .home-hero.mobile { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding-bottom: calc(60px + env(safe-area-inset-bottom) + 16px); }
         .search-container { position: relative; margin: 0 12px 12px; flex-shrink: 0; }
         .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--fg-faint); pointer-events: none; }
         .search-input { width: 100%; padding: 10px 14px 10px 36px; background: var(--surface-alt, var(--accent)); border: 1.5px solid transparent; font-size: 0.875rem; border-radius: 50px; color: var(--foreground); }
