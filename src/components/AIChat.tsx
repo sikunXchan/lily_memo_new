@@ -610,11 +610,13 @@ function InsertableBlockCard({
 
 function ClarifyBottomSheet({
   question,
+  progress,
   onAnswer,
   onDismiss,
   disabled,
 }: {
   question: ClarifyQuestion;
+  progress: { current: number; total: number };
   onAnswer: (text: string) => void;
   onDismiss: () => void;
   disabled: boolean;
@@ -637,7 +639,12 @@ function ClarifyBottomSheet({
     <div className="clarify-overlay" onClick={onDismiss}>
       <div className="clarify-sheet" onClick={e => e.stopPropagation()}>
         <div className="clarify-header">
-          <span className="clarify-question">{question.question}</span>
+          <div className="clarify-q-wrap">
+            {progress.total > 1 && (
+              <span className="clarify-progress">質問 {progress.current} / {progress.total}</span>
+            )}
+            <span className="clarify-question">{question.question}</span>
+          </div>
           <button className="clarify-close" onClick={onDismiss} title="閉じる">
             <X size={16} />
           </button>
@@ -698,9 +705,16 @@ function ClarifyBottomSheet({
           gap: 12px; padding: 18px 16px 14px;
           border-bottom: 1px solid var(--border);
         }
+        .clarify-q-wrap {
+          flex: 1; display: flex; flex-direction: column; gap: 5px;
+        }
+        .clarify-progress {
+          font-size: 0.72rem; font-weight: 700; color: var(--primary);
+          letter-spacing: 0.4px;
+        }
         .clarify-question {
           font-size: 0.95rem; font-weight: 700;
-          color: var(--foreground); line-height: 1.45; flex: 1;
+          color: var(--foreground); line-height: 1.45;
         }
         .clarify-close {
           flex-shrink: 0; background: var(--accent); border: none; border-radius: 50%;
@@ -912,7 +926,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
   const [fileError, setFileError] = useState('');
   const [webSearch, setWebSearch] = useState(false);
-  const [activeQuestion, setActiveQuestion] = useState<ClarifyQuestion | null>(null);
+  const [questionQueue, setQuestionQueue] = useState<ClarifyQuestion[]>([]);
+  const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -929,7 +944,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
   useEffect(() => {
     const last = messages[messages.length - 1];
     if (last?.role === 'lily' && last.questions && last.questions.length > 0) {
-      setActiveQuestion(last.questions[0]);
+      setQuestionQueue(last.questions);
+      setCollectedAnswers([]);
     }
   }, [messages]);
 
@@ -1270,11 +1286,32 @@ export default function AIChat({ onOpenSettings, onSwitchTab }: AIChatProps) {
         </button>
       </div>
 
-      {activeQuestion && (
+      {questionQueue.length > 0 && (
         <ClarifyBottomSheet
-          question={activeQuestion}
-          onAnswer={(t) => { setActiveQuestion(null); sendMessage(t); }}
-          onDismiss={() => setActiveQuestion(null)}
+          key={questionQueue[0].id}
+          question={questionQueue[0]}
+          progress={{
+            current: collectedAnswers.length + 1,
+            total: collectedAnswers.length + questionQueue.length,
+          }}
+          onAnswer={(t) => {
+            const current = questionQueue[0];
+            const answers = [...collectedAnswers, { q: current.question, a: t }];
+            const remaining = questionQueue.slice(1);
+            if (remaining.length > 0) {
+              setCollectedAnswers(answers);
+              setQuestionQueue(remaining);
+            } else {
+              setQuestionQueue([]);
+              setCollectedAnswers([]);
+              const combined =
+                answers.length === 1
+                  ? answers[0].a
+                  : answers.map(p => `・${p.q}\n→ ${p.a}`).join('\n');
+              sendMessage(combined);
+            }
+          }}
+          onDismiss={() => { setQuestionQueue([]); setCollectedAnswers([]); }}
           disabled={isLoading}
         />
       )}
