@@ -1,6 +1,55 @@
 export interface ChatAttachment {
   mimeType: string;
-  data: string; // base64 without the data: prefix
+  data: string; // base64 without the data: prefix; empty string when fileUri is set
+  fileUri?: string; // Gemini File API URI — preferred over inline_data when present
+}
+
+// Upload a file to the Gemini File API and return its URI.
+// Files expire after 48 h on the free tier, which is fine for chat use.
+export async function uploadToFileApi(
+  base64Data: string,
+  mimeType: string,
+  displayName: string,
+  apiKey: string,
+): Promise<string> {
+  // Decode base64 → binary
+  const binaryStr = atob(base64Data);
+  const binary = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) binary[i] = binaryStr.charCodeAt(i);
+
+  // Build multipart/related body (metadata + file bytes)
+  const boundary = `gem_${Date.now()}`;
+  const enc = new TextEncoder();
+  const head = enc.encode(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ file: { display_name: displayName } }) +
+    `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+  );
+  const tail = enc.encode(`\r\n--${boundary}--`);
+
+  const body = new Uint8Array(head.length + binary.length + tail.length);
+  body.set(head, 0);
+  body.set(binary, head.length);
+  body.set(tail, head.length + binary.length);
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    },
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => null) as { error?: { message?: string } } | null;
+    throw new Error(err?.error?.message || 'File API upload failed');
+  }
+
+  const data = await res.json() as { file?: { uri?: string } };
+  const uri = data.file?.uri;
+  if (!uri) throw new Error('File API returned no URI');
+  return uri;
 }
 
 export interface ChatTurn {
@@ -41,9 +90,11 @@ export async function callGeminiChat(
       role: t.role,
       parts: [
         { text: t.text },
-        ...(t.attachments?.map(a => ({
-          inline_data: { mime_type: a.mimeType, data: a.data },
-        })) ?? []),
+        ...(t.attachments?.map(a =>
+          a.fileUri
+            ? { file_data: { mime_type: a.mimeType, file_uri: a.fileUri } }
+            : { inline_data: { mime_type: a.mimeType, data: a.data } }
+        ) ?? []),
       ],
     })),
     generationConfig: {
@@ -448,7 +499,11 @@ export async function callSikunLilyChat(
         role: t.role,
         parts: [
           { text: t.text },
-          ...(t.attachments?.map(a => ({ inline_data: { mime_type: a.mimeType, data: a.data } })) ?? []),
+          ...(t.attachments?.map(a =>
+            a.fileUri
+              ? { file_data: { mime_type: a.mimeType, file_uri: a.fileUri } }
+              : { inline_data: { mime_type: a.mimeType, data: a.data } }
+          ) ?? []),
         ],
       })),
       generationConfig: { temperature: 0.3, topK: 20, topP: 0.85, maxOutputTokens: 2048 },
