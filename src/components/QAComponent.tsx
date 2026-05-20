@@ -457,6 +457,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
   };
 
   const toggleRevealAll = () => setRevealAll(v => !v);
+  const checkedCount = pairs.filter(p => p.checked).length;
 
   if (isEditing) {
     return (
@@ -579,7 +580,14 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
     <NodeViewWrapper className="qa-wrapper">
       <div className="qa-block" contentEditable={false}>
         <div className="qa-block-header">
-          <span className="qa-block-title">{kindLabel} <span className="qa-count">{pairs.length}問</span></span>
+          <span className="qa-block-title">
+            {kindLabel} <span className="qa-count">{pairs.length}問</span>
+            {checkedCount > 0 && (
+              <span className={`qa-progress-badge${checkedCount === pairs.length ? ' done' : ''}`}>
+                {checkedCount}/{pairs.length} 完了
+              </span>
+            )}
+          </span>
           <div className="qa-block-header-actions">
             <button className="qa-action-btn" onClick={toggleRevealAll}>
               {revealAll ? '答えを隠す' : '答え合わせ'}
@@ -647,6 +655,20 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
           font-weight: 600;
           opacity: 0.65;
           margin-left: 4px;
+        }
+        .qa-progress-badge {
+          display: inline-block;
+          margin-left: 8px;
+          font-size: 0.74rem;
+          font-weight: 700;
+          background: color-mix(in srgb, var(--primary) 15%, transparent);
+          color: var(--primary);
+          border-radius: 99px;
+          padding: 1px 8px;
+        }
+        .qa-progress-badge.done {
+          background: #e8f7ee;
+          color: #1a7a4d;
         }
         .qa-block-header-actions {
           display: flex;

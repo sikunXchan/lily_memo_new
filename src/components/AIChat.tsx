@@ -842,11 +842,20 @@ function FilePreview({ block }: { block: InsertableBlock }) {
 function QAPreview({ code }: { code: string }) {
   const pairs = useMemo(() => parseQAPairs(code), [code]);
   const [open, setOpen] = useState<Set<number>>(new Set());
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const toggle = (i: number) => setChecked(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
+  const allDone = checked.size === pairs.length && pairs.length > 0;
   return (
     <div className="qa-prev">
+      <div className={`qa-prev-progress${allDone ? ' all-done' : ''}`}>
+        {checked.size}/{pairs.length} 完了
+      </div>
       {pairs.map((p, i) => (
-        <div key={i} className="qa-item">
-          <div className="qa-q">Q{i + 1}. {p.q}</div>
+        <div key={i} className={`qa-item${checked.has(i) ? ' checked' : ''}`}>
+          <div className="qa-item-row">
+            <input type="checkbox" className="qa-prev-cb" checked={checked.has(i)} onChange={() => toggle(i)} />
+            <div className="qa-q">Q{i + 1}. {p.q}</div>
+          </div>
           {open.has(i) ? (
             <div className="qa-a">A. {p.a}</div>
           ) : (
@@ -856,10 +865,16 @@ function QAPreview({ code }: { code: string }) {
       ))}
       <style jsx>{`
         .qa-prev { display:flex; flex-direction:column; gap:8px; }
-        .qa-item { background:var(--background); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
-        .qa-q { font-weight:700; font-size:0.82rem; color:var(--foreground); }
-        .qa-a { margin-top:6px; font-size:0.82rem; color:var(--primary); white-space:pre-wrap; }
-        .qa-show { margin-top:6px; background:transparent; border:1px dashed var(--border); border-radius:6px; padding:3px 10px; font-size:0.74rem; color:var(--fg-muted); cursor:pointer; }
+        .qa-prev-progress { font-size:0.75rem; font-weight:700; color:var(--primary); background:color-mix(in srgb,var(--primary) 12%,transparent); border-radius:99px; padding:2px 10px; align-self:flex-start; margin-bottom:2px; }
+        .qa-prev-progress.all-done { background:#e8f7ee; color:#1a7a4d; }
+        .qa-item { background:var(--background); border:1px solid var(--border); border-radius:8px; padding:8px 10px; transition:opacity 0.2s; }
+        .qa-item.checked { opacity:0.45; }
+        .qa-item.checked .qa-q { text-decoration:line-through; }
+        .qa-item-row { display:flex; align-items:flex-start; gap:8px; }
+        .qa-prev-cb { margin-top:2px; width:16px; height:16px; flex-shrink:0; accent-color:var(--primary); cursor:pointer; }
+        .qa-q { font-weight:700; font-size:0.82rem; color:var(--foreground); flex:1; }
+        .qa-a { margin-top:6px; font-size:0.82rem; color:var(--primary); white-space:pre-wrap; padding-left:24px; }
+        .qa-show { margin-top:6px; margin-left:24px; background:transparent; border:1px dashed var(--border); border-radius:6px; padding:3px 10px; font-size:0.74rem; color:var(--fg-muted); cursor:pointer; }
       `}</style>
     </div>
   );
