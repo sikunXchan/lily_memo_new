@@ -42,14 +42,14 @@ export function noteHtmlToText(html: string): string {
   });
 
   doc.querySelectorAll('div[data-type="qa"]').forEach(el => {
-    let pairs: { q: string; a: string }[] = [];
+    let pairs: { q: string; a: string; checked?: boolean }[] = [];
     try {
       pairs = JSON.parse(el.getAttribute('data-pairs') || '[]');
     } catch {
       pairs = [];
     }
     const txt = pairs
-      .map((p, i) => `Q${i + 1}: ${p.q}\nA${i + 1}: ${p.a}`)
+      .map((p, i) => `Q${i + 1}: ${p.q} [${p.checked ? '✓ 済' : '未'}]\nA${i + 1}: ${p.a}`)
       .join('\n');
     el.replaceWith(doc.createTextNode(`\n[Q&A 問題集]\n${txt}\n`));
   });
