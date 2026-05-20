@@ -2123,12 +2123,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
       <style jsx>{`
         .ai-chat-container { display: flex; flex-direction: column; height: 100%; background: var(--background); overflow: hidden; position: relative; }
-        .chat-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--glass-tint, rgba(255,255,255,0.9)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); flex-shrink: 0; gap: 8px; }
-        .header-left { display: flex; align-items: center; gap: 10px; }
+        .chat-header { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--glass-tint, rgba(255,255,255,0.9)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); flex-shrink: 0; gap: 8px; overflow: hidden; }
+        .header-left { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .header-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; object-position: top center; border: 2px solid var(--border); background: var(--accent); }
         .header-title { font-size: 0.95rem; font-weight: 800; color: var(--primary); }
         .header-sub { font-size: 0.7rem; color: var(--fg-muted); }
-        .header-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .header-right { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
+        .header-right::-webkit-scrollbar { display: none; }
         .model-toggle { display: flex; align-items: center; gap: 5px; background: var(--accent); border: 1px solid var(--border); border-radius: 16px; padding: 5px 10px; cursor: pointer; font-size: 0.74rem; font-weight: 700; white-space: nowrap; transition: all 0.2s; }
         .model-toggle.siku { color: #8B4513; border-color: #8B4513; background: color-mix(in srgb, #8B4513 12%, transparent); }
         .model-toggle.lily { color: var(--primary); border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
