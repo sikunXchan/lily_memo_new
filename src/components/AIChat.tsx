@@ -17,7 +17,7 @@ import {
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
-import type { Note } from '@/lib/db';
+import type { Note, Folder } from '@/lib/db';
 import {
   callGeminiChat, callDeepResearch, uploadToFileApi,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
@@ -66,12 +66,15 @@ interface ChatMessage {
 
 interface InsertableBlock {
   id: string;
-  type: 'mermaid' | 'chart' | 'qa' | 'slides' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite';
+  type: 'mermaid' | 'chart' | 'qa' | 'slides' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'folder_create' | 'note_move';
   rawCode: string;
   previewLabel: string;
   fileName?: string;
   memoTitle?: string;
   memoId?: number;
+  folderName?: string;
+  folderColor?: string;
+  targetFolderName?: string;
 }
 
 interface ClarifyQuestion {
@@ -230,7 +233,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     }
   });
 
-  const FENCE_RE = /```(mermaid|chart|qa|slides|geometry|memo_create|memo_overwrite)([\s\S]*?)```/g;
+  const FENCE_RE = /```(mermaid|chart|qa|slides|geometry|memo_create|memo_overwrite|folder_create|note_move)([\s\S]*?)```/g;
   const textContent = work2.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
@@ -276,6 +279,24 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const content = trimmed.split('\n').slice(1).join('\n').trim();
       blocks.push({ id, type: 'memo_overwrite', rawCode: content, previewLabel: `メモ上書き: ID ${memoId ?? '不明'}`, memoId });
       return `\n✨ [メモを書き換える準備ができたよ]\n`;
+    }
+    if (type === 'folder_create') {
+      const lines = trimmed.split('\n');
+      const nameMatch = lines[0]?.match(/^@@folder_create\s*:\s*(.+)/);
+      const colorMatch = lines.find(l => l.startsWith('@@color:'))?.match(/^@@color:\s*(.+)/);
+      const folderName = nameMatch?.[1]?.trim() || '新しいフォルダ';
+      const folderColor = colorMatch?.[1]?.trim();
+      blocks.push({ id, type: 'folder_create', rawCode: trimmed, previewLabel: `フォルダ作成: 📁 ${folderName}`, folderName, folderColor });
+      return `\n📁 [「${folderName}」フォルダを作る準備ができたよ]\n`;
+    }
+    if (type === 'note_move') {
+      const lines = trimmed.split('\n');
+      const idMatch = lines[0]?.match(/^@@note_move\s*:\s*(\d+)/);
+      const folderMatch = lines.find(l => l.startsWith('@@to_folder:'))?.match(/^@@to_folder:\s*(.+)/);
+      const memoId = idMatch ? Number(idMatch[1]) : undefined;
+      const targetFolderName = folderMatch?.[1]?.trim() || '未分類';
+      blocks.push({ id, type: 'note_move', rawCode: trimmed, previewLabel: `移動: ID ${memoId ?? '?'} → 📁 ${targetFolderName}`, memoId, targetFolderName });
+      return `\n📁 [メモを「${targetFolderName}」に移動する準備ができたよ]\n`;
     }
     return '';
   }).trim();
@@ -459,14 +480,25 @@ PDF・画像・音声・動画・手書きメモ・Webページなど、あら�
 市場調査や競合分析など抽象的な指示も具体的なステップに分解して実行すること。`,
 };
 
-function buildSikunSystemPrompt(contextNotes: Note[], mode?: string): string {
+function buildSikunSystemPrompt(contextNotes: Note[], allFolders?: Folder[], mode?: string): string {
   const base = SIKUNLILY_CHAT_SYSTEM_PROMPT;
   const modePrompt = mode ? (SIKU_MODE_PROMPTS[mode] ?? '') : '';
-  if (contextNotes.length === 0) return `${base}${modePrompt}`;
-  const context = contextNotes
-    .map(n => `## ${n.title || '無題'} (ID:${n.id})\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
-    .join('\n\n---\n\n');
-  return `${base}${modePrompt}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
+  let extra = '';
+  if (allFolders && allFolders.length > 0) {
+    const list = allFolders.map(f => `- 「${f.name}」(フォルダID:${f.id})`).join('\n');
+    extra += `\n\n【既存のフォルダ (${allFolders.length}件)】\n${list}`;
+  }
+  if (contextNotes.length > 0) {
+    const notesCtx = contextNotes
+      .map(n => {
+        const folder = allFolders?.find(f => f.id === n.folderId);
+        const loc = folder ? ` [フォルダ:${folder.name}]` : ' [未分類]';
+        return `## ${n.title || '無題'} (ID:${n.id})${loc}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`;
+      })
+      .join('\n\n---\n\n');
+    extra += `\n\n【参照中のメモ (${contextNotes.length}件)】\n${notesCtx}`;
+  }
+  return `${base}${modePrompt}${extra}`;
 }
 
 /* ───────────── Block previews ───────────── */
@@ -946,6 +978,78 @@ function ZipDownloadButton({ blocks }: { blocks: InsertableBlock[] }) {
   );
 }
 
+function FolderActionCard({ block, allNotes }: { block: InsertableBlock; allNotes: Note[] }) {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const allFolders = useLiveQuery(() => db.folders.filter(f => !f.deletedAt).toArray(), []);
+
+  const noteTitle = block.memoId != null
+    ? (allNotes.find(n => n.id === block.memoId)?.title || `ID:${block.memoId}`)
+    : '不明';
+
+  const handleExecute = async () => {
+    if (status !== 'idle') return;
+    setStatus('loading');
+    try {
+      if (block.type === 'folder_create') {
+        const existing = allFolders?.find(f => f.name === block.folderName);
+        if (!existing) {
+          await db.folders.add({
+            syncId: newSyncId(),
+            name: block.folderName!,
+            color: block.folderColor || '--folder-pink',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+        }
+        setStatus('done');
+      } else if (block.type === 'note_move' && block.memoId != null) {
+        let folder = allFolders?.find(f => f.name === block.targetFolderName);
+        if (!folder) {
+          const newId = await db.folders.add({
+            syncId: newSyncId(),
+            name: block.targetFolderName!,
+            color: '--folder-pink',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          folder = { id: newId as number, name: block.targetFolderName!, syncId: '', createdAt: 0, updatedAt: 0 };
+        }
+        await db.notes.update(block.memoId, { folderId: folder.id, updatedAt: Date.now() });
+        setStatus('done');
+      }
+    } catch {
+      setStatus('error');
+    }
+  };
+
+  const icon = block.type === 'folder_create' ? '📁' : '📄';
+  const label = block.type === 'folder_create'
+    ? `フォルダ「${block.folderName}」を作成`
+    : `「${noteTitle}」→ 📁 ${block.targetFolderName}`;
+  const btnLabel = block.type === 'folder_create' ? 'フォルダを作成する' : 'メモを移動する';
+
+  return (
+    <div className="folder-action-card">
+      <div className="folder-action-label">{icon} {label}</div>
+      <button
+        className={`folder-action-btn ${status}`}
+        onClick={handleExecute}
+        disabled={status !== 'idle'}
+      >
+        {status === 'loading' ? '実行中...' : status === 'done' ? '✓ 完了' : status === 'error' ? '✕ 失敗' : btnLabel}
+      </button>
+      <style jsx>{`
+        .folder-action-card { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+        .folder-action-label { flex: 1; font-size: 0.83rem; color: var(--foreground); font-weight: 600; word-break: break-word; }
+        .folder-action-btn { flex-shrink: 0; background: var(--primary); color: white; border: none; border-radius: 8px; padding: 6px 14px; font-size: 0.8rem; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
+        .folder-action-btn.done { background: #22863a; }
+        .folder-action-btn.error { background: #cc0000; }
+        .folder-action-btn:disabled { opacity: 0.6; cursor: default; }
+      `}</style>
+    </div>
+  );
+}
+
 function InsertableBlockCard({
   block,
   allNotes,
@@ -1297,16 +1401,20 @@ function LilyBubble({
         )}
         {message.extractedBlocks && message.extractedBlocks.length > 0 && (
           <div className="block-list">
-            {message.extractedBlocks.map(block => (
-              <InsertableBlockCard
-                key={block.id}
-                block={block}
-                allNotes={allNotes}
-                defaultNoteId={selectedNoteId}
-                isPremium={model === 'sikunlily'}
-                onNoteCreated={onNoteCreated}
-              />
-            ))}
+            {message.extractedBlocks.map(block =>
+              block.type === 'folder_create' || block.type === 'note_move' ? (
+                <FolderActionCard key={block.id} block={block} allNotes={allNotes} />
+              ) : (
+                <InsertableBlockCard
+                  key={block.id}
+                  block={block}
+                  allNotes={allNotes}
+                  defaultNoteId={selectedNoteId}
+                  isPremium={model === 'sikunlily'}
+                  onNoteCreated={onNoteCreated}
+                />
+              )
+            )}
             {message.extractedBlocks.filter(b => b.type === 'file').length >= 2 && (
               <ZipDownloadButton blocks={message.extractedBlocks.filter(b => b.type === 'file')} />
             )}
@@ -1478,6 +1586,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
   const allNotes = useLiveQuery(
     () => db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray(),
+    []
+  );
+  const allFolders = useLiveQuery(
+    () => db.folders.filter(f => !f.deletedAt).toArray(),
     []
   );
 
@@ -1668,11 +1780,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         );
         setSikunProgress('');
       } else if (activeModel === 'sikunlily') {
+        const folders = allFolders ?? [];
         if (activeMode === 'code') {
           setSikunProgress('コードを設計中...');
           aiText = await callGeminiChat(
             history,
-            buildSikunSystemPrompt(contextNotes, 'code'),
+            buildSikunSystemPrompt(contextNotes, folders, 'code'),
             apiKey,
             { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
           );
@@ -1681,7 +1794,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           setSikunProgress('メモを分析中...');
           aiText = await callGeminiChat(
             history,
-            buildSikunSystemPrompt(contextNotes, 'organize'),
+            buildSikunSystemPrompt(contextNotes, folders, 'organize'),
             apiKey,
             { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
           );
@@ -1690,7 +1803,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           setSikunProgress('データを解析中...');
           aiText = await callGeminiChat(
             history,
-            buildSikunSystemPrompt(contextNotes, 'analysis'),
+            buildSikunSystemPrompt(contextNotes, folders, 'analysis'),
             apiKey,
             { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
           );
@@ -1699,7 +1812,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           setSikunProgress('調査・検証中...');
           aiText = await callGeminiChat(
             history,
-            buildSikunSystemPrompt(contextNotes, 'research'),
+            buildSikunSystemPrompt(contextNotes, folders, 'research'),
             apiKey,
             { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
           );
@@ -1708,7 +1821,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           // モード未選択 → 通常会話（高速・シングルステージ）
           aiText = await callGeminiChat(
             history,
-            buildSikunSystemPrompt(contextNotes),
+            buildSikunSystemPrompt(contextNotes, folders),
             apiKey,
           );
         }
