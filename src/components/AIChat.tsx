@@ -655,27 +655,29 @@ function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: '
         </div>
         <style jsx>{`
           .help-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px; }
-          .help-modal { background:var(--bg,#fff); border-radius:16px; width:100%; max-width:520px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.18); }
+          .help-modal { background:var(--background); border-radius:16px; width:100%; max-width:520px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.18); }
           .help-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px 0; }
-          .help-title { font-size:1.05rem; font-weight:700; color:var(--primary,#e84393); }
-          .help-close { background:none; border:none; cursor:pointer; color:var(--fg-muted,#888); padding:4px; display:flex; }
+          .help-title { font-size:1.05rem; font-weight:700; color:var(--primary); }
+          .help-close { background:none; border:none; cursor:pointer; color:var(--foreground); opacity:0.6; padding:4px; display:flex; }
+          .help-close:hover { opacity:1; }
           .help-tabs { display:flex; gap:6px; padding:12px 18px 0; }
-          .help-tab { background:none; border:1.5px solid var(--border,#e0e0e0); border-radius:20px; padding:5px 14px; font-size:0.82rem; cursor:pointer; color:var(--fg-muted,#888); transition:all 0.15s; }
-          .help-tab.active { background:var(--primary,#e84393); color:#fff; border-color:var(--primary,#e84393); }
+          .help-tab { background:none; border:1.5px solid var(--border); border-radius:20px; padding:5px 14px; font-size:0.82rem; cursor:pointer; color:var(--foreground); opacity:0.65; transition:all 0.15s; }
+          .help-tab:hover { opacity:1; }
+          .help-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); opacity:1; }
           .help-body { overflow-y:auto; padding:14px 18px 20px; flex:1; }
-          .help-lead { font-size:0.85rem; color:var(--fg-muted,#666); margin:0 0 12px; line-height:1.5; }
+          .help-lead { font-size:0.85rem; color:var(--foreground); opacity:0.7; margin:0 0 12px; line-height:1.5; }
           .help-grid { display:flex; flex-direction:column; gap:8px; }
-          .help-card { display:flex; align-items:flex-start; gap:10px; padding:9px 12px; background:var(--accent,#fdf0f7); border-radius:10px; }
+          .help-card { display:flex; align-items:flex-start; gap:10px; padding:9px 12px; background:var(--accent); border:1px solid var(--border); border-radius:10px; }
           .help-card-icon { font-size:1.2rem; flex-shrink:0; margin-top:1px; }
-          .help-card strong { font-size:0.88rem; color:var(--fg,#333); }
-          .help-card-desc { font-size:0.79rem; color:var(--fg-muted,#888); margin-top:1px; }
-          .help-section-title { font-size:0.85rem; font-weight:700; color:var(--primary,#e84393); margin:16px 0 8px; }
+          .help-card strong { font-size:0.88rem; color:var(--foreground); }
+          .help-card-desc { font-size:0.79rem; color:var(--foreground); opacity:0.65; margin-top:1px; }
+          .help-section-title { font-size:0.85rem; font-weight:700; color:var(--primary); margin:16px 0 8px; }
           .help-prompts { display:flex; flex-direction:column; gap:6px; }
-          .help-prompt { background:var(--bg2,#f8f8f8); border:1px solid var(--border,#e8e8e8); border-radius:8px; padding:8px 12px; font-size:0.82rem; color:var(--fg,#333); white-space:pre-wrap; }
+          .help-prompt { background:var(--accent); border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:0.82rem; color:var(--foreground); white-space:pre-wrap; }
           .help-tips { display:flex; flex-direction:column; gap:12px; }
-          .help-tip { padding:12px 14px; background:var(--accent,#fdf0f7); border-radius:10px; }
-          .help-tip-title { font-size:0.88rem; color:var(--fg,#333); display:block; margin-bottom:4px; }
-          .help-tip-desc { font-size:0.81rem; color:var(--fg-muted,#666); margin:0; line-height:1.5; }
+          .help-tip { padding:12px 14px; background:var(--accent); border:1px solid var(--border); border-radius:10px; }
+          .help-tip-title { font-size:0.88rem; color:var(--foreground); display:block; margin-bottom:4px; font-weight:600; }
+          .help-tip-desc { font-size:0.81rem; color:var(--foreground); opacity:0.7; margin:0; line-height:1.5; }
         `}</style>
       </div>
     </div>
