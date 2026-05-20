@@ -1,7 +1,8 @@
 export interface ChatAttachment {
   mimeType: string;
-  data: string; // base64 without the data: prefix; empty string when fileUri is set
-  fileUri?: string; // Gemini File API URI — preferred over inline_data when present
+  data: string; // base64 without the data: prefix; empty string when fileUri or extractedText is set
+  fileUri?: string;      // Gemini File API URI — used for large images
+  extractedText?: string; // pre-extracted text content for PDFs
 }
 
 // Upload a file to the Gemini File API and return its URI.
@@ -93,10 +94,12 @@ export async function callGeminiChat(
       role: t.role,
       parts: [
         { text: t.text },
-        ...(t.attachments?.map(a =>
-          a.fileUri
-            ? { file_data: { mime_type: a.mimeType, file_uri: a.fileUri } }
-            : { inline_data: { mime_type: a.mimeType, data: a.data } }
+        ...(t.attachments?.flatMap(a =>
+          a.extractedText
+            ? [{ text: `[添付PDF の内容]\n${a.extractedText}` }]
+            : a.fileUri
+              ? [{ file_data: { mime_type: a.mimeType, file_uri: a.fileUri } }]
+              : [{ inline_data: { mime_type: a.mimeType, data: a.data } }]
         ) ?? []),
       ],
     })),
@@ -502,10 +505,12 @@ export async function callSikunLilyChat(
         role: t.role,
         parts: [
           { text: t.text },
-          ...(t.attachments?.map(a =>
-            a.fileUri
-              ? { file_data: { mime_type: a.mimeType, file_uri: a.fileUri } }
-              : { inline_data: { mime_type: a.mimeType, data: a.data } }
+          ...(t.attachments?.flatMap(a =>
+            a.extractedText
+              ? [{ text: `[添付PDF の内容]\n${a.extractedText}` }]
+              : a.fileUri
+                ? [{ file_data: { mime_type: a.mimeType, file_uri: a.fileUri } }]
+                : [{ inline_data: { mime_type: a.mimeType, data: a.data } }]
           ) ?? []),
         ],
       })),
