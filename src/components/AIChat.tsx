@@ -292,7 +292,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     if (type === 'note_move') {
       const lines = trimmed.split('\n');
       const idMatch = lines[0]?.match(/^@@note_move\s*:\s*(\d+)/);
-      const folderMatch = lines.find(l => l.startsWith('@@to_folder:'))?.match(/^@@to_folder:\s*(.+)/);
+      const folderMatch = lines.find((l: string) => l.startsWith('@@to_folder:'))?.match(/^@@to_folder:\s*(.+)/);
       const memoId = idMatch ? Number(idMatch[1]) : undefined;
       const targetFolderName = folderMatch?.[1]?.trim() || '未分類';
       blocks.push({ id, type: 'note_move', rawCode: trimmed, previewLabel: `移動: ID ${memoId ?? '?'} → 📁 ${targetFolderName}`, memoId, targetFolderName });
