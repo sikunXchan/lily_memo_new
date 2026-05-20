@@ -489,6 +489,38 @@ function ImageSaveBar({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Auto-quote mindmap node labels that contain bracket characters,
+// which break Mermaid's parser if left unquoted.
+function sanitizeMindmap(src: string): string {
+  if (!/^\s*mindmap\b/.test(src)) return src;
+  return src
+    .split('\n')
+    .map(line => {
+      // Match indentation + optional node-shape prefix + label text
+      const m = line.match(/^(\s*)((?:root|[a-zA-Z_]\w*)?\s*)?(.+)$/);
+      if (!m) return line;
+      const [, indent, prefix = '', label] = m;
+      // Already quoted or is a shape-wrapped node like ((text)) / [text] / (text)
+      if (/^["']/.test(label.trim())) return line;
+      if (/^[(\[{].*[)\]}]$/.test(label.trim())) {
+        // Shape node like ((foo)) — check inner text
+        const inner = label.trim().replace(/^[(\[{]+/, '').replace(/[)\]}]+$/, '');
+        if (/[()（）\[\]{}【】「」〔〕#&<>]/.test(inner)) {
+          // Can't easily re-quote shape nodes; leave as-is and let mermaid handle
+          return line;
+        }
+        return line;
+      }
+      // Plain label — quote if it contains problematic chars
+      if (/[()（）\[\]{}【】「」〔〕#&<>]/.test(label)) {
+        const escaped = label.replace(/"/g, "'");
+        return `${indent}${prefix}"${escaped}"`;
+      }
+      return line;
+    })
+    .join('\n');
+}
+
 function MermaidPreview({ code, baseName }: { code: string; baseName: string }) {
   const [svg, setSvg] = useState('');
   const [err, setErr] = useState(false);
@@ -497,7 +529,7 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
     (async () => {
       try {
         const id = `lily-mmd-${Math.random().toString(36).slice(2, 9)}`;
-        const { svg: out } = await mermaid.render(id, code);
+        const { svg: out } = await mermaid.render(id, sanitizeMindmap(code));
         if (!cancelled) { setSvg(out); setErr(false); }
       } catch {
         if (!cancelled) setErr(true);
