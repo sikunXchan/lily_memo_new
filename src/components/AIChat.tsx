@@ -20,6 +20,7 @@ import { db, newSyncId } from '@/lib/db';
 import type { Note, Folder } from '@/lib/db';
 import {
   callGeminiChat, callDeepResearch, uploadToFileApi,
+  streamSikunlilyChat, SIKU_THINKING_BUDGETS,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
@@ -64,6 +65,7 @@ interface ChatMessage {
   extractedBlocks?: InsertableBlock[];
   questions?: ClarifyQuestion[];
   attachments?: AttachmentMeta[];
+  thinking?: string; // sikunlily extended thinking log
 }
 
 interface InsertableBlock {
@@ -1425,6 +1427,7 @@ function LilyBubble({
 }) {
   const avatarSrc = model === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png';
   const avatarAlt = model === 'sikunlily' ? 'sikunlily' : 'Lily';
+  const [thinkingOpen, setThinkingOpen] = useState(false);
   return (
     <div className="lily-bubble-row">
       <div className="lily-avatar">
@@ -1441,6 +1444,19 @@ function LilyBubble({
         </div>
         {message.questions && message.questions.length > 0 && (
           <div className="ask-asked-hint">❓ {message.questions.length}件の質問をしたよ</div>
+        )}
+        {message.thinking && (
+          <div className="thinking-toggle-wrap">
+            <button
+              className="thinking-toggle-btn"
+              onClick={() => setThinkingOpen(o => !o)}
+            >
+              🧠 思考の過程 {thinkingOpen ? '▲' : '▼'}
+            </button>
+            {thinkingOpen && (
+              <div className="thinking-content">{message.thinking}</div>
+            )}
+          </div>
         )}
         {message.extractedBlocks && message.extractedBlocks.length > 0 && (
           <div className="block-list">
@@ -1500,6 +1516,22 @@ function LilyBubble({
         .rt-body :global(.katex-display) { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; background: rgba(var(--primary-rgb,236,72,153),0.04); border-radius: 6px; padding: 6px 10px; }
         .block-list { margin-top: 4px; }
         .ask-asked-hint { margin-top: 6px; font-size: 0.78rem; color: var(--fg-muted); display: flex; align-items: center; gap: 4px; }
+        .thinking-toggle-wrap { margin-top: 6px; }
+        .thinking-toggle-btn {
+          display: flex; align-items: center; gap: 5px;
+          padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: 600;
+          background: transparent; color: #888; border: 1px solid var(--border);
+          cursor: pointer; transition: background 0.15s, color 0.15s;
+        }
+        .thinking-toggle-btn:hover { background: var(--accent); color: var(--foreground); }
+        .thinking-content {
+          margin-top: 6px; padding: 10px 12px;
+          background: #0f172a; color: #94a3b8;
+          border-radius: 8px; font-size: 0.72rem; line-height: 1.6;
+          max-height: 260px; overflow-y: auto;
+          font-family: 'Fira Code','Consolas',monospace;
+          white-space: pre-wrap; word-break: break-word;
+        }
       `}</style>
     </div>
   );
@@ -1618,6 +1650,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
   const [activeModel, setActiveModel] = useState<'lily' | 'sikunlily'>('lily');
   const [sikunProgress, setSikunProgress] = useState<string>('');
+  const [sikunLiveThinking, setSikunLiveThinking] = useState<string>('');
+  const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
+  const pendingThinkingRef = useRef<string>('');
   const [sikunNoteIds, setSikunNoteIds] = useState<number[]>([]);
   const [sikunAllNotes, setSikunAllNotes] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -1833,72 +1868,46 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         setSikunProgress('');
       } else if (activeModel === 'sikunlily') {
         const folders = allFolders ?? [];
-        if (activeMode === 'code') {
-          setSikunProgress('コードを設計中...');
-          aiText = await callGeminiChat(
-            history,
-            buildSikunSystemPrompt(contextNotes, folders, 'code'),
-            apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
-          );
-          setSikunProgress('');
-        } else if (activeMode === 'organize') {
-          setSikunProgress('メモを分析中...');
-          aiText = await callGeminiChat(
-            history,
-            buildSikunSystemPrompt(contextNotes, folders, 'organize'),
-            apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
-          );
-          setSikunProgress('');
-        } else if (activeMode === 'analysis') {
-          setSikunProgress('データを解析中...');
-          aiText = await callGeminiChat(
-            history,
-            buildSikunSystemPrompt(contextNotes, folders, 'analysis'),
-            apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
-          );
-          setSikunProgress('');
-        } else if (activeMode === 'research') {
-          setSikunProgress('調査・検証中...');
-          aiText = await callGeminiChat(
-            history,
-            buildSikunSystemPrompt(contextNotes, folders, 'research'),
-            apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
-          );
-          setSikunProgress('');
-        } else if (activeMode === 'arch') {
-          setSikunProgress('アーキテクチャを設計中...');
-          aiText = await callGeminiChat(
-            history,
-            buildSikunSystemPrompt(contextNotes, folders, 'arch'),
-            apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
-          );
-          setSikunProgress('');
-        } else if (activeMode === 'study') {
-          setSikunProgress('学習支援中...');
-          aiText = await callGeminiChat(
-            history,
-            buildSikunSystemPrompt(contextNotes, folders, 'study'),
-            apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
-          );
-          setSikunProgress('');
-        } else {
-          // モード未選択 → 通常会話（高速・シングルステージ）
-          aiText = await callGeminiChat(
-            history,
-            buildSikunSystemPrompt(contextNotes, folders),
-            apiKey,
-          );
-        }
+        const budget = activeMode
+          ? (SIKU_THINKING_BUDGETS[activeMode] ?? 4096)
+          : 4096;
+        const modeLabels: Record<string, string> = {
+          code: 'コードを設計中',
+          arch: 'アーキテクチャを設計中',
+          analysis: 'データを解析中',
+          research: '調査・検証中',
+          study: '学習支援中',
+          organize: 'メモを分析中',
+        };
+        setSikunProgress(budget !== 0 ? '🧠 深く思考中...' : (modeLabels[activeMode ?? ''] ?? '考え中') + '...');
+        setSikunLiveThinking('');
+        let thinkingAccum = '';
+        aiText = await streamSikunlilyChat(
+          history,
+          buildSikunSystemPrompt(contextNotes, folders, activeMode ?? undefined),
+          apiKey,
+          budget,
+          {
+            onThinkingDelta: (delta) => {
+              thinkingAccum += delta;
+              setSikunLiveThinking(thinkingAccum);
+              if (budget !== 0) setSikunProgress('🧠 思考中...');
+            },
+            onResponseDelta: () => {
+              setSikunProgress('✍️ 回答を生成中...');
+            },
+          },
+          ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+        );
+        setSikunProgress('');
+        setSikunLiveThinking('');
+        pendingThinkingRef.current = thinkingAccum;
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
       }
       const { textContent, blocks, questions } = parseAIResponse(aiText, true);
+      const capturedThinking = pendingThinkingRef.current;
+      pendingThinkingRef.current = '';
 
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -1911,9 +1920,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
+        thinking: capturedThinking || undefined,
       }]);
     } catch (e) {
       setSikunProgress('');
+      setSikunLiveThinking('');
+      pendingThinkingRef.current = '';
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
@@ -2141,6 +2153,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           <>
             <TypingIndicator model={activeModel} />
             {sikunProgress && <div className="siku-progress">{sikunProgress}</div>}
+            {sikunLiveThinking && (
+              <div className="siku-thinking-live">
+                <div className="siku-thinking-live-header">
+                  <span className="siku-thinking-pulse" />
+                  思考ログ（リアルタイム）
+                </div>
+                <div className="siku-thinking-live-body">{sikunLiveThinking}</div>
+              </div>
+            )}
           </>
         )}
         <div ref={messagesEndRef} />
@@ -2338,6 +2359,28 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .web-toggle.on .web-state { background: var(--primary); color: white; }
         @media (max-width: 380px) { .web-toggle .web-label { display: none; } }
         .siku-progress { font-size: 0.78rem; color: var(--fg-muted); padding-left: 52px; margin-top: -8px; font-style: italic; }
+        .siku-thinking-live {
+          margin: 4px 0 4px 52px;
+          border: 1px solid #334155; border-radius: 10px;
+          background: #0f172a; overflow: hidden;
+        }
+        .siku-thinking-live-header {
+          display: flex; align-items: center; gap: 7px;
+          padding: 6px 12px; font-size: 0.72rem; font-weight: 600;
+          color: #64748b; border-bottom: 1px solid #1e293b;
+        }
+        .siku-thinking-pulse {
+          width: 7px; height: 7px; border-radius: 50%; background: #3b82f6;
+          animation: thinkPulse 1.2s ease-in-out infinite;
+          flex-shrink: 0;
+        }
+        @keyframes thinkPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.7)} }
+        .siku-thinking-live-body {
+          padding: 8px 12px; max-height: 180px; overflow-y: auto;
+          font-size: 0.7rem; line-height: 1.55; color: #64748b;
+          font-family: 'Fira Code','Consolas',monospace;
+          white-space: pre-wrap; word-break: break-word;
+        }
         .context-toggle { background: transparent; border: none; cursor: pointer; padding: 2px; }
         .context-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent); border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px; font-size: 0.78rem; color: var(--fg-muted); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
         .context-chip.selected { color: var(--primary); border-color: var(--primary); }

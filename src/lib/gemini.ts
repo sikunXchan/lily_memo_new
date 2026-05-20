@@ -79,6 +79,135 @@ export interface ChatOptions {
   models?: string[];
 }
 
+export interface ThinkingCallbacks {
+  onThinkingDelta?: (text: string) => void;
+  onResponseDelta?: (text: string) => void;
+}
+
+// thinking budget per sikunlily mode.  -1 = dynamic (model decides), 0 = off.
+export const SIKU_THINKING_BUDGETS: Record<string, number> = {
+  code:     -1,
+  arch:     -1,
+  analysis: 8192,
+  research: 8192,
+  study:    4096,
+  organize: 0,
+};
+const DEFAULT_THINKING_BUDGET = 4096;
+
+/**
+ * Streams a sikunlily response with extended thinking enabled.
+ * Thought parts (thought:true) are routed to onThinkingDelta;
+ * response parts go to onResponseDelta and are also accumulated into
+ * the returned promise value.
+ * Falls back to non-thinking callGeminiChat on any stream error.
+ */
+export async function streamSikunlilyChat(
+  history: ChatTurn[],
+  systemPrompt: string,
+  apiKey: string,
+  thinkingBudget: number,
+  callbacks: ThinkingCallbacks = {},
+  modelList: string[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+): Promise<string> {
+  const genConfig: Record<string, unknown> = {
+    temperature: 0.7,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens: 16384,
+  };
+  if (thinkingBudget !== 0) {
+    genConfig.thinkingConfig = { thinkingBudget };
+  }
+
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: history.map(t => ({
+      role: t.role,
+      parts: [
+        { text: t.text } as GeminiPart,
+        ...attachmentToParts(t.attachments ?? []),
+      ],
+    })),
+    generationConfig: genConfig,
+  });
+
+  let lastError = 'AI request failed';
+  for (let i = 0; i < modelList.length; i++) {
+    const model = modelList[i];
+    if (i > 0) await new Promise(r => setTimeout(r, 1000));
+
+    // flash-lite doesn't reliably support thinking — skip thinkingConfig for it
+    const isLite = model.includes('lite');
+    const effectiveBody = (isLite && thinkingBudget !== 0)
+      ? JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: history.map(t => ({
+            role: t.role,
+            parts: [{ text: t.text } as GeminiPart, ...attachmentToParts(t.attachments ?? [])],
+          })),
+          generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 8192 },
+        })
+      : body;
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: effectiveBody,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null) as { error?: { message?: string } } | null;
+        lastError = err?.error?.message || `HTTP ${res.status}`;
+        if (res.status === 404) continue;
+        if (!RETRY_STATUSES.has(res.status)) throw new Error(lastError);
+        continue;
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = '';
+      let buf = '';
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]') break outer;
+          try {
+            const chunk = JSON.parse(raw);
+            const parts: Array<{ text?: string; thought?: boolean }> =
+              chunk.candidates?.[0]?.content?.parts ?? [];
+            for (const part of parts) {
+              if (!part.text) continue;
+              if (part.thought) {
+                callbacks.onThinkingDelta?.(part.text);
+              } else {
+                callbacks.onResponseDelta?.(part.text);
+                fullResponse += part.text;
+              }
+            }
+          } catch { /* ignore malformed chunks */ }
+        }
+      }
+
+      if (fullResponse.trim()) return fullResponse.trim();
+      lastError = '空の応答が返ってきたよ';
+    } catch (e) {
+      lastError = (e as Error).message;
+    }
+  }
+  // stream exhausted → fall back to regular call (no thinking)
+  return callGeminiChat(history, systemPrompt, apiKey, { models: modelList });
+}
+
 export interface SikunLilyProgress {
   stage: 1 | 2;
   label: string;
