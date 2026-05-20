@@ -489,15 +489,55 @@ function ImageSaveBar({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Characters that break Mermaid mindmap parsing when unquoted.
+const MERMAID_PROBLEM = /[()（）\[\]{}【】「」〔〕『』#&<>]/;
+
+// Sanitize mindmap code so nodes with special chars are safely quoted.
+// Shape nodes like ((text)) are converted to ["text"] when the inner
+// text contains problem characters, since quoting inside shape syntax
+// is not reliably supported across Mermaid versions.
+function sanitizeMindmap(src: string): string {
+  if (!/^\s*mindmap\b/.test(src)) return src;
+  return src
+    .split('\n')
+    .map((line, idx) => {
+      if (idx === 0) return line; // "mindmap" keyword line
+      const indent = line.match(/^(\s*)/)?.[1] ?? '';
+      const content = line.slice(indent.length);
+      if (!content.trim()) return line;
+      if (/^"/.test(content)) return line; // already quoted
+      // Shape node: ((text)), [text], (text), {{text}}, >text]
+      const shape = content.match(/^([(\[{>]{1,2})(.+?)([)\]}]{1,2})$/);
+      if (shape) {
+        const [, , inner] = shape;
+        if (MERMAID_PROBLEM.test(inner)) {
+          return `${indent}["${inner.replace(/"/g, "'")}"]`;
+        }
+        return line;
+      }
+      // Plain text label
+      if (MERMAID_PROBLEM.test(content)) {
+        return `${indent}"${content.replace(/"/g, "'")}"`;
+      }
+      return line;
+    })
+    .join('\n');
+}
+
 function MermaidPreview({ code, baseName }: { code: string; baseName: string }) {
   const [svg, setSvg] = useState('');
   const [err, setErr] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const sanitized = sanitizeMindmap(code);
       try {
+        // Pre-validate to prevent Mermaid v11 from injecting a bomb SVG on error.
+        const ok = await (mermaid as unknown as { parse(t: string, o: object): Promise<boolean> })
+          .parse(sanitized, { suppressErrors: true });
+        if (!ok) { if (!cancelled) setErr(true); return; }
         const id = `lily-mmd-${Math.random().toString(36).slice(2, 9)}`;
-        const { svg: out } = await mermaid.render(id, code);
+        const { svg: out } = await mermaid.render(id, sanitized);
         if (!cancelled) { setSvg(out); setErr(false); }
       } catch {
         if (!cancelled) setErr(true);
