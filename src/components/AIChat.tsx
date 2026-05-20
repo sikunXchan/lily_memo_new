@@ -427,7 +427,7 @@ async function createNoteWithBlock(block: InsertableBlock, title: string): Promi
 function buildSystemPrompt(contextNotes: Note[]): string {
   if (contextNotes.length === 0) return LILY_CHAT_SYSTEM_PROMPT;
   const context = contextNotes
-    .map(n => `## ${n.title || '無題'}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
+    .map(n => `## ${n.title || '無題'} (ID:${n.id})\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
     .join('\n\n---\n\n');
   return `${LILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
@@ -464,7 +464,7 @@ function buildSikunSystemPrompt(contextNotes: Note[], mode?: string): string {
   const modePrompt = mode ? (SIKU_MODE_PROMPTS[mode] ?? '') : '';
   if (contextNotes.length === 0) return `${base}${modePrompt}`;
   const context = contextNotes
-    .map(n => `## ${n.title || '無題'}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
+    .map(n => `## ${n.title || '無題'} (ID:${n.id})\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
     .join('\n\n---\n\n');
   return `${base}${modePrompt}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
