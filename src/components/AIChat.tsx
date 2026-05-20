@@ -44,13 +44,14 @@ const MAX_FILES = 5;
 const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain';
 
 interface AttachmentMeta {
-  id: string; // stable key for async updates
+  id: string;
   name: string;
   mimeType: string;
   data: string; // base64
   isImage: boolean;
-  fileUri?: string;  // set after File API upload
-  uploading?: boolean; // true while File API upload is in progress
+  fileUri?: string;       // set after File API upload (large images)
+  extractedText?: string; // set after pdf.js text extraction (PDFs)
+  uploading?: boolean;    // true while async processing is in progress
 }
 
 interface ChatMessage {
@@ -1310,6 +1311,25 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
   };
 
+  const extractPdfText = async (base64Data: string): Promise<string> => {
+    const pdfjs = await import('pdfjs-dist');
+    pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+    const binaryStr = atob(base64Data);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+    const doc = await pdfjs.getDocument({ data: bytes }).promise;
+    const pages: string[] = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item) => ('str' in item ? (item as { str: string }).str : ''))
+        .join(' ');
+      pages.push(`--- ${p}ページ ---\n${pageText}`);
+    }
+    return pages.join('\n\n');
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
@@ -1335,19 +1355,29 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         const result = reader.result as string;
         const base64 = result.split(',')[1] ?? '';
         const id = crypto.randomUUID();
-        // Use File API for PDFs and images larger than 2 MB to avoid
-        // oversized inline_data payloads that trigger 503 demand errors.
-        const useFileApi = file.type === 'application/pdf' || file.size > 2 * 1024 * 1024;
+        const isPdf = file.type === 'application/pdf';
+        // Large images (>2 MB) use File API; PDFs use pdf.js text extraction.
+        const useLargeImageUpload = !isPdf && file.size > 2 * 1024 * 1024;
         const meta: AttachmentMeta = {
           id,
           name: file.name,
           mimeType: file.type || 'application/octet-stream',
           data: base64,
           isImage: file.type.startsWith('image/'),
-          uploading: useFileApi && !!apiKey,
+          uploading: isPdf || (useLargeImageUpload && !!apiKey),
         };
         setAttachments(prev => prev.length >= MAX_FILES ? prev : [...prev, meta]);
-        if (useFileApi && apiKey) {
+        if (isPdf) {
+          try {
+            const extractedText = await extractPdfText(base64);
+            setAttachments(prev =>
+              prev.map(a => a.id === id ? { ...a, extractedText, uploading: false } : a)
+            );
+          } catch (err) {
+            setAttachments(prev => prev.filter(a => a.id !== id));
+            setFileError(`「${file.name}」のPDF読み込みに失敗したよ: ${err instanceof Error ? err.message : 'unknown error'}`);
+          }
+        } else if (useLargeImageUpload && apiKey) {
           try {
             const fileUri = await uploadToFileApi(base64, file.type, file.name, apiKey);
             setAttachments(prev =>
@@ -1419,8 +1449,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         if (idx === lastUserIdx && m.attachments && m.attachments.length > 0) {
           turn.attachments = m.attachments.map<ChatAttachment>(a => ({
             mimeType: a.mimeType,
-            data: a.fileUri ? '' : a.data,
+            data: a.fileUri || a.extractedText ? '' : a.data,
             fileUri: a.fileUri,
+            extractedText: a.extractedText,
           }));
         }
         return turn;
