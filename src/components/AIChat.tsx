@@ -1353,11 +1353,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             setAttachments(prev =>
               prev.map(a => a.id === id ? { ...a, fileUri, uploading: false } : a)
             );
-          } catch {
-            // Upload failed — fall back to inline_data silently
-            setAttachments(prev =>
-              prev.map(a => a.id === id ? { ...a, uploading: false } : a)
-            );
+          } catch (err) {
+            setAttachments(prev => prev.filter(a => a.id !== id));
+            setFileError(`「${file.name}」のアップロードに失敗したよ: ${err instanceof Error ? err.message : 'unknown error'}`);
           }
         }
       };

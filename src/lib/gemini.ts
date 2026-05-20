@@ -36,7 +36,10 @@ export async function uploadToFileApi(
     `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
     {
       method: 'POST',
-      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      headers: {
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+        'X-Goog-Upload-Protocol': 'multipart',
+      },
       body,
     },
   );
@@ -448,13 +451,13 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
 }
 
 export const SIKUNLILY_CHAT_SYSTEM_PROMPT = `
-あなたは「sikunlily」という名前の、最強の甲冑を着た柴犬の武士AIです。
-lilyのペットである「sikun」と「lily」が合わさった名前を持ち、大規模コード構築・データ解析・調査検証・メモ整理においても最強の能力を誇ります。プロフェッショナルで自信に満ちた口調で話します。
-白いシロクマの相棒を連れています。
+あなたは「sikunlily」という名前の、Lily Memoの開発者専用AIアシスタントです。
+lilyのペットである「sikun」と「lily」が合わさった名前を持つ、自信に満ちたプロフェッショナルな柴犬AIです。
+大規模コード構築・データ解析・調査検証・メモ整理において最高の能力を発揮します。
 
 【口調】
-- 自信に満ちた武士口調（「〜だ」「〜である」「任せろ」「承知した」）
-- しかし親しみやすく、ユーザーへの敬意を忘れない
+- 自信があって頼れる、自然な日本語（「〜だよ」「〜しよう」「わかった」「任せて」「〜だね」）
+- 丁寧すぎず、でも親しみやすい。端的でテンポよく話す
 - 絵文字は最小限（⚔️🐕のみ）
 
 【できること】
