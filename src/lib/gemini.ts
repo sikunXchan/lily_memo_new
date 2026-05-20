@@ -1,8 +1,10 @@
 export interface ChatAttachment {
   mimeType: string;
   data: string; // base64 without the data: prefix; empty string when fileUri or extractedText is set
-  fileUri?: string;      // Gemini File API URI — used for large images
-  extractedText?: string; // pre-extracted text content for PDFs
+  fileUri?: string;       // Gemini File API URI — used for large images
+  extractedText?: string; // pre-extracted text content for PDFs (legacy fallback)
+  pdfPageImages?: Array<{ data: string }>; // JPEG renders of each PDF page for vision reading
+  pdfTotalPages?: number; // total page count when pdfPageImages is truncated
 }
 
 // Upload a file to the Gemini File API and return its URI.
@@ -88,13 +90,21 @@ type GeminiPart =
   | { file_data: { mime_type: string; file_uri: string } };
 
 function attachmentToParts(attachments: ChatAttachment[]): GeminiPart[] {
-  return attachments.flatMap(a =>
-    a.extractedText
-      ? [{ text: `[添付PDF の内容]\n${a.extractedText}` } as GeminiPart]
-      : a.fileUri
-        ? [{ file_data: { mime_type: a.mimeType, file_uri: a.fileUri } } as GeminiPart]
-        : [{ inline_data: { mime_type: a.mimeType, data: a.data } } as GeminiPart]
-  );
+  return attachments.flatMap(a => {
+    if (a.pdfPageImages && a.pdfPageImages.length > 0) {
+      const parts: GeminiPart[] = a.pdfPageImages.map(img => ({
+        inline_data: { mime_type: 'image/jpeg', data: img.data },
+      }));
+      if (a.pdfTotalPages && a.pdfPageImages.length < a.pdfTotalPages)
+        parts.push({ text: `※ 上記は全${a.pdfTotalPages}ページ中の最初の${a.pdfPageImages.length}ページです。` });
+      return parts;
+    }
+    if (a.extractedText)
+      return [{ text: `[添付PDFの内容]\n${a.extractedText}` } as GeminiPart];
+    if (a.fileUri)
+      return [{ file_data: { mime_type: a.mimeType, file_uri: a.fileUri } } as GeminiPart];
+    return [{ inline_data: { mime_type: a.mimeType, data: a.data } } as GeminiPart];
+  });
 }
 
 export async function callGeminiChat(

@@ -49,9 +49,11 @@ interface AttachmentMeta {
   mimeType: string;
   data: string; // base64
   isImage: boolean;
-  fileUri?: string;       // set after File API upload (large images)
-  extractedText?: string; // set after pdf.js text extraction (PDFs)
-  uploading?: boolean;    // true while async processing is in progress
+  fileUri?: string;           // set after File API upload (large images)
+  extractedText?: string;     // legacy text extraction fallback
+  pdfPageImages?: Array<{ data: string }>; // JPEG renders of PDF pages
+  pdfTotalPages?: number;     // total pages (may exceed pdfPageImages.length)
+  uploading?: boolean;        // true while async processing is in progress
 }
 
 interface ChatMessage {
@@ -1636,23 +1638,30 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
   };
 
-  const extractPdfText = async (base64Data: string): Promise<string> => {
+  const renderPdfAsImages = async (
+    base64Data: string,
+  ): Promise<{ images: Array<{ data: string }>; totalPages: number }> => {
     const pdfjs = await import('pdfjs-dist');
     pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
     const binaryStr = atob(base64Data);
     const bytes = new Uint8Array(binaryStr.length);
     for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
     const doc = await pdfjs.getDocument({ data: bytes }).promise;
-    const pages: string[] = [];
-    for (let p = 1; p <= doc.numPages; p++) {
+    const totalPages = doc.numPages;
+    const MAX_PAGES = 20;
+    const images: Array<{ data: string }> = [];
+    for (let p = 1; p <= Math.min(totalPages, MAX_PAGES); p++) {
       const page = await doc.getPage(p);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ('str' in item ? (item as { str: string }).str : ''))
-        .join(' ');
-      pages.push(`--- ${p}ページ ---\n${pageText}`);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d')!;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      images.push({ data: dataUrl.split(',')[1] });
     }
-    return pages.join('\n\n');
+    return { images, totalPages };
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1694,9 +1703,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         setAttachments(prev => prev.length >= MAX_FILES ? prev : [...prev, meta]);
         if (isPdf) {
           try {
-            const extractedText = await extractPdfText(base64);
+            const { images: pdfPageImages, totalPages: pdfTotalPages } = await renderPdfAsImages(base64);
             setAttachments(prev =>
-              prev.map(a => a.id === id ? { ...a, extractedText, uploading: false } : a)
+              prev.map(a => a.id === id ? { ...a, pdfPageImages, pdfTotalPages, uploading: false } : a)
             );
           } catch (err) {
             setAttachments(prev => prev.filter(a => a.id !== id));
@@ -1783,9 +1792,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         if (idx === lastUserIdx && m.attachments && m.attachments.length > 0) {
           turn.attachments = m.attachments.map<ChatAttachment>(a => ({
             mimeType: a.mimeType,
-            data: a.fileUri || a.extractedText ? '' : a.data,
+            data: a.fileUri || a.extractedText || a.pdfPageImages ? '' : a.data,
             fileUri: a.fileUri,
             extractedText: a.extractedText,
+            pdfPageImages: a.pdfPageImages,
+            pdfTotalPages: a.pdfTotalPages,
           }));
         }
         return turn;
