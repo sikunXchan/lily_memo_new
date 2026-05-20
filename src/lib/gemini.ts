@@ -56,50 +56,54 @@ export async function callGeminiChat(
 
   let lastError = 'AI request failed';
   const modelList = options.models ?? GEMINI_MODELS;
+  // Per-model retry attempts for transient errors (demand spikes, quota).
+  const MAX_ATTEMPTS = 3;
 
   for (let i = 0; i < modelList.length; i++) {
     const model = modelList[i];
-    // Google Search grounding is only reliable on the 2.x models, so we
-    // only attach the tool there; the 1.5 fallback runs without it.
     const useSearch = options.webSearch && !model.includes('1.5');
     const body = JSON.stringify(
       useSearch ? { ...baseBody, tools: [{ google_search: {} }] } : baseBody
     );
 
-    // Brief delay before retrying a different model to avoid hammering the API.
-    if (i > 0) await new Promise(r => setTimeout(r, 500 * i));
-
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    });
 
-    if (response.ok) {
-      const data = await response.json();
-      const parts = data.candidates?.[0]?.content?.parts;
-      if (Array.isArray(parts)) {
-        const text = parts
-          .map((p: { text?: string }) => p.text || '')
-          .join('')
-          .trim();
-        if (text) return text;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // Exponential backoff: 0s, 2s, 4s within a model; 1s between models.
+      if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
+      else if (i > 0) await new Promise(r => setTimeout(r, 1000));
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const parts = data.candidates?.[0]?.content?.parts;
+        if (Array.isArray(parts)) {
+          const text = parts
+            .map((p: { text?: string }) => p.text || '')
+            .join('')
+            .trim();
+          if (text) return text;
+        }
+        lastError = data.candidates?.[0]?.finishReason
+          ? `応答を生成できなかったよ (${data.candidates[0].finishReason})`
+          : '空の応答が返ってきたよ';
+        break; // non-retryable empty response → next model
       }
-      // Empty / non-text response (safety block etc.) → try next model.
-      lastError = data.candidates?.[0]?.finishReason
-        ? `応答を生成できなかったよ (${data.candidates[0].finishReason})`
-        : '空の応答が返ってきたよ';
-      continue;
-    }
 
-    const error = await response.json().catch(() => null);
-    lastError = error?.error?.message || lastError;
+      const error = await response.json().catch(() => null);
+      lastError = error?.error?.message || lastError;
 
-    // Transient errors (quota, overload) and model-not-found (404) → try the next model.
-    // Hard errors (bad key, bad request) won't be fixed by retrying.
-    if (!RETRY_STATUSES.has(response.status) && response.status !== 404) {
-      throw new Error(lastError);
+      // Hard errors (bad key, bad request, model not found) → stop immediately.
+      if (!RETRY_STATUSES.has(response.status)) {
+        if (response.status === 404) break; // model gone → next model
+        throw new Error(lastError);
+      }
+      // Transient error: retry this model (loop continues).
     }
   }
 
@@ -362,25 +366,32 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
     generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 2048 },
   };
   let lastError = 'AI request failed';
+  const MAX_ATTEMPTS = 3;
   for (let i = 0; i < GEMINI_MODELS.length; i++) {
     const model = GEMINI_MODELS[i];
-    if (i > 0) await new Promise(r => setTimeout(r, 500 * i));
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(baseBody),
-    });
-    if (res.ok) {
-      const d = await res.json();
-      const text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      if (text) return text;
-      lastError = '空の応答が返ってきたよ';
-      continue;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
+      else if (i > 0) await new Promise(r => setTimeout(r, 1000));
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(baseBody),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (text) return text;
+        lastError = '空の応答が返ってきたよ';
+        break;
+      }
+      const err = await res.json().catch(() => null);
+      lastError = err?.error?.message || lastError;
+      if (!RETRY_STATUSES.has(res.status)) {
+        if (res.status === 404) break;
+        throw new Error(lastError);
+      }
     }
-    const err = await res.json().catch(() => null);
-    lastError = err?.error?.message || lastError;
-    if (!RETRY_STATUSES.has(res.status) && res.status !== 404) throw new Error(lastError);
   }
   throw new Error(lastError);
 }
