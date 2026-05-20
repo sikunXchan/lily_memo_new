@@ -1422,7 +1422,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             history,
             buildSikunSystemPrompt(contextNotes, 'code'),
             apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
           );
           setSikunProgress('');
         } else if (activeMode === 'organize') {
@@ -1431,7 +1431,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             history,
             buildSikunSystemPrompt(contextNotes, 'organize'),
             apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
           );
           setSikunProgress('');
         } else if (activeMode === 'analysis') {
@@ -1440,7 +1440,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             history,
             buildSikunSystemPrompt(contextNotes, 'analysis'),
             apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
           );
           setSikunProgress('');
         } else if (activeMode === 'research') {
@@ -1449,7 +1449,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             history,
             buildSikunSystemPrompt(contextNotes, 'research'),
             apiKey,
-            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'] },
+            { models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'] },
           );
           setSikunProgress('');
         } else {

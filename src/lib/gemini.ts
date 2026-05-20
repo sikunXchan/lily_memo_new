@@ -14,7 +14,6 @@ export interface ChatTurn {
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
-  'gemini-1.5-flash',
 ];
 
 // Status codes that are transient — retry with the next model.
@@ -97,9 +96,9 @@ export async function callGeminiChat(
     const error = await response.json().catch(() => null);
     lastError = error?.error?.message || lastError;
 
-    // Transient errors (quota, overload) → try the next model.
+    // Transient errors (quota, overload) and model-not-found (404) → try the next model.
     // Hard errors (bad key, bad request) won't be fixed by retrying.
-    if (!RETRY_STATUSES.has(response.status)) {
+    if (!RETRY_STATUSES.has(response.status) && response.status !== 404) {
       throw new Error(lastError);
     }
   }
@@ -381,7 +380,7 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
     }
     const err = await res.json().catch(() => null);
     lastError = err?.error?.message || lastError;
-    if (!RETRY_STATUSES.has(res.status)) throw new Error(lastError);
+    if (!RETRY_STATUSES.has(res.status) && res.status !== 404) throw new Error(lastError);
   }
   throw new Error(lastError);
 }
