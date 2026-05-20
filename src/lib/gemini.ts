@@ -82,6 +82,21 @@ export interface SikunLilyProgress {
   label: string;
 }
 
+type GeminiPart =
+  | { text: string }
+  | { inline_data: { mime_type: string; data: string } }
+  | { file_data: { mime_type: string; file_uri: string } };
+
+function attachmentToParts(attachments: ChatAttachment[]): GeminiPart[] {
+  return attachments.flatMap(a =>
+    a.extractedText
+      ? [{ text: `[添付PDF の内容]\n${a.extractedText}` } as GeminiPart]
+      : a.fileUri
+        ? [{ file_data: { mime_type: a.mimeType, file_uri: a.fileUri } } as GeminiPart]
+        : [{ inline_data: { mime_type: a.mimeType, data: a.data } } as GeminiPart]
+  );
+}
+
 export async function callGeminiChat(
   history: ChatTurn[],
   systemPrompt: string,
@@ -93,14 +108,8 @@ export async function callGeminiChat(
     contents: history.map(t => ({
       role: t.role,
       parts: [
-        { text: t.text },
-        ...(t.attachments?.flatMap(a =>
-          a.extractedText
-            ? [{ text: `[添付PDF の内容]\n${a.extractedText}` }]
-            : a.fileUri
-              ? [{ file_data: { mime_type: a.mimeType, file_uri: a.fileUri } }]
-              : [{ inline_data: { mime_type: a.mimeType, data: a.data } }]
-        ) ?? []),
+        { text: t.text } as GeminiPart,
+        ...attachmentToParts(t.attachments ?? []),
       ],
     })),
     generationConfig: {
@@ -505,13 +514,7 @@ export async function callSikunLilyChat(
         role: t.role,
         parts: [
           { text: t.text },
-          ...(t.attachments?.flatMap(a =>
-            a.extractedText
-              ? [{ text: `[添付PDF の内容]\n${a.extractedText}` }]
-              : a.fileUri
-                ? [{ file_data: { mime_type: a.mimeType, file_uri: a.fileUri } }]
-                : [{ inline_data: { mime_type: a.mimeType, data: a.data } }]
-          ) ?? []),
+          ...attachmentToParts(t.attachments ?? []),
         ],
       })),
       generationConfig: { temperature: 0.3, topK: 20, topP: 0.85, maxOutputTokens: 2048 },
