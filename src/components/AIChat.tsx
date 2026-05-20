@@ -283,7 +283,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     if (type === 'folder_create') {
       const lines = trimmed.split('\n');
       const nameMatch = lines[0]?.match(/^@@folder_create\s*:\s*(.+)/);
-      const colorMatch = lines.find(l => l.startsWith('@@color:'))?.match(/^@@color:\s*(.+)/);
+      const colorMatch = lines.find((l: string) => l.startsWith('@@color:'))?.match(/^@@color:\s*(.+)/);
       const folderName = nameMatch?.[1]?.trim() || '新しいフォルダ';
       const folderColor = colorMatch?.[1]?.trim();
       blocks.push({ id, type: 'folder_create', rawCode: trimmed, previewLabel: `フォルダ作成: 📁 ${folderName}`, folderName, folderColor });
