@@ -209,6 +209,20 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     setIsMobileView(window.innerWidth <= 768);
   }, []);
 
+  // QAチェックボックス切替時に即時保存（debounceを待たずに保存）
+  useEffect(() => {
+    const handler = () => {
+      if (!editor || !noteIdRef.current) return;
+      const noteId = noteIdRef.current;
+      setTimeout(() => {
+        const content = editor.getHTML();
+        db.notes.update(noteId, { content, updatedAt: Date.now() });
+      }, 0);
+    };
+    window.addEventListener('qa-checkbox-toggled', handler);
+    return () => window.removeEventListener('qa-checkbox-toggled', handler);
+  }, [editor]);
+
   // 編集モード↔閲覧モード切替でエディタのeditableを制御
   useEffect(() => {
     if (!editor) return;

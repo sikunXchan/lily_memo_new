@@ -618,6 +618,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
                   j === i ? { ...p, checked: !p.checked } : p
                 );
                 updateAttributes({ pairs: next });
+                window.dispatchEvent(new CustomEvent('qa-checkbox-toggled'));
               }}
             />
           ))}
