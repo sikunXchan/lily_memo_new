@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
-  FileDown, Wand2, Download, Pencil,
+  FileDown, Wand2, Download, Pencil, HelpCircle,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -470,6 +470,155 @@ function buildSikunSystemPrompt(contextNotes: Note[], mode?: string): string {
 }
 
 /* ───────────── Block previews ───────────── */
+
+/* ─────────────── Help Modal ─────────────── */
+
+const LILY_FEATURES = [
+  { icon: '📝', title: 'メモ分析・要約', desc: '選択中のメモを読んで要点まとめ・アドバイス' },
+  { icon: '🗺️', title: 'マインドマップ', desc: 'アイデア出し・ブレスト → Mermaid mindmap で可視化' },
+  { icon: '📊', title: 'グラフ作成', desc: 'データを棒・折れ線・円グラフなどに可視化 (Chart.js)' },
+  { icon: '🔷', title: 'Mermaid 図', desc: 'フロー・シーケンス・クラス図・ER図・ガントチャート' },
+  { icon: '📐', title: '数学・幾何の図', desc: '座標平面に点・ベクトル・円・関数グラフを描画' },
+  { icon: '❓', title: 'Q&A・問題作成', desc: '一問一答・穴埋め・4択・○×・単語カードなど6形式' },
+  { icon: '📄', title: 'PDF・画像解析', desc: 'ファイルを添付して内容分析・要約・図表化' },
+  { icon: '💻', title: 'コードスニペット', desc: 'Python/JS/HTMLなどのコード生成・解説' },
+  { icon: '✉️', title: 'メール文面作成', desc: 'メモを元に報告メール・議事録メールの下書き' },
+  { icon: '✍️', title: 'トーン調整', desc: '文章をフォーマル/カジュアル/丁寧に書き換え' },
+  { icon: '📰', title: 'ブログ案', desc: 'メモからブログタイトル案・構成案を提案' },
+  { icon: '💾', title: 'メモ書き込み', desc: '「メモに書いて」で新規作成・選択中メモを上書き保存' },
+];
+
+const SIKU_FEATURES = [
+  { icon: '📚', title: '全メモ横断分析', desc: '複数メモ・全メモを一括で参照・分析・整理提案' },
+  { icon: '🔍', title: '調査・検証', desc: '事実確認・情報源の信頼性評価・矛盾の検出・訂正' },
+  { icon: '⚙️', title: '大規模コード構築', desc: '複数ファイルにまたがるプロジェクト全体を設計・実装' },
+  { icon: '📈', title: 'データ解析', desc: '非構造化データの統合解析・パターン認識・将来予測' },
+  { icon: '🗂️', title: 'メモ整理', desc: 'メモ間の関連性・重複・矛盾を検出してリンク提案' },
+  { icon: '🌐', title: 'Deep Research', desc: '数分かけてウェブ全体を深くリサーチしてレポート作成' },
+  { icon: '📄', title: 'PDF・画像解析', desc: 'ファイルを添付して内容分析・検証・要約' },
+  { icon: '💾', title: 'メモ書き込み', desc: '「メモに書いて」「整理してメモにして」で保存・上書き' },
+  { icon: '🌍', title: '翻訳・要約', desc: '多言語翻訳、長文の要約、文章の変換' },
+];
+
+const LILY_PROMPTS = [
+  'このメモの要点を3つにまとめて',
+  '「スマートホーム」についてマインドマップを作って',
+  '先週の売上データをグラフにして\n月曜:120 火曜:95 水曜:140 木曜:110 金曜:160',
+  'このメモからテスト問題を4択で5問作って',
+  '次の文章をフォーマルに書き換えて',
+  'このメモを元に上司への報告メールを作って',
+  '二次方程式 x²+3x+2=0 を図を使って解説して',
+  'フローチャート: ユーザー登録フローを図にして',
+];
+
+const SIKU_PROMPTS = [
+  '全メモを読んで重複している内容をまとめて',
+  '「地球温暖化は人間活動が原因だ」この主張の根拠と反論を検証して',
+  'React + TypeScript で TODO アプリを作って。CRUD 全部実装して',
+  'このメモ群の中で矛盾している記述はある？',
+  '全メモを分析してフォルダ分類案を提案して',
+  'このメモの内容を整理してメモに書いて',
+];
+
+const TIPS = [
+  { title: 'メモを選んでから話しかける', desc: '右上の「メモを選ぶ」でメモを選択してから質問すると、AI がメモの内容を読んで回答できます。' },
+  { title: 'ファイルを添付する', desc: '📎ボタンで PDF・画像を添付できます。「これを要約して」「この画像について説明して」と送信するだけ。' },
+  { title: 'Lily はメモを直接書き込める', desc: '「このメモを書き換えて」「要約してメモに保存して」と頼むと、編集候補を提案してくれます。確認後に保存されます。' },
+  { title: 'sikunlily は厳しく検証する', desc: '内容の間違いや矛盾があると遠慮なく指摘します。「この情報は正しい？」「根拠は？」という使い方に最適です。' },
+  { title: 'ネット検索を ON にする', desc: '「ネット検索 ON」にすると最新情報も調べて答えます。時事ニュース・最新技術の調査に有効。' },
+  { title: 'sikunlily の Deep Research', desc: '「Deep Research ON」にすると数分かけてウェブ全体をリサーチし、詳細なレポートを作成します。' },
+];
+
+function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: 'lily' | 'sikunlily' | 'tips' }) {
+  const [tab, setTab] = useState<'lily' | 'sikunlily' | 'tips'>(initialTab);
+  return (
+    <div className="help-overlay" onClick={onClose}>
+      <div className="help-modal" onClick={e => e.stopPropagation()}>
+        <div className="help-header">
+          <span className="help-title">使い方ガイド</span>
+          <button className="help-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="help-tabs">
+          {(['lily', 'sikunlily', 'tips'] as const).map(t => (
+            <button key={t} className={`help-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
+              {t === 'lily' ? '🌸 Lily' : t === 'sikunlily' ? '⚔️ sikunlily' : '💡 使い方'}
+            </button>
+          ))}
+        </div>
+        <div className="help-body">
+          {tab === 'lily' && (
+            <>
+              <p className="help-lead">Lily はノート作成・学習・創作をサポートする優しいAIアシスタントです。</p>
+              <div className="help-grid">
+                {LILY_FEATURES.map(f => (
+                  <div key={f.title} className="help-card">
+                    <span className="help-card-icon">{f.icon}</span>
+                    <div><strong>{f.title}</strong><div className="help-card-desc">{f.desc}</div></div>
+                  </div>
+                ))}
+              </div>
+              <p className="help-section-title">プロンプト例</p>
+              <div className="help-prompts">
+                {LILY_PROMPTS.map(p => <div key={p} className="help-prompt">{p}</div>)}
+              </div>
+            </>
+          )}
+          {tab === 'sikunlily' && (
+            <>
+              <p className="help-lead">sikunlily は正確性・批判的思考を重視する開発者向けAIです。間違いは遠慮なく指摘します。</p>
+              <div className="help-grid">
+                {SIKU_FEATURES.map(f => (
+                  <div key={f.title} className="help-card">
+                    <span className="help-card-icon">{f.icon}</span>
+                    <div><strong>{f.title}</strong><div className="help-card-desc">{f.desc}</div></div>
+                  </div>
+                ))}
+              </div>
+              <p className="help-section-title">プロンプト例</p>
+              <div className="help-prompts">
+                {SIKU_PROMPTS.map(p => <div key={p} className="help-prompt">{p}</div>)}
+              </div>
+            </>
+          )}
+          {tab === 'tips' && (
+            <div className="help-tips">
+              {TIPS.map(t => (
+                <div key={t.title} className="help-tip">
+                  <strong className="help-tip-title">{t.title}</strong>
+                  <p className="help-tip-desc">{t.desc}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <style jsx>{`
+          .help-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px; }
+          .help-modal { background:var(--bg,#fff); border-radius:16px; width:100%; max-width:520px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.18); }
+          .help-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px 0; }
+          .help-title { font-size:1.05rem; font-weight:700; color:var(--primary,#e84393); }
+          .help-close { background:none; border:none; cursor:pointer; color:var(--fg-muted,#888); padding:4px; display:flex; }
+          .help-tabs { display:flex; gap:6px; padding:12px 18px 0; }
+          .help-tab { background:none; border:1.5px solid var(--border,#e0e0e0); border-radius:20px; padding:5px 14px; font-size:0.82rem; cursor:pointer; color:var(--fg-muted,#888); transition:all 0.15s; }
+          .help-tab.active { background:var(--primary,#e84393); color:#fff; border-color:var(--primary,#e84393); }
+          .help-body { overflow-y:auto; padding:14px 18px 20px; flex:1; }
+          .help-lead { font-size:0.85rem; color:var(--fg-muted,#666); margin:0 0 12px; line-height:1.5; }
+          .help-grid { display:flex; flex-direction:column; gap:8px; }
+          .help-card { display:flex; align-items:flex-start; gap:10px; padding:9px 12px; background:var(--accent,#fdf0f7); border-radius:10px; }
+          .help-card-icon { font-size:1.2rem; flex-shrink:0; margin-top:1px; }
+          .help-card strong { font-size:0.88rem; color:var(--fg,#333); }
+          .help-card-desc { font-size:0.79rem; color:var(--fg-muted,#888); margin-top:1px; }
+          .help-section-title { font-size:0.85rem; font-weight:700; color:var(--primary,#e84393); margin:16px 0 8px; }
+          .help-prompts { display:flex; flex-direction:column; gap:6px; }
+          .help-prompt { background:var(--bg2,#f8f8f8); border:1px solid var(--border,#e8e8e8); border-radius:8px; padding:8px 12px; font-size:0.82rem; color:var(--fg,#333); white-space:pre-wrap; }
+          .help-tips { display:flex; flex-direction:column; gap:12px; }
+          .help-tip { padding:12px 14px; background:var(--accent,#fdf0f7); border-radius:10px; }
+          .help-tip-title { font-size:0.88rem; color:var(--fg,#333); display:block; margin-bottom:4px; }
+          .help-tip-desc { font-size:0.81rem; color:var(--fg-muted,#666); margin:0; line-height:1.5; }
+        `}</style>
+      </div>
+    </div>
+  );
+}
 
 function ImageSaveBar({ children }: { children: React.ReactNode }) {
   return (
@@ -1318,8 +1467,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
   const [activeModel, setActiveModel] = useState<'lily' | 'sikunlily'>('lily');
   const [sikunProgress, setSikunProgress] = useState<string>('');
-  const [sikunNoteIds, setSikunNoteIds] = useState<number[]>([]); // multi-select for sikunlily
-  const [sikunAllNotes, setSikunAllNotes] = useState(false);      // "全メモ参照" toggle
+  const [sikunNoteIds, setSikunNoteIds] = useState<number[]>([]);
+  const [sikunAllNotes, setSikunAllNotes] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [helpInitialTab, setHelpInitialTab] = useState<'lily' | 'sikunlily' | 'tips'>('lily');
   const [deepResearch, setDeepResearch] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1696,8 +1847,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               <RotateCcw size={15} />
             </button>
           )}
+          <button
+            className="help-btn"
+            onClick={() => { setHelpInitialTab(activeModel === 'sikunlily' ? 'sikunlily' : 'lily'); setShowHelp(true); }}
+            title="使い方ガイド"
+          >
+            <HelpCircle size={16} />
+          </button>
         </div>
       </div>
+      {showHelp && <HelpModal onClose={() => setShowHelp(false)} initialTab={helpInitialTab} />}
 
       {showContextPanel && activeModel === 'sikunlily' && (
         <div className="context-panel">
