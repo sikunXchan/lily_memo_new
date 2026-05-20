@@ -427,7 +427,7 @@ async function createNoteWithBlock(block: InsertableBlock, title: string): Promi
 function buildSystemPrompt(contextNotes: Note[]): string {
   if (contextNotes.length === 0) return LILY_CHAT_SYSTEM_PROMPT;
   const context = contextNotes
-    .map(n => `## ${n.title || '無題'}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
+    .map(n => `## ${n.title || '無題'} (ID:${n.id})\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
     .join('\n\n---\n\n');
   return `${LILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
@@ -464,7 +464,7 @@ function buildSikunSystemPrompt(contextNotes: Note[], mode?: string): string {
   const modePrompt = mode ? (SIKU_MODE_PROMPTS[mode] ?? '') : '';
   if (contextNotes.length === 0) return `${base}${modePrompt}`;
   const context = contextNotes
-    .map(n => `## ${n.title || '無題'}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
+    .map(n => `## ${n.title || '無題'} (ID:${n.id})\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
     .join('\n\n---\n\n');
   return `${base}${modePrompt}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
@@ -1318,6 +1318,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
   const [activeModel, setActiveModel] = useState<'lily' | 'sikunlily'>('lily');
   const [sikunProgress, setSikunProgress] = useState<string>('');
+  const [sikunNoteIds, setSikunNoteIds] = useState<number[]>([]); // multi-select for sikunlily
+  const [sikunAllNotes, setSikunAllNotes] = useState(false);      // "全メモ参照" toggle
   const [deepResearch, setDeepResearch] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1460,7 +1462,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
     try {
       const contextNotes: Note[] = [];
-      if (selectedNoteId) {
+      if (activeModel === 'sikunlily') {
+        if (sikunAllNotes) {
+          contextNotes.push(...(allNotes ?? []));
+        } else {
+          for (const id of sikunNoteIds) {
+            const n = await db.notes.get(id);
+            if (n) contextNotes.push(n);
+          }
+        }
+      } else if (selectedNoteId) {
         const n = await db.notes.get(selectedNoteId);
         if (n) contextNotes.push(n);
       }
@@ -1553,7 +1564,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
       }
-      const { textContent, blocks, questions } = parseAIResponse(aiText, activeModel !== 'sikunlily');
+      const { textContent, blocks, questions } = parseAIResponse(aiText, true);
 
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -1663,7 +1674,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             </button>
           )}
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
-            {selectedNote ? (
+            {activeModel === 'sikunlily' ? (
+              <span className={`context-chip${sikunAllNotes || sikunNoteIds.length > 0 ? ' selected' : ''}`}>
+                {sikunAllNotes ? '📚 全メモ参照中' : sikunNoteIds.length > 0 ? `📄 ${sikunNoteIds.length}件選択中` : 'メモを選ぶ'}
+                {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </span>
+            ) : selectedNote ? (
               <span className="context-chip selected">
                 📄 {selectedNote.title || '無題'}
                 {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
@@ -1683,7 +1699,37 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </div>
       </div>
 
-      {showContextPanel && (
+      {showContextPanel && activeModel === 'sikunlily' && (
+        <div className="context-panel">
+          <button
+            className={`note-chip${sikunAllNotes ? ' active' : ''}`}
+            onClick={() => { setSikunAllNotes(true); setSikunNoteIds([]); setShowContextPanel(false); }}
+          >
+            📚 全メモを参照
+          </button>
+          <button
+            className={`note-chip${!sikunAllNotes && sikunNoteIds.length === 0 ? ' active' : ''}`}
+            onClick={() => { setSikunAllNotes(false); setSikunNoteIds([]); setShowContextPanel(false); }}
+          >
+            なし
+          </button>
+          {allNotes?.map(n => (
+            <button
+              key={n.id}
+              className={`note-chip${sikunNoteIds.includes(n.id!) ? ' active' : ''}`}
+              onClick={() => {
+                setSikunAllNotes(false);
+                setSikunNoteIds(prev =>
+                  prev.includes(n.id!) ? prev.filter(id => id !== n.id) : [...prev, n.id!]
+                );
+              }}
+            >
+              {sikunNoteIds.includes(n.id!) ? '✓ ' : ''}{n.title || '無題のメモ'}
+            </button>
+          ))}
+        </div>
+      )}
+      {showContextPanel && activeModel === 'lily' && (
         <div className="context-panel">
           <button
             className={`note-chip ${!selectedNoteId ? 'active' : ''}`}
