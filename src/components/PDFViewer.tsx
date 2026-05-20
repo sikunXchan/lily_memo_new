@@ -298,12 +298,15 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
       try {
         const page = await pdfDoc.getPage(currentPage);
         if (cancelled) return;
-        const viewport = page.getViewport({ scale });
+        const dpr = window.devicePixelRatio || 1;
+        const logicalViewport = page.getViewport({ scale });
+        const physicalViewport = page.getViewport({ scale: scale * dpr });
         const canvas = canvasRef.current!;
         const ctx = canvas.getContext('2d')!;
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        const task = page.render({ canvasContext: ctx, viewport });
+        canvas.width = physicalViewport.width;
+        canvas.height = physicalViewport.height;
+        canvas.style.width = `${logicalViewport.width}px`;
+        const task = page.render({ canvasContext: ctx, viewport: physicalViewport });
         renderTaskRef.current = task;
         await task.promise;
         renderTaskRef.current = null;
