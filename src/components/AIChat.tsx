@@ -19,7 +19,7 @@ import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import {
-  callGeminiChat, callDeepResearch,
+  callGeminiChat, callDeepResearch, uploadToFileApi,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
@@ -44,10 +44,13 @@ const MAX_FILES = 5;
 const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain';
 
 interface AttachmentMeta {
+  id: string; // stable key for async updates
   name: string;
   mimeType: string;
   data: string; // base64
   isImage: boolean;
+  fileUri?: string;  // set after File API upload
+  uploading?: boolean; // true while File API upload is in progress
 }
 
 interface ChatMessage {
@@ -1328,19 +1331,35 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         return;
       }
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         const result = reader.result as string;
         const base64 = result.split(',')[1] ?? '';
-        setAttachments(prev =>
-          prev.length >= MAX_FILES
-            ? prev
-            : [...prev, {
-                name: file.name,
-                mimeType: file.type || 'application/octet-stream',
-                data: base64,
-                isImage: file.type.startsWith('image/'),
-              }]
-        );
+        const id = crypto.randomUUID();
+        // Use File API for PDFs and images larger than 2 MB to avoid
+        // oversized inline_data payloads that trigger 503 demand errors.
+        const useFileApi = file.type === 'application/pdf' || file.size > 2 * 1024 * 1024;
+        const meta: AttachmentMeta = {
+          id,
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          data: base64,
+          isImage: file.type.startsWith('image/'),
+          uploading: useFileApi && !!apiKey,
+        };
+        setAttachments(prev => prev.length >= MAX_FILES ? prev : [...prev, meta]);
+        if (useFileApi && apiKey) {
+          try {
+            const fileUri = await uploadToFileApi(base64, file.type, file.name, apiKey);
+            setAttachments(prev =>
+              prev.map(a => a.id === id ? { ...a, fileUri, uploading: false } : a)
+            );
+          } catch {
+            // Upload failed — fall back to inline_data silently
+            setAttachments(prev =>
+              prev.map(a => a.id === id ? { ...a, uploading: false } : a)
+            );
+          }
+        }
       };
       reader.onerror = () => setFileError(`「${file.name}」の読み込みに失敗したよ`);
       reader.readAsDataURL(file);
@@ -1401,7 +1420,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         };
         if (idx === lastUserIdx && m.attachments && m.attachments.length > 0) {
           turn.attachments = m.attachments.map<ChatAttachment>(a => ({
-            mimeType: a.mimeType, data: a.data,
+            mimeType: a.mimeType,
+            data: a.fileUri ? '' : a.data,
+            fileUri: a.fileUri,
           }));
         }
         return turn;
@@ -1743,14 +1764,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       {(attachments.length > 0 || fileError) && (
         <div className="att-bar">
           {attachments.map((att, i) => (
-            <div key={i} className="att-chip">
-              {att.isImage ? (
+            <div key={att.id ?? i} className={`att-chip${att.uploading ? ' att-chip--uploading' : ''}`}>
+              {att.uploading ? (
+                <span className="att-chip-icon">⏳</span>
+              ) : att.isImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={`data:${att.mimeType};base64,${att.data}`} alt={att.name} className="att-chip-thumb" />
               ) : (
                 <span className="att-chip-icon">📎</span>
               )}
-              <span className="att-chip-name">{att.name}</span>
+              <span className="att-chip-name">{att.uploading ? `${att.name} (アップロード中...)` : att.name}</span>
               <button className="att-remove" onClick={() => removeAttachment(i)} title="削除"><X size={14} /></button>
             </div>
           ))}
@@ -1787,7 +1810,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         <button
           className="send-btn"
           onClick={() => sendMessage()}
-          disabled={(!input.trim() && attachments.length === 0) || isLoading}
+          disabled={(!input.trim() && attachments.length === 0) || isLoading || attachments.some(a => a.uploading)}
           title="送信 (Enter)"
         >
           <Send size={20} />
