@@ -5,7 +5,6 @@ export type QuickActionId =
   | 'proofread'
   | 'translate_en'
   | 'flashcards'
-  | 'quiz'
   | 'todo';
 
 export interface QuickActionMeta {
@@ -20,7 +19,6 @@ export const QUICK_ACTIONS: QuickActionMeta[] = [
   { id: 'proofread',    emoji: '✨', label: '校正版を追加',         description: '誤字脱字・文法を直した版を末尾に挿入' },
   { id: 'translate_en', emoji: '🌐', label: '英語に翻訳',           description: 'メモを自然な英語にして末尾に挿入' },
   { id: 'flashcards',   emoji: '🧠', label: 'フラッシュカード生成', description: '重要語を抜き出し単語カード化（学習）' },
-  { id: 'quiz',         emoji: '❓', label: '4択クイズを生成',      description: '理解度を測る4択問題を作成（学習）' },
   { id: 'todo',         emoji: '✅', label: 'ToDoを抽出',           description: 'メモ内のアクションをチェックリスト化' },
 ];
 
@@ -32,7 +30,7 @@ export interface QAPair {
 
 export type QuickActionResult =
   | { kind: 'text';      html: string }
-  | { kind: 'qa';        qaKind: 'flash' | 'choice'; pairs: QAPair[] }
+  | { kind: 'qa';        qaKind: 'flash'; pairs: QAPair[] }
   | { kind: 'tasklist';  items: string[] };
 
 // Escape for HTML insertion.
@@ -105,17 +103,6 @@ function buildPrompt(action: QuickActionId, noteText: string, noteTitle: string)
 - a は簡潔で正確に
 - 同じ語の繰り返しは避ける`,
       };
-    case 'quiz':
-      return {
-        system: SYSTEM_BASE,
-        user: `${head}\n\nこのメモの理解度を測る 4 択クイズを 5〜8 問作成してください。
-出力は次の JSON 形式のみ（コードフェンスや説明文は不要）:
-{"items":[{"q":"問題文","opts":["選択肢1","選択肢2","選択肢3","選択肢4"],"a":"A"}, ...]}
-- opts は必ず 4 個
-- a は "A" "B" "C" "D" のいずれか（正解の選択肢のラベル）
-- ひっかけ選択肢ももっともらしく、ただし明確に誤りであること
-- メモに書かれていない事項は出題しない`,
-      };
     case 'todo':
       return {
         system: SYSTEM_BASE,
@@ -129,7 +116,6 @@ function buildPrompt(action: QuickActionId, noteText: string, noteTitle: string)
   }
 }
 
-interface QuizItem { q: string; opts?: string[]; a: string; }
 interface FlashItem { q: string; a: string; }
 
 export async function runQuickAction(
@@ -166,15 +152,6 @@ export async function runQuickAction(
         .map(it => ({ q: it.q.trim(), a: it.a.trim() }));
       if (pairs.length === 0) throw new Error('フラッシュカードを生成できませんでした');
       return { kind: 'qa', qaKind: 'flash', pairs };
-    }
-    case 'quiz': {
-      const data = extractJson(raw) as { items?: QuizItem[] } | null;
-      const items = Array.isArray(data?.items) ? data!.items : [];
-      const pairs: QAPair[] = items
-        .filter(it => it && typeof it.q === 'string' && Array.isArray(it.opts) && it.opts.length >= 2 && typeof it.a === 'string')
-        .map(it => ({ q: it.q.trim(), opts: it.opts!.map(o => String(o).trim()), a: it.a.trim() }));
-      if (pairs.length === 0) throw new Error('クイズを生成できませんでした');
-      return { kind: 'qa', qaKind: 'choice', pairs };
     }
     case 'todo': {
       const data = extractJson(raw) as { items?: string[] } | null;
