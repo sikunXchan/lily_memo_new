@@ -25,6 +25,18 @@ const EDGE_SNAP_PX = 18;
 const IDLE_BLINK_MIN_MS = 22000;
 const IDLE_BLINK_MAX_MS = 42000;
 
+// Typing animation frames cycled while a reply is loading. The order
+// returns to "both" between single-hand frames so it reads as alternate
+// key presses. All three are pre-aligned (head centered, same height).
+const TYPING_FRAMES = [
+  '/sikun-type-both.png',
+  '/sikun-type-right.png',
+  '/sikun-type-both.png',
+  '/sikun-type-left.png',
+];
+const TYPING_FRAME_MS = 140;
+const IDLE_ICON = '/sikun-character.png';
+
 function timeOfDayPlaceholder(): string {
   const h = new Date().getHours();
   if (h >= 5 && h < 11) return 'おはよう、何か聞きたいか？';
@@ -93,8 +105,11 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
   const [history, setHistory] = useState<SikunMessage[]>([]);
   const [idleBlink, setIdleBlink] = useState(false);
   const [tapStreak, setTapStreak] = useState(0);
+  const [typingFrame, setTypingFrame] = useState(0);
+  const [contextPing, setContextPing] = useState(false);
   const lastTapAt = useRef<number>(0);
   const lastInteractionAt = useRef<number>(Date.now());
+  const prevNoteId = useRef<number | undefined>(undefined);
 
   // Pre-fetch active note via live query so the context is ready
   // instantly when the user sends — no per-message DB round trip.
@@ -124,6 +139,14 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
 
   const persistPos = useCallback((p: Pos) => {
     try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {}
+  }, []);
+
+  // Close the inline input. Blur first so the app shell's global
+  // focusout handler fires and the bottom navigation reappears (without
+  // this, isInputFocused stays true and the nav stays hidden).
+  const closeInput = useCallback(() => {
+    inputRef.current?.blur();
+    setMode('closed');
   }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -197,7 +220,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
         setMode('input');
         setBubbleVisible(false);
       } else {
-        setMode('closed');
+        closeInput();
       }
     }
   };
@@ -221,6 +244,26 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
     return () => window.clearTimeout(timeoutId);
   }, [loading, dragging, mode]);
 
+  // Cycle the typing frames while a reply is loading.
+  useEffect(() => {
+    if (!loading) { setTypingFrame(0); return; }
+    const id = window.setInterval(() => {
+      setTypingFrame(f => (f + 1) % TYPING_FRAMES.length);
+    }, TYPING_FRAME_MS);
+    return () => window.clearInterval(id);
+  }, [loading]);
+
+  // Briefly flash a 📓 above sikun when the active memo changes, so the
+  // user sees that sikun has noticed the new context.
+  useEffect(() => {
+    if (activeNoteId === prevNoteId.current) return;
+    prevNoteId.current = activeNoteId;
+    if (activeNoteId === undefined) return;
+    setContextPing(true);
+    const t = window.setTimeout(() => setContextPing(false), 1300);
+    return () => window.clearTimeout(t);
+  }, [activeNoteId]);
+
   const sendQuickAction = (presetText: string) => {
     setInput('');
     return doSend(presetText);
@@ -242,6 +285,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
       setMode('closed');
       return;
     }
+    closeInput();
     lastInteractionAt.current = Date.now();
     setLoading(true);
     setBubbleVisible(false);
@@ -300,7 +344,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
   return (
     <>
       <div
-        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'thinking' : ''} ${idleBlink ? 'blink' : ''}`}
+        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'typing' : ''} ${idleBlink ? 'blink' : ''}`}
         style={{ left: pos.x, top: pos.y }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -314,16 +358,21 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
         title="タップで話しかける / 長押しで移動"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/sikun-character.png" alt="sikun" draggable={false} />
+        <img
+          src={loading ? TYPING_FRAMES[typingFrame] : IDLE_ICON}
+          alt="sikun"
+          draggable={false}
+        />
+        {contextPing && <span className="sikun-context-ping" aria-hidden>📓</span>}
       </div>
 
-      {loading && (
-        <div className="sikun-thinking-bubble" style={bubbleStyle} aria-hidden>
-          <span className="dot d1" />
-          <span className="dot d2" />
-          <span className="dot d3" />
-        </div>
-      )}
+      {/* Preload typing frames so the animation doesn't flicker on first run */}
+      <div className="sikun-preload" aria-hidden>
+        {[...new Set(TYPING_FRAMES)].map(src => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={src} src={src} alt="" />
+        ))}
+      </div>
 
       {!loading && bubbleVisible && lastReply && (
         <div className="sikun-bubble" style={bubbleStyle} role="status">
@@ -347,7 +396,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
                 e.preventDefault();
                 void sendMessage();
               }
-              if (e.key === 'Escape') setMode('closed');
+              if (e.key === 'Escape') closeInput();
             }}
             disabled={loading}
           />
@@ -381,12 +430,8 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
           transform: scale(1.1);
           filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
         }
-        .sikun-icon.thinking {
-          animation: sikun-bob 0.8s ease-in-out infinite;
-        }
-        @keyframes sikun-bob {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-4px) rotate(-3deg); }
+        .sikun-icon.typing {
+          opacity: 1;
         }
         .sikun-icon.blink {
           animation: sikun-blink 0.38s ease-in-out;
@@ -395,35 +440,6 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
           0%, 100% { transform: scaleY(1); }
           50% { transform: scaleY(0.6); }
         }
-
-        .sikun-thinking-bubble {
-          position: fixed;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-          padding: 8px 12px;
-          background: var(--background, #fff);
-          border: 1px solid var(--border, rgba(0,0,0,0.12));
-          border-radius: 14px;
-          box-shadow: 0 6px 20px rgba(0,0,0,0.18);
-          width: auto;
-          min-width: 48px;
-          z-index: 9998;
-        }
-        .sikun-thinking-bubble .dot {
-          width: 6px;
-          height: 6px;
-          background: var(--primary, #6b46c1);
-          border-radius: 50%;
-          animation: sikun-dot 1.1s ease-in-out infinite;
-        }
-        .sikun-thinking-bubble .dot.d2 { animation-delay: 0.18s; }
-        .sikun-thinking-bubble .dot.d3 { animation-delay: 0.36s; }
-        @keyframes sikun-dot {
-          0%, 70%, 100% { transform: translateY(0); opacity: 0.4; }
-          35% { transform: translateY(-5px); opacity: 1; }
-        }
         .sikun-icon img {
           width: 100%;
           height: 100%;
@@ -431,6 +447,29 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
           pointer-events: none;
           user-select: none;
           -webkit-user-drag: none;
+        }
+        .sikun-context-ping {
+          position: absolute;
+          top: -14px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 18px;
+          pointer-events: none;
+          animation: sikun-ping 1.3s ease-out forwards;
+        }
+        @keyframes sikun-ping {
+          0% { opacity: 0; transform: translate(-50%, 4px) scale(0.6); }
+          25% { opacity: 1; transform: translate(-50%, -2px) scale(1.1); }
+          75% { opacity: 1; transform: translate(-50%, -2px) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -10px) scale(1); }
+        }
+        .sikun-preload {
+          position: fixed;
+          width: 0;
+          height: 0;
+          overflow: hidden;
+          opacity: 0;
+          pointer-events: none;
         }
 
         .sikun-bubble {
