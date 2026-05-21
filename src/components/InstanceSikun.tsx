@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { X, Send } from 'lucide-react';
 import { db } from '@/lib/db';
+import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat } from '@/lib/gemini';
 import {
   loadSikunHistory, saveSikunHistory, toChatTurns,
@@ -38,15 +39,19 @@ const TYPING_FRAME_MS = 170;
 const IDLE_ICON = '/sikun-character.png';
 
 // Book animation: plays once when user opens a memo.
-// Order: open → read → hand on book → read → close
+// Open → settle into reading, flip a few pages (read↔hand), then close.
 const BOOK_FRAMES = [
   '/sikun-book-open.png',
   '/sikun-book-read.png',
   '/sikun-book-hand.png',
   '/sikun-book-read.png',
+  '/sikun-book-hand.png',
+  '/sikun-book-read.png',
+  '/sikun-book-hand.png',
+  '/sikun-book-read.png',
   '/sikun-book-close.png',
 ];
-const BOOK_FRAME_MS = 350;
+const BOOK_FRAME_MS = 280;
 
 const TONE_PROMPTS: Record<string, string> = {
   bushi: 'sikunlily と同じ柴犬の武士口調（「〜だ」「〜だぞ」「〜せよ」）。短く、キレよく。',
@@ -413,7 +418,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     const pomMatch = text.match(/(\d+)\s*分.*(タイマー|ポモドーロ)|(タイマー|ポモドーロ).*(\d+)\s*分|^ポモドーロ$/);
     if (pomMatch) {
       closeInput();
-      const mins = parseInt(pomMatch[1] || pomMatch[4] || '25', 10);
+      const mins = parseInt(pomMatch[1] || pomMatch[4] || '30', 10);
       startPomodoro(mins);
       setLastReply(`${mins}分のタイマーを開始したぞ！集中せよ⚔️`);
       setBubbleVisible(true);
@@ -444,8 +449,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
 
     let noteContext = '';
     if (activeNote) {
-      const plain = (activeNote.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      noteContext = `\n\n# 現在ユーザーが開いているメモ\nタイトル: ${activeNote.title || '無題'}\n抜粋(先頭500文字): ${plain.slice(0, 500)}`;
+      // noteHtmlToText surfaces Q&A / Mermaid / Chart content stored in
+      // element attributes, so sikun can read quizzes & diagrams too.
+      const plain = noteHtmlToText(activeNote.content || '');
+      noteContext = `\n\n# 現在ユーザーが開いているメモ\nタイトル: ${activeNote.title || '無題'}\n抜粋(先頭800文字): ${plain.slice(0, 800)}`;
     }
 
     try {
@@ -491,7 +498,14 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     radialItems.push({ key: 'tr', emoji: '🌐', label: '翻訳', run: () => { setRadialOpen(false); void sendQuickAction('このメモを自然な英語に翻訳してくれ。'); } });
     radialItems.push({ key: 'todo', emoji: '✅', label: 'ToDo', run: () => { setRadialOpen(false); void sendQuickAction('このメモからやること（ToDo）を短く抜き出してくれ。'); } });
   }
-  radialItems.push({ key: 'pom', emoji: '⏱', label: 'ポモドーロ', run: () => { setRadialOpen(false); startPomodoro(25); setLastReply('25分のタイマーを開始したぞ！集中せよ⚔️'); setBubbleVisible(true); } });
+  const launchPomodoro = (mins: number) => {
+    setRadialOpen(false);
+    startPomodoro(mins);
+    setLastReply(`${mins}分のタイマーを開始したぞ！集中せよ⚔️`);
+    setBubbleVisible(true);
+  };
+  radialItems.push({ key: 'pom30', emoji: '⏱', label: '30分', run: () => launchPomodoro(30) });
+  radialItems.push({ key: 'pom60', emoji: '⏰', label: '60分', run: () => launchPomodoro(60) });
   radialItems.push({ key: 'prev', emoji: '⏮', label: '前のメモ', run: jumpToPrevNote });
 
   const iconCx = pos.x + ICON_SIZE / 2;
