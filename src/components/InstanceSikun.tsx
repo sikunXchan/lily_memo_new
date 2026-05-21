@@ -28,9 +28,7 @@ const EDGE_SNAP_PX = 18;
 const IDLE_BLINK_MIN_MS = 22000;
 const IDLE_BLINK_MAX_MS = 42000;
 
-// Typing animation frames cycled while a reply is loading. Each of the
-// three poses gets equal screen time so all hands are clearly visible.
-// All three are pre-aligned (head centered, same height).
+// Typing animation frames cycled while a reply is loading.
 const TYPING_FRAMES = [
   '/sikun-type-both.png',
   '/sikun-type-right.png',
@@ -38,6 +36,17 @@ const TYPING_FRAMES = [
 ];
 const TYPING_FRAME_MS = 170;
 const IDLE_ICON = '/sikun-character.png';
+
+// Book animation: plays once when user opens a memo.
+// Order: open → read → hand on book → read → close
+const BOOK_FRAMES = [
+  '/sikun-book-open.png',
+  '/sikun-book-read.png',
+  '/sikun-book-hand.png',
+  '/sikun-book-read.png',
+  '/sikun-book-close.png',
+];
+const BOOK_FRAME_MS = 350;
 
 const TONE_PROMPTS: Record<string, string> = {
   bushi: 'sikunlily と同じ柴犬の武士口調（「〜だ」「〜だぞ」「〜せよ」）。短く、キレよく。',
@@ -57,6 +66,11 @@ function timeOfDayPlaceholder(): string {
   if (h >= 11 && h < 17) return 'sikunに話す...';
   if (h >= 17 && h < 22) return 'お疲れさん。何か手伝うか？';
   return '夜更かしか？短く答えるぞ';
+}
+
+function formatMs(ms: number): string {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 const INSTANCE_SIKUN_SYSTEM = `あなたは「Instance Sikun」、画面上に常駐するフローティング・キャラクター。
@@ -109,8 +123,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     return { x: window.innerWidth - ICON_SIZE - 12, y: 90 };
   });
   const [dragging, setDragging] = useState(false);
-  // 'closed' = just icon. 'input' = inline input bar near icon. Bubble shows
-  // automatically while a reply is loading or when user re-taps after a reply.
   const [mode, setMode] = useState<'closed' | 'input'>('closed');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -120,14 +132,17 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
   const [idleBlink, setIdleBlink] = useState(false);
   const [tapStreak, setTapStreak] = useState(0);
   const [typingFrame, setTypingFrame] = useState(0);
-  const [contextPing, setContextPing] = useState(false);
+  const [bookFrame, setBookFrame] = useState<number | null>(null);
+  const [selectionBadge, setSelectionBadge] = useState(false);
+  const [selectedText, setSelectedText] = useState('');
+  const [pomodoroMs, setPomodoroMs] = useState<number | null>(null);
   const [radialOpen, setRadialOpen] = useState(false);
   const lastTapAt = useRef<number>(0);
   const lastInteractionAt = useRef<number>(Date.now());
   const seenNoteIdRef = useRef<number | undefined>(undefined);
+  const selectionBadgeTimer = useRef<number | null>(null);
+  const pomodoroRef = useRef<number | null>(null);
 
-  // Pre-fetch active note via live query so the context is ready
-  // instantly when the user sends — no per-message DB round trip.
   const activeNote = useLiveQuery(
     async () => (activeNoteId !== undefined ? await db.notes.get(activeNoteId) : undefined),
     [activeNoteId],
@@ -156,12 +171,102 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {}
   }, []);
 
-  // Close the inline input. Blur first so the app shell's global
-  // focusout handler fires and the bottom navigation reappears (without
-  // this, isInputFocused stays true and the nav stays hidden).
   const closeInput = useCallback(() => {
     inputRef.current?.blur();
     setMode('closed');
+  }, []);
+
+  // Idle blink
+  useEffect(() => {
+    let timeoutId: number;
+    const scheduleNext = () => {
+      const delay = IDLE_BLINK_MIN_MS + Math.random() * (IDLE_BLINK_MAX_MS - IDLE_BLINK_MIN_MS);
+      timeoutId = window.setTimeout(() => {
+        const sinceInteraction = Date.now() - lastInteractionAt.current;
+        if (sinceInteraction > IDLE_BLINK_MIN_MS && !loading && !dragging && mode === 'closed') {
+          setIdleBlink(true);
+          window.setTimeout(() => setIdleBlink(false), 380);
+        }
+        scheduleNext();
+      }, delay);
+    };
+    scheduleNext();
+    return () => window.clearTimeout(timeoutId);
+  }, [loading, dragging, mode]);
+
+  // Typing frame cycle while loading
+  useEffect(() => {
+    if (!loading) { setTypingFrame(0); return; }
+    const id = window.setInterval(() => {
+      setTypingFrame(f => (f + 1) % TYPING_FRAMES.length);
+    }, TYPING_FRAME_MS);
+    return () => window.clearInterval(id);
+  }, [loading]);
+
+  // Book animation: play once when user opens a memo
+  useEffect(() => {
+    if (activeNoteId === seenNoteIdRef.current) return;
+    seenNoteIdRef.current = activeNoteId;
+    if (activeNoteId === undefined) { setBookFrame(null); return; }
+    setBookFrame(0);
+    let f = 0;
+    const id = window.setInterval(() => {
+      f++;
+      if (f < BOOK_FRAMES.length) {
+        setBookFrame(f);
+      } else {
+        setBookFrame(null);
+        window.clearInterval(id);
+      }
+    }, BOOK_FRAME_MS);
+    return () => window.clearInterval(id);
+  }, [activeNoteId]);
+
+  // Listen for text selections to offer quick explanations
+  useEffect(() => {
+    const onSelection = () => {
+      const sel = window.getSelection();
+      const text = sel?.toString().trim() || '';
+      if (text.length > 5) {
+        setSelectedText(text);
+        setSelectionBadge(true);
+        if (selectionBadgeTimer.current) window.clearTimeout(selectionBadgeTimer.current);
+        selectionBadgeTimer.current = window.setTimeout(() => {
+          setSelectionBadge(false);
+          setSelectedText('');
+        }, 8000);
+      }
+    };
+    document.addEventListener('selectionchange', onSelection);
+    return () => {
+      document.removeEventListener('selectionchange', onSelection);
+      if (selectionBadgeTimer.current) window.clearTimeout(selectionBadgeTimer.current);
+      if (pomodoroRef.current) window.clearInterval(pomodoroRef.current);
+    };
+  }, []);
+
+  const startPomodoro = useCallback((minutes: number) => {
+    if (pomodoroRef.current) window.clearInterval(pomodoroRef.current);
+    const endTs = Date.now() + minutes * 60 * 1000;
+    setPomodoroMs(endTs - Date.now());
+    pomodoroRef.current = window.setInterval(() => {
+      const remaining = endTs - Date.now();
+      if (remaining <= 0) {
+        if (pomodoroRef.current) { window.clearInterval(pomodoroRef.current); pomodoroRef.current = null; }
+        setPomodoroMs(0);
+        setLastReply(`${minutes}分経ったぞ！お疲れ、少し休んでよし。⚔️`);
+        setBubbleVisible(true);
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        window.setTimeout(() => setPomodoroMs(null), 4000);
+      } else {
+        setPomodoroMs(remaining);
+      }
+    }, 1000);
+  }, []);
+
+  const stopPomodoro = useCallback(() => {
+    if (pomodoroRef.current) { window.clearInterval(pomodoroRef.current); pomodoroRef.current = null; }
+    setPomodoroMs(null);
   }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -169,8 +274,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     pointerStart.current = { x: e.clientX, y: e.clientY, ox: pos.x, oy: pos.y, ts: Date.now() };
     moved.current = false;
     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
-    // Hold still → radial quick menu. Moving the finger first turns it into
-    // a drag instead (handled in onPointerMove).
     longPressTimer.current = window.setTimeout(() => {
       if (!moved.current) {
         setRadialOpen(true);
@@ -188,7 +291,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     if (Math.abs(dx) > TAP_MAX_MOVE || Math.abs(dy) > TAP_MAX_MOVE) {
       if (!moved.current) {
         moved.current = true;
-        // Start dragging as soon as the finger moves (unless radial is open)
         if (!radialOpen) {
           if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
           setDragging(true);
@@ -223,10 +325,19 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
       lastInteractionAt.current = Date.now();
       return;
     }
-    // If the radial menu just opened on long-press, leave it open.
     if (radialOpen) return;
     if (elapsed <= TAP_MAX_MS && !moved.current) {
       lastInteractionAt.current = Date.now();
+
+      // Tapping while a selection badge is active → explain the selected text
+      if (selectionBadge && selectedText) {
+        setSelectionBadge(false);
+        if (selectionBadgeTimer.current) window.clearTimeout(selectionBadgeTimer.current);
+        setSelectedText('');
+        void sendQuickAction(`次の文を短く解説してくれ:\n${selectedText.slice(0, 500)}`);
+        return;
+      }
+
       const now = Date.now();
       const since = now - lastTapAt.current;
       lastTapAt.current = now;
@@ -260,45 +371,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     }
   };
 
-  // Idle blink animation: randomly trigger a subtle blink when sikun has
-  // been untouched for a while. Stops while user is interacting.
-  useEffect(() => {
-    let timeoutId: number;
-    const scheduleNext = () => {
-      const delay = IDLE_BLINK_MIN_MS + Math.random() * (IDLE_BLINK_MAX_MS - IDLE_BLINK_MIN_MS);
-      timeoutId = window.setTimeout(() => {
-        const sinceInteraction = Date.now() - lastInteractionAt.current;
-        if (sinceInteraction > IDLE_BLINK_MIN_MS && !loading && !dragging && mode === 'closed') {
-          setIdleBlink(true);
-          window.setTimeout(() => setIdleBlink(false), 380);
-        }
-        scheduleNext();
-      }, delay);
-    };
-    scheduleNext();
-    return () => window.clearTimeout(timeoutId);
-  }, [loading, dragging, mode]);
-
-  // Cycle the typing frames while a reply is loading.
-  useEffect(() => {
-    if (!loading) { setTypingFrame(0); return; }
-    const id = window.setInterval(() => {
-      setTypingFrame(f => (f + 1) % TYPING_FRAMES.length);
-    }, TYPING_FRAME_MS);
-    return () => window.clearInterval(id);
-  }, [loading]);
-
-  // Briefly flash a 📓 above sikun when the active memo changes, so the
-  // user sees that sikun has noticed the new context.
-  useEffect(() => {
-    if (activeNoteId === seenNoteIdRef.current) return;
-    seenNoteIdRef.current = activeNoteId;
-    if (activeNoteId === undefined) return;
-    setContextPing(true);
-    const t = window.setTimeout(() => setContextPing(false), 1300);
-    return () => window.clearTimeout(t);
-  }, [activeNoteId]);
-
   const sendQuickAction = (presetText: string) => {
     setInput('');
     return doSend(presetText);
@@ -320,12 +392,34 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     const text = input.trim();
     if (!text || loading) return;
     setInput('');
-    // Natural-language shortcut: "前のメモ" / "さっきのメモ" → jump back.
+
+    // Natural-language: jump to previous memo
     if (/(前|さっき|戻)(の)?メモ|メモ.*(戻|に戻)/.test(text) || /^(戻る|戻って)$/.test(text)) {
       closeInput();
       jumpToPrevNote();
       return;
     }
+
+    // Pomodoro: stop
+    if (pomodoroMs !== null && /(止め|ストップ|キャンセル|stop)/i.test(text)) {
+      closeInput();
+      stopPomodoro();
+      setLastReply('タイマーを止めたぞ。');
+      setBubbleVisible(true);
+      return;
+    }
+
+    // Pomodoro: start (e.g. "25分タイマー", "ポモドーロ", "15分ポモドーロ")
+    const pomMatch = text.match(/(\d+)\s*分.*(タイマー|ポモドーロ)|(タイマー|ポモドーロ).*(\d+)\s*分|^ポモドーロ$/);
+    if (pomMatch) {
+      closeInput();
+      const mins = parseInt(pomMatch[1] || pomMatch[4] || '25', 10);
+      startPomodoro(mins);
+      setLastReply(`${mins}分のタイマーを開始したぞ！集中せよ⚔️`);
+      setBubbleVisible(true);
+      return;
+    }
+
     return doSend(text);
   };
 
@@ -348,7 +442,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     const nextHistory = [...history, userMsg];
     setHistory(nextHistory);
 
-    // Use the already-fetched activeNote (no per-message DB round trip).
     let noteContext = '';
     if (activeNote) {
       const plain = (activeNote.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -361,10 +454,8 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
         toChatTurns(nextHistory),
         systemPrompt,
         apiKey,
-        0, // no extended thinking — keep it snappy
+        0,
       );
-      // Strip any code fences / ask blocks the model might emit despite the
-      // system prompt — Instance Sikun must always come through as plain text.
       const replyClean = reply
         .replace(/```[\s\S]*?```/g, '')
         .replace(/^#+\s*/gm, '')
@@ -384,7 +475,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     }
   };
 
-  // Place the bubble / input on whichever side has more room.
   const winW = typeof window !== 'undefined' ? window.innerWidth : 800;
   const bubbleOnLeft = pos.x + ICON_SIZE / 2 > winW / 2;
   const bubbleStyle: React.CSSProperties = bubbleOnLeft
@@ -395,20 +485,20 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     ? { right: winW - pos.x + 8, top: pos.y + ICON_SIZE + 6 }
     : { left: pos.x + ICON_SIZE + 8, top: pos.y + ICON_SIZE + 6 };
 
-  // Radial quick-menu items (only the applicable ones).
   const radialItems: { key: string; emoji: string; label: string; run: () => void }[] = [];
   if (activeNote) {
     radialItems.push({ key: 'sum', emoji: '📝', label: '要約', run: () => { setRadialOpen(false); void sendQuickAction('このメモを3行で要約してくれ。'); } });
     radialItems.push({ key: 'tr', emoji: '🌐', label: '翻訳', run: () => { setRadialOpen(false); void sendQuickAction('このメモを自然な英語に翻訳してくれ。'); } });
     radialItems.push({ key: 'todo', emoji: '✅', label: 'ToDo', run: () => { setRadialOpen(false); void sendQuickAction('このメモからやること（ToDo）を短く抜き出してくれ。'); } });
   }
+  radialItems.push({ key: 'pom', emoji: '⏱', label: 'ポモドーロ', run: () => { setRadialOpen(false); startPomodoro(25); setLastReply('25分のタイマーを開始したぞ！集中せよ⚔️'); setBubbleVisible(true); } });
   radialItems.push({ key: 'prev', emoji: '⏮', label: '前のメモ', run: jumpToPrevNote });
 
   const iconCx = pos.x + ICON_SIZE / 2;
   const iconCy = pos.y + ICON_SIZE / 2;
   const radius = ICON_SIZE / 2 + 52;
-  const baseAngle = bubbleOnLeft ? 180 : 0; // open toward screen interior
-  const span = radialItems.length > 1 ? 150 : 0;
+  const baseAngle = bubbleOnLeft ? 180 : 0;
+  const span = radialItems.length > 1 ? 160 : 0;
   const radialPos = (i: number): React.CSSProperties => {
     const n = radialItems.length;
     const deg = baseAngle - span / 2 + (n > 1 ? span * (i / (n - 1)) : 0);
@@ -417,6 +507,12 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     const cy = iconCy + radius * Math.sin(rad);
     return { left: cx - 28, top: cy - 28 };
   };
+
+  const currentIcon = loading
+    ? TYPING_FRAMES[typingFrame]
+    : bookFrame !== null
+      ? BOOK_FRAMES[bookFrame]
+      : IDLE_ICON;
 
   return (
     <>
@@ -435,12 +531,19 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
         title="タップで話す / ドラッグで移動 / 長押しでメニュー"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={loading ? TYPING_FRAMES[typingFrame] : IDLE_ICON}
-          alt="sikun"
-          draggable={false}
-        />
-        {contextPing && <span className="sikun-context-ping" aria-hidden>📓</span>}
+        <img src={currentIcon} alt="sikun" draggable={false} />
+
+        {/* Selection badge: tap sikun while text is selected to explain it */}
+        {selectionBadge && !loading && (
+          <span className="sikun-badge sikun-badge-selection" aria-hidden>?</span>
+        )}
+
+        {/* Pomodoro timer badge */}
+        {pomodoroMs !== null && !loading && (
+          <span className="sikun-badge sikun-badge-timer" aria-hidden>
+            {formatMs(pomodoroMs)}
+          </span>
+        )}
       </div>
 
       {radialOpen && (
@@ -460,9 +563,9 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
         </>
       )}
 
-      {/* Preload typing frames so the animation doesn't flicker on first run */}
+      {/* Preload all animated frames */}
       <div className="sikun-preload" aria-hidden>
-        {[...new Set(TYPING_FRAMES)].map(src => (
+        {[...new Set([...TYPING_FRAMES, ...BOOK_FRAMES, IDLE_ICON])].map(src => (
           // eslint-disable-next-line @next/next/no-img-element
           <img key={src} src={src} alt="" />
         ))}
@@ -524,9 +627,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
           transform: scale(1.1);
           filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
         }
-        .sikun-icon.typing {
-          opacity: 1;
-        }
+        .sikun-icon.typing { opacity: 1; }
         .sikun-icon.blink {
           animation: sikun-blink 0.38s ease-in-out;
         }
@@ -542,21 +643,46 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
           user-select: none;
           -webkit-user-drag: none;
         }
-        .sikun-context-ping {
+
+        .sikun-badge {
           position: absolute;
-          top: -14px;
+          pointer-events: none;
+          font-weight: 800;
+          line-height: 1;
+          border-radius: 999px;
+          white-space: nowrap;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+        }
+        .sikun-badge-selection {
+          top: -10px;
           left: 50%;
           transform: translateX(-50%);
-          font-size: 18px;
-          pointer-events: none;
-          animation: sikun-ping 1.3s ease-out forwards;
+          font-size: 14px;
+          background: var(--primary, #6b46c1);
+          color: #fff;
+          width: 22px;
+          height: 22px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          animation: sikun-ping 0.3s ease-out both;
+        }
+        .sikun-badge-timer {
+          bottom: -12px;
+          left: 50%;
+          transform: translateX(-50%);
+          font-size: 10px;
+          background: #e53e3e;
+          color: #fff;
+          padding: 2px 6px;
+          border-radius: 999px;
         }
         @keyframes sikun-ping {
-          0% { opacity: 0; transform: translate(-50%, 4px) scale(0.6); }
-          25% { opacity: 1; transform: translate(-50%, -2px) scale(1.1); }
-          75% { opacity: 1; transform: translate(-50%, -2px) scale(1); }
-          100% { opacity: 0; transform: translate(-50%, -10px) scale(1); }
+          from { opacity: 0; transform: translateX(-50%) scale(0.5); }
+          to   { opacity: 1; transform: translateX(-50%) scale(1); }
         }
+
         .sikun-preload {
           position: fixed;
           width: 0;
