@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
-  FileDown, Wand2, Download, Pencil, HelpCircle, Mic, MicOff,
+  FileDown, Wand2, Download, Pencil, HelpCircle,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -1628,12 +1628,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [helpInitialTab, setHelpInitialTab] = useState<'lily' | 'sikunlily' | 'tips'>('lily');
   const [deepResearch, setDeepResearch] = useState(false);
   const [multiAgent, setMultiAgent] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
 
   const allNotes = useLiveQuery(
     () => db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray(),
@@ -1932,35 +1929,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     }
   }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch, multiAgent]);
 
-  const toggleVoiceInput = useCallback(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = window as any;
-    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!SR) return;
-
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rec: any = new SR();
-    rec.lang = 'ja-JP';
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript as string;
-      setInput(prev => prev ? prev + ' ' + transcript : transcript);
-    };
-    rec.onerror = () => setIsListening(false);
-    rec.onend = () => setIsListening(false);
-    recognitionRef.current = rec;
-    rec.start();
-    setIsListening(true);
-  }, [isListening]);
-
   const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
 
   if (!apiKey) {
@@ -2144,7 +2112,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <div className="welcome-lily-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={activeModel === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png'}
+                src={activeModel === 'sikunlily' ? '/sikun-character.png' : '/lily-character.png'}
                 alt={activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}
                 className="welcome-lily"
               />
@@ -2335,14 +2303,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           disabled={isLoading}
         />
         <button
-          className={`voice-btn ${isListening ? 'listening' : ''}`}
-          onClick={toggleVoiceInput}
-          disabled={isLoading}
-          title={isListening ? '録音停止' : '音声入力'}
-        >
-          {isListening ? <MicOff size={18} /> : <Mic size={18} />}
-        </button>
-        <button
           className="send-btn"
           onClick={() => sendMessage()}
           disabled={(!input.trim() && attachments.length === 0) || isLoading || attachments.some(a => a.uploading)}
@@ -2433,8 +2393,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
         .welcome-screen { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 0; text-align: center; }
-        .welcome-lily-wrap { width: 120px; height: 180px; animation: float 3s ease-in-out infinite; }
-        .welcome-lily { width: 100%; height: 100%; object-fit: cover; }
+        .welcome-lily-wrap { width: 180px; height: 180px; animation: float 3s ease-in-out infinite; }
+        .welcome-lily { width: 100%; height: 100%; object-fit: contain; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .welcome-text { font-size: 0.9rem; color: var(--fg-muted); line-height: 1.6; margin: 0; }
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }
@@ -2456,11 +2416,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .attach-btn:disabled { opacity: 0.4; cursor: default; }
         .send-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--primary); color: white; border: none; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s; }
         .send-btn:disabled { opacity: 0.4; cursor: default; }
-        .voice-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--accent); color: var(--fg-muted); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
-        .voice-btn:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
-        .voice-btn.listening { background: color-mix(in srgb, #e53e3e 15%, transparent); border-color: #e53e3e; color: #e53e3e; animation: pulse 1s ease-in-out infinite; }
-        .voice-btn:disabled { opacity: 0.4; cursor: default; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
         .web-toggle.multi-agent-toggle { background: var(--accent); }
         .web-toggle.multi-agent-toggle.on { background: color-mix(in srgb, #7c3aed 15%, transparent); border-color: #7c3aed; color: #7c3aed; }
         .web-toggle.multi-agent-toggle.on .web-state { color: #7c3aed; }

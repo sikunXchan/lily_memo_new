@@ -17,13 +17,22 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   const [geminiKey, setGeminiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
+  const [sikunEnabled, setSikunEnabled] = useState(false);
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
       navigator.storage.persisted().then(setIsPersisted);
     }
     setGeminiKey(localStorage.getItem('lily_gemini_api_key') || '');
+    setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
   }, []);
+
+  const toggleSikun = () => {
+    const next = !sikunEnabled;
+    setSikunEnabled(next);
+    localStorage.setItem('lily_instance_sikun_enabled', next ? '1' : '0');
+    window.dispatchEvent(new Event('lily-settings-changed'));
+  };
 
   const saveGeminiKey = () => {
     localStorage.setItem('lily_gemini_api_key', geminiKey.trim());
@@ -148,6 +157,31 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
             <button className={`btn-action ${keySaved ? 'saved' : ''}`} onClick={saveGeminiKey}>
               {keySaved ? '✓ 保存しました' : '保存する'}
             </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Sparkles size={20} />
+            <h3>Instance Sikun（常駐アシスタント）</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">
+              ONにすると、どの画面でも上部にsikunのアイコンが現れて、タップで話しかけられるよ。<br />
+              長押しでアイコンの位置を動かせる。会話パネルを開いてもメモ編集やタブ切り替えはそのままできるから、作業を止めなくていい。
+            </p>
+            <div className="toggle-row">
+              <span className="toggle-state">{sikunEnabled ? '有効' : '無効'}</span>
+              <button
+                className={`toggle-switch ${sikunEnabled ? 'on' : ''}`}
+                onClick={toggleSikun}
+                role="switch"
+                aria-checked={sikunEnabled}
+                aria-label="Instance Sikun"
+              >
+                <span className="toggle-knob" />
+              </button>
+            </div>
           </div>
         </section>
 
@@ -356,6 +390,43 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
           color: var(--fg-muted);
           display: flex;
           align-items: center;
+        }
+        .toggle-row {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+        .toggle-state {
+          font-size: 0.88rem;
+          font-weight: 700;
+          color: var(--fg-muted);
+        }
+        .toggle-switch {
+          position: relative;
+          width: 52px;
+          height: 30px;
+          border-radius: 999px;
+          background: var(--border);
+          border: none;
+          cursor: pointer;
+          transition: background 0.18s;
+        }
+        .toggle-switch.on {
+          background: var(--primary);
+        }
+        .toggle-knob {
+          position: absolute;
+          top: 3px;
+          left: 3px;
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          background: #fff;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          transition: transform 0.18s;
+        }
+        .toggle-switch.on .toggle-knob {
+          transform: translateX(22px);
         }
 
         @media (max-width: 768px) {

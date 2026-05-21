@@ -49,11 +49,35 @@ export function sanitizeFilename(name: string): string {
   return cleaned || 'lily-file.txt';
 }
 
+function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua)
+    || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints ?? 0) > 1);
+}
+
+// iOS Safari ignores <a download> and opens the blob in a new tab. Use the
+// Web Share API to surface the system save sheet on iOS, fall back to the
+// anchor trick everywhere else.
 export function triggerDownload(blob: Blob, filename: string): void {
+  if (isIOS() && typeof navigator !== 'undefined' && 'canShare' in navigator) {
+    try {
+      const file = new File([blob], filename, { type: blob.type });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const n = navigator as any;
+      if (n.canShare?.({ files: [file] })) {
+        n.share({ files: [file], title: filename }).catch(() => {});
+        return;
+      }
+    } catch {
+      // fall through
+    }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -88,7 +112,18 @@ export function downloadSvgAsPng(svg: string, filename: string, scale = 2): void
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     URL.revokeObjectURL(url);
     canvas.toBlob(blob => {
-      if (blob) triggerDownload(blob, sanitizeFilename(filename));
+      if (blob) {
+        triggerDownload(blob, sanitizeFilename(filename));
+        return;
+      }
+      // iOS Safari sometimes returns null from toBlob — fall back to dataURL
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        const bin = atob(dataUrl.split(',')[1]);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        triggerDownload(new Blob([bytes], { type: 'image/png' }), sanitizeFilename(filename));
+      } catch { /* give up */ }
     }, 'image/png');
   };
   img.onerror = () => URL.revokeObjectURL(url);

@@ -15,6 +15,7 @@ const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false }
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
 const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
 const AIChat = dynamic(() => import('@/components/AIChat'), { ssr: false });
+const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
 
 type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai';
 
@@ -29,6 +30,7 @@ export default function Home() {
   const [isLandscape, setIsLandscape] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [sikunEnabled, setSikunEnabled] = useState(false);
 
   useEffect(() => {
     const checkLayout = () => {
@@ -61,6 +63,13 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (savedViewMode === 'graph' || savedViewMode === 'tree') setSidebarViewMode(savedViewMode);
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
+    const onSettingsChange = () => {
+      setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
+    };
+    window.addEventListener('lily-settings-changed', onSettingsChange);
+
     if (navigator.storage && navigator.storage.persist) {
       navigator.storage.persist();
     }
@@ -76,6 +85,7 @@ export default function Home() {
       window.removeEventListener('resize', checkLayout);
       window.removeEventListener('focusin', handleFocus);
       window.removeEventListener('focusout', handleBlur);
+      window.removeEventListener('lily-settings-changed', onSettingsChange);
     }
   }, []);
 
@@ -218,6 +228,10 @@ export default function Home() {
           </>
         )}
       </main>
+
+      {sikunEnabled && activeTab !== 'sketch' && (
+        <InstanceSikun activeNoteId={activeNoteId} />
+      )}
 
       {isMobile && !isInputFocused && !activeNoteId && (activeTab as string) !== 'ai' && (
         <nav className="bottom-nav">
