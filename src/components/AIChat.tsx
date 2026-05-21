@@ -2393,8 +2393,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
         .welcome-screen { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 0; text-align: center; }
-        .welcome-lily-wrap { width: 180px; height: 180px; animation: float 3s ease-in-out infinite; }
-        .welcome-lily { width: 100%; height: 100%; object-fit: contain; }
+        .welcome-lily-wrap { width: 160px; height: 200px; animation: float 3s ease-in-out infinite; display: flex; align-items: center; justify-content: center; }
+        .welcome-lily { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; image-rendering: -webkit-optimize-contrast; display: block; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .welcome-text { font-size: 0.9rem; color: var(--fg-muted); line-height: 1.6; margin: 0; }
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }

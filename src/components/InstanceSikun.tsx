@@ -20,6 +20,18 @@ const LONG_PRESS_MS = 450;
 const TAP_MAX_MS = 300;
 const TAP_MAX_MOVE = 6;
 const BUBBLE_W = 260;
+const DOUBLE_TAP_MS = 320;
+const EDGE_SNAP_PX = 18;
+const IDLE_BLINK_MIN_MS = 22000;
+const IDLE_BLINK_MAX_MS = 42000;
+
+function timeOfDayPlaceholder(): string {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 11) return 'おはよう、何か聞きたいか？';
+  if (h >= 11 && h < 17) return 'sikunに話す...';
+  if (h >= 17 && h < 22) return 'お疲れさん。何か手伝うか？';
+  return '夜更かしか？短く答えるぞ';
+}
 
 const INSTANCE_SIKUN_SYSTEM = `あなたは「Instance Sikun」、画面上に常駐するフローティング・キャラクター。
 sikunlilyの軽量版で、ユーザーが作業中にちらっと質問する用途専用だ。
@@ -79,6 +91,10 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
   const [lastReply, setLastReply] = useState<string>('');
   const [bubbleVisible, setBubbleVisible] = useState(false);
   const [history, setHistory] = useState<SikunMessage[]>([]);
+  const [idleBlink, setIdleBlink] = useState(false);
+  const [tapStreak, setTapStreak] = useState(0);
+  const lastTapAt = useRef<number>(0);
+  const lastInteractionAt = useRef<number>(Date.now());
 
   // Pre-fetch active note via live query so the context is ready
   // instantly when the user sends — no per-message DB round trip.
@@ -128,17 +144,53 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
     }
   };
 
+  const snapToEdgeIfClose = (p: Pos): Pos => {
+    if (typeof window === 'undefined') return p;
+    const W = window.innerWidth;
+    const next = { ...p };
+    if (next.x < EDGE_SNAP_PX) next.x = 6;
+    else if (next.x + ICON_SIZE > W - EDGE_SNAP_PX) next.x = W - ICON_SIZE - 6;
+    return next;
+  };
+
   const onPointerUp = () => {
     if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
     const start = pointerStart.current;
     pointerStart.current = null;
     if (!start) return;
     const elapsed = Date.now() - start.ts;
-    if (dragging) { setDragging(false); persistPos(pos); return; }
+    if (dragging) {
+      setDragging(false);
+      const snapped = snapToEdgeIfClose(pos);
+      if (snapped.x !== pos.x) setPos(snapped);
+      persistPos(snapped);
+      lastInteractionAt.current = Date.now();
+      return;
+    }
     if (elapsed <= TAP_MAX_MS && !moved.current) {
-      // Tap behavior:
-      // - If there's a reply hidden, show it
-      // - Otherwise toggle the inline input
+      lastInteractionAt.current = Date.now();
+      const now = Date.now();
+      const since = now - lastTapAt.current;
+      lastTapAt.current = now;
+
+      // Double tap → summarise active memo
+      if (since < DOUBLE_TAP_MS && activeNote) {
+        setTapStreak(0);
+        void sendQuickAction('このメモを3行で要約してくれ。');
+        return;
+      }
+
+      // 5-tap easter egg
+      const nextStreak = since < 500 ? tapStreak + 1 : 1;
+      setTapStreak(nextStreak);
+      if (nextStreak >= 5) {
+        setTapStreak(0);
+        setLastReply('くすぐったいぞ⚔️ そんなに連打されるとは思わなんだ。');
+        setBubbleVisible(true);
+        return;
+      }
+
+      // Regular tap
       if (lastReply && !bubbleVisible && mode === 'closed') {
         setBubbleVisible(true);
       } else if (mode === 'closed') {
@@ -150,8 +202,38 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
     }
   };
 
-  const sendMessage = async () => {
+  // Idle blink animation: randomly trigger a subtle blink when sikun has
+  // been untouched for a while. Stops while user is interacting.
+  useEffect(() => {
+    let timeoutId: number;
+    const scheduleNext = () => {
+      const delay = IDLE_BLINK_MIN_MS + Math.random() * (IDLE_BLINK_MAX_MS - IDLE_BLINK_MIN_MS);
+      timeoutId = window.setTimeout(() => {
+        const sinceInteraction = Date.now() - lastInteractionAt.current;
+        if (sinceInteraction > IDLE_BLINK_MIN_MS && !loading && !dragging && mode === 'closed') {
+          setIdleBlink(true);
+          window.setTimeout(() => setIdleBlink(false), 380);
+        }
+        scheduleNext();
+      }, delay);
+    };
+    scheduleNext();
+    return () => window.clearTimeout(timeoutId);
+  }, [loading, dragging, mode]);
+
+  const sendQuickAction = (presetText: string) => {
+    setInput('');
+    return doSend(presetText);
+  };
+
+  const sendMessage = () => {
     const text = input.trim();
+    if (!text || loading) return;
+    setInput('');
+    return doSend(text);
+  };
+
+  const doSend = async (text: string) => {
     if (!text || loading) return;
     const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
     if (!apiKey) {
@@ -160,10 +242,10 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
       setMode('closed');
       return;
     }
-    setInput('');
+    lastInteractionAt.current = Date.now();
     setLoading(true);
-    setBubbleVisible(true);
-    setLastReply('考え中...');
+    setBubbleVisible(false);
+    setLastReply('');
 
     const userMsg: SikunMessage = { id: `u${Date.now()}`, role: 'user', text, ts: Date.now() };
     const nextHistory = [...history, userMsg];
@@ -190,6 +272,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
         .replace(/^#+\s*/gm, '')
         .trim() || '...';
       setLastReply(replyClean);
+      setBubbleVisible(true);
       const sikunMsg: SikunMessage = { id: `s${Date.now()}`, role: 'sikun', text: replyClean, ts: Date.now() };
       const finalHistory = [...nextHistory, sikunMsg];
       setHistory(finalHistory);
@@ -197,6 +280,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
       setMode('closed');
     } catch (err) {
       setLastReply(`エラー: ${err instanceof Error ? err.message : '失敗'}`);
+      setBubbleVisible(true);
     } finally {
       setLoading(false);
     }
@@ -216,7 +300,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
   return (
     <>
       <div
-        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'thinking' : ''}`}
+        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'thinking' : ''} ${idleBlink ? 'blink' : ''}`}
         style={{ left: pos.x, top: pos.y }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -233,7 +317,15 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
         <img src="/sikun-character.png" alt="sikun" draggable={false} />
       </div>
 
-      {bubbleVisible && lastReply && (
+      {loading && (
+        <div className="sikun-thinking-bubble" style={bubbleStyle} aria-hidden>
+          <span className="dot d1" />
+          <span className="dot d2" />
+          <span className="dot d3" />
+        </div>
+      )}
+
+      {!loading && bubbleVisible && lastReply && (
         <div className="sikun-bubble" style={bubbleStyle} role="status">
           <button className="sikun-bubble-close" onClick={() => setBubbleVisible(false)} aria-label="閉じる">
             <X size={12} />
@@ -247,7 +339,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
           <input
             ref={inputRef}
             className="sikun-input"
-            placeholder="sikunに話す..."
+            placeholder={timeOfDayPlaceholder()}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => {
@@ -294,7 +386,43 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
         }
         @keyframes sikun-bob {
           0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-3px); }
+          50% { transform: translateY(-4px) rotate(-3deg); }
+        }
+        .sikun-icon.blink {
+          animation: sikun-blink 0.38s ease-in-out;
+        }
+        @keyframes sikun-blink {
+          0%, 100% { transform: scaleY(1); }
+          50% { transform: scaleY(0.6); }
+        }
+
+        .sikun-thinking-bubble {
+          position: fixed;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          padding: 8px 12px;
+          background: var(--background, #fff);
+          border: 1px solid var(--border, rgba(0,0,0,0.12));
+          border-radius: 14px;
+          box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+          width: auto;
+          min-width: 48px;
+          z-index: 9998;
+        }
+        .sikun-thinking-bubble .dot {
+          width: 6px;
+          height: 6px;
+          background: var(--primary, #6b46c1);
+          border-radius: 50%;
+          animation: sikun-dot 1.1s ease-in-out infinite;
+        }
+        .sikun-thinking-bubble .dot.d2 { animation-delay: 0.18s; }
+        .sikun-thinking-bubble .dot.d3 { animation-delay: 0.36s; }
+        @keyframes sikun-dot {
+          0%, 70%, 100% { transform: translateY(0); opacity: 0.4; }
+          35% { transform: translateY(-5px); opacity: 1; }
         }
         .sikun-icon img {
           width: 100%;
