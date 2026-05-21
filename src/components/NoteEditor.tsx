@@ -17,7 +17,7 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck, Link2
+  Search, ChevronUp, ChevronDown, SquareCheck, Link2, Sparkles
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
@@ -25,6 +25,8 @@ import HandwritingCanvas from './HandwritingCanvas';
 import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension } from '@/lib/extensions';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
+import { runQuickAction, QUICK_ACTIONS, type QuickActionId } from '@/lib/quickAI';
+import { noteHtmlToText } from '@/lib/noteText';
 
 const lowlight = createLowlight(common);
 
@@ -133,6 +135,9 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [showNotePicker, setShowNotePicker] = useState(false);
   const [notePickerQuery, setNotePickerQuery] = useState('');
+  const [showAIMenu, setShowAIMenu] = useState(false);
+  const [aiRunning, setAIRunning] = useState<QuickActionId | null>(null);
+  const [aiError, setAIError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
@@ -208,6 +213,18 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   useEffect(() => {
     setIsMobileView(window.innerWidth <= 768);
   }, []);
+
+  // AI クイック操作メニュー: 外側クリックで閉じる
+  useEffect(() => {
+    if (!showAIMenu) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.ai-menu-wrap')) return;
+      setShowAIMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showAIMenu]);
 
   // QAチェックボックス切替時に即時保存（debounceを待たずに保存）
   useEffect(() => {
@@ -619,6 +636,56 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     });
   };
 
+  const handleQuickAI = async (action: QuickActionId) => {
+    if (!editor || aiRunning) return;
+    const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
+    if (!apiKey) {
+      setAIError('設定画面で Gemini API キーを登録してね');
+      return;
+    }
+    const html = editor.getHTML();
+    const text = noteHtmlToText(html);
+    if (!text || text.length < 8) {
+      setAIError('メモが短すぎるよ。もう少し書いてから試してみて');
+      return;
+    }
+    setAIError(null);
+    setAIRunning(action);
+    setShowAIMenu(false);
+    try {
+      const result = await runQuickAction(action, text, note?.title || '', apiKey);
+      const wasEditable = editor.isEditable;
+      if (!wasEditable) editor.setEditable(true);
+      const end = editor.state.doc.content.size;
+      if (result.kind === 'text') {
+        editor.chain().insertContentAt(end, result.html).run();
+      } else if (result.kind === 'qa') {
+        editor.chain().insertContentAt(end, {
+          type: 'qa',
+          attrs: { kind: result.qaKind, pairs: result.pairs },
+        }).run();
+      } else if (result.kind === 'tasklist') {
+        const heading = '<h3>✅ ToDo</h3>';
+        const list = `<ul data-type="taskList">${
+          result.items.map(t =>
+            `<li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>${
+              t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            }</p></div></li>`
+          ).join('')
+        }</ul>`;
+        editor.chain().insertContentAt(end, heading + list).run();
+      }
+      if (!wasEditable) editor.setEditable(false);
+      // Save immediately rather than waiting for debounce.
+      const content = editor.getHTML();
+      await db.notes.update(noteId, { content, updatedAt: Date.now() });
+    } catch (e) {
+      setAIError(e instanceof Error ? e.message : 'AI 処理に失敗したよ');
+    } finally {
+      setAIRunning(null);
+    }
+  };
+
   const insertGeometry = () => {
     insertWithoutFocus({
       type: 'geometry',
@@ -683,6 +750,35 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                 <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
                 <button className="btn-tool" onClick={insertQA} title="Q&A"><BookOpen size={18} /></button>
                 <button className="btn-tool" onClick={insertGeometry} title="幾何の図"><Compass size={18} /></button>
+                <div className="ai-menu-wrap">
+                  <button
+                    className={`btn-tool${showAIMenu ? ' active' : ''}`}
+                    onClick={() => { setShowAIMenu(p => !p); setAIError(null); }}
+                    disabled={!!aiRunning}
+                    title="AI クイック操作"
+                  >
+                    {aiRunning ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                  </button>
+                  {showAIMenu && (
+                    <div className="ai-menu-dropdown">
+                      <div className="ai-menu-header">AI でこのメモを…</div>
+                      {QUICK_ACTIONS.map(act => (
+                        <button
+                          key={act.id}
+                          className="ai-menu-item"
+                          onClick={() => handleQuickAI(act.id)}
+                          disabled={!!aiRunning}
+                        >
+                          <span className="ai-menu-emoji">{act.emoji}</span>
+                          <span className="ai-menu-text">
+                            <span className="ai-menu-label">{act.label}</span>
+                            <span className="ai-menu-desc">{act.description}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="note-picker-wrap">
                   <button
                     className={`btn-tool${showNotePicker ? ' active' : ''}`}
@@ -1177,6 +1273,74 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
         .note-picker-item:hover { background: var(--accent); }
         .note-picker-empty { padding: 10px 14px; font-size: 0.82rem; color: var(--fg-muted); }
 
+        /* ===== AI クイック操作メニュー ===== */
+        .ai-menu-wrap { position: relative; }
+        .ai-menu-dropdown {
+          position: absolute;
+          top: calc(100% + 4px);
+          right: 0;
+          z-index: 200;
+          background: var(--background);
+          border: 1.5px solid var(--border);
+          border-radius: 12px;
+          box-shadow: 0 10px 32px rgba(0,0,0,0.18);
+          min-width: 260px;
+          overflow: hidden;
+        }
+        .ai-menu-header {
+          padding: 8px 14px;
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.5px;
+          text-transform: uppercase;
+          color: var(--primary);
+          background: color-mix(in srgb, var(--primary) 8%, transparent);
+          border-bottom: 1px solid var(--border);
+        }
+        .ai-menu-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          width: 100%;
+          padding: 10px 14px;
+          background: none;
+          border: none;
+          text-align: left;
+          cursor: pointer;
+          border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+          transition: background 0.14s;
+        }
+        .ai-menu-item:last-child { border-bottom: none; }
+        .ai-menu-item:hover:not(:disabled) { background: var(--accent); }
+        .ai-menu-item:disabled { opacity: 0.5; cursor: default; }
+        .ai-menu-emoji { font-size: 1.15rem; line-height: 1.4; }
+        .ai-menu-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+        .ai-menu-label { font-size: 0.88rem; font-weight: 700; color: var(--foreground); }
+        .ai-menu-desc { font-size: 0.74rem; color: var(--fg-muted); line-height: 1.4; }
+        .ai-error-toast {
+          position: fixed;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #e0584f;
+          color: #fff;
+          padding: 10px 18px;
+          border-radius: 999px;
+          font-size: 0.85rem;
+          font-weight: 600;
+          box-shadow: 0 6px 22px rgba(0,0,0,0.22);
+          z-index: 9999;
+          max-width: 90vw;
+        }
+        .ai-error-toast button {
+          background: transparent;
+          border: none;
+          color: #fff;
+          margin-left: 12px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
         /* ===== メモ間リンク ===== */
         .note-link {
           display: inline-flex;
@@ -1317,6 +1481,12 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           to { transform: translateY(0); }
         }
       `}</style>
+      {aiError && (
+        <div className="ai-error-toast">
+          {aiError}
+          <button onClick={() => setAIError(null)}>×</button>
+        </div>
+      )}
     </div>
   );
 }
