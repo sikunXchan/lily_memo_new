@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Send, Trash2 } from 'lucide-react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { X, Send } from 'lucide-react';
 import { db } from '@/lib/db';
-import { streamSikunlilyChat, SIKUNLILY_CHAT_SYSTEM_PROMPT } from '@/lib/gemini';
+import { streamSikunlilyChat } from '@/lib/gemini';
 import {
-  loadSikunHistory, saveSikunHistory, clearSikunHistory, toChatTurns,
+  loadSikunHistory, saveSikunHistory, toChatTurns,
   type SikunMessage,
 } from '@/lib/sikunHistory';
 
@@ -14,10 +15,33 @@ interface InstanceSikunProps {
 }
 
 const POS_KEY = 'lily_instance_sikun_pos';
-const ICON_SIZE = 56;
+const ICON_SIZE = 64;
 const LONG_PRESS_MS = 450;
 const TAP_MAX_MS = 300;
 const TAP_MAX_MOVE = 6;
+const BUBBLE_W = 260;
+
+const INSTANCE_SIKUN_SYSTEM = `あなたは「Instance Sikun」、画面上に常駐するフローティング・キャラクター。
+sikunlilyの軽量版で、ユーザーが作業中にちらっと質問する用途専用だ。
+
+# 役割
+- 短い質問への即答（1〜3文）
+- アクティブメモの内容に対する簡単な質問への回答
+- 直接的な事実回答や言い換え、簡単な要約のみ
+
+# 絶対にやらないこと
+- mermaid 図、QA ブロック、グラフ、スライド、図形などの構造化出力は一切作らない
+- \`\`\`ask\`\`\` で聞き返さない（聞き返さずベストエフォートで答える）
+- コードフェンス、Markdown見出し、箇条書きを使わない（プレーンテキスト3文以内が基本）
+- 長文の解説や論文調の回答はしない
+- 「次のアクション」「次のステップ」みたいなメタ説明をしない
+
+# 複雑な依頼が来たら
+「それは AI タブの sikunlily 本体に頼んでくれ」とひと言だけ返せ。
+（例: 「マインドマップ作って」「クイズ作って」「グラフ書いて」「Deep Research して」など）
+
+# 口調
+sikunlily と同じ柴犬の武士口調（「〜だ」「〜ぞ」）。短く、キレよく。`;
 
 interface Pos { x: number; y: number }
 
@@ -44,32 +68,37 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
     const saved = loadPos();
     if (saved) return saved;
     if (typeof window === 'undefined') return { x: 16, y: 80 };
-    return { x: window.innerWidth - ICON_SIZE - 16, y: 80 };
+    return { x: window.innerWidth - ICON_SIZE - 12, y: 90 };
   });
   const [dragging, setDragging] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [messages, setMessages] = useState<SikunMessage[]>([]);
+  // 'closed' = just icon. 'input' = inline input bar near icon. Bubble shows
+  // automatically while a reply is loading or when user re-taps after a reply.
+  const [mode, setMode] = useState<'closed' | 'input'>('closed');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lastReply, setLastReply] = useState<string>('');
+  const [bubbleVisible, setBubbleVisible] = useState(false);
+  const [history, setHistory] = useState<SikunMessage[]>([]);
 
-  // pointer drag state held in refs so we don't trigger re-renders on move
+  // Pre-fetch active note via live query so the context is ready
+  // instantly when the user sends — no per-message DB round trip.
+  const activeNote = useLiveQuery(
+    async () => (activeNoteId !== undefined ? await db.notes.get(activeNoteId) : undefined),
+    [activeNoteId],
+  );
+
   const pointerStart = useRef<{ x: number; y: number; ox: number; oy: number; ts: number } | null>(null);
   const moved = useRef(false);
   const longPressTimer = useRef<number | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setHistory(loadSikunHistory()); }, []);
 
   useEffect(() => {
-    setMessages(loadSikunHistory());
-  }, []);
-
-  useEffect(() => {
-    if (panelOpen) {
-      const t = setTimeout(() => {
-        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-      }, 50);
-      return () => clearTimeout(t);
+    if (mode === 'input') {
+      setTimeout(() => inputRef.current?.focus(), 30);
     }
-  }, [panelOpen, messages]);
+  }, [mode]);
 
   useEffect(() => {
     const handleResize = () => setPos(p => clampPos(p));
@@ -81,49 +110,43 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
     try { localStorage.setItem(POS_KEY, JSON.stringify(p)); } catch {}
   }, []);
 
-  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     pointerStart.current = { x: e.clientX, y: e.clientY, ox: pos.x, oy: pos.y, ts: Date.now() };
     moved.current = false;
     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
-    longPressTimer.current = window.setTimeout(() => {
-      setDragging(true);
-    }, LONG_PRESS_MS);
+    longPressTimer.current = window.setTimeout(() => setDragging(true), LONG_PRESS_MS);
   };
 
-  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!pointerStart.current) return;
     const dx = e.clientX - pointerStart.current.x;
     const dy = e.clientY - pointerStart.current.y;
-    if (Math.abs(dx) > TAP_MAX_MOVE || Math.abs(dy) > TAP_MAX_MOVE) {
-      moved.current = true;
-    }
+    if (Math.abs(dx) > TAP_MAX_MOVE || Math.abs(dy) > TAP_MAX_MOVE) moved.current = true;
     if (dragging) {
-      setPos(clampPos({
-        x: pointerStart.current.ox + dx,
-        y: pointerStart.current.oy + dy,
-      }));
+      setPos(clampPos({ x: pointerStart.current.ox + dx, y: pointerStart.current.oy + dy }));
     }
   };
 
-  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (longPressTimer.current) {
-      window.clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
+  const onPointerUp = () => {
+    if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
     const start = pointerStart.current;
     pointerStart.current = null;
     if (!start) return;
     const elapsed = Date.now() - start.ts;
-    if (dragging) {
-      setDragging(false);
-      persistPos(pos);
-      e.preventDefault();
-      return;
-    }
-    // Tap: short press, no significant movement
+    if (dragging) { setDragging(false); persistPos(pos); return; }
     if (elapsed <= TAP_MAX_MS && !moved.current) {
-      setPanelOpen(p => !p);
+      // Tap behavior:
+      // - If there's a reply hidden, show it
+      // - Otherwise toggle the inline input
+      if (lastReply && !bubbleVisible && mode === 'closed') {
+        setBubbleVisible(true);
+      } else if (mode === 'closed') {
+        setMode('input');
+        setBubbleVisible(false);
+      } else {
+        setMode('closed');
+      }
     }
   };
 
@@ -132,73 +155,68 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
     if (!text || loading) return;
     const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
     if (!apiKey) {
-      alert('設定で Gemini API キーを保存してね');
+      setLastReply('設定で Gemini API キーを保存してくれ');
+      setBubbleVisible(true);
+      setMode('closed');
       return;
     }
     setInput('');
-    const userMsg: SikunMessage = { id: `u${Date.now()}`, role: 'user', text, ts: Date.now() };
-    const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
     setLoading(true);
+    setBubbleVisible(true);
+    setLastReply('考え中...');
 
-    // Inject current-note context into the system prompt so "このメモ" works.
+    const userMsg: SikunMessage = { id: `u${Date.now()}`, role: 'user', text, ts: Date.now() };
+    const nextHistory = [...history, userMsg];
+    setHistory(nextHistory);
+
+    // Use the already-fetched activeNote (no per-message DB round trip).
     let noteContext = '';
-    if (activeNoteId !== undefined) {
-      try {
-        const note = await db.notes.get(activeNoteId);
-        if (note) {
-          const plain = (note.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-          noteContext = `\n\n## 現在ユーザーが開いているメモ\n- タイトル: ${note.title || '無題'}\n- 抜粋(先頭400文字): ${plain.slice(0, 400)}`;
-        }
-      } catch { /* ignore */ }
+    if (activeNote) {
+      const plain = (activeNote.content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      noteContext = `\n\n# 現在ユーザーが開いているメモ\nタイトル: ${activeNote.title || '無題'}\n抜粋(先頭500文字): ${plain.slice(0, 500)}`;
     }
-    const systemPrompt = `${SIKUNLILY_CHAT_SYSTEM_PROMPT}
-
-あなたは今、画面に常駐するフローティング・アシスタント「Instance Sikun」として動作している。
-ユーザーは作業中に短い質問や依頼をしてくる。回答は簡潔（基本3〜6文）に。
-コードブロックや図は必要時のみ使用し、長文の解説は避ける。${noteContext}`;
 
     try {
       const reply = await streamSikunlilyChat(
-        toChatTurns(nextMessages),
-        systemPrompt,
+        toChatTurns(nextHistory),
+        INSTANCE_SIKUN_SYSTEM + noteContext,
         apiKey,
-        4096,
+        0, // no extended thinking — keep it snappy
       );
-      const sikunMsg: SikunMessage = {
-        id: `s${Date.now()}`,
-        role: 'sikun',
-        text: reply,
-        ts: Date.now(),
-      };
-      const finalMessages = [...nextMessages, sikunMsg];
-      setMessages(finalMessages);
-      saveSikunHistory(finalMessages);
+      // Strip any code fences / ask blocks the model might emit despite the
+      // system prompt — Instance Sikun must always come through as plain text.
+      const replyClean = reply
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/^#+\s*/gm, '')
+        .trim() || '...';
+      setLastReply(replyClean);
+      const sikunMsg: SikunMessage = { id: `s${Date.now()}`, role: 'sikun', text: replyClean, ts: Date.now() };
+      const finalHistory = [...nextHistory, sikunMsg];
+      setHistory(finalHistory);
+      saveSikunHistory(finalHistory);
+      setMode('closed');
     } catch (err) {
-      const errorMsg: SikunMessage = {
-        id: `e${Date.now()}`,
-        role: 'sikun',
-        text: `エラー: ${err instanceof Error ? err.message : '失敗'}`,
-        ts: Date.now(),
-      };
-      const finalMessages = [...nextMessages, errorMsg];
-      setMessages(finalMessages);
-      saveSikunHistory(finalMessages);
+      setLastReply(`エラー: ${err instanceof Error ? err.message : '失敗'}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClear = () => {
-    if (!confirm('Instance Sikun の会話履歴を全部消すよ？')) return;
-    setMessages([]);
-    clearSikunHistory();
-  };
+  // Place the bubble / input on whichever side has more room.
+  const winW = typeof window !== 'undefined' ? window.innerWidth : 800;
+  const bubbleOnLeft = pos.x + ICON_SIZE / 2 > winW / 2;
+  const bubbleStyle: React.CSSProperties = bubbleOnLeft
+    ? { right: winW - pos.x + 8, top: pos.y }
+    : { left: pos.x + ICON_SIZE + 8, top: pos.y };
+
+  const inputStyle: React.CSSProperties = bubbleOnLeft
+    ? { right: winW - pos.x + 8, top: pos.y + ICON_SIZE + 6 }
+    : { left: pos.x + ICON_SIZE + 8, top: pos.y + ICON_SIZE + 6 };
 
   return (
     <>
-      <button
-        className={`sikun-icon ${dragging ? 'dragging' : ''}`}
+      <div
+        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'thinking' : ''}`}
         style={{ left: pos.x, top: pos.y }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -209,64 +227,46 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
           setDragging(false);
         }}
         aria-label="Instance Sikun"
-        title="Instance Sikun（長押しで移動 / タップで対話）"
+        title="タップで話しかける / 長押しで移動"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/sikun-character.png" alt="sikun" draggable={false} />
-      </button>
+      </div>
 
-      {panelOpen && (
-        <div className="sikun-panel" role="dialog" aria-label="Instance Sikun chat">
-          <div className="sikun-panel-header">
-            <span className="sikun-panel-title">Instance Sikun</span>
-            <button className="sikun-icon-btn" onClick={handleClear} title="履歴を消す">
-              <Trash2 size={16} />
-            </button>
-            <button className="sikun-icon-btn" onClick={() => setPanelOpen(false)} title="閉じる">
-              <X size={18} />
-            </button>
-          </div>
+      {bubbleVisible && lastReply && (
+        <div className="sikun-bubble" style={bubbleStyle} role="status">
+          <button className="sikun-bubble-close" onClick={() => setBubbleVisible(false)} aria-label="閉じる">
+            <X size={12} />
+          </button>
+          <div className="sikun-bubble-text">{lastReply}</div>
+        </div>
+      )}
 
-          <div className="sikun-messages" ref={scrollRef}>
-            {messages.length === 0 && (
-              <div className="sikun-empty">
-                やあ、Instance Sikun だ⚔️<br />
-                作業中でも気軽に話しかけてくれ。<br />
-                「このメモ要約して」とかどうだ？
-              </div>
-            )}
-            {messages.map(m => (
-              <div key={m.id} className={`sikun-msg ${m.role}`}>
-                {m.text}
-              </div>
-            ))}
-            {loading && <div className="sikun-msg sikun loading">考え中...</div>}
-          </div>
-
-          <div className="sikun-input-row">
-            <textarea
-              className="sikun-input"
-              placeholder="sikunに話しかける..."
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  void sendMessage();
-                }
-              }}
-              rows={1}
-              disabled={loading}
-            />
-            <button
-              className="sikun-send"
-              onClick={() => void sendMessage()}
-              disabled={!input.trim() || loading}
-              aria-label="送信"
-            >
-              <Send size={16} />
-            </button>
-          </div>
+      {mode === 'input' && (
+        <div className="sikun-input-row" style={inputStyle}>
+          <input
+            ref={inputRef}
+            className="sikun-input"
+            placeholder="sikunに話す..."
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void sendMessage();
+              }
+              if (e.key === 'Escape') setMode('closed');
+            }}
+            disabled={loading}
+          />
+          <button
+            className="sikun-send"
+            onClick={() => void sendMessage()}
+            disabled={!input.trim() || loading}
+            aria-label="送信"
+          >
+            <Send size={14} />
+          </button>
         </div>
       )}
 
@@ -275,135 +275,97 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
           position: fixed;
           width: ${ICON_SIZE}px;
           height: ${ICON_SIZE}px;
-          border-radius: 50%;
-          border: 2px solid var(--primary, #6b46c1);
-          background: var(--background, #fff);
-          padding: 0;
-          overflow: hidden;
           z-index: 9999;
-          opacity: 0.88;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.18);
           cursor: pointer;
           touch-action: none;
-          transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+          user-select: none;
+          opacity: 0.92;
+          transition: opacity 0.15s, transform 0.15s, filter 0.15s;
+          filter: drop-shadow(0 2px 4px rgba(0,0,0,0.18));
         }
         .sikun-icon:hover { opacity: 1; }
         .sikun-icon.dragging {
           opacity: 1;
-          transform: scale(1.08);
-          box-shadow: 0 6px 22px rgba(0,0,0,0.32);
+          transform: scale(1.1);
+          filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
+        }
+        .sikun-icon.thinking {
+          animation: sikun-bob 0.8s ease-in-out infinite;
+        }
+        @keyframes sikun-bob {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-3px); }
         }
         .sikun-icon img {
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          object-fit: contain;
           pointer-events: none;
           user-select: none;
+          -webkit-user-drag: none;
         }
 
-        .sikun-panel {
+        .sikun-bubble {
           position: fixed;
-          right: 12px;
-          bottom: 80px;
-          width: min(360px, calc(100vw - 24px));
-          height: min(520px, calc(100vh - 120px));
-          background: var(--background, #fff);
-          border: 1px solid var(--border, rgba(0,0,0,0.12));
-          border-radius: 16px;
-          box-shadow: 0 12px 40px rgba(0,0,0,0.22);
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          z-index: 9998;
-        }
-        .sikun-panel-header {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 12px;
-          background: var(--accent, #f4f1ff);
-          border-bottom: 1px solid var(--border, rgba(0,0,0,0.08));
-        }
-        .sikun-panel-title {
-          flex: 1;
-          font-weight: 700;
-          font-size: 0.92rem;
-          color: var(--primary, #6b46c1);
-        }
-        .sikun-icon-btn {
-          background: transparent;
-          border: none;
-          color: var(--fg-muted, #666);
-          cursor: pointer;
-          padding: 4px;
-          display: flex;
-          align-items: center;
-          border-radius: 6px;
-        }
-        .sikun-icon-btn:hover { background: var(--border, rgba(0,0,0,0.06)); color: var(--primary, #6b46c1); }
-
-        .sikun-messages {
-          flex: 1;
+          width: ${BUBBLE_W}px;
+          max-width: calc(100vw - 24px);
+          max-height: 220px;
           overflow-y: auto;
-          padding: 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        .sikun-empty {
-          color: var(--fg-muted, #666);
-          font-size: 0.85rem;
-          line-height: 1.6;
-          text-align: center;
-          padding: 30px 12px;
-        }
-        .sikun-msg {
-          font-size: 0.88rem;
+          background: var(--background, #fff);
+          color: var(--foreground, #222);
+          border: 1px solid var(--border, rgba(0,0,0,0.12));
+          border-radius: 14px;
+          padding: 10px 26px 10px 12px;
+          box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+          font-size: 0.86rem;
           line-height: 1.55;
-          padding: 8px 12px;
-          border-radius: 12px;
-          max-width: 92%;
+          z-index: 9998;
           white-space: pre-wrap;
           word-wrap: break-word;
         }
-        .sikun-msg.user {
-          align-self: flex-end;
-          background: var(--primary, #6b46c1);
-          color: white;
+        .sikun-bubble-close {
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          border: none;
+          background: var(--accent, #eee);
+          color: var(--fg-muted, #666);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          padding: 0;
         }
-        .sikun-msg.sikun {
-          align-self: flex-start;
-          background: var(--accent, #f4f1ff);
-          color: var(--foreground, #222);
-        }
-        .sikun-msg.loading { opacity: 0.65; font-style: italic; }
+        .sikun-bubble-text { display: block; }
 
         .sikun-input-row {
+          position: fixed;
           display: flex;
-          gap: 6px;
-          padding: 10px;
-          border-top: 1px solid var(--border, rgba(0,0,0,0.08));
-          background: var(--background, #fff);
+          gap: 4px;
+          width: ${BUBBLE_W}px;
+          max-width: calc(100vw - 24px);
+          z-index: 9999;
         }
         .sikun-input {
           flex: 1;
-          resize: none;
-          min-height: 34px;
-          max-height: 100px;
           padding: 8px 10px;
-          border-radius: 10px;
-          border: 1px solid var(--border, rgba(0,0,0,0.12));
-          background: var(--accent, #f4f1ff);
+          border-radius: 18px;
+          border: 1px solid var(--border, rgba(0,0,0,0.18));
+          background: var(--background, #fff);
           color: var(--foreground, #222);
           font-family: inherit;
-          font-size: 0.88rem;
+          font-size: 0.86rem;
           outline: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         .sikun-input:focus { border-color: var(--primary, #6b46c1); }
         .sikun-send {
-          width: 36px;
-          height: 36px;
-          border-radius: 10px;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
           background: var(--primary, #6b46c1);
           color: white;
           border: none;
@@ -411,6 +373,7 @@ export default function InstanceSikun({ activeNoteId }: InstanceSikunProps) {
           align-items: center;
           justify-content: center;
           cursor: pointer;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.15);
         }
         .sikun-send:disabled { opacity: 0.4; cursor: default; }
       `}</style>

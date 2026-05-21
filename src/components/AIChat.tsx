@@ -2112,7 +2112,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <div className="welcome-lily-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={activeModel === 'sikunlily' ? '/sikun-character.png' : '/lily-character.png'}
+                src={activeModel === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png'}
                 alt={activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}
                 className="welcome-lily"
               />
