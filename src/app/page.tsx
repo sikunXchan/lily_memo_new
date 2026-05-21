@@ -31,6 +31,7 @@ export default function Home() {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
+  const [recentNotes, setRecentNotes] = useState<number[]>([]);
 
   useEffect(() => {
     const checkLayout = () => {
@@ -99,6 +100,12 @@ export default function Home() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  // Track recently viewed memos so Instance Sikun can jump back.
+  useEffect(() => {
+    if (activeNoteId === undefined) return;
+    setRecentNotes(prev => [activeNoteId, ...prev.filter(id => id !== activeNoteId)].slice(0, 10));
+  }, [activeNoteId]);
 
   if (!mounted) return null;
 
@@ -230,7 +237,11 @@ export default function Home() {
       </main>
 
       {sikunEnabled && activeTab !== 'sketch' && (
-        <InstanceSikun activeNoteId={activeNoteId} />
+        <InstanceSikun
+          activeNoteId={activeNoteId}
+          prevNoteId={recentNotes.find(id => id !== activeNoteId)}
+          onOpenNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
+        />
       )}
 
       {isMobile && !isInputFocused && !activeNoteId && (activeTab as string) !== 'ai' && (

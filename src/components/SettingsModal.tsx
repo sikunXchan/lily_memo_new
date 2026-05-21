@@ -18,6 +18,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
+  const [sikunTone, setSikunTone] = useState('bushi');
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
@@ -25,6 +26,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
     }
     setGeminiKey(localStorage.getItem('lily_gemini_api_key') || '');
     setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
+    setSikunTone(localStorage.getItem('lily_sikun_tone') || 'bushi');
   }, []);
 
   const toggleSikun = () => {
@@ -32,6 +34,11 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
     setSikunEnabled(next);
     localStorage.setItem('lily_instance_sikun_enabled', next ? '1' : '0');
     window.dispatchEvent(new Event('lily-settings-changed'));
+  };
+
+  const changeTone = (tone: string) => {
+    setSikunTone(tone);
+    localStorage.setItem('lily_sikun_tone', tone);
   };
 
   const saveGeminiKey = () => {
@@ -182,6 +189,29 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
                 <span className="toggle-knob" />
               </button>
             </div>
+
+            {sikunEnabled && (
+              <>
+                <p className="desc" style={{ marginTop: 20, marginBottom: 10 }}>口調を選べるよ。</p>
+                <div className="option-grid">
+                  {[
+                    { id: 'bushi', name: '武士', tag: 'デフォルト' },
+                    { id: 'keigo', name: '敬語', tag: 'ていねい' },
+                    { id: 'tame', name: 'タメ口', tag: 'フランク' },
+                    { id: 'casual', name: 'カジュアル', tag: '絵文字あり' },
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      className={`option-card ${sikunTone === t.id ? 'selected' : ''}`}
+                      onClick={() => changeTone(t.id)}
+                    >
+                      <span className="option-name">{t.name}</span>
+                      <span className="option-tag">{t.tag}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </section>
 
