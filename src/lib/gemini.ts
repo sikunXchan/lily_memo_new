@@ -88,12 +88,12 @@ export interface ThinkingCallbacks {
 export const SIKU_THINKING_BUDGETS: Record<string, number> = {
   code:     -1,
   arch:     -1,
-  analysis: 8192,
-  research: 8192,
-  study:    4096,
+  analysis: -1,
+  research: -1,
+  study:    8192,
   organize: 0,
 };
-const DEFAULT_THINKING_BUDGET = 4096;
+const DEFAULT_THINKING_BUDGET = 8192;
 
 /**
  * Streams a sikunlily response with extended thinking enabled.
@@ -114,7 +114,7 @@ export async function streamSikunlilyChat(
     temperature: 0.7,
     topK: 40,
     topP: 0.95,
-    maxOutputTokens: 16384,
+    maxOutputTokens: 65536,
   };
   if (thinkingBudget !== 0) {
     genConfig.thinkingConfig = { thinkingBudget };
@@ -255,7 +255,7 @@ export async function callGeminiChat(
       temperature: 0.8,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 8192,
+      maxOutputTokens: 65536,
     },
   };
 
@@ -889,4 +889,98 @@ export async function callDeepResearch(
     }
   }
   throw new Error('Deep Research がタイムアウトしました（10分）');
+}
+
+// ──────────────────────────────────────────────────────────────
+// Multi-agent pipeline: Planning → Execution → Synthesis
+// For complex sikunlily requests we run 3 sequential LLM calls:
+//   1. Planner  – breaks the task into concrete sub-steps
+//   2. Executor – executes each step (or all at once with the plan)
+//   3. Synthesizer – produces the final, polished answer
+// ──────────────────────────────────────────────────────────────
+
+export interface MultiAgentCallbacks {
+  onProgress?: (stage: string) => void;
+  onThinkingDelta?: (text: string) => void;
+  onResponseDelta?: (text: string) => void;
+}
+
+export async function runMultiAgentPipeline(
+  userMessage: string,
+  systemPrompt: string,
+  apiKey: string,
+  callbacks: MultiAgentCallbacks = {},
+): Promise<string> {
+  const { onProgress, onThinkingDelta, onResponseDelta } = callbacks;
+
+  // ── Step 1: Planner ──────────────────────────────────────
+  onProgress?.('[Agent 1/3] タスクを分析・計画中…');
+  const plannerSystem = `${systemPrompt}
+
+あなたは今、プランナーとして動作している。
+ユーザーのリクエストを受け取り、それを達成するための具体的なサブタスク一覧を簡潔に日本語で列挙せよ。
+各サブタスクは1〜2文で明確に記述し、番号付きリストで出力せよ。
+最後に「## 実行戦略」セクションで全体のアプローチを2〜3文で説明せよ。
+余計な前置きなしに直接リストから始めよ。`;
+
+  const planRaw = await callGeminiChat(
+    [{ role: 'user', text: userMessage }],
+    plannerSystem,
+    apiKey,
+    { models: ['gemini-2.5-flash'] },
+  );
+
+  // ── Step 2: Executor ─────────────────────────────────────
+  onProgress?.('[Agent 2/3] 各タスクを実行中…');
+  const executorSystem = `${systemPrompt}
+
+あなたは今、エグゼキューターとして動作している。
+以下のプランに従い、ユーザーのリクエストを詳細に実行せよ。
+コード・図・分析・調査結果など、要求されたすべての成果物を完全に生成すること。
+途中で「次のエージェントに渡す」などとは言わず、すべての作業を完遂せよ。
+
+## プランナーが立案した計画
+${planRaw}`;
+
+  let executionResult = '';
+  try {
+    executionResult = await streamSikunlilyChat(
+      [{ role: 'user', text: userMessage }],
+      executorSystem,
+      apiKey,
+      -1,
+      { onThinkingDelta, onResponseDelta },
+    );
+  } catch {
+    executionResult = await callGeminiChat(
+      [{ role: 'user', text: userMessage }],
+      executorSystem,
+      apiKey,
+    );
+  }
+
+  // ── Step 3: Synthesizer ───────────────────────────────────
+  onProgress?.('[Agent 3/3] 最終回答を統合中…');
+  const synthSystem = `${systemPrompt}
+
+あなたは今、シンセサイザー（統合エージェント）として動作している。
+以下の実行結果をレビューし、品質を向上させて最終回答を仕上げよ。
+- 重複・矛盾・不完全な部分を修正する
+- ユーザーにとって最も価値ある部分を前面に出す
+- 必要なら補足情報を追加する
+- 冗長な部分は削ぎ落とす
+出力は最終回答のみ（「統合しました」等のメタコメントは不要）。
+
+## 実行エージェントの出力
+${executionResult}`;
+
+  const final = await callGeminiChat(
+    [{ role: 'user', text: userMessage }],
+    synthSystem,
+    apiKey,
+    { models: ['gemini-2.5-flash'] },
+  );
+
+  onProgress?.(undefined as unknown as string);
+  return final;
 }

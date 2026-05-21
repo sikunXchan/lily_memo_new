@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
-  FileDown, Wand2, Download, Pencil, HelpCircle,
+  FileDown, Wand2, Download, Pencil, HelpCircle, Mic, MicOff,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -22,6 +22,7 @@ import {
   callGeminiChat, callDeepResearch, uploadToFileApi,
   streamSikunlilyChat, SIKU_THINKING_BUDGETS,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
+  runMultiAgentPipeline,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -1626,9 +1627,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [showHelp, setShowHelp] = useState(false);
   const [helpInitialTab, setHelpInitialTab] = useState<'lily' | 'sikunlily' | 'tips'>('lily');
   const [deepResearch, setDeepResearch] = useState(false);
+  const [multiAgent, setMultiAgent] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
 
   const allNotes = useLiveQuery(
     () => db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray(),
@@ -1836,37 +1841,59 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         setSikunProgress('');
       } else if (activeModel === 'sikunlily') {
         const folders = allFolders ?? [];
-        const budget = activeMode
-          ? (SIKU_THINKING_BUDGETS[activeMode] ?? 4096)
-          : 4096;
-        const modeLabels: Record<string, string> = {
-          code: 'コードを設計中',
-          arch: 'アーキテクチャを設計中',
-          analysis: 'データを解析中',
-          research: '調査・検証中',
-          study: '学習支援中',
-          organize: 'メモを分析中',
-        };
-        setSikunProgress(budget !== 0 ? '🧠 深く思考中...' : (modeLabels[activeMode ?? ''] ?? '考え中') + '...');
+        const sikunSystemPrompt = buildSikunSystemPrompt(contextNotes, folders, activeMode ?? undefined);
         setSikunLiveThinking('');
         let thinkingAccum = '';
-        aiText = await streamSikunlilyChat(
-          history,
-          buildSikunSystemPrompt(contextNotes, folders, activeMode ?? undefined),
-          apiKey,
-          budget,
-          {
-            onThinkingDelta: (delta) => {
-              thinkingAccum += delta;
-              setSikunLiveThinking(thinkingAccum);
-              if (budget !== 0) setSikunProgress('🧠 思考中...');
+
+        if (multiAgent) {
+          // ── マルチエージェントパイプライン ──
+          aiText = await runMultiAgentPipeline(
+            history[history.length - 1]?.text ?? input,
+            sikunSystemPrompt,
+            apiKey,
+            {
+              onProgress: (msg) => setSikunProgress(msg ?? ''),
+              onThinkingDelta: (delta) => {
+                thinkingAccum += delta;
+                setSikunLiveThinking(thinkingAccum);
+              },
+              onResponseDelta: () => {
+                setSikunProgress('✍️ 回答を生成中...');
+              },
             },
-            onResponseDelta: () => {
-              setSikunProgress('✍️ 回答を生成中...');
+          );
+        } else {
+          // ── 通常の sikunlily ──
+          const budget = activeMode
+            ? (SIKU_THINKING_BUDGETS[activeMode] ?? 8192)
+            : 8192;
+          const modeLabels: Record<string, string> = {
+            code: 'コードを設計中',
+            arch: 'アーキテクチャを設計中',
+            analysis: 'データを解析中',
+            research: '調査・検証中',
+            study: '学習支援中',
+            organize: 'メモを分析中',
+          };
+          setSikunProgress(budget !== 0 ? '🧠 深く思考中...' : (modeLabels[activeMode ?? ''] ?? '考え中') + '...');
+          aiText = await streamSikunlilyChat(
+            history,
+            sikunSystemPrompt,
+            apiKey,
+            budget,
+            {
+              onThinkingDelta: (delta) => {
+                thinkingAccum += delta;
+                setSikunLiveThinking(thinkingAccum);
+                if (budget !== 0) setSikunProgress('🧠 思考中...');
+              },
+              onResponseDelta: () => {
+                setSikunProgress('✍️ 回答を生成中...');
+              },
             },
-          },
-          ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-        );
+            ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+          );
+        }
         setSikunProgress('');
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
@@ -1903,7 +1930,36 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch]);
+  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch, multiAgent]);
+
+  const toggleVoiceInput = useCallback(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SR) return;
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rec: any = new SR();
+    rec.lang = 'ja-JP';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript as string;
+      setInput(prev => prev ? prev + ' ' + transcript : transcript);
+    };
+    rec.onerror = () => setIsListening(false);
+    rec.onend = () => setIsListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setIsListening(true);
+  }, [isListening]);
 
   const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
 
@@ -1985,6 +2041,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               <Sparkles size={13} />
               <span className="web-label">Deep Research</span>
               <span className="web-state">{deepResearch ? 'ON' : 'OFF'}</span>
+            </button>
+          )}
+          {activeModel === 'sikunlily' && (
+            <button
+              className={`web-toggle multi-agent-toggle ${multiAgent ? 'on' : ''}`}
+              onClick={() => setMultiAgent(p => !p)}
+              title="マルチエージェント: 計画→実行→統合の3エージェントが協調して複雑タスクを処理する"
+            >
+              <span style={{ fontSize: '11px' }}>🤖</span>
+              <span className="web-label">Multi-Agent</span>
+              <span className="web-state">{multiAgent ? 'ON' : 'OFF'}</span>
             </button>
           )}
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
@@ -2268,6 +2335,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           disabled={isLoading}
         />
         <button
+          className={`voice-btn ${isListening ? 'listening' : ''}`}
+          onClick={toggleVoiceInput}
+          disabled={isLoading}
+          title={isListening ? '録音停止' : '音声入力'}
+        >
+          {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+        </button>
+        <button
           className="send-btn"
           onClick={() => sendMessage()}
           disabled={(!input.trim() && attachments.length === 0) || isLoading || attachments.some(a => a.uploading)}
@@ -2358,8 +2433,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
         .welcome-screen { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 0; text-align: center; }
-        .welcome-lily-wrap { width: 180px; height: 180px; animation: float 3s ease-in-out infinite; }
-        .welcome-lily { width: 100%; height: 100%; object-fit: contain; }
+        .welcome-lily-wrap { width: 120px; height: 180px; animation: float 3s ease-in-out infinite; }
+        .welcome-lily { width: 100%; height: 100%; object-fit: cover; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .welcome-text { font-size: 0.9rem; color: var(--fg-muted); line-height: 1.6; margin: 0; }
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }
@@ -2381,6 +2456,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .attach-btn:disabled { opacity: 0.4; cursor: default; }
         .send-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--primary); color: white; border: none; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s; }
         .send-btn:disabled { opacity: 0.4; cursor: default; }
+        .voice-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--accent); color: var(--fg-muted); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+        .voice-btn:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
+        .voice-btn.listening { background: color-mix(in srgb, #e53e3e 15%, transparent); border-color: #e53e3e; color: #e53e3e; animation: pulse 1s ease-in-out infinite; }
+        .voice-btn:disabled { opacity: 0.4; cursor: default; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .web-toggle.multi-agent-toggle { background: var(--accent); }
+        .web-toggle.multi-agent-toggle.on { background: color-mix(in srgb, #7c3aed 15%, transparent); border-color: #7c3aed; color: #7c3aed; }
+        .web-toggle.multi-agent-toggle.on .web-state { color: #7c3aed; }
         .att-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--accent); flex-shrink: 0; overflow-x: auto; }
         .att-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 5px 8px 5px 10px; flex-shrink: 0; }
         .att-chip-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; }
