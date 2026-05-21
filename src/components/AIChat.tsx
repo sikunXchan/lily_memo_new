@@ -28,6 +28,7 @@ import { noteHtmlToText } from '@/lib/noteText';
 import { parseSlides, exportSlidesToPptx } from '@/lib/slides';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
+import { sanitizeMindmap } from '@/lib/mermaidSanitize';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
@@ -700,41 +701,6 @@ function ImageSaveBar({ children }: { children: React.ReactNode }) {
       `}</style>
     </div>
   );
-}
-
-// Characters that break Mermaid mindmap parsing when unquoted.
-const MERMAID_PROBLEM = /[()（）\[\]{}【】「」〔〕『』#&<>]/;
-
-// Sanitize mindmap code so nodes with special chars are safely quoted.
-// Shape nodes like ((text)) are converted to ["text"] when the inner
-// text contains problem characters, since quoting inside shape syntax
-// is not reliably supported across Mermaid versions.
-function sanitizeMindmap(src: string): string {
-  if (!/^\s*mindmap\b/.test(src)) return src;
-  return src
-    .split('\n')
-    .map((line, idx) => {
-      if (idx === 0) return line; // "mindmap" keyword line
-      const indent = line.match(/^(\s*)/)?.[1] ?? '';
-      const content = line.slice(indent.length);
-      if (!content.trim()) return line;
-      if (/^"/.test(content)) return line; // already quoted
-      // Shape node: ((text)), [text], (text), {{text}}, >text]
-      const shape = content.match(/^([(\[{>]{1,2})(.+?)([)\]}]{1,2})$/);
-      if (shape) {
-        const [, , inner] = shape;
-        if (MERMAID_PROBLEM.test(inner)) {
-          return `${indent}["${inner.replace(/"/g, "'")}"]`;
-        }
-        return line;
-      }
-      // Plain text label
-      if (MERMAID_PROBLEM.test(content)) {
-        return `${indent}"${content.replace(/"/g, "'")}"`;
-      }
-      return line;
-    })
-    .join('\n');
 }
 
 function MermaidPreview({ code, baseName }: { code: string; baseName: string }) {

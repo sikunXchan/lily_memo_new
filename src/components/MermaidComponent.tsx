@@ -3,6 +3,7 @@
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
+import { sanitizeMindmap } from '@/lib/mermaidSanitize';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose', suppressErrors: true } as any);
@@ -23,7 +24,8 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
       if (!attrs.content) return;
       try {
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-        const { svg: renderedSvg } = await mermaid.render(id, attrs.content as string);
+        const source = sanitizeMindmap(attrs.content as string);
+        const { svg: renderedSvg } = await mermaid.render(id, source);
         if (!cancelled) { setSvg(renderedSvg); setError(''); }
       } catch (err) {
         console.error('Mermaid render error:', err);
