@@ -51,23 +51,22 @@ const BOOK_FRAMES = [
 const BOOK_FRAME_MS = 280;
 
 const TONE_PROMPTS: Record<string, string> = {
-  bushi: 'sikunlily と同じ柴犬の武士口調（「〜だ」「〜だぞ」「〜せよ」）。短く、キレよく。',
   keigo: '丁寧な敬語（「〜です」「〜ます」「〜でしょう」）。礼儀正しく、簡潔に。',
   tame: 'フランクなタメ口（「〜だよ」「〜じゃん」「〜してみて」）。友達みたいに気さくに。',
   casual: 'カジュアルでフレンドリー、絵文字も少しだけ使う（「〜だね！」「〜かも🐶」）。明るく簡潔に。',
 };
 
 function currentTonePrompt(): string {
-  if (typeof window === 'undefined') return TONE_PROMPTS.bushi;
-  return TONE_PROMPTS[localStorage.getItem(TONE_KEY) || 'bushi'] || TONE_PROMPTS.bushi;
+  if (typeof window === 'undefined') return TONE_PROMPTS.tame;
+  return TONE_PROMPTS[localStorage.getItem(TONE_KEY) || 'tame'] || TONE_PROMPTS.tame;
 }
 
 function timeOfDayPlaceholder(): string {
   const h = new Date().getHours();
   if (h >= 5 && h < 11) return 'おはよう、何か聞きたいか？';
   if (h >= 11 && h < 17) return 'sikunに話す...';
-  if (h >= 17 && h < 22) return 'お疲れさん。何か手伝うか？';
-  return '夜更かしか？短く答えるぞ';
+  if (h >= 17 && h < 22) return 'お疲れさま。何か手伝おうか？';
+  return '夜更かし？短めに答えるよ';
 }
 
 function formatMs(ms: number): string {
@@ -140,6 +139,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
   const [selectionBadge, setSelectionBadge] = useState(false);
   const [selectedText, setSelectedText] = useState('');
   const [pomodoroMs, setPomodoroMs] = useState<number | null>(null);
+  const [pausedMs, setPausedMs] = useState<number | null>(null);
   const [radialOpen, setRadialOpen] = useState(false);
 
   const lastTapAt = useRef<number>(0);
@@ -149,6 +149,8 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
   const selectionBadgeTimer = useRef<number | null>(null);
   const selectionDebounce = useRef<number | null>(null);
   const pomodoroRef = useRef<number | null>(null);
+  const pomodoroEndRef = useRef<number>(0);
+  const pomodoroMinRef = useRef<number>(30);
   const pointerStart = useRef<{ x: number; y: number; ox: number; oy: number; ts: number } | null>(null);
   const moved = useRef(false);
   const longPressTimer = useRef<number | null>(null);
@@ -249,16 +251,18 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     };
   }, []);
 
-  const startPomodoro = useCallback((minutes: number) => {
+  // Run the countdown for a given remaining time. Used by both start & resume.
+  const runTimer = useCallback((remainingMs: number) => {
     if (pomodoroRef.current) window.clearInterval(pomodoroRef.current);
-    const endTs = Date.now() + minutes * 60 * 1000;
-    setPomodoroMs(endTs - Date.now());
+    pomodoroEndRef.current = Date.now() + remainingMs;
+    setPausedMs(null);
+    setPomodoroMs(remainingMs);
     pomodoroRef.current = window.setInterval(() => {
-      const remaining = endTs - Date.now();
+      const remaining = pomodoroEndRef.current - Date.now();
       if (remaining <= 0) {
         if (pomodoroRef.current) { window.clearInterval(pomodoroRef.current); pomodoroRef.current = null; }
         setPomodoroMs(0);
-        setLastReply(`${minutes}分経ったぞ！お疲れ、少し休んでよし。⚔️`);
+        setLastReply(`${pomodoroMinRef.current}分経ったよ！お疲れさま、少し休もう。`);
         setBubbleVisible(true);
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
         window.setTimeout(() => setPomodoroMs(null), 4000);
@@ -268,9 +272,28 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     }, 1000);
   }, []);
 
-  const stopPomodoro = useCallback(() => {
+  const startPomodoro = useCallback((minutes: number) => {
+    pomodoroMinRef.current = minutes;
+    runTimer(minutes * 60 * 1000);
+  }, [runTimer]);
+
+  // Pause keeps the remaining time so it can be resumed later.
+  const pausePomodoro = useCallback(() => {
+    if (pomodoroRef.current) { window.clearInterval(pomodoroRef.current); pomodoroRef.current = null; }
+    const remaining = pomodoroEndRef.current - Date.now();
+    setPomodoroMs(null);
+    setPausedMs(remaining > 0 ? remaining : null);
+  }, []);
+
+  const resumePomodoro = useCallback(() => {
+    if (pausedMs !== null && pausedMs > 0) runTimer(pausedMs);
+  }, [pausedMs, runTimer]);
+
+  // Cancel clears everything (no resume).
+  const cancelPomodoro = useCallback(() => {
     if (pomodoroRef.current) { window.clearInterval(pomodoroRef.current); pomodoroRef.current = null; }
     setPomodoroMs(null);
+    setPausedMs(null);
   }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -358,7 +381,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
       setTapStreak(nextStreak);
       if (nextStreak >= 5) {
         setTapStreak(0);
-        setLastReply('くすぐったいぞ⚔️ そんなに連打されるとは思わなんだ。');
+        setLastReply('くすぐったいよ！そんなに連打しないで〜🐶');
         setBubbleVisible(true);
         return;
       }
@@ -384,10 +407,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     setRadialOpen(false);
     if (prevNoteId !== undefined && onOpenNote) {
       onOpenNote(prevNoteId);
-      setLastReply('さっきのメモを開いたぞ。');
+      setLastReply('さっきのメモを開いたよ。');
       setBubbleVisible(true);
     } else {
-      setLastReply('戻れるメモがまだ無いぞ。');
+      setLastReply('戻れるメモがまだ無いよ。');
       setBubbleVisible(true);
     }
   }, [prevNoteId, onOpenNote]);
@@ -403,10 +426,27 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
       return;
     }
 
-    if (pomodoroMs !== null && /(止め|ストップ|キャンセル|stop)/i.test(text)) {
+    // Resume a paused timer
+    if (pausedMs !== null && /(再開|続き|続け|resume)/i.test(text)) {
       closeInput();
-      stopPomodoro();
-      setLastReply('タイマーを止めたぞ。');
+      resumePomodoro();
+      setLastReply('タイマーを再開したよ！');
+      setBubbleVisible(true);
+      return;
+    }
+    // Fully cancel
+    if ((pomodoroMs !== null || pausedMs !== null) && /(終了|キャンセル|cancel|やめ)/i.test(text)) {
+      closeInput();
+      cancelPomodoro();
+      setLastReply('タイマーを終了したよ。');
+      setBubbleVisible(true);
+      return;
+    }
+    // Pause a running timer
+    if (pomodoroMs !== null && /(止め|ストップ|一時停止|stop|pause)/i.test(text)) {
+      closeInput();
+      pausePomodoro();
+      setLastReply('タイマーを一時停止したよ。「再開」で続けられる。');
       setBubbleVisible(true);
       return;
     }
@@ -416,7 +456,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
       closeInput();
       const mins = parseInt(pomMatch[1] || pomMatch[4] || '30', 10);
       startPomodoro(mins);
-      setLastReply(`${mins}分のタイマーを開始したぞ！集中せよ⚔️`);
+      setLastReply(`${mins}分のタイマーを開始したよ！集中しよう。`);
       setBubbleVisible(true);
       return;
     }
@@ -502,10 +542,14 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     radialItems.push({ key: 'td',  emoji: '✅', label: 'ToDo', run: () => { setRadialOpen(false); void sendQuickAction('このメモからやること（ToDo）を短く抜き出してくれ。'); } });
   }
   if (pomodoroMs !== null) {
-    radialItems.push({ key: 'stop', emoji: '⏹', label: '止める', run: () => { setRadialOpen(false); stopPomodoro(); setLastReply('タイマーを止めたぞ。'); setBubbleVisible(true); } });
+    radialItems.push({ key: 'pause', emoji: '⏸', label: '一時停止', run: () => { setRadialOpen(false); pausePomodoro(); setLastReply('タイマーを一時停止したよ。「再開」で続けられる。'); setBubbleVisible(true); } });
+    radialItems.push({ key: 'stop', emoji: '⏹', label: '終了', run: () => { setRadialOpen(false); cancelPomodoro(); setLastReply('タイマーを終了したよ。'); setBubbleVisible(true); } });
+  } else if (pausedMs !== null) {
+    radialItems.push({ key: 'resume', emoji: '▶', label: '再開', run: () => { setRadialOpen(false); resumePomodoro(); setLastReply('タイマーを再開したよ！'); setBubbleVisible(true); } });
+    radialItems.push({ key: 'stop', emoji: '⏹', label: '終了', run: () => { setRadialOpen(false); cancelPomodoro(); setLastReply('タイマーを終了したよ。'); setBubbleVisible(true); } });
   } else {
-    radialItems.push({ key: 'p30', emoji: '⏱', label: '30分', run: () => { setRadialOpen(false); startPomodoro(30); setLastReply('30分のタイマーを開始したぞ！集中せよ⚔️'); setBubbleVisible(true); } });
-    radialItems.push({ key: 'p60', emoji: '⏰', label: '60分', run: () => { setRadialOpen(false); startPomodoro(60); setLastReply('60分のタイマーを開始したぞ！集中せよ⚔️'); setBubbleVisible(true); } });
+    radialItems.push({ key: 'p30', emoji: '⏱', label: '30分', run: () => { setRadialOpen(false); startPomodoro(30); setLastReply('30分のタイマーを開始したよ！集中しよう。'); setBubbleVisible(true); } });
+    radialItems.push({ key: 'p60', emoji: '⏰', label: '60分', run: () => { setRadialOpen(false); startPomodoro(60); setLastReply('60分のタイマーを開始したよ！集中しよう。'); setBubbleVisible(true); } });
   }
   radialItems.push({ key: 'prev', emoji: '⏮', label: '前のメモ', run: jumpToPrevNote });
 
@@ -551,10 +595,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
           <span className="sikun-badge sikun-badge-sel" aria-hidden>?</span>
         )}
 
-        {/* Pomodoro countdown badge */}
-        {pomodoroMs !== null && !loading && (
-          <span className="sikun-badge sikun-badge-timer" aria-hidden>
-            {formatMs(pomodoroMs)}
+        {/* Pomodoro countdown badge (paused shows ⏸ + dimmed) */}
+        {(pomodoroMs !== null || pausedMs !== null) && !loading && (
+          <span className={`sikun-badge sikun-badge-timer ${pausedMs !== null ? 'paused' : ''}`} aria-hidden>
+            {pausedMs !== null ? `⏸${formatMs(pausedMs)}` : formatMs(pomodoroMs!)}
           </span>
         )}
       </div>
@@ -673,6 +717,9 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
           background: #e53e3e;
           color: #fff;
           padding: 2px 6px;
+        }
+        .sikun-badge-timer.paused {
+          background: #718096;
         }
         @keyframes sikun-pop {
           from { opacity: 0; transform: translateX(-50%) scale(0.5); }

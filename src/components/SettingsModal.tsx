@@ -18,7 +18,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
-  const [sikunTone, setSikunTone] = useState('bushi');
+  const [sikunTone, setSikunTone] = useState('tame');
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
@@ -26,7 +26,14 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
     }
     setGeminiKey(localStorage.getItem('lily_gemini_api_key') || '');
     setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
-    setSikunTone(localStorage.getItem('lily_sikun_tone') || 'bushi');
+    // 武士モードは廃止。旧設定が残っていればタメ口に移行する。
+    const savedTone = localStorage.getItem('lily_sikun_tone');
+    if (savedTone && savedTone !== 'bushi') {
+      setSikunTone(savedTone);
+    } else {
+      setSikunTone('tame');
+      localStorage.setItem('lily_sikun_tone', 'tame');
+    }
   }, []);
 
   const toggleSikun = () => {
@@ -195,9 +202,8 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
                 <p className="desc" style={{ marginTop: 20, marginBottom: 10 }}>口調を選べるよ。</p>
                 <div className="option-grid">
                   {[
-                    { id: 'bushi', name: '武士', tag: 'デフォルト' },
+                    { id: 'tame', name: 'タメ口', tag: 'デフォルト' },
                     { id: 'keigo', name: '敬語', tag: 'ていねい' },
-                    { id: 'tame', name: 'タメ口', tag: 'フランク' },
                     { id: 'casual', name: 'カジュアル', tag: '絵文字あり' },
                   ].map(t => (
                     <button
