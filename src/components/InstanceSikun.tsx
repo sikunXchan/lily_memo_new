@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Send } from 'lucide-react';
-import { db } from '@/lib/db';
+import { db, newSyncId } from '@/lib/db';
 import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat } from '@/lib/gemini';
 import {
@@ -140,7 +140,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
   const [selectedText, setSelectedText] = useState('');
   const [pomodoroMs, setPomodoroMs] = useState<number | null>(null);
   const [pausedMs, setPausedMs] = useState<number | null>(null);
+  const [pendingAnswer, setPendingAnswer] = useState<string>('');
   const [radialOpen, setRadialOpen] = useState(false);
+  // 'quickmemo' sub-mode: input is used as a note title
+  const [inputMode, setInputMode] = useState<'chat' | 'quickmemo'>('chat');
 
   const lastTapAt = useRef<number>(0);
   const lastInteractionAt = useRef<number>(Date.now());
@@ -369,13 +372,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
       const since = now - lastTapAt.current;
       lastTapAt.current = now;
 
-      // Double tap → summarise active memo
-      if (since < DOUBLE_TAP_MS && activeNoteId !== undefined) {
-        setTapStreak(0);
-        void sendQuickAction('このメモを3行で要約してくれ。');
-        return;
-      }
-
       // 5-tap easter egg
       const nextStreak = since < 500 ? tapStreak + 1 : 1;
       setTapStreak(nextStreak);
@@ -415,10 +411,95 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     }
   }, [prevNoteId, onOpenNote]);
 
+  // Random Q&A from any QA memo
+  const randomQA = useCallback(async () => {
+    setRadialOpen(false);
+    try {
+      const notes = await db.notes.toArray();
+      const pairs: { q: string; a: string; noteTitle: string }[] = [];
+      for (const note of notes) {
+        if (!note.content) continue;
+        const matches = [...note.content.matchAll(/data-pairs="([^"]*)"/g)];
+        for (const m of matches) {
+          try {
+            const decoded = m[1].replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&amp;/g, '&');
+            const arr = JSON.parse(decoded);
+            if (Array.isArray(arr)) {
+              pairs.push(...arr.map((p: { q: string; a: string }) => ({ q: p.q, a: p.a, noteTitle: note.title || '無題' })));
+            }
+          } catch { /* skip malformed */ }
+        }
+      }
+      if (pairs.length === 0) {
+        setLastReply('QAメモが見つからないよ。AIタブでQAを作ってみよう。');
+        setBubbleVisible(true);
+        return;
+      }
+      const item = pairs[Math.floor(Math.random() * pairs.length)];
+      setLastReply(`【${item.noteTitle}】\nQ: ${item.q}`);
+      setPendingAnswer(item.a);
+      setBubbleVisible(true);
+    } catch {
+      setLastReply('QAの取得に失敗しちゃった。');
+      setBubbleVisible(true);
+    }
+  }, []);
+
+  // Show last 5 memo titles
+  const showRecentMemos = useCallback(async () => {
+    setRadialOpen(false);
+    try {
+      const notes = await db.notes.orderBy('updatedAt').reverse().limit(5).toArray();
+      if (notes.length === 0) {
+        setLastReply('まだメモが無いよ。');
+      } else {
+        setLastReply('最近のメモ:\n' + notes.map((n, i) => `${i + 1}. ${n.title || '無題'}`).join('\n'));
+      }
+      setBubbleVisible(true);
+    } catch {
+      setLastReply('取得に失敗しちゃった。');
+      setBubbleVisible(true);
+    }
+  }, []);
+
+  // Enter quick-memo mode (input as note title)
+  const openQuickMemo = useCallback(() => {
+    setRadialOpen(false);
+    setInputMode('quickmemo');
+    setMode('input');
+    setBubbleVisible(false);
+  }, []);
+
+  const createQuickMemo = useCallback(async (title: string) => {
+    if (!title.trim()) return;
+    try {
+      const id = await db.notes.add({
+        syncId: newSyncId(),
+        title: title.trim(),
+        content: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      closeInput();
+      setInputMode('chat');
+      if (onOpenNote) onOpenNote(id as number);
+    } catch {
+      setLastReply('メモの作成に失敗しちゃった。');
+      setBubbleVisible(true);
+    }
+  }, [closeInput, onOpenNote]);
+
   const sendMessage = () => {
     const text = input.trim();
     if (!text || loading) return;
     setInput('');
+
+    // Quick-memo mode: treat input as note title
+    if (inputMode === 'quickmemo') {
+      setInputMode('chat');
+      void createQuickMemo(text);
+      return;
+    }
 
     if (/(前|さっき|戻)(の)?メモ|メモ.*(戻|に戻)/.test(text) || /^(戻る|戻って)$/.test(text)) {
       closeInput();
@@ -536,11 +617,9 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
 
   // Radial menu items
   const radialItems: { key: string; emoji: string; label: string; run: () => void }[] = [];
-  if (activeNoteId !== undefined) {
-    radialItems.push({ key: 'sum', emoji: '📝', label: '要約', run: () => { setRadialOpen(false); void sendQuickAction('このメモを3行で要約してくれ。'); } });
-    radialItems.push({ key: 'tr',  emoji: '🌐', label: '翻訳', run: () => { setRadialOpen(false); void sendQuickAction('このメモを自然な英語に翻訳してくれ。'); } });
-    radialItems.push({ key: 'td',  emoji: '✅', label: 'ToDo', run: () => { setRadialOpen(false); void sendQuickAction('このメモからやること（ToDo）を短く抜き出してくれ。'); } });
-  }
+  radialItems.push({ key: 'qa',   emoji: '🎲', label: 'ランダム問題', run: () => void randomQA() });
+  radialItems.push({ key: 'rec',  emoji: '📋', label: '最近のメモ',  run: () => void showRecentMemos() });
+  radialItems.push({ key: 'qm',   emoji: '✏️', label: 'クイックメモ', run: openQuickMemo });
   if (pomodoroMs !== null) {
     radialItems.push({ key: 'pause', emoji: '⏸', label: '一時停止', run: () => { setRadialOpen(false); pausePomodoro(); setLastReply('タイマーを一時停止したよ。「再開」で続けられる。'); setBubbleVisible(true); } });
     radialItems.push({ key: 'stop', emoji: '⏹', label: '終了', run: () => { setRadialOpen(false); cancelPomodoro(); setLastReply('タイマーを終了したよ。'); setBubbleVisible(true); } });
@@ -625,24 +704,35 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
 
       {!loading && bubbleVisible && lastReply && (
         <div className="sikun-bubble" style={bubbleStyle} role="status">
-          <button className="sikun-bubble-close" onClick={() => setBubbleVisible(false)} aria-label="閉じる">
+          <button className="sikun-bubble-close" onClick={() => { setBubbleVisible(false); setPendingAnswer(''); }} aria-label="閉じる">
             <X size={12} />
           </button>
           <div className="sikun-bubble-text">{lastReply}</div>
+          {pendingAnswer && (
+            <button
+              className="sikun-answer-btn"
+              onClick={() => { setLastReply(`A: ${pendingAnswer}`); setPendingAnswer(''); }}
+            >
+              答えを見る
+            </button>
+          )}
         </div>
       )}
 
       {mode === 'input' && (
         <div className="sikun-input-row" style={inputStyle}>
+          {inputMode === 'quickmemo' && (
+            <span className="sikun-input-label">✏️ タイトル:</span>
+          )}
           <input
             ref={inputRef}
             className="sikun-input"
-            placeholder={timeOfDayPlaceholder()}
+            placeholder={inputMode === 'quickmemo' ? 'メモのタイトルを入力...' : timeOfDayPlaceholder()}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void sendMessage(); }
-              if (e.key === 'Escape') closeInput();
+              if (e.key === 'Escape') { setInputMode('chat'); closeInput(); }
             }}
             disabled={loading}
           />
@@ -764,6 +854,26 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
           display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
         }
         .sikun-bubble-text { display: block; }
+        .sikun-answer-btn {
+          display: block;
+          margin-top: 8px;
+          width: 100%;
+          padding: 5px 0;
+          background: var(--primary, #6b46c1);
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .sikun-input-label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: var(--primary, #6b46c1);
+          white-space: nowrap;
+          align-self: center;
+        }
         .sikun-input-row {
           position: fixed; display: flex; gap: 4px;
           width: ${BUBBLE_W}px; max-width: calc(100vw - 24px); z-index: 9999;
