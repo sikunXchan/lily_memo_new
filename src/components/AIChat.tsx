@@ -1462,27 +1462,48 @@ function UserBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-function TypingIndicator({ model }: { model?: 'lily' | 'sikunlily' }) {
-  const avatarSrc = model === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png';
-  const avatarAlt = model === 'sikunlily' ? 'sikunlily' : 'Lily';
+// 18-frame boxing combo looped while lily / sikunlily are thinking.
+const BOXING_FRAMES = [
+  '/sikun-box-01.png', '/sikun-box-02.png', '/sikun-box-03.png', '/sikun-box-04.png',
+  '/sikun-box-05.png', '/sikun-box-06.png', '/sikun-box-07.png', '/sikun-box-08.png',
+  '/sikun-box-09.png', '/sikun-box-10.png', '/sikun-box-11.png', '/sikun-box-12.png',
+  '/sikun-box-13.png', '/sikun-box-14.png', '/sikun-box-15.png', '/sikun-box-16.png',
+  '/sikun-box-17.png', '/sikun-box-18.png',
+];
+const BOXING_FRAME_MS = 130;
+
+function TypingIndicator() {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setFrame(f => (f + 1) % BOXING_FRAMES.length), BOXING_FRAME_MS);
+    return () => window.clearInterval(id);
+  }, []);
   return (
     <div className="typing-row">
-      <div className="typing-avatar">
+      <div className="typing-boxer">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
+        <img src={BOXING_FRAMES[frame]} alt="考え中" className="boxer-img" />
       </div>
       <div className="typing-bubble">
         <span className="dot" /><span className="dot" /><span className="dot" />
       </div>
+      {/* Preload all frames so the first loop doesn't flicker */}
+      <div className="boxer-preload" aria-hidden>
+        {BOXING_FRAMES.map(src => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={src} src={src} alt="" />
+        ))}
+      </div>
       <style jsx>{`
-        .typing-row { display: flex; align-items: flex-start; gap: 10px; align-self: flex-start; }
-        .typing-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--accent); border: 2px solid var(--border); }
-        .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+        .typing-row { display: flex; align-items: flex-end; gap: 8px; align-self: flex-start; }
+        .typing-boxer { flex-shrink: 0; width: 64px; height: 64px; }
+        .boxer-img { width: 100%; height: 100%; object-fit: contain; display: block; }
         .typing-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 12px 16px; display: flex; gap: 5px; align-items: center; }
         .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); animation: bounce 1.2s infinite ease-in-out; }
         .dot:nth-child(2) { animation-delay: 0.2s; }
         .dot:nth-child(3) { animation-delay: 0.4s; }
         @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-6px); opacity: 1; } }
+        .boxer-preload { position: absolute; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none; }
       `}</style>
     </div>
   );
@@ -2104,7 +2125,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         )}
         {isLoading && (
           <>
-            <TypingIndicator model={activeModel} />
+            <TypingIndicator />
             {sikunProgress && <div className="siku-progress">{sikunProgress}</div>}
             {sikunLiveThinking && (
               <div className="siku-thinking-live">
