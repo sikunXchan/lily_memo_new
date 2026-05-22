@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { registerPdfProvider } from '@/lib/pdfBridge';
 
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -181,6 +182,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   // Canvas & DOM refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -311,6 +313,26 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
         await task.promise;
         renderTaskRef.current = null;
         if (!cancelled) setOverlayVersion(v => v + 1);
+
+        // Render a selectable text layer over the canvas so the user can
+        // highlight words; sikun then explains the selection (same flow as memos).
+        const textContainer = textLayerRef.current;
+        if (textContainer && !cancelled) {
+          textContainer.replaceChildren();
+          textContainer.style.setProperty('--scale-factor', String(scale));
+          textContainer.style.width = `${logicalViewport.width}px`;
+          textContainer.style.height = `${logicalViewport.height}px`;
+          try {
+            const textContent = await page.getTextContent();
+            if (cancelled) return;
+            const textLayer = new pdfjs.TextLayer({
+              textContentSource: textContent,
+              container: textContainer,
+              viewport: logicalViewport,
+            });
+            await textLayer.render();
+          } catch { /* text layer is best-effort */ }
+        }
       } catch (e) {
         if ((e as Error)?.name !== 'RenderingCancelledException') console.error('render error:', e);
       }
@@ -322,6 +344,38 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
       renderTaskRef.current = null;
     };
   }, [pdfDoc, currentPage, scale]);
+
+  // Expose the current page image to the floating sikun while a PDF is open.
+  useEffect(() => {
+    if (!hasPDF) { registerPdfProvider(null); return; }
+    registerPdfProvider(() => {
+      const canvas = canvasRef.current;
+      if (!canvas || canvas.width === 0) return null;
+      try {
+        // Cap the long edge so the upload stays small.
+        const maxEdge = 1600;
+        const longEdge = Math.max(canvas.width, canvas.height);
+        let src: HTMLCanvasElement = canvas;
+        if (longEdge > maxEdge) {
+          const r = maxEdge / longEdge;
+          const tmp = document.createElement('canvas');
+          tmp.width = Math.round(canvas.width * r);
+          tmp.height = Math.round(canvas.height * r);
+          tmp.getContext('2d')!.drawImage(canvas, 0, 0, tmp.width, tmp.height);
+          src = tmp;
+        }
+        const dataUrl = src.toDataURL('image/jpeg', 0.85);
+        return {
+          imageBase64: dataUrl.split(',')[1],
+          page: currentPageRef.current,
+          total: totalPages,
+        };
+      } catch {
+        return null;
+      }
+    });
+    return () => registerPdfProvider(null);
+  }, [hasPDF, totalPages]);
 
   // Overlay redraw when annotations or page version changes
   useEffect(() => { drawOverlay(); }, [overlayVersion, annotations, drawOverlay]);
@@ -665,6 +719,13 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           {!isLoading && !error && (
             <div className="pdf-canvas-wrapper">
               <canvas ref={canvasRef} className="pdf-canvas" />
+              {/* Selectable text layer — disabled while annotating so it
+                  doesn't intercept the pen/highlighter pointer events. */}
+              <div
+                ref={textLayerRef}
+                className={`pdf-textlayer${annotationMode !== 'none' ? ' inactive' : ''}`}
+                aria-hidden
+              />
               <canvas
                 ref={overlayCanvasRef}
                 className={`pdf-overlay${annotationMode !== 'none' ? ' drawing' : ''}`}
@@ -850,6 +911,23 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             pointer-events:none; touch-action:none;
           }
           .pdf-overlay.drawing { pointer-events:auto; cursor:crosshair; }
+          /* Selectable text layer (PDF.js) overlaid on the canvas */
+          .pdf-textlayer {
+            position:absolute; top:0; left:0;
+            overflow:clip; line-height:1;
+            text-align:initial; text-size-adjust:none;
+            forced-color-adjust:none; transform-origin:0 0;
+            z-index:1;
+          }
+          .pdf-textlayer.inactive { pointer-events:none; user-select:none; }
+          .pdf-textlayer :global(span),
+          .pdf-textlayer :global(br) {
+            color:transparent; position:absolute;
+            white-space:pre; cursor:text;
+            transform-origin:0% 0%;
+          }
+          .pdf-textlayer :global(span.markedContent) { top:0; height:0; }
+          .pdf-textlayer :global(::selection) { background:rgba(59,130,246,0.35); }
           .pdf-status {
             display:flex; flex-direction:column; align-items:center;
             justify-content:center; gap:16px; color:#ccc;

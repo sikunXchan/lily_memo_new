@@ -241,6 +241,7 @@ export default function Home() {
           activeNoteId={activeNoteId}
           prevNoteId={recentNotes.find(id => id !== activeNoteId)}
           onOpenNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
+          isPdfTab={activeTab === 'pdf' && !activeNoteId}
         />
       )}
 
