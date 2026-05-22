@@ -223,13 +223,6 @@ export default function Home() {
                     isDesktop={true}
                   />
                 )}
-                {isDesktopLayout && activeTab === 'ai' && (
-                  <AIChat
-                    onOpenSettings={openSettings}
-                    onSwitchTab={(tab) => { setActiveTab(tab); setActiveNoteId(undefined); }}
-                    onNoteCreated={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
-                  />
-                )}
               </div>
             )}
           </>
