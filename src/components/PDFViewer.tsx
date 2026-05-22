@@ -5,7 +5,7 @@ import {
   X, Upload, FileText, Link as LinkIcon, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
   Play, Pause, RotateCcw, Highlighter, Pencil, Trash2,
-  Image as ImageIcon, Plus,
+  Image as ImageIcon, Plus, TextCursorInput,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -168,6 +168,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
 
   // Annotations
   const [annotationMode, setAnnotationMode] = useState<'none' | 'highlight' | 'pen'>('none');
+  const [textSelectMode, setTextSelectMode] = useState(false);
   const [hlColorIdx, setHlColorIdx] = useState(0);
   const [penColorIdx, setPenColorIdx] = useState(5); // black
   const [penWidthIdx, setPenWidthIdx] = useState(1); // medium
@@ -184,6 +185,8 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
+  const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
+  pdfDocRef.current = pdfDoc;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const blobUrlRef = useRef('');
@@ -345,14 +348,16 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     };
   }, [pdfDoc, currentPage, scale]);
 
-  // Expose the current page image to the floating sikun while a PDF is open.
+  // Expose the current page (and a full-document renderer) to the floating
+  // sikun while a PDF is open. Both run on demand — sikun only calls them
+  // when an action explicitly needs the image(s), never on every message.
   useEffect(() => {
     if (!hasPDF) { registerPdfProvider(null); return; }
-    registerPdfProvider(() => {
+
+    const getCurrentPage = () => {
       const canvas = canvasRef.current;
       if (!canvas || canvas.width === 0) return null;
       try {
-        // Cap the long edge so the upload stays small.
         const maxEdge = 1600;
         const longEdge = Math.max(canvas.width, canvas.height);
         let src: HTMLCanvasElement = canvas;
@@ -364,16 +369,36 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           tmp.getContext('2d')!.drawImage(canvas, 0, 0, tmp.width, tmp.height);
           src = tmp;
         }
-        const dataUrl = src.toDataURL('image/jpeg', 0.85);
         return {
-          imageBase64: dataUrl.split(',')[1],
+          imageBase64: src.toDataURL('image/jpeg', 0.85).split(',')[1],
           page: currentPageRef.current,
           total: totalPages,
         };
       } catch {
         return null;
       }
-    });
+    };
+
+    const getAllPages = async (maxPages: number) => {
+      const doc = pdfDocRef.current;
+      if (!doc) return null;
+      const total = doc.numPages;
+      const n = Math.min(total, maxPages);
+      const images: string[] = [];
+      for (let i = 1; i <= n; i++) {
+        try {
+          const page = await doc.getPage(i);
+          const vp = page.getViewport({ scale: 1.3 });
+          const cv = document.createElement('canvas');
+          cv.width = vp.width; cv.height = vp.height;
+          await page.render({ canvasContext: cv.getContext('2d')!, viewport: vp }).promise;
+          images.push(cv.toDataURL('image/jpeg', 0.78).split(',')[1]);
+        } catch { /* skip a failed page */ }
+      }
+      return { images, total, truncated: n < total };
+    };
+
+    registerPdfProvider(getCurrentPage, getAllPages);
     return () => registerPdfProvider(null);
   }, [hasPDF, totalPages]);
 
@@ -592,10 +617,17 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             </button>
           </div>
           <div className="pdf-bar-right">
-            <button className={`pdf-icon-btn${annotationMode === 'highlight' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'highlight' ? 'none' : 'highlight')} title="ハイライト">
+            <button
+              className={`pdf-icon-btn${textSelectMode ? ' active' : ''}`}
+              onClick={() => { setTextSelectMode(v => !v); setAnnotationMode('none'); }}
+              title="文字選択モード（選択するとsikunが解説）"
+            >
+              <TextCursorInput size={18} />
+            </button>
+            <button className={`pdf-icon-btn${annotationMode === 'highlight' ? ' active' : ''}`} onClick={() => { setAnnotationMode(m => m === 'highlight' ? 'none' : 'highlight'); setTextSelectMode(false); }} title="ハイライト">
               <Highlighter size={18} />
             </button>
-            <button className={`pdf-icon-btn${annotationMode === 'pen' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'pen' ? 'none' : 'pen')} title="ペン手書き">
+            <button className={`pdf-icon-btn${annotationMode === 'pen' ? ' active' : ''}`} onClick={() => { setAnnotationMode(m => m === 'pen' ? 'none' : 'pen'); setTextSelectMode(false); }} title="ペン手書き">
               <Pencil size={18} />
             </button>
             <button className={`pdf-icon-btn${showTimer ? ' active' : ''}`} onClick={() => { setShowTimer(v => !v); setTimerCollapsed(false); }} title="タイマー">
@@ -608,6 +640,15 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             )}
           </div>
         </div>
+
+        {/* Text-select hint */}
+        {textSelectMode && (
+          <div className="textselect-hint">
+            <TextCursorInput size={14} />
+            <span>文字をなぞって選択 → sikunをタップすると解説してくれるよ</span>
+            <button className="textselect-done" onClick={() => setTextSelectMode(false)}>完了</button>
+          </div>
+        )}
 
         {/* Annotation toolbar */}
         {annotationMode !== 'none' && (
@@ -723,7 +764,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
                   doesn't intercept the pen/highlighter pointer events. */}
               <div
                 ref={textLayerRef}
-                className={`pdf-textlayer${annotationMode !== 'none' ? ' inactive' : ''}`}
+                className={`pdf-textlayer${textSelectMode ? ' active' : ''}`}
                 aria-hidden
               />
               <canvas
@@ -785,6 +826,18 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           }
           .pdf-bar-right {
             margin-left:auto; display:flex; align-items:center; gap:2px; flex-shrink:0;
+          }
+          /* Text-select hint */
+          .textselect-hint {
+            display:flex; align-items:center; gap:8px;
+            background:var(--primary); color:#fff;
+            padding:8px 14px; font-size:0.8rem; font-weight:600;
+            flex-shrink:0;
+          }
+          .textselect-done {
+            margin-left:auto; background:rgba(255,255,255,0.25); color:#fff;
+            padding:4px 12px; border-radius:7px; font-size:0.78rem;
+            font-weight:700; cursor:pointer;
           }
           /* Annotation bar */
           .annotation-bar {
@@ -911,23 +964,30 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             pointer-events:none; touch-action:none;
           }
           .pdf-overlay.drawing { pointer-events:auto; cursor:crosshair; }
-          /* Selectable text layer (PDF.js) overlaid on the canvas */
+          /* Selectable text layer (PDF.js) overlaid on the canvas.
+             Off by default so it never blocks scroll/pan; turned on only
+             in text-select mode. */
           .pdf-textlayer {
             position:absolute; top:0; left:0;
             overflow:clip; line-height:1;
             text-align:initial; text-size-adjust:none;
             forced-color-adjust:none; transform-origin:0 0;
-            z-index:1;
+            z-index:2;
+            pointer-events:none; user-select:none;
           }
-          .pdf-textlayer.inactive { pointer-events:none; user-select:none; }
+          .pdf-textlayer.active {
+            pointer-events:auto;
+            user-select:text; -webkit-user-select:text;
+          }
           .pdf-textlayer :global(span),
           .pdf-textlayer :global(br) {
             color:transparent; position:absolute;
             white-space:pre; cursor:text;
             transform-origin:0% 0%;
+            user-select:text; -webkit-user-select:text;
           }
           .pdf-textlayer :global(span.markedContent) { top:0; height:0; }
-          .pdf-textlayer :global(::selection) { background:rgba(59,130,246,0.35); }
+          .pdf-textlayer :global(::selection) { background:rgba(59,130,246,0.4); }
           .pdf-status {
             display:flex; flex-direction:column; align-items:center;
             justify-content:center; gap:16px; color:#ccc;

@@ -5,7 +5,7 @@ import { X, Send } from 'lucide-react';
 import { db } from '@/lib/db';
 import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat, type ChatTurn } from '@/lib/gemini';
-import { getPdfSnapshot } from '@/lib/pdfBridge';
+import { getPdfSnapshot, getPdfAllPages } from '@/lib/pdfBridge';
 import {
   loadSikunHistory, saveSikunHistory, toChatTurns,
   type SikunMessage,
@@ -16,6 +16,13 @@ interface InstanceSikunProps {
   prevNoteId?: number;
   onOpenNote?: (id: number) => void;
   isPdfTab?: boolean;
+}
+
+interface DoSendOpts {
+  fullNote?: boolean;    // include the whole memo body, not just an excerpt
+  attachPdf?: boolean;   // attach the current PDF page image
+  attachPdfAll?: boolean; // attach every PDF page image (capped)
+  heavy?: boolean;       // allow long, detailed output
 }
 
 const POS_KEY = 'lily_instance_sikun_pos';
@@ -50,7 +57,9 @@ const BOOK_FRAMES = [
   '/sikun-book-read.png',
   '/sikun-book-close.png',
 ];
-const BOOK_FRAME_MS = 280;
+// How long each frame stays before the next. First (open) and last (close)
+// linger; the middle page-flips are quick.
+const BOOK_FRAME_DELAYS = [600, 200, 200, 200, 200, 200, 200, 200, 600];
 
 const TONE_PROMPTS: Record<string, string> = {
   keigo: '丁寧な敬語（「〜です」「〜ます」「〜でしょう」）。礼儀正しく、簡潔に。',
@@ -145,6 +154,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const [pomodoroMs, setPomodoroMs] = useState<number | null>(null);
   const [pausedMs, setPausedMs] = useState<number | null>(null);
   const [pendingAnswer, setPendingAnswer] = useState<string>('');
+  const [quizMode, setQuizMode] = useState(false);
   const [radialOpen, setRadialOpen] = useState(false);
 
   const lastTapAt = useRef<number>(0);
@@ -211,18 +221,22 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     if (activeNoteId === seenNoteIdRef.current) return;
     seenNoteIdRef.current = activeNoteId;
     if (activeNoteId === undefined) { setBookFrame(null); return; }
-    setBookFrame(0);
     let f = 0;
-    const id = window.setInterval(() => {
-      f++;
-      if (f < BOOK_FRAMES.length) {
-        setBookFrame(f);
-      } else {
-        setBookFrame(null);
-        window.clearInterval(id);
-      }
-    }, BOOK_FRAME_MS);
-    return () => window.clearInterval(id);
+    setBookFrame(0);
+    let timer: number;
+    const advance = () => {
+      timer = window.setTimeout(() => {
+        f++;
+        if (f < BOOK_FRAMES.length) {
+          setBookFrame(f);
+          advance();
+        } else {
+          setBookFrame(null);
+        }
+      }, BOOK_FRAME_DELAYS[f] ?? 200);
+    };
+    advance();
+    return () => window.clearTimeout(timer);
   }, [activeNoteId]);
 
   // Selection badge — debounced so rapid selectionchange bursts don't flicker
@@ -311,6 +325,8 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         setRadialOpen(true);
         setMode('closed');
         setBubbleVisible(false);
+        setQuizMode(false);
+        setPendingAnswer('');
         if (navigator.vibrate) navigator.vibrate(10);
       }
     }, LONG_PRESS_MS);
@@ -396,13 +412,15 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     }
   };
 
-  const sendQuickAction = (presetText: string, opts?: { fullNote?: boolean; attachPdf?: boolean }) => {
+  const sendQuickAction = (presetText: string, opts?: DoSendOpts) => {
     setInput('');
     return doSend(presetText, opts);
   };
 
   const jumpToPrevNote = useCallback(() => {
     setRadialOpen(false);
+    setQuizMode(false);
+    setPendingAnswer('');
     if (prevNoteId !== undefined && onOpenNote) {
       onOpenNote(prevNoteId);
       setLastReply('さっきのメモを開いたよ。');
@@ -444,6 +462,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       const item = pairs[Math.floor(Math.random() * pairs.length)];
       setLastReply(`Q: ${item.q}`);
       setPendingAnswer(item.a);
+      setQuizMode(true);
       setBubbleVisible(true);
     } catch {
       setLastReply('Q&Aの取得に失敗しちゃった。');
@@ -454,6 +473,8 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   // Show last 5 memo titles
   const showRecentMemos = useCallback(async () => {
     setRadialOpen(false);
+    setQuizMode(false);
+    setPendingAnswer('');
     try {
       const notes = await db.notes.orderBy('updatedAt').reverse().limit(5).toArray();
       if (notes.length === 0) {
@@ -517,7 +538,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     return doSend(text);
   };
 
-  const doSend = async (text: string, opts?: { fullNote?: boolean; attachPdf?: boolean }) => {
+  const doSend = async (text: string, opts?: DoSendOpts) => {
     if (!text || loading) return;
     const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
     if (!apiKey) {
@@ -531,6 +552,8 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     setLoading(true);
     setBubbleVisible(false);
     setLastReply('');
+    setQuizMode(false);
+    setPendingAnswer('');
 
     const userMsg: SikunMessage = { id: `u${Date.now()}`, role: 'user', text, ts: Date.now() };
     const nextHistory = [...history, userMsg];
@@ -551,10 +574,27 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       } catch { /* ignore */ }
     }
 
-    // Attach the current PDF page when relevant so sikun can read it.
+    // Attach PDF on demand only. Free-text on the PDF tab attaches the page
+    // just when the message clearly refers to it — never on every message.
     const turns: ChatTurn[] = toChatTurns(nextHistory);
     let pdfNote = '';
-    if (opts?.attachPdf || isPdfTab) {
+    const wantPage = opts?.attachPdf
+      || (isPdfTab && /ページ|pdf|この(問題|図|表|文|内容|資料|範囲|箇所)|ここ|画像|written|書いて/i.test(text));
+    if (opts?.attachPdfAll) {
+      const all = await getPdfAllPages(15);
+      if (all && all.images.length > 0 && turns.length > 0) {
+        turns[turns.length - 1] = {
+          ...turns[turns.length - 1],
+          attachments: [{
+            mimeType: 'image/jpeg',
+            data: '',
+            pdfPageImages: all.images.map(d => ({ data: d })),
+            pdfTotalPages: all.total,
+          }],
+        };
+        pdfNote = `\n\n# PDF全文\n全${all.total}ページ${all.truncated ? `中の最初の${all.images.length}ページ` : ''}を画像で添付した。全体を通して読み取り、丁寧に解説せよ。`;
+      }
+    } else if (wantPage) {
       const snap = getPdfSnapshot();
       if (snap && turns.length > 0) {
         turns[turns.length - 1] = {
@@ -569,8 +609,13 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       }
     }
 
+    // Heavy actions (full PDF, full memo) may produce long, structured text.
+    const heavyNote = opts?.heavy
+      ? '\n\n# 今回は重要な解析依頼\n出力の長さ制限は気にせず、必要なだけ詳しく丁寧に長文で回答してよい。段落や「・」の箇条書きで構造化してよい（mermaid/QAブロック等の特殊ブロックは作らない）。'
+      : '';
+
     try {
-      const systemPrompt = INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt()) + noteContext + pdfNote;
+      const systemPrompt = INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt()) + noteContext + pdfNote + heavyNote;
       const reply = await streamSikunlilyChat(
         turns,
         systemPrompt,
@@ -611,13 +656,13 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   // Radial menu items — context aware
   const radialItems: { key: string; emoji: string; label: string; run: () => void }[] = [];
   if (isPdfTab) {
-    // PDF tab → analyze the current page
-    radialItems.push({ key: 'pdfx', emoji: '📄', label: 'ページ解説', run: () => { setRadialOpen(false); void sendQuickAction('このPDFページの内容を分かりやすく解説して。', { attachPdf: true }); } });
+    // PDF tab → analyze the current page or the whole document
+    radialItems.push({ key: 'pdfx', emoji: '📄', label: 'ページ解説', run: () => { setRadialOpen(false); void sendQuickAction('このPDFページの内容を、初学者にも分かるよう丁寧に解説して。', { attachPdf: true, heavy: true }); } });
+    radialItems.push({ key: 'pdfall', emoji: '📚', label: 'PDF全文解説', run: () => { setRadialOpen(false); void sendQuickAction('このPDF全体の内容を、章立て・ポイントを押さえて丁寧に解説して。', { attachPdfAll: true, heavy: true }); } });
     radialItems.push({ key: 'pdft', emoji: '🔤', label: '翻訳', run: () => { setRadialOpen(false); void sendQuickAction('このPDFページを日本語に翻訳して。', { attachPdf: true }); } });
-    radialItems.push({ key: 'pdfs', emoji: '📝', label: '要約', run: () => { setRadialOpen(false); void sendQuickAction('このPDFページを3〜5行で要約して。', { attachPdf: true }); } });
   } else if (activeNoteId !== undefined) {
     // Memo open → memo actions (full content)
-    radialItems.push({ key: 'sum', emoji: '📝', label: '要約', run: () => { setRadialOpen(false); void sendQuickAction('このメモの内容を3〜5行で要約して。', { fullNote: true }); } });
+    radialItems.push({ key: 'sum', emoji: '📝', label: '要約', run: () => { setRadialOpen(false); void sendQuickAction('このメモの内容を、要点を漏らさず分かりやすく要約して。', { fullNote: true, heavy: true }); } });
     radialItems.push({ key: 'todo', emoji: '✅', label: 'ToDo', run: () => { setRadialOpen(false); void sendQuickAction('このメモから「やること(ToDo)」を箇条書きで抜き出して。無ければ「ToDoは無さそう」と答えて。', { fullNote: true }); } });
     radialItems.push({ key: 'qa', emoji: '🎲', label: 'ランダム問題', run: () => void randomQA() });
   }
@@ -712,17 +757,29 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
 
       {!loading && bubbleVisible && lastReply && (
         <div className="sikun-bubble" style={bubbleStyle} role="status">
-          <button className="sikun-bubble-close" onClick={() => { setBubbleVisible(false); setPendingAnswer(''); }} aria-label="閉じる">
+          <button className="sikun-bubble-close" onClick={() => { setBubbleVisible(false); setPendingAnswer(''); setQuizMode(false); }} aria-label="閉じる">
             <X size={12} />
           </button>
           <div className="sikun-bubble-text">{lastReply}</div>
-          {pendingAnswer && (
-            <button
-              className="sikun-answer-btn"
-              onClick={() => { setLastReply(`A: ${pendingAnswer}`); setPendingAnswer(''); }}
-            >
-              答えを見る
-            </button>
+          {(pendingAnswer || quizMode) && (
+            <div className="sikun-quiz-actions">
+              {pendingAnswer && (
+                <button
+                  className="sikun-answer-btn"
+                  onClick={() => { setLastReply(`A: ${pendingAnswer}`); setPendingAnswer(''); }}
+                >
+                  答えを見る
+                </button>
+              )}
+              {quizMode && (
+                <button
+                  className="sikun-answer-btn outline"
+                  onClick={() => void randomQA()}
+                >
+                  次の問題 →
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -849,7 +906,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         .sikun-radial-label { font-size: 0.58rem; font-weight: 700; color: var(--fg-muted, #555); line-height: 1; }
         .sikun-bubble {
           position: fixed;
-          width: ${BUBBLE_W}px; max-width: calc(100vw - 24px); max-height: 220px; overflow-y: auto;
+          width: ${BUBBLE_W}px; max-width: calc(100vw - 24px); max-height: min(60vh, 420px); overflow-y: auto;
           background: var(--background, #fff); color: var(--foreground, #222);
           border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: 14px;
           padding: 10px 26px 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.18);
@@ -863,11 +920,14 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
         }
         .sikun-bubble-text { display: block; }
-        .sikun-answer-btn {
-          display: block;
+        .sikun-quiz-actions {
+          display: flex;
+          gap: 6px;
           margin-top: 8px;
-          width: 100%;
-          padding: 5px 0;
+        }
+        .sikun-answer-btn {
+          flex: 1;
+          padding: 6px 0;
           background: var(--primary, #6b46c1);
           color: #fff;
           border: none;
@@ -875,6 +935,11 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           font-size: 0.8rem;
           font-weight: 700;
           cursor: pointer;
+        }
+        .sikun-answer-btn.outline {
+          background: transparent;
+          color: var(--primary, #6b46c1);
+          border: 1.5px solid var(--primary, #6b46c1);
         }
         .sikun-input-row {
           position: fixed; display: flex; gap: 4px;
