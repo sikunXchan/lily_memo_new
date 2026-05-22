@@ -109,6 +109,7 @@ export async function streamSikunlilyChat(
   thinkingBudget: number,
   callbacks: ThinkingCallbacks = {},
   modelList: string[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+  useSearch = false,
 ): Promise<string> {
   const genConfig: Record<string, unknown> = {
     temperature: 0.7,
@@ -120,7 +121,7 @@ export async function streamSikunlilyChat(
     genConfig.thinkingConfig = { thinkingBudget };
   }
 
-  const body = JSON.stringify({
+  const basePayload: Record<string, unknown> = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: history.map(t => ({
       role: t.role,
@@ -130,7 +131,9 @@ export async function streamSikunlilyChat(
       ],
     })),
     generationConfig: genConfig,
-  });
+  };
+  if (useSearch) basePayload.tools = [{ google_search: {} }];
+  const body = JSON.stringify(basePayload);
 
   let lastError = 'AI request failed';
   for (let i = 0; i < modelList.length; i++) {
@@ -141,6 +144,7 @@ export async function streamSikunlilyChat(
     const isLite = model.includes('lite');
     const effectiveBody = (isLite && thinkingBudget !== 0)
       ? JSON.stringify({
+          ...(useSearch ? { tools: [{ google_search: {} }] } : {}),
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: history.map(t => ({
             role: t.role,
