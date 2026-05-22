@@ -1888,7 +1888,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                 setSikunProgress('✍️ 回答を生成中...');
               },
             },
-            ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+            ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
           );
         }
         setSikunProgress('');

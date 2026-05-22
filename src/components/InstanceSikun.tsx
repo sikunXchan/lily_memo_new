@@ -616,10 +616,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
 
     try {
       const systemPrompt = INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt()) + noteContext + pdfNote + heavyNote;
-      // Use flash for normal queries; Pro only for heavy analysis (PDF full, full memo).
-      const modelList = opts?.heavy
-        ? ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
-        : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+      const modelList = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
       // Google Search only when user explicitly asks to look something up.
       const wantsSearch = /調べ|検索|ネット|最新|今年|今月|ニュース|天気|株価|リリース|公式|search|latest/i.test(text);
       const reply = await streamSikunlilyChat(

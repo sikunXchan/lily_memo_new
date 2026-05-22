@@ -86,11 +86,11 @@ export interface ThinkingCallbacks {
 
 // thinking budget per sikunlily mode.  -1 = dynamic (model decides), 0 = off.
 export const SIKU_THINKING_BUDGETS: Record<string, number> = {
-  code:     -1,
-  arch:     -1,
-  analysis: -1,
-  research: -1,
-  study:    8192,
+  code:     8192,
+  arch:     8192,
+  analysis: 4096,
+  research: 4096,
+  study:    2048,
   organize: 0,
 };
 const DEFAULT_THINKING_BUDGET = 8192;
@@ -760,11 +760,11 @@ export async function callSikunLilyChat(
   apiKey: string,
   onProgress?: (p: SikunLilyProgress) => void,
 ): Promise<string> {
-  // Stage 1: gemini-2.5-pro でスライド構成を設計
+  // Stage 1: gemini-2.5-flash でスライド構成を設計
   onProgress?.({ stage: 1, label: '構成を設計中...' });
   let outline = '';
   try {
-    const proBody = {
+    const flashBody = {
       systemInstruction: {
         parts: [{ text: 'あなたはスライド構成エキスパートだ。ユーザーの依頼とメモを元に、スライドの構成案（各スライドのタイトルと要点のみ）を箇条書きで出力せよ。説明不要。JSON不要。構成案のみ。' }],
       },
@@ -777,12 +777,12 @@ export async function callSikunLilyChat(
       })),
       generationConfig: { temperature: 0.3, topK: 20, topP: 0.85, maxOutputTokens: 2048 },
     };
-    const proRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(proBody) },
+    const flashRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(flashBody) },
     );
-    if (proRes.ok) {
-      const d = await proRes.json();
+    if (flashRes.ok) {
+      const d = await flashRes.json();
       outline = d.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('').trim() || '';
     }
   } catch { /* Stage 1 失敗時はアウトラインなしで続行 */ }
