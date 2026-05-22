@@ -35,12 +35,16 @@ const BUBBLE_W = 260;
 const DOUBLE_TAP_MS = 320;
 const EDGE_SNAP_PX = 18;
 
-const TYPING_FRAMES = [
-  '/sikun-type-both.png',
-  '/sikun-type-right.png',
-  '/sikun-type-left.png',
+// 18-frame boxing combo looped while sikun is thinking: guard -> jab/cross
+// + impact -> dodge/weave -> hooks -> uppercuts -> jump-uppercut climax.
+const BOXING_FRAMES = [
+  '/sikun-box-01.png', '/sikun-box-02.png', '/sikun-box-03.png', '/sikun-box-04.png',
+  '/sikun-box-05.png', '/sikun-box-06.png', '/sikun-box-07.png', '/sikun-box-08.png',
+  '/sikun-box-09.png', '/sikun-box-10.png', '/sikun-box-11.png', '/sikun-box-12.png',
+  '/sikun-box-13.png', '/sikun-box-14.png', '/sikun-box-15.png', '/sikun-box-16.png',
+  '/sikun-box-17.png', '/sikun-box-18.png',
 ];
-const TYPING_FRAME_MS = 170;
+const BOXING_FRAME_MS = 130;
 const IDLE_ICON = '/sikun-character.png';
 
 // 9-frame book animation played once when user opens a memo.
@@ -148,7 +152,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const [bubbleVisible, setBubbleVisible] = useState(false);
   const [history, setHistory] = useState<SikunMessage[]>([]);
   const [tapStreak, setTapStreak] = useState(0);
-  const [typingFrame, setTypingFrame] = useState(0);
+  const [boxFrame, setBoxFrame] = useState(0);
   const [bookFrame, setBookFrame] = useState<number | null>(null);
   const [selectionBadge, setSelectionBadge] = useState(false);
   const [selectedText, setSelectedText] = useState('');
@@ -193,10 +197,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     setMode('closed');
   }, []);
 
-  // Typing frame cycle
+  // Boxing combo cycle while thinking
   useEffect(() => {
-    if (!loading) { setTypingFrame(0); return; }
-    const id = window.setInterval(() => setTypingFrame(f => (f + 1) % TYPING_FRAMES.length), TYPING_FRAME_MS);
+    if (!loading) { setBoxFrame(0); return; }
+    const id = window.setInterval(() => setBoxFrame(f => (f + 1) % BOXING_FRAMES.length), BOXING_FRAME_MS);
     return () => window.clearInterval(id);
   }, [loading]);
 
@@ -712,7 +716,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   };
 
   const currentIcon = loading
-    ? TYPING_FRAMES[typingFrame]
+    ? BOXING_FRAMES[boxFrame]
     : bookFrame !== null
       ? BOOK_FRAMES[bookFrame]
       : IDLE_ICON;
@@ -763,7 +767,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
 
       {/* Preload all frames */}
       <div className="sikun-preload" aria-hidden>
-        {[...new Set([...TYPING_FRAMES, ...BOOK_FRAMES, IDLE_ICON])].map(src => (
+        {[...new Set([...BOXING_FRAMES, ...BOOK_FRAMES, IDLE_ICON])].map(src => (
           // eslint-disable-next-line @next/next/no-img-element
           <img key={src} src={src} alt="" />
         ))}
@@ -838,6 +842,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
         }
         .sikun-icon.typing { opacity: 1; }
+        .sikun-icon.typing img {
+          transform: scale(1.25);
+          transform-origin: bottom center;
+        }
         .sikun-icon.book img {
           transform: scale(1.35);
           transform-origin: bottom center;
