@@ -5,7 +5,7 @@ import {
   X, Upload, FileText, Link as LinkIcon, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
   Play, Pause, RotateCcw, Highlighter, Pencil, Trash2,
-  Image as ImageIcon, Plus,
+  Image as ImageIcon, Plus, Camera,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -187,6 +187,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   pdfDocRef.current = pdfDoc;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const blobUrlRef = useRef('');
   const drawingRef = useRef<{ x: number; y: number } | null>(null);
   const currentPenPathRef = useRef<Array<{ x: number; y: number }>>([]);
@@ -948,16 +949,22 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           <input ref={fileInputRef} type="file" accept="application/pdf" hidden onChange={handleFileUpload} />
         </div>
 
-        {/* Photo-to-PDF section */}
+        {/* Photo / scan to PDF section */}
         <div className="photo-section">
           <div className="photo-section-header">
             <ImageIcon size={18} className="photo-icon" />
-            <span>写真から1枚のPDFにする</span>
+            <span>書類をスキャン / 写真から1枚のPDFにする</span>
           </div>
 
-          <button className="btn-add-photos" onClick={() => photoInputRef.current?.click()}>
-            <Plus size={16} />写真を追加
-          </button>
+          <div className="photo-btn-row">
+            <button className="btn-add-photos" onClick={() => cameraInputRef.current?.click()}>
+              <Camera size={16} />書類をスキャン
+            </button>
+            <button className="btn-add-photos outline" onClick={() => photoInputRef.current?.click()}>
+              <Plus size={16} />写真を追加
+            </button>
+          </div>
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handlePhotoSelect} />
           <input ref={photoInputRef} type="file" accept="image/*" multiple hidden onChange={handlePhotoSelect} />
 
           {photoThumbs.length > 0 && (
@@ -1053,14 +1060,20 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           font-size:0.95rem; font-weight:700; color:var(--foreground);
         }
         .photo-icon { color:var(--primary); }
+        .photo-btn-row { display:flex; gap:10px; flex-wrap:wrap; }
         .btn-add-photos {
           display:flex; align-items:center; gap:6px;
-          padding:10px 16px; background:var(--background);
-          border:1px solid var(--border); color:var(--foreground);
+          padding:10px 16px; background:var(--primary); color:#fff;
+          border:1px solid var(--primary);
           font-size:0.88rem; font-weight:600; border-radius:10px;
-          cursor:pointer; transition:background 0.15s; width:fit-content;
+          cursor:pointer; transition:opacity 0.15s; width:fit-content;
         }
-        .btn-add-photos:hover { background:var(--border); }
+        .btn-add-photos:hover { opacity:0.85; }
+        .btn-add-photos.outline {
+          background:var(--background); color:var(--foreground);
+          border:1px solid var(--border);
+        }
+        .btn-add-photos.outline:hover { background:var(--border); opacity:1; }
         .photo-thumbs {
           display:flex; gap:10px; flex-wrap:wrap;
         }

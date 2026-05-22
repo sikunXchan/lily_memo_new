@@ -34,8 +34,6 @@ const TAP_MAX_MOVE = 8;
 const BUBBLE_W = 260;
 const DOUBLE_TAP_MS = 320;
 const EDGE_SNAP_PX = 18;
-const IDLE_BLINK_MIN_MS = 22000;
-const IDLE_BLINK_MAX_MS = 42000;
 
 const TYPING_FRAMES = [
   '/sikun-type-both.png',
@@ -149,7 +147,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const [lastReply, setLastReply] = useState<string>('');
   const [bubbleVisible, setBubbleVisible] = useState(false);
   const [history, setHistory] = useState<SikunMessage[]>([]);
-  const [idleBlink, setIdleBlink] = useState(false);
   const [tapStreak, setTapStreak] = useState(0);
   const [typingFrame, setTypingFrame] = useState(0);
   const [bookFrame, setBookFrame] = useState<number | null>(null);
@@ -195,23 +192,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     inputRef.current?.blur();
     setMode('closed');
   }, []);
-
-  // Idle blink
-  useEffect(() => {
-    let tid: number;
-    const scheduleNext = () => {
-      const delay = IDLE_BLINK_MIN_MS + Math.random() * (IDLE_BLINK_MAX_MS - IDLE_BLINK_MIN_MS);
-      tid = window.setTimeout(() => {
-        if (Date.now() - lastInteractionAt.current > IDLE_BLINK_MIN_MS && !loading && !dragging && mode === 'closed') {
-          setIdleBlink(true);
-          window.setTimeout(() => setIdleBlink(false), 380);
-        }
-        scheduleNext();
-      }, delay);
-    };
-    scheduleNext();
-    return () => window.clearTimeout(tid);
-  }, [loading, dragging, mode]);
 
   // Typing frame cycle
   useEffect(() => {
@@ -740,7 +720,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   return (
     <>
       <div
-        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'typing' : ''} ${idleBlink ? 'blink' : ''} ${bookFrame !== null ? 'book' : ''}`}
+        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'typing' : ''} ${bookFrame !== null ? 'book' : ''}`}
         style={{ left: pos.x, top: pos.y }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -861,11 +841,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         .sikun-icon.book img {
           transform: scale(1.35);
           transform-origin: bottom center;
-        }
-        .sikun-icon.blink { animation: sikun-blink 0.38s ease-in-out; }
-        @keyframes sikun-blink {
-          0%, 100% { transform: scaleY(1); }
-          50% { transform: scaleY(0.6); }
         }
         .sikun-icon img {
           width: 100%;
