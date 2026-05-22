@@ -5,7 +5,7 @@ import {
   X, Upload, FileText, Link as LinkIcon, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
   Play, Pause, RotateCcw, Highlighter, Pencil, Trash2,
-  Image as ImageIcon, Plus, Camera,
+  Image as ImageIcon, Plus,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -178,7 +178,6 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoThumbs, setPhotoThumbs] = useState<string[]>([]);
   const [isConvertingPDF, setIsConvertingPDF] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
 
   // Canvas & DOM refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -188,7 +187,6 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   pdfDocRef.current = pdfDoc;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
   const blobUrlRef = useRef('');
   const drawingRef = useRef<{ x: number; y: number } | null>(null);
   const currentPenPathRef = useRef<Array<{ x: number; y: number }>>([]);
@@ -544,33 +542,6 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     setPhotoFiles(prev => [...prev, ...files]);
     setPhotoThumbs(prev => [...prev, ...thumbs]);
     e.target.value = '';
-  };
-
-  // Document scan: capture a photo, strip the background (desk/surroundings)
-  // so only the document remains, then add it to the photos→PDF pipeline.
-  const handleScanSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (!files.length) return;
-    setIsScanning(true);
-    try {
-      const { removeBackground } = await import('@imgly/background-removal');
-      const processed: File[] = [];
-      for (const f of files) {
-        try {
-          const blob = await removeBackground(f);
-          processed.push(new File([blob], f.name.replace(/\.\w+$/, '') + '-scan.png', { type: 'image/png' }));
-        } catch (err) {
-          console.error('background removal failed, using original:', err);
-          processed.push(f);
-        }
-      }
-      const thumbs = processed.map(f => URL.createObjectURL(f));
-      setPhotoFiles(prev => [...prev, ...processed]);
-      setPhotoThumbs(prev => [...prev, ...thumbs]);
-    } finally {
-      setIsScanning(false);
-    }
   };
 
   const removePhoto = (idx: number) => {
@@ -977,23 +948,16 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           <input ref={fileInputRef} type="file" accept="application/pdf" hidden onChange={handleFileUpload} />
         </div>
 
-        {/* Photo / scan to PDF section */}
+        {/* Photo-to-PDF section */}
         <div className="photo-section">
           <div className="photo-section-header">
             <ImageIcon size={18} className="photo-icon" />
-            <span>書類をスキャン / 写真から1枚のPDFにする</span>
+            <span>写真から1枚のPDFにする</span>
           </div>
 
-          <div className="photo-btn-row">
-            <button className="btn-add-photos" onClick={() => cameraInputRef.current?.click()} disabled={isScanning}>
-              <Camera size={16} />{isScanning ? '背景を除去中...' : '書類をスキャン'}
-            </button>
-            <button className="btn-add-photos outline" onClick={() => photoInputRef.current?.click()} disabled={isScanning}>
-              <Plus size={16} />写真を追加
-            </button>
-          </div>
-          <p className="photo-hint">「書類をスキャン」はカメラで撮影し、背景を取り除いて資料だけのPDFにします。</p>
-          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handleScanSelect} />
+          <button className="btn-add-photos" onClick={() => photoInputRef.current?.click()}>
+            <Plus size={16} />写真を追加
+          </button>
           <input ref={photoInputRef} type="file" accept="image/*" multiple hidden onChange={handlePhotoSelect} />
 
           {photoThumbs.length > 0 && (
@@ -1089,22 +1053,14 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           font-size:0.95rem; font-weight:700; color:var(--foreground);
         }
         .photo-icon { color:var(--primary); }
-        .photo-btn-row { display:flex; gap:10px; flex-wrap:wrap; }
         .btn-add-photos {
           display:flex; align-items:center; gap:6px;
-          padding:10px 16px; background:var(--primary); color:#fff;
-          border:1px solid var(--primary);
+          padding:10px 16px; background:var(--background);
+          border:1px solid var(--border); color:var(--foreground);
           font-size:0.88rem; font-weight:600; border-radius:10px;
-          cursor:pointer; transition:opacity 0.15s; width:fit-content;
+          cursor:pointer; transition:background 0.15s; width:fit-content;
         }
-        .btn-add-photos:hover { opacity:0.85; }
-        .btn-add-photos:disabled { opacity:0.5; cursor:default; }
-        .btn-add-photos.outline {
-          background:var(--background); color:var(--foreground);
-          border:1px solid var(--border);
-        }
-        .btn-add-photos.outline:hover { background:var(--border); opacity:1; }
-        .photo-hint { font-size:0.75rem; color:var(--fg-muted); line-height:1.5; }
+        .btn-add-photos:hover { background:var(--border); }
         .photo-thumbs {
           display:flex; gap:10px; flex-wrap:wrap;
         }
