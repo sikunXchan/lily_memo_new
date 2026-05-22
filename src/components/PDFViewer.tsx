@@ -5,7 +5,7 @@ import {
   X, Upload, FileText, Link as LinkIcon, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
   Play, Pause, RotateCcw, Highlighter, Pencil, Trash2,
-  Image as ImageIcon, Plus,
+  Image as ImageIcon, Plus, Maximize2, Minimize2,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -173,6 +173,9 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const [penWidthIdx, setPenWidthIdx] = useState(1); // medium
   const [annotations, setAnnotations] = useState<Record<number, AnnotationItem[]>>({});
   const [overlayVersion, setOverlayVersion] = useState(0);
+
+  // Fullscreen
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Photo-to-PDF
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
@@ -397,6 +400,33 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [hasPDF, totalPages]);
 
+  // Fullscreen sync
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    document.addEventListener('webkitfullscreenchange', handler);
+    return () => {
+      document.removeEventListener('fullscreenchange', handler);
+      document.removeEventListener('webkitfullscreenchange', handler);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    const el = document.documentElement as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+    };
+    const doc = document as Document & {
+      webkitExitFullscreen?: () => Promise<void>;
+      webkitFullscreenElement?: Element | null;
+    };
+    const inFullscreen = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+    if (inFullscreen) {
+      (document.exitFullscreen?.() || doc.webkitExitFullscreen?.());
+    } else {
+      (el.requestFullscreen?.() || el.webkitRequestFullscreen?.());
+    }
+  };
+
   // Cleanup blob URLs
   useEffect(() => () => {
     if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
@@ -609,6 +639,9 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
                 <ExternalLink size={18} />
               </a>
             )}
+            <button className="pdf-icon-btn" onClick={toggleFullscreen} title={isFullscreen ? '全画面を終了' : '全画面表示'}>
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
           </div>
         </div>
 
