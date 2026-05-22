@@ -1601,6 +1601,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
   };
 
+  // Preset shortcuts fill the input (not auto-send) so the user can tweak
+  // the prompt or attach an image before sending.
+  const fillInput = (text: string) => {
+    setInput(text);
+    requestAnimationFrame(() => { textareaRef.current?.focus(); autoResizeTextarea(); });
+  };
+
   const renderPdfAsImages = async (
     base64Data: string,
   ): Promise<{ images: Array<{ data: string }>; totalPages: number }> => {
@@ -2064,7 +2071,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                 <p className="welcome-text">sikunlily だ ⚔️🐕<br />lilyのペット「sikun」と「lily」が合わさった柴犬の武士だ。<br />コード構築・データ解析・調査検証・メモ整理が得意だ。</p>
                 <div className="suggestions">
                   {SIKUNLILY_SUGGESTIONS.map(s => (
-                    <button key={s} className="suggestion-chip siku" onClick={() => sendMessage(s)}>{s}</button>
+                    <button key={s} className="suggestion-chip siku" onClick={() => fillInput(s)}>{s}</button>
                   ))}
                 </div>
               </>
@@ -2073,7 +2080,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                 <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
                 <div className="suggestions">
                   {SUGGESTIONS.map(s => (
-                    <button key={s} className="suggestion-chip" onClick={() => sendMessage(s)}>{s}</button>
+                    <button key={s} className="suggestion-chip" onClick={() => fillInput(s)}>{s}</button>
                   ))}
                 </div>
               </>
@@ -2191,13 +2198,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         <div className="quick-actions">
           <Wand2 size={14} className="qa-wand" />
           {QUICK_ACTIONS.map(a => (
-            <button key={a.label} className="quick-chip" onClick={() => sendMessage(a.prompt)} disabled={isLoading}>
+            <button key={a.label} className="quick-chip" onClick={() => fillInput(a.prompt)} disabled={isLoading}>
               {a.label}
             </button>
           ))}
           <button
             className="quick-chip"
-            onClick={() => { setInput(ENGLISH_VOCAB_PROMPT); textareaRef.current?.focus(); }}
+            onClick={() => fillInput(ENGLISH_VOCAB_PROMPT)}
             disabled={isLoading}
             title="英単語帳の画像を添付してから送ると、穴埋め例文を作るよ"
           >

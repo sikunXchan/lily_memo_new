@@ -178,6 +178,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoThumbs, setPhotoThumbs] = useState<string[]>([]);
   const [isConvertingPDF, setIsConvertingPDF] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
 
   // Canvas & DOM refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -543,6 +544,33 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     setPhotoFiles(prev => [...prev, ...files]);
     setPhotoThumbs(prev => [...prev, ...thumbs]);
     e.target.value = '';
+  };
+
+  // Document scan: capture a photo, strip the background (desk/surroundings)
+  // so only the document remains, then add it to the photos→PDF pipeline.
+  const handleScanSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    setIsScanning(true);
+    try {
+      const { removeBackground } = await import('@imgly/background-removal');
+      const processed: File[] = [];
+      for (const f of files) {
+        try {
+          const blob = await removeBackground(f);
+          processed.push(new File([blob], f.name.replace(/\.\w+$/, '') + '-scan.png', { type: 'image/png' }));
+        } catch (err) {
+          console.error('background removal failed, using original:', err);
+          processed.push(f);
+        }
+      }
+      const thumbs = processed.map(f => URL.createObjectURL(f));
+      setPhotoFiles(prev => [...prev, ...processed]);
+      setPhotoThumbs(prev => [...prev, ...thumbs]);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const removePhoto = (idx: number) => {
@@ -957,14 +985,15 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           </div>
 
           <div className="photo-btn-row">
-            <button className="btn-add-photos" onClick={() => cameraInputRef.current?.click()}>
-              <Camera size={16} />書類をスキャン
+            <button className="btn-add-photos" onClick={() => cameraInputRef.current?.click()} disabled={isScanning}>
+              <Camera size={16} />{isScanning ? '背景を除去中...' : '書類をスキャン'}
             </button>
-            <button className="btn-add-photos outline" onClick={() => photoInputRef.current?.click()}>
+            <button className="btn-add-photos outline" onClick={() => photoInputRef.current?.click()} disabled={isScanning}>
               <Plus size={16} />写真を追加
             </button>
           </div>
-          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handlePhotoSelect} />
+          <p className="photo-hint">「書類をスキャン」はカメラで撮影し、背景を取り除いて資料だけのPDFにします。</p>
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handleScanSelect} />
           <input ref={photoInputRef} type="file" accept="image/*" multiple hidden onChange={handlePhotoSelect} />
 
           {photoThumbs.length > 0 && (
@@ -1069,11 +1098,13 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           cursor:pointer; transition:opacity 0.15s; width:fit-content;
         }
         .btn-add-photos:hover { opacity:0.85; }
+        .btn-add-photos:disabled { opacity:0.5; cursor:default; }
         .btn-add-photos.outline {
           background:var(--background); color:var(--foreground);
           border:1px solid var(--border);
         }
         .btn-add-photos.outline:hover { background:var(--border); opacity:1; }
+        .photo-hint { font-size:0.75rem; color:var(--fg-muted); line-height:1.5; }
         .photo-thumbs {
           display:flex; gap:10px; flex-wrap:wrap;
         }
