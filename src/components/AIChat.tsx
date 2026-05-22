@@ -26,7 +26,6 @@ import {
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
-import { parseSlides, exportSlidesToPptx } from '@/lib/slides';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
 import { sanitizeMindmap } from '@/lib/mermaidSanitize';
@@ -72,7 +71,7 @@ interface ChatMessage {
 
 interface InsertableBlock {
   id: string;
-  type: 'mermaid' | 'chart' | 'qa' | 'slides' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'folder_create' | 'note_move';
+  type: 'mermaid' | 'chart' | 'qa' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'folder_create' | 'note_move';
   rawCode: string;
   previewLabel: string;
   fileName?: string;
@@ -239,7 +238,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     }
   });
 
-  const FENCE_RE = /```(mermaid|chart|qa|slides|geometry|memo_create|memo_overwrite|folder_create|note_move)([\s\S]*?)```/g;
+  const FENCE_RE = /```(mermaid|chart|qa|geometry|memo_create|memo_overwrite|folder_create|note_move)([\s\S]*?)```/g;
   const textContent = work2.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
@@ -257,12 +256,6 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       if (pairs.length === 0) return '\n[Q&Aの解析に失敗しちゃった]\n';
       const label = `${pairs.length}問の${QA_KIND_LABEL[parseQAKind(trimmed)]}`;
       blocks.push({ id, type: 'qa', rawCode: trimmed, previewLabel: label });
-      return `\n✨ [${label}を作ったよ]\n`;
-    }
-    if (type === 'slides') {
-      const deck = parseSlides(trimmed);
-      const label = `${deck.slides.length}枚のスライド`;
-      blocks.push({ id, type: 'slides', rawCode: trimmed, previewLabel: label });
       return `\n✨ [${label}を作ったよ]\n`;
     }
     if (type === 'geometry') {
@@ -398,31 +391,6 @@ function blockToHtml(block: InsertableBlock): string {
   }
   if (block.type === 'memo_create') {
     return `<p>${block.rawCode.split('\n').map(escHtmlAttr).join('</p><p>')}</p>`;
-  }
-  if (block.type === 'slides') {
-    const deck = parseSlides(block.rawCode);
-    return deck.slides
-      .map(s => {
-        const lines: string[] = [];
-        if (s.subtitle) lines.push(s.subtitle);
-        if (s.lead) lines.push(s.lead);
-        if (s.quote) lines.push(`"${s.quote}"${s.by ? ` — ${s.by}` : ''}`);
-        const bullets = [
-          ...(s.items ?? []),
-          ...(s.left?.items ?? []),
-          ...(s.right?.items ?? []),
-          ...(s.cols?.flatMap(c => c.items) ?? []),
-          ...(s.kpis?.map(k => `${k.value} — ${k.label}${k.detail ? ` (${k.detail})` : ''}`) ?? []),
-          ...(s.steps?.map(st => `${st.heading}${st.detail ? `: ${st.detail}` : ''}`) ?? []),
-        ];
-        const h = s.heading ? `<h2>${escHtmlAttr(s.heading)}</h2>` : '';
-        const body = lines.map(p => `<p>${escHtmlAttr(p)}</p>`).join('');
-        const ul = bullets.length
-          ? `<ul>${bullets.map(b => `<li>${escHtmlAttr(b)}</li>`).join('')}</ul>`
-          : '';
-        return h + body + ul;
-      })
-      .join('');
   }
   return '';
 }
@@ -874,26 +842,6 @@ function QAPreview({ code }: { code: string }) {
   );
 }
 
-function SlidesPreview({ code }: { code: string }) {
-  const deck = useMemo(() => parseSlides(code), [code]);
-  return (
-    <div className="sl-prev">
-      {deck.slides.map((s, i) => (
-        <div key={i} className="sl-item">
-          <span className="sl-no">{i === 0 ? '表紙' : i}</span>
-          <span className="sl-title">{s.heading || s.quote || s.subtitle || `(${s.type})`}</span>
-        </div>
-      ))}
-      <style jsx>{`
-        .sl-prev { display:flex; flex-direction:column; gap:6px; }
-        .sl-item { display:flex; align-items:center; gap:8px; background:var(--background); border:1px solid var(--border); border-radius:8px; padding:6px 10px; }
-        .sl-no { flex-shrink:0; min-width:34px; text-align:center; font-size:0.7rem; font-weight:700; color:white; background:var(--primary); border-radius:10px; padding:2px 6px; }
-        .sl-title { font-size:0.82rem; color:var(--foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      `}</style>
-    </div>
-  );
-}
-
 function MemoPermissionModal({
   block,
   allNotes,
@@ -1068,13 +1016,11 @@ function InsertableBlockCard({
   block,
   allNotes,
   defaultNoteId,
-  isPremium,
   onNoteCreated,
 }: {
   block: InsertableBlock;
   allNotes: Note[];
   defaultNoteId?: number;
-  isPremium?: boolean;
   onNoteCreated?: (id: number) => void;
 }) {
   const NEW_NOTE = '__new__';
@@ -1083,13 +1029,11 @@ function InsertableBlockCard({
   );
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [pdfStatus, setPdfStatus] = useState<'idle' | 'loading'>('idle');
   const [showMemoModal, setShowMemoModal] = useState(false);
 
   const baseName = `lily-${block.type}-${block.id.slice(0, 6)}`;
   const typeEmoji = block.type === 'mermaid' ? '🌊'
     : block.type === 'chart' ? '📊'
-    : block.type === 'slides' ? '🖼️'
     : block.type === 'geometry' ? '📐'
     : block.type === 'file' ? '📄'
     : block.type === 'memo_create' ? '✏️'
@@ -1114,19 +1058,6 @@ function InsertableBlockCard({
     }
   };
 
-  const handlePptx = async () => {
-    if (pdfStatus === 'loading') return;
-    setPdfStatus('loading');
-    try {
-      const deck = parseSlides(block.rawCode);
-      await exportSlidesToPptx(deck, isPremium ? 'premium' : 'standard');
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'PowerPointの作成に失敗しちゃった');
-    } finally {
-      setPdfStatus('idle');
-    }
-  };
-
   return (
     <div className="insertable-block">
       <div className="block-header">
@@ -1137,20 +1068,12 @@ function InsertableBlockCard({
         {block.type === 'mermaid' && <MermaidPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'chart' && <ChartPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'qa' && <QAPreview code={block.rawCode} />}
-        {block.type === 'slides' && <SlidesPreview code={block.rawCode} />}
         {block.type === 'geometry' && <GeometryPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'file' && <FilePreview block={block} />}
         {(block.type === 'memo_create' || block.type === 'memo_overwrite') && (
           <pre className="memo-block-preview">{block.rawCode.slice(0, 200)}{block.rawCode.length > 200 ? '\n…' : ''}</pre>
         )}
       </div>
-
-      {block.type === 'slides' && (
-        <button className="pdf-btn" onClick={handlePptx} disabled={pdfStatus === 'loading'}>
-          <FileDown size={14} />
-          {pdfStatus === 'loading' ? 'PowerPoint作成中...' : 'PowerPoint(.pptx)で保存'}
-        </button>
-      )}
 
       {(block.type === 'memo_create' || block.type === 'memo_overwrite') ? (
         <>
@@ -1438,7 +1361,6 @@ function LilyBubble({
                   block={block}
                   allNotes={allNotes}
                   defaultNoteId={selectedNoteId}
-                  isPremium={model === 'sikunlily'}
                   onNoteCreated={onNoteCreated}
                 />
               )
@@ -1941,7 +1863,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           </div>
           <h2 className="setup-title">やあ！Lily だよ 🐶</h2>
           <p className="setup-desc">
-            Gemini API キーを設定すると、メモの分析・図やスライドの作成・問題作りをお手伝いできるよ！
+            Gemini API キーを設定すると、メモの分析・図やグラフの作成・問題作りをお手伝いできるよ！
           </p>
           <button className="setup-btn" onClick={onOpenSettings}>
             <Sparkles size={18} />
@@ -2128,7 +2050,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               </>
             ) : (
               <>
-                <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフ・スライドまで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
+                <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
                 <div className="suggestions">
                   {SUGGESTIONS.map(s => (
                     <button key={s} className="suggestion-chip" onClick={() => sendMessage(s)}>{s}</button>
