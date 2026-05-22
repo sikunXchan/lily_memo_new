@@ -153,6 +153,8 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const [tapStreak, setTapStreak] = useState(0);
   const [typingFrame, setTypingFrame] = useState(0);
   const [bookFrame, setBookFrame] = useState<number | null>(null);
+  const [selectionBadge, setSelectionBadge] = useState(false);
+  const [selectedText, setSelectedText] = useState('');
   const [pomodoroMs, setPomodoroMs] = useState<number | null>(null);
   const [pausedMs, setPausedMs] = useState<number | null>(null);
   const [pendingAnswer, setPendingAnswer] = useState<string>('');
@@ -163,6 +165,8 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const lastInteractionAt = useRef<number>(Date.now());
   // Track the last noteId we showed the book animation for
   const seenNoteIdRef = useRef<number | undefined>(undefined);
+  const selectionBadgeTimer = useRef<number | null>(null);
+  const selectionDebounce = useRef<number | null>(null);
   const pomodoroRef = useRef<number | null>(null);
   const pomodoroEndRef = useRef<number>(0);
   const pomodoroMinRef = useRef<number>(30);
@@ -238,6 +242,39 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     advance();
     return () => window.clearTimeout(timer);
   }, [activeNoteId]);
+
+  // Selection badge (memo only) — debounced so rapid selectionchange bursts
+  // don't flicker. PDF text selection is intentionally excluded because PDF
+  // OCR/text extraction is unreliable; users type the word into chat instead.
+  useEffect(() => {
+    const capture = () => {
+      if (isPdfTab) return;
+      if (selectionDebounce.current) window.clearTimeout(selectionDebounce.current);
+      selectionDebounce.current = window.setTimeout(() => {
+        const sel = window.getSelection();
+        const text = sel?.toString().trim() || '';
+        if (text.length >= 2) {
+          setSelectedText(text);
+          setSelectionBadge(true);
+          if (selectionBadgeTimer.current) window.clearTimeout(selectionBadgeTimer.current);
+          selectionBadgeTimer.current = window.setTimeout(() => {
+            setSelectionBadge(false);
+            setSelectedText('');
+          }, 10000);
+        }
+        // don't clear badge on empty — user may be tapping sikun while text is still selected
+      }, 200);
+    };
+    // selectionchange fires on text selection; pointerup catches mobile long-press selection
+    document.addEventListener('selectionchange', capture);
+    document.addEventListener('pointerup', capture);
+    return () => {
+      document.removeEventListener('selectionchange', capture);
+      document.removeEventListener('pointerup', capture);
+      if (selectionDebounce.current) window.clearTimeout(selectionDebounce.current);
+      if (selectionBadgeTimer.current) window.clearTimeout(selectionBadgeTimer.current);
+    };
+  }, [isPdfTab]);
 
   useEffect(() => {
     return () => {
@@ -351,6 +388,15 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     if (radialOpen) return;
     if (elapsed <= TAP_MAX_MS && !moved.current) {
       lastInteractionAt.current = Date.now();
+
+      // Tapping while selection badge is active → explain selected text (memo)
+      if (selectionBadge && selectedText) {
+        if (selectionBadgeTimer.current) window.clearTimeout(selectionBadgeTimer.current);
+        setSelectionBadge(false);
+        setSelectedText('');
+        void sendQuickAction(`次の文を短く解説してくれ:\n${selectedText.slice(0, 500)}`);
+        return;
+      }
 
       const now = Date.now();
       const since = now - lastTapAt.current;
@@ -709,6 +755,11 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={currentIcon} alt="sikun" draggable={false} />
+
+        {/* Selection badge: shows when memo text is selected, tap to explain */}
+        {selectionBadge && !loading && (
+          <span className="sikun-badge sikun-badge-sel" aria-hidden>?</span>
+        )}
 
         {/* Pomodoro countdown badge (paused shows ⏸ + dimmed) */}
         {(pomodoroMs !== null || pausedMs !== null) && !loading && (
