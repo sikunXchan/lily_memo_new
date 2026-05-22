@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Send } from 'lucide-react';
-import { db, newSyncId } from '@/lib/db';
+import { db } from '@/lib/db';
 import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat } from '@/lib/gemini';
 import {
@@ -142,8 +142,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
   const [pausedMs, setPausedMs] = useState<number | null>(null);
   const [pendingAnswer, setPendingAnswer] = useState<string>('');
   const [radialOpen, setRadialOpen] = useState(false);
-  // 'quickmemo' sub-mode: input is used as a note title
-  const [inputMode, setInputMode] = useState<'chat' | 'quickmemo'>('chat');
 
   const lastTapAt = useRef<number>(0);
   const lastInteractionAt = useRef<number>(Date.now());
@@ -462,44 +460,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
     }
   }, []);
 
-  // Enter quick-memo mode (input as note title)
-  const openQuickMemo = useCallback(() => {
-    setRadialOpen(false);
-    setInputMode('quickmemo');
-    setMode('input');
-    setBubbleVisible(false);
-  }, []);
-
-  const createQuickMemo = useCallback(async (title: string) => {
-    if (!title.trim()) return;
-    try {
-      const id = await db.notes.add({
-        syncId: newSyncId(),
-        title: title.trim(),
-        content: '',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-      closeInput();
-      setInputMode('chat');
-      if (onOpenNote) onOpenNote(id as number);
-    } catch {
-      setLastReply('メモの作成に失敗しちゃった。');
-      setBubbleVisible(true);
-    }
-  }, [closeInput, onOpenNote]);
-
   const sendMessage = () => {
     const text = input.trim();
     if (!text || loading) return;
     setInput('');
-
-    // Quick-memo mode: treat input as note title
-    if (inputMode === 'quickmemo') {
-      setInputMode('chat');
-      void createQuickMemo(text);
-      return;
-    }
 
     if (/(前|さっき|戻)(の)?メモ|メモ.*(戻|に戻)/.test(text) || /^(戻る|戻って)$/.test(text)) {
       closeInput();
@@ -619,7 +583,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
   const radialItems: { key: string; emoji: string; label: string; run: () => void }[] = [];
   radialItems.push({ key: 'qa',   emoji: '🎲', label: 'ランダム問題', run: () => void randomQA() });
   radialItems.push({ key: 'rec',  emoji: '📋', label: '最近のメモ',  run: () => void showRecentMemos() });
-  radialItems.push({ key: 'qm',   emoji: '✏️', label: 'クイックメモ', run: openQuickMemo });
   if (pomodoroMs !== null) {
     radialItems.push({ key: 'pause', emoji: '⏸', label: '一時停止', run: () => { setRadialOpen(false); pausePomodoro(); setLastReply('タイマーを一時停止したよ。「再開」で続けられる。'); setBubbleVisible(true); } });
     radialItems.push({ key: 'stop', emoji: '⏹', label: '終了', run: () => { setRadialOpen(false); cancelPomodoro(); setLastReply('タイマーを終了したよ。'); setBubbleVisible(true); } });
@@ -721,18 +684,15 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
 
       {mode === 'input' && (
         <div className="sikun-input-row" style={inputStyle}>
-          {inputMode === 'quickmemo' && (
-            <span className="sikun-input-label">✏️ タイトル:</span>
-          )}
           <input
             ref={inputRef}
             className="sikun-input"
-            placeholder={inputMode === 'quickmemo' ? 'メモのタイトルを入力...' : timeOfDayPlaceholder()}
+            placeholder={timeOfDayPlaceholder()}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void sendMessage(); }
-              if (e.key === 'Escape') { setInputMode('chat'); closeInput(); }
+              if (e.key === 'Escape') closeInput();
             }}
             disabled={loading}
           />
@@ -870,13 +830,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
           font-size: 0.8rem;
           font-weight: 700;
           cursor: pointer;
-        }
-        .sikun-input-label {
-          font-size: 0.75rem;
-          font-weight: 700;
-          color: var(--primary, #6b46c1);
-          white-space: nowrap;
-          align-self: center;
         }
         .sikun-input-row {
           position: fixed; display: flex; gap: 4px;
