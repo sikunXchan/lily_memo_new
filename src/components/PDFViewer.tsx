@@ -174,8 +174,8 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const [annotations, setAnnotations] = useState<Record<number, AnnotationItem[]>>({});
   const [overlayVersion, setOverlayVersion] = useState(0);
 
-  // Fullscreen
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // App-level fullscreen (hides the top bar to maximize canvas area)
+  const [isAppFullscreen, setIsAppFullscreen] = useState(false);
 
   // Photo-to-PDF
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
@@ -400,33 +400,6 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [hasPDF, totalPages]);
 
-  // Fullscreen sync
-  useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handler);
-    document.addEventListener('webkitfullscreenchange', handler);
-    return () => {
-      document.removeEventListener('fullscreenchange', handler);
-      document.removeEventListener('webkitfullscreenchange', handler);
-    };
-  }, []);
-
-  const toggleFullscreen = () => {
-    const el = document.documentElement as HTMLElement & {
-      webkitRequestFullscreen?: () => Promise<void>;
-    };
-    const doc = document as Document & {
-      webkitExitFullscreen?: () => Promise<void>;
-      webkitFullscreenElement?: Element | null;
-    };
-    const inFullscreen = !!(document.fullscreenElement || doc.webkitFullscreenElement);
-    if (inFullscreen) {
-      (document.exitFullscreen?.() || doc.webkitExitFullscreen?.());
-    } else {
-      (el.requestFullscreen?.() || el.webkitRequestFullscreen?.());
-    }
-  };
-
   // Cleanup blob URLs
   useEffect(() => () => {
     if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
@@ -600,9 +573,9 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   // ========== VIEWER ==========
   if (isLoading || hasPDF || error) {
     return (
-      <div className={`pdf-fullscreen${embedded ? ' embedded' : ''}${timerAlert ? ' timer-alert' : ''}`}>
+      <div className={`pdf-fullscreen${embedded ? ' embedded' : ''}${timerAlert ? ' timer-alert' : ''}${isAppFullscreen ? ' app-fullscreen' : ''}`}>
         {/* Top bar */}
-        <div className="pdf-top-bar">
+        {!isAppFullscreen && <div className="pdf-top-bar">
           <button className="pdf-text-btn" onClick={closePDF}>
             <X size={16} /><span>閉じる</span>
           </button>
@@ -639,11 +612,18 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
                 <ExternalLink size={18} />
               </a>
             )}
-            <button className="pdf-icon-btn" onClick={toggleFullscreen} title={isFullscreen ? '全画面を終了' : '全画面表示'}>
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            <button className="pdf-icon-btn" onClick={() => setIsAppFullscreen(true)} title="全画面表示">
+              <Maximize2 size={18} />
             </button>
           </div>
-        </div>
+        </div>}
+
+        {/* Fullscreen exit button */}
+        {isAppFullscreen && (
+          <button className="pdf-fullscreen-exit" onClick={() => setIsAppFullscreen(false)} title="全画面を終了">
+            <Minimize2 size={20} />
+          </button>
+        )}
 
         {/* Annotation toolbar */}
         {annotationMode !== 'none' && (
@@ -815,6 +795,16 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           .pdf-bar-right {
             margin-left:auto; display:flex; align-items:center; gap:2px; flex-shrink:0;
           }
+          /* App-level fullscreen exit button */
+          .pdf-fullscreen-exit {
+            position:absolute; top:12px; right:12px; z-index:10;
+            width:40px; height:40px; border-radius:50%;
+            background:rgba(0,0,0,0.5); color:#fff;
+            display:flex; align-items:center; justify-content:center;
+            cursor:pointer; backdrop-filter:blur(4px);
+            transition:background 0.15s;
+          }
+          .pdf-fullscreen-exit:hover { background:rgba(0,0,0,0.75); }
           /* Annotation bar */
           .annotation-bar {
             background:var(--background); border-bottom:1px solid var(--border);
