@@ -759,7 +759,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         {/* Selection badge: shows when memo text is selected, tap to explain */}
         {selectionBadge && !loading && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src="/IMG_3001.png" alt="?" className="sikun-badge sikun-badge-sel" aria-hidden />
+          <img src="/sikun-badge-q.png" alt="?" className="sikun-badge sikun-badge-sel" aria-hidden />
         )}
 
         {/* Pomodoro countdown badge (paused shows ⏸ + dimmed) */}
@@ -886,11 +886,11 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           box-shadow: 0 2px 6px rgba(0,0,0,0.25);
         }
         .sikun-badge-sel {
-          top: -18px;
+          top: -20px;
           left: 50%;
           transform: translateX(-50%);
-          width: 32px;
-          height: 32px;
+          width: 16px;
+          height: auto;
           object-fit: contain;
           border-radius: 0;
           background: transparent;
