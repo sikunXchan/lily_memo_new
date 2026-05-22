@@ -940,15 +940,12 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           .timer-btn:hover { opacity:0.85; }
           /* Canvas — stable centering via scrollbar-gutter + text-align */
           .pdf-canvas-area {
-            flex:1; overflow-y:auto; overflow-x:auto; min-height:0;
+            flex:1; overflow-y:auto; overflow-x:hidden; min-height:0;
             -webkit-overflow-scrolling:touch;
-            padding:16px; scrollbar-gutter:stable;
-            display:flex; justify-content:center; align-items:flex-start;
-          }
-          .pdf-fullscreen.embedded .pdf-canvas-area {
-            overflow-x: hidden;
             touch-action: pan-y;
-            overscroll-behavior: contain;
+            overscroll-behavior-x: none;
+            padding:16px;
+            display:flex; justify-content:center; align-items:flex-start;
           }
           .pdf-canvas-wrapper {
             position:relative; max-width:100%; flex-shrink:0;
