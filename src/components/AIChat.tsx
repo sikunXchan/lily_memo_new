@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
-  FileDown, Wand2, Download, Pencil, HelpCircle,
+  FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -1887,6 +1887,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   return (
     <div className="ai-chat-container">
       <div className="chat-header">
+        {onSwitchTab && (
+          <button className="chat-back-btn" onClick={() => onSwitchTab('memos')} title="メモに戻る">
+            <ArrowLeft size={20} />
+          </button>
+        )}
         <div className="header-left">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -2267,6 +2272,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       <style jsx>{`
         .ai-chat-container { display: flex; flex-direction: column; height: 100%; background: var(--background); overflow: hidden; position: relative; }
         .chat-header { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--glass-tint, rgba(255,255,255,0.9)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); flex-shrink: 0; gap: 8px; overflow: hidden; }
+        .chat-back-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; background: var(--accent); border: 1px solid var(--border); color: var(--foreground); cursor: pointer; flex-shrink: 0; transition: opacity 0.15s; }
+        .chat-back-btn:hover { opacity: 0.75; }
         .header-left { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .header-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; object-position: top center; border: 2px solid var(--border); background: var(--accent); }
         .header-title { font-size: 0.95rem; font-weight: 800; color: var(--primary); }
