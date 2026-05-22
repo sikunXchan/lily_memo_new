@@ -177,7 +177,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         <section className="settings-section">
           <div className="section-title">
             <Sparkles size={20} />
-            <h3>Instance Sikun（常駐アシスタント）</h3>
+            <h3>sikun（常駐アシスタント）</h3>
           </div>
           <div className="section-content">
             <p className="desc">
@@ -191,7 +191,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
                 onClick={toggleSikun}
                 role="switch"
                 aria-checked={sikunEnabled}
-                aria-label="Instance Sikun"
+                aria-label="sikun"
               >
                 <span className="toggle-knob" />
               </button>

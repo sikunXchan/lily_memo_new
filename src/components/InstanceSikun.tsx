@@ -74,7 +74,7 @@ function formatMs(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-const INSTANCE_SIKUN_SYSTEM = `あなたは「Instance Sikun」、画面上に常駐するフローティング・キャラクター。
+const INSTANCE_SIKUN_SYSTEM = `あなたは「sikun」、画面上に常駐するフローティング・キャラクター。
 sikunlilyの軽量版で、ユーザーが作業中にちらっと質問する用途専用だ。
 必要なときはGoogle検索で最新情報を調べて答えよ。
 
@@ -653,7 +653,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
   return (
     <>
       <div
-        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'typing' : ''} ${idleBlink ? 'blink' : ''}`}
+        className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'typing' : ''} ${idleBlink ? 'blink' : ''} ${bookFrame !== null ? 'book' : ''}`}
         style={{ left: pos.x, top: pos.y }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -663,7 +663,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
           pointerStart.current = null;
           setDragging(false);
         }}
-        aria-label="Instance Sikun"
+        aria-label="sikun"
         title="タップで話す / ドラッグで移動 / 長押しでメニュー"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -762,6 +762,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote }: 
           filter: drop-shadow(0 4px 10px rgba(0,0,0,0.3));
         }
         .sikun-icon.typing { opacity: 1; }
+        .sikun-icon.book img {
+          transform: scale(1.35);
+          transform-origin: bottom center;
+        }
         .sikun-icon.blink { animation: sikun-blink 0.38s ease-in-out; }
         @keyframes sikun-blink {
           0%, 100% { transform: scaleY(1); }
