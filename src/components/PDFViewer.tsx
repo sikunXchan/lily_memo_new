@@ -758,6 +758,9 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             position: absolute; inset: 0;
             height: 100%; z-index: auto;
           }
+          /* App fullscreen lifts above the bottom nav (3000) and the
+             floating sikun (9999) so the PDF truly fills the screen. */
+          .pdf-fullscreen.app-fullscreen { z-index: 10000; }
           .pdf-fullscreen.timer-alert { animation: alertFlash 0.5s ease 3; }
           @keyframes alertFlash {
             0%,100% { box-shadow:none; }
