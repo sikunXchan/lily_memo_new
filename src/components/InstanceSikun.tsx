@@ -159,7 +159,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const [radialOpen, setRadialOpen] = useState(false);
 
   const lastTapAt = useRef<number>(0);
-  const lastInteractionAt = useRef<number>(Date.now());
   // Track the last noteId we showed the book animation for
   const seenNoteIdRef = useRef<number | undefined>(undefined);
   const selectionBadgeTimer = useRef<number | null>(null);
@@ -362,12 +361,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       const snapped = snapToEdgeIfClose(pos);
       if (snapped.x !== pos.x) setPos(snapped);
       persistPos(snapped);
-      lastInteractionAt.current = Date.now();
       return;
     }
     if (radialOpen) return;
     if (elapsed <= TAP_MAX_MS && !moved.current) {
-      lastInteractionAt.current = Date.now();
 
       // Tapping while selection badge is active → explain selected text (memo)
       if (selectionBadge && selectedText) {
@@ -540,7 +537,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       return;
     }
     closeInput();
-    lastInteractionAt.current = Date.now();
     setLoading(true);
     setBubbleVisible(false);
     setLastReply('');

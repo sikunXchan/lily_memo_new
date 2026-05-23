@@ -1557,21 +1557,23 @@ function TypingIndicator() {
   );
 }
 
-// Floating boxing animation pinned to the bottom-right of the screen while
-// lily / sikunlily are generating. Layered above the chat; pointer-events
-// off so it never blocks taps underneath.
-function BoxingOverlay() {
+// Floating thinking animation pinned to the bottom-right of the screen while
+// lily / sikunlily are generating. lily boxes; sikunlily dribbles. Layered
+// above the chat; pointer-events off so it never blocks taps underneath.
+function BoxingOverlay({ model }: { model: 'lily' | 'sikunlily' }) {
   const [frame, setFrame] = useState(0);
+  const isSikun = model === 'sikunlily';
   useEffect(() => {
+    if (isSikun) return; // dribble is an animated GIF, no JS frame cycling
     const id = window.setInterval(() => setFrame(f => (f + 1) % BOXING_FRAMES.length), BOXING_FRAME_MS);
     return () => window.clearInterval(id);
-  }, []);
+  }, [isSikun]);
   return (
     <div className="boxing-overlay" aria-hidden>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={BOXING_FRAMES[frame]} alt="" className="boxing-img" />
+      <img src={isSikun ? '/sikun-dribble.gif' : BOXING_FRAMES[frame]} alt="" className="boxing-img" />
       <div className="boxing-preload">
-        {BOXING_FRAMES.map(src => (
+        {!isSikun && BOXING_FRAMES.map(src => (
           // eslint-disable-next-line @next/next/no-img-element
           <img key={src} src={src} alt="" />
         ))}
@@ -2298,7 +2300,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         {isLoading && (
           <>
             <TypingIndicator />
-            <BoxingOverlay />
+            <BoxingOverlay model={activeModel} />
             {sikunProgress && <div className="siku-progress">{sikunProgress}</div>}
             {sikunLiveThinking && (
               <div className="siku-thinking-live">
