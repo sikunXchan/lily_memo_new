@@ -73,10 +73,22 @@ export interface ImageAsset {
   type: string;
 }
 
+// A saved lily / sikunlily conversation. `messages` is a JSON-serialized
+// ChatMessage[] (heavy attachment data stripped before saving).
+export interface SavedChat {
+  id?: number;
+  title: string;
+  model: 'lily' | 'sikunlily';
+  messages: string;
+  count: number;
+  createdAt: number;
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
   images!: Table<ImageAsset>;
+  savedChats!: Table<SavedChat>;
 
   constructor() {
     super('LilyDatabase');
@@ -117,6 +129,9 @@ export class LilyDatabase extends Dexie {
       await tx.table('notes').toCollection().modify((n: any) => {
         if (!n.syncId) n.syncId = newSyncId();
       });
+    });
+    this.version(8).stores({
+      savedChats: '++id, model, createdAt',
     });
   }
 }

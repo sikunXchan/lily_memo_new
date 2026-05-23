@@ -6,6 +6,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
+  Save, History, Trash2,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -17,7 +18,8 @@ import {
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
-import type { Note, Folder } from '@/lib/db';
+import type { Note, Folder, SavedChat } from '@/lib/db';
+import { saveChat, deleteSavedChat, parseSavedMessages } from '@/lib/chatHistory';
 import {
   callGeminiChat, callDeepResearch, uploadToFileApi,
   streamSikunlilyChat, SIKU_THINKING_BUDGETS,
@@ -1473,38 +1475,110 @@ const BOXING_FRAMES = [
 const BOXING_FRAME_MS = 130;
 
 function TypingIndicator() {
+  return (
+    <div className="typing-row">
+      <div className="typing-bubble">
+        <span className="dot" /><span className="dot" /><span className="dot" />
+      </div>
+      <style jsx>{`
+        .typing-row { display: flex; align-items: center; gap: 8px; align-self: flex-start; }
+        .typing-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 12px 16px; display: flex; gap: 5px; align-items: center; }
+        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); animation: bounce 1.2s infinite ease-in-out; }
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-6px); opacity: 1; } }
+      `}</style>
+    </div>
+  );
+}
+
+// Floating boxing animation pinned to the bottom-right of the screen while
+// lily / sikunlily are generating. Layered above the chat; pointer-events
+// off so it never blocks taps underneath.
+function BoxingOverlay() {
   const [frame, setFrame] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => setFrame(f => (f + 1) % BOXING_FRAMES.length), BOXING_FRAME_MS);
     return () => window.clearInterval(id);
   }, []);
   return (
-    <div className="typing-row">
-      <div className="typing-boxer">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={BOXING_FRAMES[frame]} alt="考え中" className="boxer-img" />
-      </div>
-      <div className="typing-bubble">
-        <span className="dot" /><span className="dot" /><span className="dot" />
-      </div>
-      {/* Preload all frames so the first loop doesn't flicker */}
-      <div className="boxer-preload" aria-hidden>
+    <div className="boxing-overlay" aria-hidden>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={BOXING_FRAMES[frame]} alt="" className="boxing-img" />
+      <div className="boxing-preload">
         {BOXING_FRAMES.map(src => (
           // eslint-disable-next-line @next/next/no-img-element
           <img key={src} src={src} alt="" />
         ))}
       </div>
       <style jsx>{`
-        .typing-row { display: flex; align-items: flex-end; gap: 8px; align-self: flex-start; }
-        .typing-boxer { flex-shrink: 0; width: 64px; height: 64px; }
-        .boxer-img { width: 100%; height: 100%; object-fit: contain; display: block; }
-        .typing-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 12px 16px; display: flex; gap: 5px; align-items: center; }
-        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); animation: bounce 1.2s infinite ease-in-out; }
-        .dot:nth-child(2) { animation-delay: 0.2s; }
-        .dot:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-6px); opacity: 1; } }
-        .boxer-preload { position: absolute; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none; }
+        .boxing-overlay {
+          position: fixed; right: 10px; bottom: 150px;
+          width: 104px; height: 104px; z-index: 4000;
+          pointer-events: none;
+        }
+        .boxing-img {
+          width: 100%; height: 100%; object-fit: contain;
+          filter: drop-shadow(0 3px 8px rgba(0,0,0,0.25));
+        }
+        .boxing-preload { position: absolute; width: 0; height: 0; overflow: hidden; opacity: 0; }
       `}</style>
+    </div>
+  );
+}
+
+function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c: SavedChat) => void }) {
+  const chats = useLiveQuery(() => db.savedChats.orderBy('createdAt').reverse().toArray(), []);
+  return (
+    <div className="history-overlay" onClick={onClose}>
+      <div className="history-modal" onClick={e => e.stopPropagation()}>
+        <div className="history-head">
+          <span className="history-head-title"><History size={16} /> 保存した会話</span>
+          <button className="history-close" onClick={onClose} title="閉じる"><X size={18} /></button>
+        </div>
+        <div className="history-list">
+          {(!chats || chats.length === 0) && (
+            <div className="history-empty">保存した会話はまだないよ。<br />会話上部の保存ボタン（💾）で残せるよ。</div>
+          )}
+          {chats?.map(c => (
+            <div key={c.id} className="history-item">
+              <button className="history-item-main" onClick={() => onLoad(c)}>
+                <span className={`history-badge ${c.model}`}>{c.model === 'sikunlily' ? 'sikunlily' : 'Lily'}</span>
+                <span className="history-texts">
+                  <span className="history-title">{c.title}</span>
+                  <span className="history-meta">
+                    {new Date(c.createdAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}・{c.count}件
+                  </span>
+                </span>
+              </button>
+              <button className="history-del" onClick={() => { if (c.id != null) deleteSavedChat(c.id); }} title="削除">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <style jsx>{`
+          .history-overlay { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+          .history-modal { background: var(--background); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 460px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+          .history-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+          .history-head-title { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 0.98rem; color: var(--foreground); }
+          .history-close { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--fg-muted); cursor: pointer; }
+          .history-close:hover { background: var(--accent); }
+          .history-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+          .history-empty { text-align: center; color: var(--fg-muted); font-size: 0.85rem; line-height: 1.7; padding: 32px 12px; }
+          .history-item { display: flex; align-items: stretch; gap: 6px; }
+          .history-item-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--accent); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; text-align: left; transition: background 0.15s; }
+          .history-item-main:hover { background: var(--border); }
+          .history-badge { flex-shrink: 0; font-size: 0.66rem; font-weight: 800; padding: 3px 7px; border-radius: 6px; }
+          .history-badge.lily { color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); }
+          .history-badge.sikunlily { color: #8B4513; background: color-mix(in srgb, #8B4513 14%, transparent); }
+          .history-texts { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+          .history-title { font-size: 0.88rem; font-weight: 600; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .history-meta { font-size: 0.72rem; color: var(--fg-muted); }
+          .history-del { flex-shrink: 0; width: 40px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; color: #ef4444; background: transparent; cursor: pointer; transition: background 0.15s; }
+          .history-del:hover { background: rgba(239,68,68,0.1); }
+        `}</style>
+      </div>
     </div>
   );
 }
@@ -1587,6 +1661,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [helpInitialTab, setHelpInitialTab] = useState<'lily' | 'sikunlily' | 'tips'>('lily');
   const [deepResearch, setDeepResearch] = useState(false);
   const [multiAgent, setMultiAgent] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [savedToast, setSavedToast] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1611,6 +1687,22 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       setCollectedAnswers([]);
     }
   }, [messages]);
+
+  const handleSaveChat = useCallback(async () => {
+    if (messages.length === 0) return;
+    await saveChat(activeModel, messages);
+    setSavedToast(true);
+    setTimeout(() => setSavedToast(false), 1800);
+  }, [messages, activeModel]);
+
+  const handleLoadChat = useCallback((chat: SavedChat) => {
+    const loaded = parseSavedMessages<ChatMessage>(chat);
+    setActiveModel(chat.model);
+    setMessages(loaded);
+    setQuestionQueue([]);
+    setCollectedAnswers([]);
+    setShowHistory(false);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -2012,6 +2104,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             )}
           </button>
           {messages.length > 0 && (
+            <button className="clear-btn" onClick={handleSaveChat} title="この会話を保存">
+              <Save size={15} />
+            </button>
+          )}
+          <button className="clear-btn" onClick={() => setShowHistory(true)} title="保存した会話の履歴">
+            <History size={15} />
+          </button>
+          {messages.length > 0 && (
             <button className="clear-btn" onClick={() => setMessages([])} title="会話をリセット">
               <RotateCcw size={15} />
             </button>
@@ -2026,6 +2126,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </div>
       </div>
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} initialTab={helpInitialTab} />}
+      {showHistory && <ChatHistoryModal onClose={() => setShowHistory(false)} onLoad={handleLoadChat} />}
+      {savedToast && <div className="chat-saved-toast">会話を保存しました ✓</div>}
 
       {showContextPanel && activeModel === 'sikunlily' && (
         <div className="context-panel">
@@ -2126,6 +2228,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         {isLoading && (
           <>
             <TypingIndicator />
+            <BoxingOverlay />
             {sikunProgress && <div className="siku-progress">{sikunProgress}</div>}
             {sikunLiveThinking && (
               <div className="siku-thinking-live">
@@ -2343,6 +2446,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .web-toggle.on .web-state { background: var(--primary); color: white; }
         @media (max-width: 380px) { .web-toggle .web-label { display: none; } }
         .siku-progress { font-size: 0.78rem; color: var(--fg-muted); padding-left: 52px; margin-top: -8px; font-style: italic; }
+        .chat-saved-toast { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 6000; background: var(--foreground); color: var(--background); font-size: 0.84rem; font-weight: 700; padding: 10px 18px; border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); animation: toastIn 0.2s ease; pointer-events: none; }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
         .siku-thinking-live {
           margin: 4px 0 4px 52px;
           border: 1px solid #334155; border-radius: 10px;

@@ -1,4 +1,4 @@
-import { db, type Folder, type Note, newSyncId } from './db';
+import { db, type Folder, type Note, type SavedChat, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -26,6 +26,7 @@ export interface BackupPayload {
   folders: unknown[];
   notes: Note[];
   images: Record<string, string>;
+  savedChats?: SavedChat[];
   timestamp: number;
   version?: number;
 }
@@ -33,6 +34,7 @@ export interface BackupPayload {
 export async function buildBackupJson(): Promise<string> {
   const folders = await db.folders.toArray();
   const notes = await db.notes.toArray();
+  const savedChats = await db.savedChats.toArray();
 
   const allImages: Record<string, string> = {};
   const compactNotes = notes.map(note => {
@@ -47,6 +49,7 @@ export async function buildBackupJson(): Promise<string> {
     folders,
     notes: compactNotes,
     images: allImages,
+    savedChats,
     timestamp: Date.now(),
     version: 1,
   };
@@ -79,10 +82,20 @@ export async function restoreBackupFromJson(jsonText: string): Promise<void> {
     } as Folder;
   });
 
-  await db.transaction('rw', db.folders, db.notes, async () => {
+  const savedChats: SavedChat[] = (data.savedChats ?? []).map(c => ({
+    title: c.title ?? '',
+    model: c.model === 'sikunlily' ? 'sikunlily' : 'lily',
+    messages: c.messages ?? '[]',
+    count: c.count ?? 0,
+    createdAt: c.createdAt ?? now,
+  }));
+
+  await db.transaction('rw', db.folders, db.notes, db.savedChats, async () => {
     await db.folders.clear();
     await db.notes.clear();
+    await db.savedChats.clear();
     if (folders.length) await db.folders.bulkPut(folders);
     if (notes.length) await db.notes.bulkPut(notes);
+    if (savedChats.length) await db.savedChats.bulkPut(savedChats);
   });
 }
