@@ -16,6 +16,7 @@ const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false }
 const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
 const AIChat = dynamic(() => import('@/components/AIChat'), { ssr: false });
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
+const SplashScreen = dynamic(() => import('@/components/SplashScreen'), { ssr: false });
 
 type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai';
 
@@ -151,6 +152,7 @@ export default function Home() {
 
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
+      <SplashScreen />
       {showSearch && (
         <SearchModal
           isOpen={showSearch}
