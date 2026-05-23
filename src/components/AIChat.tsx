@@ -554,16 +554,38 @@ const SIKU_PROMPTS = [
 ];
 
 const TIPS = [
+  { title: '🌱 節約モードでコストを抑える', desc: 'ヘッダーの「節約モード」をONにすると、思考をオフ＋軽量モデルで答えるので、API料金が最大で約1/20になります。普段使いは節約モードがおすすめ。' },
   { title: 'メモを選んでから話しかける', desc: '右上の「メモを選ぶ」でメモを選択してから質問すると、AI がメモの内容を読んで回答できます。' },
   { title: 'ファイルを添付する', desc: '📎ボタンで PDF・画像を添付できます。「これを要約して」「この画像について説明して」と送信するだけ。' },
+  { title: '会話を保存・復元できる', desc: 'ヘッダーの💾ボタンで今の会話を保存、🕐ボタンで保存した会話を開いたり削除できます（端末内に保存）。' },
   { title: 'Lily はメモを直接書き込める', desc: '「このメモを書き換えて」「要約してメモに保存して」と頼むと、編集候補を提案してくれます。確認後に保存されます。' },
   { title: 'sikunlily は厳しく検証する', desc: '内容の間違いや矛盾があると遠慮なく指摘します。「この情報は正しい？」「根拠は？」という使い方に最適です。' },
-  { title: 'ネット検索を ON にする', desc: '「ネット検索 ON」にすると最新情報も調べて答えます。時事ニュース・最新技術の調査に有効。' },
-  { title: 'sikunlily の Deep Research', desc: '「Deep Research ON」にすると数分かけてウェブ全体をリサーチし、詳細なレポートを作成します。' },
+  { title: 'ネット検索を ON にする', desc: '「ネット検索 ON」にすると最新情報も調べて答えます。時事ニュース・最新技術の調査に有効（料金が少し加算されます）。' },
+  { title: 'sikunlily の Deep Research', desc: '「Deep Research ON」にすると数分かけてウェブ全体をリサーチし、詳細なレポートを作成します（料金が高め）。' },
 ];
 
-function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: 'lily' | 'sikunlily' | 'tips' }) {
-  const [tab, setTab] = useState<'lily' | 'sikunlily' | 'tips'>(initialTab);
+// Rough per-message API cost estimates (JPY, ~¥155/USD). All models are
+// Google Gemini 2.5 flash / flash-lite. Output tokens and "thinking" are the
+// main cost; input (PDF pages, images, memo context) is comparatively cheap.
+const PRICE_ROWS = [
+  { label: 'Lily（通常の質問）', cost: '約 ¥0.3〜1', note: '要約・翻訳・メール・相談などテキスト中心' },
+  { label: 'Lily＋問題作成', cost: '約 ¥1〜8', note: '問題数が多いほど高い（書く量＝出力が増える）' },
+  { label: 'Lily＋PDF・画像', cost: '約 ¥1〜3', note: 'ページ数ぶん読む量が増える（入力は安め）' },
+  { label: 'sikunlily（思考あり）', cost: '約 ¥3〜6', note: '思考トークンが主なコスト' },
+  { label: 'ネット検索 ON', cost: '＋数円／回', note: '検索（グラウンディング）が別途加算' },
+  { label: 'Deep Research', cost: '約 ¥20〜100＋', note: '数分・複数検索の重い処理' },
+  { label: '🌱 節約モード', cost: '約 ¥0.1〜0.5', note: '思考オフ＋軽量モデルで最大約1/20' },
+];
+
+const PRICE_USERS = [
+  { label: 'ライトに使う人', desc: '1日数回、テキスト中心', cost: '月 約 ¥30〜150' },
+  { label: '標準的に使う人', desc: 'lily中心＋たまにPDF・問題作成・sikunlily', cost: '月 約 ¥150〜500' },
+  { label: 'ヘビーに使う人', desc: 'sikunlilyの思考・Deep Research・検索を多用', cost: '月 約 ¥1,000〜' },
+  { label: '節約モード中心', desc: '標準的な使い方でも節約モードON', cost: '月 約 ¥50〜150' },
+];
+
+function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: 'lily' | 'sikunlily' | 'tips' | 'cost' }) {
+  const [tab, setTab] = useState<'lily' | 'sikunlily' | 'tips' | 'cost'>(initialTab);
   return (
     <div className="help-overlay" onClick={onClose}>
       <div className="help-modal" onClick={e => e.stopPropagation()}>
@@ -572,9 +594,9 @@ function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: '
           <button className="help-close" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="help-tabs">
-          {(['lily', 'sikunlily', 'tips'] as const).map(t => (
+          {(['lily', 'sikunlily', 'tips', 'cost'] as const).map(t => (
             <button key={t} className={`help-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-              {t === 'lily' ? '🌸 Lily' : t === 'sikunlily' ? '⚔️ sikunlily' : '💡 使い方'}
+              {t === 'lily' ? '🌸 Lily' : t === 'sikunlily' ? '⚔️ sikunlily' : t === 'tips' ? '💡 使い方' : '💰 料金'}
             </button>
           ))}
         </div>
@@ -623,6 +645,44 @@ function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: '
               ))}
             </div>
           )}
+          {tab === 'cost' && (
+            <>
+              <p className="help-lead">
+                AI は Google Gemini（2.5 flash / flash-lite）を使っています。料金は「書く量（出力）」と「思考」が主で、PDF・画像・メモを読む量（入力）は比較的安いです。下の金額は1メッセージあたりの目安（円）です。
+              </p>
+              <div className="price-table">
+                {PRICE_ROWS.map(r => (
+                  <div key={r.label} className="price-row">
+                    <span className="price-label">{r.label}</span>
+                    <span className="price-cost">{r.cost}</span>
+                    <span className="price-note">{r.note}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="help-section-title">問題作成・PDFは料金が変わる？</p>
+              <div className="help-tips">
+                <div className="help-tip">
+                  <strong className="help-tip-title">❓ 問題作成</strong>
+                  <p className="help-tip-desc">問題の数だけ「書く量」が増えるので料金も増えます。5問なら数十銭〜1円程度、200問のような大量生成だと¥4〜8ほどになります。</p>
+                </div>
+                <div className="help-tip">
+                  <strong className="help-tip-title">📄 PDF・画像読み込み</strong>
+                  <p className="help-tip-desc">ページ数ぶん「読む量」が増えますが、入力は安いので影響は小さめ。10ページのPDFでも+¥1前後。むしろ回答（出力）の長さの方が料金に効きます。</p>
+                </div>
+              </div>
+              <p className="help-section-title">一般的なユーザー1人あたりの目安</p>
+              <div className="price-table">
+                {PRICE_USERS.map(u => (
+                  <div key={u.label} className="price-row">
+                    <span className="price-label">{u.label}</span>
+                    <span className="price-cost">{u.cost}</span>
+                    <span className="price-note">{u.desc}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="help-note">※ 為替（約¥155/＄）やGoogleの価格改定で変動します。あくまで目安です。節約するなら「🌱 節約モード」をON、ネット検索・Deep Researchは必要な時だけONがおすすめ。</p>
+            </>
+          )}
         </div>
         <style jsx>{`
           .help-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px; }
@@ -649,6 +709,12 @@ function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: '
           .help-tip { padding:12px 14px; background:var(--accent); border:1px solid var(--border); border-radius:10px; }
           .help-tip-title { font-size:0.88rem; color:var(--foreground); display:block; margin-bottom:4px; font-weight:600; }
           .help-tip-desc { font-size:0.81rem; color:var(--foreground); opacity:0.7; margin:0; line-height:1.5; }
+          .price-table { display:flex; flex-direction:column; gap:6px; }
+          .price-row { display:grid; grid-template-columns:1fr auto; gap:2px 10px; padding:9px 12px; background:var(--accent); border:1px solid var(--border); border-radius:10px; }
+          .price-label { font-size:0.85rem; font-weight:700; color:var(--foreground); }
+          .price-cost { font-size:0.85rem; font-weight:800; color:#16a34a; text-align:right; white-space:nowrap; }
+          .price-note { grid-column:1 / -1; font-size:0.76rem; color:var(--foreground); opacity:0.62; line-height:1.4; }
+          .help-note { font-size:0.76rem; color:var(--foreground); opacity:0.6; line-height:1.5; margin:14px 0 0; }
         `}</style>
       </div>
     </div>
@@ -2186,25 +2252,33 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                 className="welcome-lily"
               />
             </div>
-            {activeModel === 'sikunlily' ? (
-              <>
-                <p className="welcome-text">sikunlily だ ⚔️🐕<br />lilyのペット「sikun」と「lily」が合わさった柴犬の武士だ。<br />コード構築・データ解析・調査検証・メモ整理が得意だ。</p>
-                <div className="suggestions">
-                  {SIKUNLILY_SUGGESTIONS.map(s => (
-                    <button key={s} className="suggestion-chip siku" onClick={() => fillInput(s)}>{s}</button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="welcome-text">こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</p>
-                <div className="suggestions">
-                  {SUGGESTIONS.map(s => (
-                    <button key={s} className="suggestion-chip" onClick={() => fillInput(s)}>{s}</button>
-                  ))}
-                </div>
-              </>
-            )}
+            <p className="welcome-text">
+              {activeModel === 'sikunlily' ? (
+                <>sikunlily だ ⚔️🐕<br />lilyのペット「sikun」と「lily」が合わさった柴犬の武士だ。<br />コード構築・データ解析・調査検証・メモ整理が得意だ。</>
+              ) : (
+                <>こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</>
+              )}
+            </p>
+
+            <button
+              className={`welcome-guide-btn${activeModel === 'sikunlily' ? ' siku' : ''}`}
+              onClick={() => { setHelpInitialTab(activeModel === 'sikunlily' ? 'sikunlily' : 'lily'); setShowHelp(true); }}
+            >
+              <span className="welcome-guide-main"><HelpCircle size={18} /> 使い方ガイドを見る</span>
+              <span className="welcome-guide-sub">できること・料金の目安をチェック</span>
+            </button>
+
+            <div className="suggestions">
+              {(activeModel === 'sikunlily' ? SIKUNLILY_SUGGESTIONS : SUGGESTIONS).map(s => (
+                <button
+                  key={s}
+                  className={`suggestion-chip${activeModel === 'sikunlily' ? ' siku' : ''}`}
+                  onClick={() => fillInput(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {messages.map(msg =>
@@ -2479,6 +2553,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .welcome-lily { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; image-rendering: -webkit-optimize-contrast; display: block; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .welcome-text { font-size: 0.9rem; color: var(--fg-muted); line-height: 1.6; margin: 0; }
+        .welcome-guide-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; margin: 6px 0 2px; padding: 13px 28px; border: none; border-radius: 18px; cursor: pointer; color: #fff; background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 55%, #ff9ec4)); box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 40%, transparent); transition: transform 0.15s, box-shadow 0.15s; animation: guidePulse 2.4s ease-in-out infinite; }
+        .welcome-guide-btn.siku { background: linear-gradient(135deg, #a05a2c, #d29156); box-shadow: 0 6px 18px rgba(139,69,19,0.35); }
+        .welcome-guide-btn:hover { transform: translateY(-2px); box-shadow: 0 9px 24px color-mix(in srgb, var(--primary) 50%, transparent); }
+        .welcome-guide-main { display: inline-flex; align-items: center; gap: 7px; font-weight: 800; font-size: 0.98rem; }
+        .welcome-guide-sub { font-size: 0.72rem; opacity: 0.92; }
+        @keyframes guidePulse { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }
         .suggestion-chip { background: color-mix(in srgb, var(--primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); color: var(--primary); border-radius: 20px; padding: 6px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .suggestion-chip:hover { background: var(--primary); color: white; }
