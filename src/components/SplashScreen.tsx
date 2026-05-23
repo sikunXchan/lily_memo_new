@@ -6,7 +6,7 @@ const SCENES = [
   '/splash-04.png', '/splash-05.png', '/splash-06.png',
   '/splash-07.png', '/splash-08.png', '/splash-09.png',
 ];
-const FADE_MS = 500;
+const FADE_MS = 1200;
 const SESSION_KEY = 'lily-splash-shown';
 const PAL = ['#ff8ec7', '#ffd66e', '#8ee6c6', '#c79bff', '#8ec9ff', '#fff7b0', '#ffb0cc', '#b0f4e6'];
 
@@ -222,7 +222,7 @@ export default function SplashScreen() {
           display: flex; align-items: center; justify-content: center;
           cursor: pointer;
           animation: fadeIn 0.45s ease both;
-          transition: opacity ${FADE_MS}ms ease;
+          transition: opacity ${FADE_MS}ms ease-in;
         }
         .splash.closing { opacity: 0; pointer-events: none; }
         .layer { position: absolute; inset: 0; pointer-events: none; }
