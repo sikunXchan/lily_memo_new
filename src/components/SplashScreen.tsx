@@ -222,9 +222,8 @@ export default function SplashScreen() {
           display: flex; align-items: center; justify-content: center;
           cursor: pointer;
           animation: fadeIn 0.45s ease both;
-          transition: opacity ${FADE_MS}ms ease-in;
         }
-        .splash.closing { opacity: 0; pointer-events: none; }
+        .splash.closing { animation: fadeOut ${FADE_MS}ms ease-in forwards; pointer-events: none; }
         .layer { position: absolute; inset: 0; pointer-events: none; }
 
         /* ── Aurora ── */
@@ -387,7 +386,8 @@ export default function SplashScreen() {
           100% { color: #ff8ec7; text-shadow: 0 0 18px #ff8ec7; }
         }
 
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
 
         @media (prefers-reduced-motion: reduce) {
           .aurora, .sunrays, .star, .spark, .comet, .glow, .glow-ring,
