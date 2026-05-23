@@ -23,10 +23,10 @@ import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
 
 import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension } from '@/lib/extensions';
-import Table from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableHeader from '@tiptap/extension-table-header';
-import TableCell from '@tiptap/extension-table-cell';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TableCell } from '@tiptap/extension-table-cell';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
 import { runQuickAction, QUICK_ACTIONS, type QuickActionId } from '@/lib/quickAI';
