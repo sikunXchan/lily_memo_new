@@ -58,8 +58,53 @@ const isHashedStatic = (url) =>
   url.pathname.startsWith('/_next/image') ||
   /\.(?:woff2?|ttf|otf|eot)$/i.test(url.pathname);
 
+// Cache name for passing share-target file payloads from SW to page.
+const SHARE_TEMP_CACHE = 'share-target-temp';
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+
+  // ── Web Share Target Level 2 ──────────────────────────────────────────────
+  // The browser POSTs shared content here.  We extract everything, stash any
+  // binary file in a temporary cache, then 303-redirect to a GET so the page
+  // can pick it up from the Cache API.
+  if (req.method === 'POST' && new URL(req.url).pathname === '/share-target') {
+    event.respondWith((async () => {
+      try {
+        const formData = await req.formData();
+        const title    = String(formData.get('title') ?? '');
+        const text     = String(formData.get('text')  ?? '');
+        const url      = String(formData.get('url')   ?? '');
+        const file     = formData.get('file');
+
+        const params = new URLSearchParams();
+        if (title) params.set('title', title);
+        if (text)  params.set('text',  text);
+        if (url)   params.set('url',   url);
+
+        if (file instanceof File && file.size > 0) {
+          // Stash the blob so the page can retrieve it via Cache API.
+          const cache = await caches.open(SHARE_TEMP_CACHE);
+          await cache.put(
+            '/share-target-pending-file',
+            new Response(file, {
+              headers: {
+                'Content-Type': file.type || 'application/octet-stream',
+                'X-File-Name':  encodeURIComponent(file.name),
+              },
+            })
+          );
+          params.set('hasFile', '1');
+        }
+
+        return Response.redirect('/share-target?' + params.toString(), 303);
+      } catch {
+        return Response.redirect('/share-target', 303);
+      }
+    })());
+    return;
+  }
+
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
