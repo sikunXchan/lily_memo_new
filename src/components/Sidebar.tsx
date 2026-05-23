@@ -2,7 +2,7 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -233,16 +233,7 @@ export default function Sidebar({
         </div>
 
         <div className="sidebar-content" style={{ minHeight: 0, overflowY: 'auto' }}>
-          {viewMode === 'graph' ? (
-            <div className="graph-wrapper">
-              <DirectoryGraph
-                folders={folders ?? []}
-                notes={notes ?? []}
-                activeNoteId={activeNoteId}
-                onSelectNote={(id) => { onSelectNote(id); if (window.innerWidth <= 768) onToggleMobile(); }}
-              />
-            </div>
-          ) : (
+          {viewMode === 'graph' ? null : (
           <div className="folder-list">
             {folders?.map(folder => (
               <div key={folder.id} className="folder-item-wrapper">
@@ -553,12 +544,6 @@ export default function Sidebar({
             opacity: 1;
             box-shadow: 0 1px 6px rgba(0,0,0,0.1);
           }
-          .graph-wrapper {
-            width: 100%;
-            height: 100%;
-            min-height: 280px;
-            display: flex;
-          }
           .sidebar-content {
             overflow-y: auto;
             min-height: 0;
@@ -841,6 +826,55 @@ export default function Sidebar({
           }
         `}</style>
       </aside>
+
+      {viewMode === 'graph' && (
+        <div className="graph-fullscreen">
+          <button
+            className="graph-close-btn"
+            onClick={() => changeViewMode('tree')}
+            title="閉じる"
+            aria-label="グラフを閉じる"
+          >
+            <X size={20} />
+          </button>
+          <DirectoryGraph
+            folders={folders ?? []}
+            notes={notes ?? []}
+            activeNoteId={activeNoteId}
+            onSelectNote={(id) => { onSelectNote(id); changeViewMode('tree'); if (window.innerWidth <= 768) onToggleMobile(); }}
+          />
+          <style jsx>{`
+            .graph-fullscreen {
+              position: fixed;
+              inset: 0;
+              z-index: 9999;
+              background: var(--background);
+              display: flex;
+              flex-direction: column;
+            }
+            .graph-close-btn {
+              position: absolute;
+              top: 16px;
+              right: 16px;
+              z-index: 10000;
+              background: var(--accent);
+              color: var(--foreground);
+              border-radius: 50%;
+              width: 40px;
+              height: 40px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              box-shadow: var(--shadow);
+              transition: background 0.2s, transform 0.15s;
+            }
+            .graph-close-btn:hover {
+              background: var(--border);
+              transform: scale(1.08);
+            }
+          `}</style>
+        </div>
+      )}
     </>
   );
 }
