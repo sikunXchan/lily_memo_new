@@ -24,7 +24,6 @@ import {
   callGeminiChat, callDeepResearch, uploadToFileApi,
   streamSikunlilyChat, SIKU_THINKING_BUDGETS,
   LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
-  runMultiAgentPipeline,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -1472,7 +1471,7 @@ const BOXING_FRAMES = [
   '/sikun-box-13.png', '/sikun-box-14.png', '/sikun-box-15.png', '/sikun-box-16.png',
   '/sikun-box-17.png', '/sikun-box-18.png',
 ];
-const BOXING_FRAME_MS = 130;
+const BOXING_FRAME_MS = 165;
 
 function TypingIndicator() {
   return (
@@ -1660,7 +1659,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [showHelp, setShowHelp] = useState(false);
   const [helpInitialTab, setHelpInitialTab] = useState<'lily' | 'sikunlily' | 'tips'>('lily');
   const [deepResearch, setDeepResearch] = useState(false);
-  const [multiAgent, setMultiAgent] = useState(false);
+  const [economy, setEconomy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1678,6 +1677,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
   useEffect(() => {
     setApiKey(localStorage.getItem('lily_gemini_api_key') || '');
+    setEconomy(localStorage.getItem('lily_economy_mode') === '1');
+  }, []);
+
+  const toggleEconomy = useCallback(() => {
+    setEconomy(prev => {
+      const next = !prev;
+      try { localStorage.setItem('lily_economy_mode', next ? '1' : '0'); } catch {}
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -1887,7 +1895,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       });
 
       let aiText: string;
-      if (deepResearch) {
+      if (deepResearch && !economy) {
         aiText = await callDeepResearch(
           history[history.length - 1]?.text ?? input,
           apiKey,
@@ -1900,60 +1908,50 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         setSikunLiveThinking('');
         let thinkingAccum = '';
 
-        if (multiAgent) {
-          // ── マルチエージェントパイプライン ──
-          aiText = await runMultiAgentPipeline(
-            history[history.length - 1]?.text ?? input,
-            sikunSystemPrompt,
-            apiKey,
-            {
-              onProgress: (msg) => setSikunProgress(msg ?? ''),
-              onThinkingDelta: (delta) => {
-                thinkingAccum += delta;
-                setSikunLiveThinking(thinkingAccum);
-              },
-              onResponseDelta: () => {
-                setSikunProgress('✍️ 回答を生成中...');
-              },
+        // 節約モード: 思考をオフ・flash-lite優先・出力上限を抑えてコスト削減
+        const budget = economy
+          ? 0
+          : (activeMode ? (SIKU_THINKING_BUDGETS[activeMode] ?? 8192) : 8192);
+        const sikunModels = economy
+          ? ['gemini-2.5-flash-lite', 'gemini-2.5-flash']
+          : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+        const modeLabels: Record<string, string> = {
+          code: 'コードを設計中',
+          arch: 'アーキテクチャを設計中',
+          analysis: 'データを解析中',
+          research: '調査・検証中',
+          study: '学習支援中',
+          organize: 'メモを分析中',
+        };
+        setSikunProgress(budget !== 0 ? '🧠 深く思考中...' : (modeLabels[activeMode ?? ''] ?? '考え中') + '...');
+        aiText = await streamSikunlilyChat(
+          history,
+          sikunSystemPrompt,
+          apiKey,
+          budget,
+          {
+            onThinkingDelta: (delta) => {
+              thinkingAccum += delta;
+              setSikunLiveThinking(thinkingAccum);
+              if (budget !== 0) setSikunProgress('🧠 思考中...');
             },
-          );
-        } else {
-          // ── 通常の sikunlily ──
-          const budget = activeMode
-            ? (SIKU_THINKING_BUDGETS[activeMode] ?? 8192)
-            : 8192;
-          const modeLabels: Record<string, string> = {
-            code: 'コードを設計中',
-            arch: 'アーキテクチャを設計中',
-            analysis: 'データを解析中',
-            research: '調査・検証中',
-            study: '学習支援中',
-            organize: 'メモを分析中',
-          };
-          setSikunProgress(budget !== 0 ? '🧠 深く思考中...' : (modeLabels[activeMode ?? ''] ?? '考え中') + '...');
-          aiText = await streamSikunlilyChat(
-            history,
-            sikunSystemPrompt,
-            apiKey,
-            budget,
-            {
-              onThinkingDelta: (delta) => {
-                thinkingAccum += delta;
-                setSikunLiveThinking(thinkingAccum);
-                if (budget !== 0) setSikunProgress('🧠 思考中...');
-              },
-              onResponseDelta: () => {
-                setSikunProgress('✍️ 回答を生成中...');
-              },
+            onResponseDelta: () => {
+              setSikunProgress('✍️ 回答を生成中...');
             },
-            ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-          );
-        }
+          },
+          sikunModels,
+          false,
+          economy ? 8192 : 65536,
+        );
         setSikunProgress('');
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else {
-        aiText = await callGeminiChat(history, systemPrompt, apiKey, { webSearch });
+        aiText = await callGeminiChat(history, systemPrompt, apiKey, {
+          webSearch,
+          models: economy ? ['gemini-2.5-flash-lite'] : undefined,
+          maxOutputTokens: economy ? 8192 : undefined,
+        });
       }
       const { textContent, blocks, questions } = parseAIResponse(aiText, true);
       const capturedThinking = pendingThinkingRef.current;
@@ -1985,7 +1983,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch, multiAgent]);
+  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch, economy]);
 
   const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
 
@@ -2055,6 +2053,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             {activeModel === 'lily' ? 'Lily' : 'sikunlily'}
           </button>
           <button
+            className={`web-toggle eco-toggle ${economy ? 'on' : ''}`}
+            onClick={toggleEconomy}
+            title="節約モード: 思考を抑えて軽量モデル(flash-lite)で答え、APIコストを大幅に削減する"
+          >
+            <span style={{ fontSize: '11px' }}>🌱</span>
+            <span className="web-label">節約モード</span>
+            <span className="web-state">{economy ? 'ON' : 'OFF'}</span>
+          </button>
+          <button
             className={`web-toggle ${webSearch ? 'on' : ''}`}
             onClick={() => setWebSearch(p => !p)}
             title="ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ"
@@ -2063,7 +2070,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <span className="web-label">ネット検索</span>
             <span className="web-state">{webSearch ? 'ON' : 'OFF'}</span>
           </button>
-          {activeModel === 'sikunlily' && (
+          {activeModel === 'sikunlily' && !economy && (
             <button
               className={`web-toggle deep-research-toggle ${deepResearch ? 'on' : ''}`}
               onClick={() => setDeepResearch(p => !p)}
@@ -2072,17 +2079,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               <Sparkles size={13} />
               <span className="web-label">Deep Research</span>
               <span className="web-state">{deepResearch ? 'ON' : 'OFF'}</span>
-            </button>
-          )}
-          {activeModel === 'sikunlily' && (
-            <button
-              className={`web-toggle multi-agent-toggle ${multiAgent ? 'on' : ''}`}
-              onClick={() => setMultiAgent(p => !p)}
-              title="マルチエージェント: 計画→実行→統合の3エージェントが協調して複雑タスクを処理する"
-            >
-              <span style={{ fontSize: '11px' }}>🤖</span>
-              <span className="web-label">Multi-Agent</span>
-              <span className="web-state">{multiAgent ? 'ON' : 'OFF'}</span>
             </button>
           )}
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
@@ -2502,9 +2498,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .attach-btn:disabled { opacity: 0.4; cursor: default; }
         .send-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--primary); color: white; border: none; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s; }
         .send-btn:disabled { opacity: 0.4; cursor: default; }
-        .web-toggle.multi-agent-toggle { background: var(--accent); }
-        .web-toggle.multi-agent-toggle.on { background: color-mix(in srgb, #7c3aed 15%, transparent); border-color: #7c3aed; color: #7c3aed; }
-        .web-toggle.multi-agent-toggle.on .web-state { color: #7c3aed; }
+        .web-toggle.eco-toggle.on { background: color-mix(in srgb, #16a34a 15%, transparent); border-color: #16a34a; color: #16a34a; }
+        .web-toggle.eco-toggle.on .web-state { background: #16a34a; color: white; }
         .att-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--accent); flex-shrink: 0; overflow-x: auto; }
         .att-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 5px 8px 5px 10px; flex-shrink: 0; }
         .att-chip-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; }
