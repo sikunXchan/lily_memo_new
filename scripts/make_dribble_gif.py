@@ -3,10 +3,11 @@
 import sys
 from PIL import Image, ImageOps
 import numpy as np
+from scipy import ndimage
 
 SRC = "public/B3A5D0EE-997F-4EB1-ACF2-68199B94327A.png"
 OUT_GIF = "public/sikun-dribble.gif"
-DURATION = 80  # ms per frame
+DURATION = 130  # ms per frame
 
 im = Image.open(SRC).convert("RGB")
 a = np.asarray(im).astype(int)
@@ -61,14 +62,35 @@ for ys, ye in rowbands:
 
 print(f"frames: {len(crops)}")
 
-# 2. White -> transparent, tight content bbox, record bear center & feet baseline.
+# 2. Remove the white background by flood-filling from the borders so that
+#    light areas *inside* the bear (cream muzzle, paw pads) stay opaque.
 rgba_frames = []
 metas = []
 for cell, bearcx in crops:
     ca = np.asarray(cell).astype(int)
-    minc = ca.min(axis=2)
-    alpha = (255 - minc).clip(0, 255)
-    alpha[alpha < 30] = 0  # drop faint white halo
+    mx = ca.max(axis=2)
+    mn = ca.min(axis=2)
+    sat = mx - mn
+    # background-like = nearly neutral (white page + soft/contact gray shadow).
+    # The bear/ball/clothes are all saturated, so neutral grays are safe to drop.
+    bglike = (mx > 120) & (sat < 24)
+    # keep only background-like regions connected to the image border
+    lbl, n = ndimage.label(bglike)
+    border = set(lbl[0, :]) | set(lbl[-1, :]) | set(lbl[:, 0]) | set(lbl[:, -1])
+    border.discard(0)
+    bg = np.isin(lbl, list(border))
+    # eat the near-white anti-alias fringe so no light halo remains on the edge
+    fringe = (mx > 225) & (sat < 32)
+    for _ in range(2):
+        bg |= ndimage.binary_dilation(bg) & fringe
+    fg = ~bg
+    # drop tiny stray opaque specks (leftover shadow bits), keep bear + ball
+    flbl, fn = ndimage.label(fg)
+    if fn:
+        sizes = ndimage.sum(np.ones_like(flbl), flbl, range(1, fn + 1))
+        keep = {i + 1 for i, s in enumerate(sizes) if s >= 60}
+        fg = np.isin(flbl, list(keep))
+    alpha = np.where(fg, 255, 0).astype(np.uint8)
     rgba = np.dstack([ca, alpha]).astype(np.uint8)
     img = Image.fromarray(rgba, "RGBA")
     ys_, xs_ = np.where(alpha > 0)
