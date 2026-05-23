@@ -72,7 +72,7 @@ interface ChatMessage {
 
 interface InsertableBlock {
   id: string;
-  type: 'mermaid' | 'chart' | 'qa' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'folder_create' | 'note_move';
+  type: 'mermaid' | 'chart' | 'qa' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'folder_create' | 'note_move' | 'table';
   rawCode: string;
   previewLabel: string;
   fileName?: string;
@@ -239,7 +239,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     }
   });
 
-  const FENCE_RE = /```(mermaid|chart|qa|geometry|memo_create|memo_overwrite|folder_create|note_move)([\s\S]*?)```/g;
+  const FENCE_RE = /```(mermaid|chart|qa|geometry|memo_create|memo_overwrite|folder_create|note_move|table)([\s\S]*?)```/g;
   const textContent = work2.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
@@ -297,6 +297,10 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const targetFolderName = folderMatch?.[1]?.trim() || '未分類';
       blocks.push({ id, type: 'note_move', rawCode: trimmed, previewLabel: `移動: ID ${memoId ?? '?'} → 📁 ${targetFolderName}`, memoId, targetFolderName });
       return `\n📁 [メモを「${targetFolderName}」に移動する準備ができたよ]\n`;
+    }
+    if (type === 'table') {
+      blocks.push({ id, type: 'table', rawCode: trimmed, previewLabel: '表' });
+      return '\n✨ [表を作ったよ]\n';
     }
     return '';
   }).trim();
@@ -370,6 +374,20 @@ function autoColorChart(parsed: Record<string, unknown>): Record<string, unknown
   return { ...parsed, data: { ...data, datasets } };
 }
 
+function markdownTableToHtml(markdown: string): string {
+  const lines = markdown.split('\n').map(l => l.trim()).filter(l => l.startsWith('|'));
+  if (lines.length < 2) return `<p>${markdown}</p>`;
+  const parseRow = (line: string) => line.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+  const headers = parseRow(lines[0]);
+  const dataRows = lines.slice(2); // skip separator line
+  const headerHtml = headers.map(h => `<th>${h}</th>`).join('');
+  const bodyHtml = dataRows.map(row => {
+    const cells = parseRow(row);
+    return `<tr>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`;
+  }).join('');
+  return `<table><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`;
+}
+
 function blockToHtml(block: InsertableBlock): string {
   if (block.type === 'mermaid') {
     return `<div content="${escHtmlAttr(block.rawCode)}" width="100%" data-type="mermaid"></div>`;
@@ -392,6 +410,9 @@ function blockToHtml(block: InsertableBlock): string {
   }
   if (block.type === 'memo_create') {
     return `<p>${block.rawCode.split('\n').map(escHtmlAttr).join('</p><p>')}</p>`;
+  }
+  if (block.type === 'table') {
+    return markdownTableToHtml(block.rawCode);
   }
   return '';
 }
