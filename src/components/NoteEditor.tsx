@@ -17,12 +17,16 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck, Link2, Sparkles
+  Search, ChevronUp, ChevronDown, SquareCheck, Link2, Sparkles, Table2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
 
 import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension } from '@/lib/extensions';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
 import { runQuickAction, QUICK_ACTIONS, type QuickActionId } from '@/lib/quickAI';
@@ -179,6 +183,10 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
       ChartExtension,
       QAExtension,
       GeometryExtension,
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       TaskList,
       CustomTaskItem.configure({ nested: true }),
       ResizableImageExtension,
@@ -708,7 +716,10 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     });
   };
 
-
+  const insertTable = () => {
+    if (!editor) return;
+    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+  };
 
 
 
@@ -750,6 +761,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                 <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
                 <button className="btn-tool" onClick={insertQA} title="Q&A"><BookOpen size={18} /></button>
                 <button className="btn-tool" onClick={insertGeometry} title="幾何の図"><Compass size={18} /></button>
+                <button className="btn-tool" onClick={insertTable} title="表を挿入"><Table2 size={18} /></button>
                 <div className="ai-menu-wrap">
                   <button
                     className={`btn-tool${showAIMenu ? ' active' : ''}`}
@@ -875,6 +887,17 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
             <button className="btn-tool" onClick={closeSearch} title="閉じる">
               <X size={16} />
             </button>
+          </div>
+        )}
+        {isEditMode && editor && editor.isActive('table') && (
+          <div className="table-context-menu">
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnBefore().run()} title="列を左に追加">列+左</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnAfter().run()} title="列を右に追加">列+右</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowBefore().run()} title="行を上に追加">行+上</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowAfter().run()} title="行を下に追加">行+下</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteRow().run()} title="行を削除">行削除</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteColumn().run()} title="列を削除">列削除</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteTable().run()} title="表を削除">表削除</button>
           </div>
         )}
       </header>
