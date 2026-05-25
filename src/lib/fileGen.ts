@@ -96,8 +96,13 @@ export function downloadSvg(svg: string, filename: string): void {
 
 // Rasterize an SVG string to a PNG and download it.
 export function downloadSvgAsPng(svg: string, filename: string, scale = 2): void {
-  const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(svgBlob);
+  // Use a base64 data URL instead of a blob URL: blob URLs for SVG fail to
+  // fire img.onload on iOS Safari and some other browsers.
+  const utf8Bytes = new TextEncoder().encode(svg);
+  let binary = '';
+  for (const byte of utf8Bytes) binary += String.fromCharCode(byte);
+  const dataUrl = `data:image/svg+xml;base64,${btoa(binary)}`;
+
   const img = new Image();
   img.onload = () => {
     const w = img.naturalWidth || img.width || 800;
@@ -106,11 +111,10 @@ export function downloadSvgAsPng(svg: string, filename: string, scale = 2): void
     canvas.width = w * scale;
     canvas.height = h * scale;
     const ctx = canvas.getContext('2d');
-    if (!ctx) { URL.revokeObjectURL(url); return; }
+    if (!ctx) return;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    URL.revokeObjectURL(url);
     canvas.toBlob(blob => {
       if (blob) {
         triggerDownload(blob, sanitizeFilename(filename));
@@ -118,16 +122,15 @@ export function downloadSvgAsPng(svg: string, filename: string, scale = 2): void
       }
       // iOS Safari sometimes returns null from toBlob — fall back to dataURL
       try {
-        const dataUrl = canvas.toDataURL('image/png');
-        const bin = atob(dataUrl.split(',')[1]);
+        const pngDataUrl = canvas.toDataURL('image/png');
+        const bin = atob(pngDataUrl.split(',')[1]);
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         triggerDownload(new Blob([bytes], { type: 'image/png' }), sanitizeFilename(filename));
       } catch { /* give up */ }
     }, 'image/png');
   };
-  img.onerror = () => URL.revokeObjectURL(url);
-  img.src = url;
+  img.src = dataUrl;
 }
 
 export function downloadCanvasAsPng(canvas: HTMLCanvasElement, filename: string): void {
