@@ -19,6 +19,7 @@ import {
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { Upload, Edit3, Save, Download, Play, FileSpreadsheet } from 'lucide-react';
+import { triggerDownload } from '@/lib/fileGen';
 
 ChartJS.register(
   CategoryScale,
@@ -163,11 +164,11 @@ return {
   // PNGとしてエクスポート
   const exportAsPng = () => {
     if (!chartRef.current) return;
-    const url = (chartRef.current.canvas as HTMLCanvasElement).toDataURL('image/png');
-    const a = document.createElement('a');
-    a.download = `${fileName || 'chart'}.png`;
-    a.href = url;
-    a.click();
+    const canvas = chartRef.current.canvas as HTMLCanvasElement;
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      triggerDownload(blob, `${fileName || 'chart'}.png`);
+    }, 'image/png');
   };
 
   return (
