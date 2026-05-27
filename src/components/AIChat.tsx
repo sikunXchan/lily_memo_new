@@ -1386,8 +1386,23 @@ function LilyBubble({
         .rt-body :global(td) { border: 1px solid var(--border); padding: 4px 10px; }
         .rt-body :global(tbody tr:nth-child(even)) { background: rgba(0,0,0,0.03); }
         .rt-body :global(.rt-code) { background: rgba(0,0,0,0.07); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 0.83em; font-family: 'Fira Code','Consolas',monospace; color: var(--primary); }
-        .rt-body :global(.rt-pre) { background: #1a1a2e; border: none; border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 0.6em 0; }
-        .rt-body :global(.rt-pre code) { font-size: 0.8rem; font-family: 'Fira Code','Consolas',monospace; white-space: pre; color: #e2e8f0; }
+        .rt-body :global(.rt-pre) { position: relative; background: #1a1a2e; border: none; border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 0.6em 0; }
+        .rt-body :global(.rt-pre[data-lang]::before) { content: attr(data-lang); position: absolute; top: 7px; right: 12px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #4b5563; pointer-events: none; }
+        .rt-body :global(.rt-pre code) { display: block; font-size: 0.8rem; font-family: 'Fira Code','Cascadia Code','Consolas',monospace; white-space: pre; color: #e2e8f0; line-height: 1.6; }
+        .rt-body :global(.hljs-keyword) { color: #c792ea; }
+        .rt-body :global(.hljs-string) { color: #c3e88d; }
+        .rt-body :global(.hljs-comment) { color: #546e7a; font-style: italic; }
+        .rt-body :global(.hljs-number) { color: #f78c6c; }
+        .rt-body :global(.hljs-function,.hljs-title.function_) { color: #82aaff; }
+        .rt-body :global(.hljs-built_in,.hljs-class,.hljs-title.class_) { color: #ffcb6b; }
+        .rt-body :global(.hljs-variable,.hljs-attr) { color: #f07178; }
+        .rt-body :global(.hljs-type) { color: #c792ea; }
+        .rt-body :global(.hljs-operator,.hljs-punctuation) { color: #89ddff; }
+        .rt-body :global(.hljs-literal,.hljs-symbol) { color: #89ddff; }
+        .rt-body :global(.hljs-meta) { color: #80cbc4; }
+        .rt-body :global(.hljs-tag) { color: #f07178; }
+        .rt-body :global(.hljs-name) { color: #82aaff; }
+        .rt-body :global(.hljs-property) { color: #80cbc4; }
         .rt-body :global(.katex) { font-size: 1.05em; }
         .rt-body :global(.katex-display) { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; background: rgba(var(--primary-rgb,236,72,153),0.04); border-radius: 6px; padding: 6px 10px; }
         .block-list { margin-top: 4px; }
