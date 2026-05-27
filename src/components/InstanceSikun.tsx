@@ -459,6 +459,59 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     }
   }, [activeNoteId]);
 
+  // Generate a study question from the full note content using AI
+  const doFullTextQuiz = useCallback(async () => {
+    setRadialOpen(false);
+    if (activeNoteId === undefined) {
+      setLastReply('メモを開いてからにしてね。');
+      setBubbleVisible(true);
+      return;
+    }
+    const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
+    if (!apiKey) {
+      setLastReply('設定で Gemini API キーを保存してくれ');
+      setBubbleVisible(true);
+      return;
+    }
+    setLoading(true);
+    setBubbleVisible(false);
+    setLastReply('');
+    setQuizMode(false);
+    setPendingAnswer('');
+    try {
+      const note = await db.notes.get(activeNoteId);
+      if (!note) throw new Error('メモが見つからない');
+      const plain = noteHtmlToText(note.content || '');
+      const noteCtx = `\n\n# 現在ユーザーが開いているメモ\nタイトル: ${note.title || '無題'}\n本文全文: ${plain}`;
+      const systemPrompt = INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt()) + noteCtx;
+      const turns: ChatTurn[] = [{
+        role: 'user',
+        text: 'このメモ全体の内容から1問だけ出して。「Q: 問題\nA: 答え」の形式で出力してね。',
+      }];
+      const reply = await streamSikunlilyChat(
+        turns, systemPrompt, apiKey, 0, {},
+        ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+        false,
+      );
+      const qm = reply.match(/Q[：:]\s*(.+)/);
+      const am = reply.match(/A[：:]\s*(.+)/);
+      if (qm && am) {
+        setLastReply(`Q: ${qm[1].trim()}`);
+        setPendingAnswer(am[1].trim());
+        setQuizMode(true);
+      } else {
+        setLastReply(reply.trim() || '問題を作れなかったよ。');
+      }
+      setBubbleVisible(true);
+      setMode('closed');
+    } catch (err) {
+      setLastReply(`エラー: ${err instanceof Error ? err.message : '失敗'}`);
+      setBubbleVisible(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeNoteId]);
+
   // Show last 5 memo titles
   const showRecentMemos = useCallback(async () => {
     setRadialOpen(false);
@@ -524,7 +577,9 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       return;
     }
 
-    return doSend(text);
+    const wantsFullNote = activeNoteId !== undefined &&
+      /全文|全体|全部|全て|解析|分析/.test(text);
+    return doSend(text, wantsFullNote ? { fullNote: true } : undefined);
   };
 
   const doSend = async (text: string, opts?: DoSendOpts) => {
@@ -675,6 +730,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     radialItems.push({ key: 'sum', emoji: '📝', label: '要約', run: () => { setRadialOpen(false); void sendQuickAction('このメモの内容を、要点を漏らさず分かりやすく要約して。', { fullNote: true, heavy: true }); } });
     radialItems.push({ key: 'todo', emoji: '✅', label: 'ToDo', run: () => { setRadialOpen(false); void sendQuickAction('このメモから「やること(ToDo)」を箇条書きで抜き出して。無ければ「ToDoは無さそう」と答えて。', { fullNote: true }); } });
     radialItems.push({ key: 'qa', emoji: '🎲', label: 'ランダム問題', run: () => void randomQA() });
+    radialItems.push({ key: 'fullq', emoji: '🔍', label: '全文問題', run: () => void doFullTextQuiz() });
   }
   radialItems.push({ key: 'rec',  emoji: '📋', label: '最近のメモ',  run: () => void showRecentMemos() });
   if (pomodoroMs !== null) {

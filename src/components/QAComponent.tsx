@@ -486,7 +486,6 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
                 <option key={v} value={v}>{l}</option>
               ))}
             </select>
-            {ph.hint && <div className="qa-hint">{ph.hint}</div>}
             <label className="qa-label">問題をペースト</label>
             <textarea
               className="qa-textarea"
@@ -563,14 +562,6 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
             cursor: pointer;
           }
           .qa-select:focus { border-color: var(--primary); }
-          .qa-hint {
-            font-size: 0.78rem;
-            color: var(--primary);
-            background: color-mix(in srgb, var(--primary) 10%, transparent);
-            border-radius: 6px;
-            padding: 6px 10px;
-            line-height: 1.5;
-          }
           .qa-textarea {
             width: 100%;
             min-height: 100px;
