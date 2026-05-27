@@ -230,8 +230,7 @@ function QACard({
       const answers = blanks > 1 ? splitItems(pair.a) : [pair.a.trim()];
       const check = () => setSubmitted(true);
       const ok = (i: number) =>
-        !!fills[i] && (norm(fills[i]) === norm(answers[i] || '') ||
-          norm(answers[i] || '').includes(norm(fills[i])) && norm(fills[i]).length >= 2);
+        !!fills[i] && norm(fills[i]) === norm(answers[i] || '');
       return (
         <div className={`qa-card ${pair.checked ? 'qa-card-checked' : ''}`}>
           <div className="qa-question">
@@ -439,9 +438,20 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
   const kind: string = attrs.kind || 'qa';
   const kindLabel = KIND_LABEL[kind] || 'Q&A';
   const [isEditing, setIsEditing] = useState(pairs.length === 0);
+  const [editKind, setEditKind] = useState(kind);
   const [qText, setQText] = useState('');
   const [aText, setAText] = useState('');
   const [revealAll, setRevealAll] = useState(false);
+
+  const KIND_PLACEHOLDER: Record<string, { q: string; a: string; hint?: string }> = {
+    qa:        { q: '1. 日本の首都は？\n2. 光合成に必要なものは？', a: '1. 東京\n2. 光・水・二酸化炭素' },
+    fill:      { q: '1. 日本の首都は＿＿だ。\n2. 光合成で___が作られる。', a: '1. 東京\n2. 酸素' },
+    choice:    { q: '1. 日本の首都は？ A. 大阪 B. 東京 C. 名古屋\n2. 光合成で作られるものは？ A. 二酸化炭素 B. 窒素 C. 酸素', a: '1. B\n2. C',
+                 hint: '問題文に選択肢を含めてください（例: A. 東京 B. 大阪 C. 名古屋）' },
+    truefalse: { q: '1. 富士山は日本最高峰である。\n2. 東京は大阪より南にある。', a: '1. ○\n2. ×' },
+    order:     { q: '1. 春 → 夏 → 秋 → 冬', a: '1. 春→夏→秋→冬', hint: '問題文に「→」で区切って順番を書き、答えに正しい順を指定してください' },
+    flash:     { q: '1. 首都\n2. 光合成', a: '1. 東京\n2. 光でデンプンを作る反応' },
+  };
 
   const handleInsert = () => {
     const questions = parseNumberedText(qText);
@@ -451,7 +461,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
       a: answers[i] ?? '',
     }));
     if (newPairs.length === 0) return;
-    updateAttributes({ pairs: newPairs });
+    updateAttributes({ pairs: newPairs, kind: editKind });
     setIsEditing(false);
     setRevealAll(false);
   };
@@ -460,11 +470,23 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
   const checkedCount = pairs.filter(p => p.checked).length;
 
   if (isEditing) {
+    const ph = KIND_PLACEHOLDER[editKind] ?? KIND_PLACEHOLDER.qa;
     return (
       <NodeViewWrapper className="qa-wrapper">
         <div className="qa-editor" contentEditable={false}>
-          <div className="qa-editor-header">{kindLabel} 読み込み</div>
+          <div className="qa-editor-header">{KIND_LABEL[editKind] ?? editKind} 読み込み</div>
           <div className="qa-editor-body">
+            <label className="qa-label">問題形式</label>
+            <select
+              className="qa-select"
+              value={editKind}
+              onChange={e => setEditKind(e.target.value)}
+            >
+              {Object.entries(KIND_LABEL).map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </select>
+            {ph.hint && <div className="qa-hint">{ph.hint}</div>}
             <label className="qa-label">問題をペースト</label>
             <textarea
               className="qa-textarea"
@@ -472,7 +494,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
               onChange={e => setQText(e.target.value)}
               onKeyDown={e => e.stopPropagation()}
               onWheel={e => e.stopPropagation()}
-              placeholder={'1.LSIとして挙げられるものは？2.次の問題...'}
+              placeholder={ph.q}
             />
             <label className="qa-label">答えをペースト</label>
             <textarea
@@ -481,7 +503,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
               onChange={e => setAText(e.target.value)}
               onKeyDown={e => e.stopPropagation()}
               onWheel={e => e.stopPropagation()}
-              placeholder={'1.(例)プロセッサ2.立ち上げ...'}
+              placeholder={ph.a}
             />
           </div>
           <div className="qa-editor-actions">
@@ -527,6 +549,27 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
             font-weight: 600;
             color: var(--foreground);
             opacity: 0.7;
+          }
+          .qa-select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--background);
+            color: var(--foreground);
+            font-size: 0.875rem;
+            font-family: inherit;
+            outline: none;
+            cursor: pointer;
+          }
+          .qa-select:focus { border-color: var(--primary); }
+          .qa-hint {
+            font-size: 0.78rem;
+            color: var(--primary);
+            background: color-mix(in srgb, var(--primary) 10%, transparent);
+            border-radius: 6px;
+            padding: 6px 10px;
+            line-height: 1.5;
           }
           .qa-textarea {
             width: 100%;
@@ -595,6 +638,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
             <button
               className="qa-action-btn"
               onClick={() => {
+                setEditKind(kind);
                 setQText(pairs.map((p, i) => `${i + 1}.${p.q}`).join('\n'));
                 setAText(pairs.map((p, i) => `${i + 1}.${p.a}`).join('\n'));
                 setIsEditing(true);

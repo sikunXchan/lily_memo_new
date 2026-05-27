@@ -7,7 +7,7 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Plus, Search, Palette, Sun, Moon, ChevronRight, FolderPlus,
-  Brush, Sparkles, FileText, Pencil, Trash2, List,
+  Brush, Sparkles, FileText, Pencil, Trash2, List, Maximize2, X,
 } from 'lucide-react';
 import type { Note, Folder } from '@/lib/db';
 
@@ -48,6 +48,7 @@ export default function HomeHero({
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
   const [deletingFolder, setDeletingFolder] = useState<DeletingFolderState | null>(null);
   const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
+  const [graphFullscreen, setGraphFullscreen] = useState(false);
 
   const folders = useLiveQuery<Folder[]>(() => db.folders.filter(f => !f.deletedAt).toArray());
   const notes = useLiveQuery<Note[]>(() => {
@@ -203,6 +204,13 @@ export default function HomeHero({
           <div className="content-area">
             {viewMode === 'graph' ? (
               <div className="graph-wrap">
+                <button
+                  className="graph-fullscreen-btn"
+                  onClick={() => setGraphFullscreen(true)}
+                  title="全画面表示"
+                >
+                  <Maximize2 size={14} />
+                </button>
                 <DirectoryGraph folders={folders ?? []} notes={notes ?? []}
                   onSelectNote={(id) => onSelectNote(id)} />
               </div>
@@ -271,6 +279,18 @@ export default function HomeHero({
             )}
           </div>
         </>
+      )}
+
+      {graphFullscreen && (
+        <div className="graph-fs-overlay">
+          <button className="graph-fs-close" onClick={() => setGraphFullscreen(false)} title="閉じる">
+            <X size={20} />
+          </button>
+          <DirectoryGraph
+            folders={folders ?? []} notes={notes ?? []}
+            onSelectNote={(id) => { onSelectNote(id); setGraphFullscreen(false); }}
+          />
+        </div>
       )}
 
       {!isDesktop && deletingFolder && (
@@ -372,7 +392,9 @@ export default function HomeHero({
 
         .content-area { padding: 0 12px; }
         @media (max-height: 500px) { .hero-banner { height: 110px; } }
-        .graph-wrap { width: 100%; height: 100%; min-height: 320px; display: flex; }
+        .graph-wrap { position: relative; width: 100%; height: 100%; min-height: 320px; display: flex; }
+        .graph-fullscreen-btn { position: absolute; top: 8px; right: 8px; z-index: 10; width: 30px; height: 30px; border-radius: 8px; background: rgba(0,0,0,0.18); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; border: none; transition: background 0.15s; backdrop-filter: blur(4px); }
+        .graph-fullscreen-btn:hover { background: rgba(0,0,0,0.4); }
 
         .folder-item-wrapper { margin-bottom: 2px; }
         .folder-item { display: flex; align-items: center; gap: 8px; padding: 10px 8px; border-radius: 10px; cursor: pointer; transition: background 0.18s; }
@@ -405,6 +427,9 @@ export default function HomeHero({
         .dda-keep { padding: 11px; background: var(--surface-alt, var(--accent)); color: var(--primary); border-radius: 12px; font-weight: 600; font-size: 0.9rem; border: 1.5px solid var(--border); }
         .dda-delete { padding: 11px; background: #ef4444; color: #fff; border-radius: 12px; font-weight: 700; font-size: 0.9rem; box-shadow: 0 4px 12px rgba(239,68,68,0.3); }
         .dda-delete:hover { background: #dc2626; }
+        .graph-fs-overlay { position: fixed; inset: 0; z-index: 9998; background: var(--background); display: flex; flex-direction: column; }
+        .graph-fs-close { position: absolute; top: 14px; right: 14px; z-index: 9999; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--foreground); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow); cursor: pointer; border: none; transition: background 0.15s; }
+        .graph-fs-close:hover { background: var(--border); }
       `}</style>
     </div>
   );

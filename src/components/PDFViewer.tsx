@@ -618,11 +618,31 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           </div>
         </div>}
 
-        {/* Fullscreen exit button */}
+        {/* Fullscreen exit button + floating nav */}
         {isAppFullscreen && (
-          <button className="pdf-fullscreen-exit" onClick={() => setIsAppFullscreen(false)} title="全画面を終了">
-            <Minimize2 size={20} />
-          </button>
+          <>
+            <button className="pdf-fullscreen-exit" onClick={() => setIsAppFullscreen(false)} title="全画面を終了">
+              <Minimize2 size={20} />
+            </button>
+            {hasPDF && (
+              <div className="pdf-fs-nav">
+                <button className="pdf-fs-nav-btn" onClick={() => setCurrentPage(p => Math.max(1, p-1))} disabled={currentPage <= 1}>
+                  <ChevronLeft size={18} />
+                </button>
+                <span className="pdf-fs-nav-label">{currentPage} / {totalPages}</span>
+                <button className="pdf-fs-nav-btn" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage >= totalPages}>
+                  <ChevronRight size={18} />
+                </button>
+                <button className="pdf-fs-nav-btn" onClick={() => setZoomIndex(i => Math.max(0, i-1))} disabled={zoomIndex === 0} title="縮小">
+                  <ZoomOut size={16} />
+                </button>
+                <span className="pdf-fs-nav-label">{Math.round(scale * 100)}%</span>
+                <button className="pdf-fs-nav-btn" onClick={() => setZoomIndex(i => Math.min(ZOOM_LEVELS.length-1, i+1))} disabled={zoomIndex === ZOOM_LEVELS.length-1} title="拡大">
+                  <ZoomIn size={16} />
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         {/* Annotation toolbar */}
@@ -809,6 +829,21 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             transition:background 0.15s;
           }
           .pdf-fullscreen-exit:hover { background:rgba(0,0,0,0.75); }
+          /* Floating nav bar in app fullscreen */
+          .pdf-fs-nav {
+            position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+            z-index:10; display:flex; align-items:center; gap:4px;
+            background:rgba(0,0,0,0.55); color:#fff; border-radius:999px;
+            padding:6px 14px; backdrop-filter:blur(8px);
+          }
+          .pdf-fs-nav-btn {
+            width:32px; height:32px; display:flex; align-items:center; justify-content:center;
+            background:transparent; color:#fff; border-radius:8px; cursor:pointer;
+            transition:background 0.15s;
+          }
+          .pdf-fs-nav-btn:hover { background:rgba(255,255,255,0.15); }
+          .pdf-fs-nav-btn:disabled { opacity:0.3; cursor:default; }
+          .pdf-fs-nav-label { font-size:0.82rem; font-weight:600; min-width:36px; text-align:center; color:#fff; }
           /* Annotation bar */
           .annotation-bar {
             background:var(--background); border-bottom:1px solid var(--border);
