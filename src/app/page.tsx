@@ -240,7 +240,7 @@ export default function Home() {
         />
       )}
 
-      {isMobile && !isInputFocused && !activeNoteId && (activeTab as string) !== 'ai' && (activeTab as string) !== 'pdf' && (
+      {isMobile && !isInputFocused && !activeNoteId && (activeTab as string) !== 'ai' && (
         <nav className="bottom-nav">
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
