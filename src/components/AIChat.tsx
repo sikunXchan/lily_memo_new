@@ -16,6 +16,7 @@ import {
   LineElement, ArcElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js';
 import mermaid from 'mermaid';
+import { initMermaid } from '@/lib/mermaidConfig';
 import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note, Folder, SavedChat } from '@/lib/db';
@@ -29,7 +30,7 @@ import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
-import { sanitizeMindmap, autoQuoteFlowchart } from '@/lib/mermaidSanitize';
+import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
@@ -39,26 +40,7 @@ ChartJS.register(
   ArcElement, Title, Tooltip, Legend, Filler
 );
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#fce4ec',
-    primaryTextColor: '#1a1a1a',
-    primaryBorderColor: '#e84393',
-    lineColor: '#e84393',
-    secondaryColor: '#fff3e0',
-    secondaryBorderColor: '#fb8c00',
-    secondaryTextColor: '#1a1a1a',
-    tertiaryColor: '#e3f2fd',
-    tertiaryBorderColor: '#1976d2',
-    tertiaryTextColor: '#1a1a1a',
-    fontFamily: 'inherit',
-  },
-  securityLevel: 'loose',
-  suppressErrors: true,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any);
+initMermaid();
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12MB per file
 const MAX_FILES = 5;
@@ -366,12 +348,26 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     }
   }
 
-  // Never let internal directives leak into the visible chat bubble.
+  // Never let internal directives leak into the visible chat bubble. The
+  // whitespace-collapsing below would otherwise wreck indentation inside
+  // fenced code snippets (```python ... ```), so stash every fence — closed
+  // pairs first, then any trailing unclosed fence from a streaming reply —
+  // run the cleanup on prose only, then restore the code verbatim.
+  const fences: string[] = [];
+  const stashFence = (m: string) => {
+    fences.push(m);
+    // Sentinel with no space/tab/word chars, so the whitespace and directive
+    // cleanups below can't touch it or the code it stands in for.
+    return `§§FENCE${fences.length - 1}§§`;
+  };
   const cleanText = textContent
+    .replace(/```[\s\S]*?```/g, stashFence)
+    .replace(/```[\s\S]*$/, stashFence)
     .replace(/[（(]\s*@@[^）)]*[）)]/g, '')
     .replace(/@@\w+\s*:\s*[^\s、,）)]*/g, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
+    .replace(/§§FENCE(\d+)§§/g, (_m, i: string) => fences[Number(i)] ?? '')
     .trim();
 
   return { textContent: cleanText, blocks, questions };
@@ -694,8 +690,8 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
         // Pre-validate to prevent Mermaid v11 from injecting a bomb SVG on error.
         let ok = await parse(source, { suppressErrors: true });
         if (!ok) {
-          // Recovery: auto-quote unquoted flowchart labels with problematic chars.
-          const recovered = autoQuoteFlowchart(source);
+          // Recovery: auto-quote flowchart labels / alias sequence participants.
+          const recovered = recoverMermaid(source);
           if (recovered !== source) {
             ok = await parse(recovered, { suppressErrors: true });
             if (ok) source = recovered;
@@ -1030,6 +1026,12 @@ function FolderActionCard({ block, allNotes }: { block: InsertableBlock; allNote
   );
 }
 
+// Block types whose raw content is useful to copy verbatim (diagrams, data,
+// problems, tables, files). Action blocks (memo/folder ops) are excluded.
+const BLOCK_COPYABLE = new Set<InsertableBlock['type']>([
+  'mermaid', 'chart', 'qa', 'geometry', 'table', 'file',
+]);
+
 function InsertableBlockCard({
   block,
   allNotes,
@@ -1080,6 +1082,7 @@ function InsertableBlockCard({
     <div className="insertable-block">
       <div className="block-header">
         <span className="block-type-badge">{typeEmoji} {block.previewLabel}</span>
+        {BLOCK_COPYABLE.has(block.type) && <CopyButton text={block.rawCode} />}
       </div>
 
       <div className="block-visual">
@@ -1130,7 +1133,7 @@ function InsertableBlockCard({
 
       <style jsx>{`
         .insertable-block { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
-        .block-header { margin-bottom: 8px; }
+        .block-header { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .block-type-badge { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); border-radius: 20px; padding: 3px 10px; font-size: 0.78rem; font-weight: 700; }
         .block-visual { margin-bottom: 10px; }
         .block-visual :global(.prev-err) { font-size: 0.78rem; color: var(--fg-muted); background: var(--accent); border-radius: 8px; padding: 12px; text-align: center; }
@@ -1375,6 +1378,57 @@ function LilyBubble({
   const fileBlocks = allBlocks.filter(b => b.type === 'file');
   const copyText = stripBlockMarkers(message.text);
 
+  // Per-code-block and per-section copy. The rich text is injected as raw HTML,
+  // so we use event delegation on the bubble. A `.code-copy-btn` copies its
+  // block's <code>; a `.section-copy-btn` copies its heading plus the content
+  // down to the next same-or-higher heading.
+  const flashCopied = (btn: Element, done: string, restore: string) => {
+    btn.textContent = done;
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = restore;
+      btn.classList.remove('copied');
+    }, 1600);
+  };
+  // Plain text of an element, minus our injected control buttons / code header.
+  const cleanText = (el: Element): string => {
+    const clone = el.cloneNode(true) as Element;
+    clone.querySelectorAll('.section-copy-btn, .code-copy-btn, .rt-pre-head').forEach(n => n.remove());
+    return (clone.textContent ?? '').trim();
+  };
+  const handleBubbleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+
+    const codeBtn = target.closest('.code-copy-btn');
+    if (codeBtn) {
+      const code = codeBtn.closest('.rt-codeblock')?.querySelector('pre code');
+      if (!code) return;
+      void navigator.clipboard.writeText(code.textContent ?? '');
+      flashCopied(codeBtn, '✓ コピー済み', '⎘ コピー');
+      return;
+    }
+
+    const secBtn = target.closest('.section-copy-btn');
+    if (secBtn) {
+      const heading = secBtn.closest('h1, h2, h3');
+      if (!heading) return;
+      const level = Number(heading.tagName[1]);
+      const parts = [cleanText(heading)];
+      let sib = heading.nextElementSibling;
+      while (sib) {
+        const tag = sib.tagName.toLowerCase();
+        const m = tag.match(/^h([1-6])$/);
+        if (m && Number(m[1]) <= level) break;
+        const txt = cleanText(sib);
+        if (txt) parts.push(txt);
+        sib = sib.nextElementSibling;
+      }
+      void navigator.clipboard.writeText(parts.join('\n\n'));
+      flashCopied(secBtn, '✓', '⎘');
+      return;
+    }
+  };
+
   const renderBlock = (block: InsertableBlock) =>
     block.type === 'folder_create' || block.type === 'note_move' ? (
       <FolderActionCard key={block.id} block={block} allNotes={allNotes} />
@@ -1395,7 +1449,7 @@ function LilyBubble({
         <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div className="lily-bubble">
+        <div className="lily-bubble" onClick={handleBubbleClick}>
           {inlineParts.map((p, i) =>
             p.kind === 'text' ? (
               <div
@@ -1471,6 +1525,25 @@ function LilyBubble({
         .rt-body :global(em) { font-style: italic; opacity: 0.9; }
         .rt-body :global(a) { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
         .rt-body :global(blockquote) { border-left: 3px solid var(--primary); margin: 0.6em 0; padding: 0.3em 0.8em; background: rgba(var(--primary-rgb, 236,72,153),0.06); border-radius: 0 6px 6px 0; color: var(--foreground); opacity: 0.9; font-style: italic; }
+        .rt-body :global(.section-copy-btn) { opacity: 0.4; margin-left: 6px; vertical-align: baseline; background: transparent; border: none; color: var(--primary); cursor: pointer; font-size: 0.78em; padding: 0 3px; line-height: 1; transition: opacity 0.15s, color 0.15s; }
+        .rt-body :global(h1:hover .section-copy-btn), .rt-body :global(h2:hover .section-copy-btn), .rt-body :global(h3:hover .section-copy-btn) { opacity: 0.85; }
+        .rt-body :global(.section-copy-btn:hover) { opacity: 1; }
+        .rt-body :global(.section-copy-btn.copied) { opacity: 1; color: #22863a; }
+        .rt-body :global(.rt-callout) { margin: 0.7em 0; border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px; padding: 8px 12px; background: var(--background); }
+        .rt-body :global(.rt-callout-head) { font-weight: 800; font-size: 0.82rem; margin-bottom: 4px; display: flex; align-items: center; gap: 5px; }
+        .rt-body :global(.rt-callout-body) { font-size: 0.86rem; }
+        .rt-body :global(.rt-callout-body > :first-child) { margin-top: 0; }
+        .rt-body :global(.rt-callout-body > :last-child) { margin-bottom: 0; }
+        .rt-body :global(.rt-callout-note) { border-left-color: #1976d2; background: rgba(25,118,210,0.06); }
+        .rt-body :global(.rt-callout-note .rt-callout-head) { color: #1976d2; }
+        .rt-body :global(.rt-callout-tip) { border-left-color: #2e7d32; background: rgba(46,125,50,0.06); }
+        .rt-body :global(.rt-callout-tip .rt-callout-head) { color: #2e7d32; }
+        .rt-body :global(.rt-callout-important) { border-left-color: #7b1fa2; background: rgba(123,31,162,0.06); }
+        .rt-body :global(.rt-callout-important .rt-callout-head) { color: #7b1fa2; }
+        .rt-body :global(.rt-callout-warning) { border-left-color: #f9a825; background: rgba(249,168,37,0.08); }
+        .rt-body :global(.rt-callout-warning .rt-callout-head) { color: #c77800; }
+        .rt-body :global(.rt-callout-caution) { border-left-color: #c62828; background: rgba(198,40,40,0.06); }
+        .rt-body :global(.rt-callout-caution .rt-callout-head) { color: #c62828; }
         .rt-body :global(hr) { border: none; border-top: 1px solid var(--border); margin: 0.8em 0; }
         .rt-body :global(table) { border-collapse: collapse; margin: 0.6em 0; font-size: 0.85rem; width: 100%; }
         .rt-body :global(thead tr) { background: var(--primary); color: white; }
@@ -1478,8 +1551,13 @@ function LilyBubble({
         .rt-body :global(td) { border: 1px solid var(--border); padding: 4px 10px; }
         .rt-body :global(tbody tr:nth-child(even)) { background: rgba(0,0,0,0.03); }
         .rt-body :global(.rt-code) { background: rgba(0,0,0,0.07); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 0.83em; font-family: 'Fira Code','Consolas',monospace; color: var(--primary); }
-        .rt-body :global(.rt-pre) { position: relative; background: #1a1a2e; border: none; border-radius: 10px; padding: 30px 16px 14px; overflow: visible; margin: 0.6em 0; }
-        .rt-body :global(.rt-pre[data-lang]::before) { content: attr(data-lang); position: absolute; top: 8px; right: 12px; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #8b95b3; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); pointer-events: none; z-index: 1; }
+        .rt-body :global(.rt-codeblock) { margin: 0.6em 0; border-radius: 10px; overflow: hidden; background: #1a1a2e; border: 1px solid rgba(255,255,255,0.07); }
+        .rt-body :global(.rt-pre-head) { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px 5px 14px; background: rgba(255,255,255,0.045); border-bottom: 1px solid rgba(255,255,255,0.07); }
+        .rt-body :global(.rt-pre-lang) { font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #8b95b3; }
+        .rt-body :global(.code-copy-btn) { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: #c7d0e8; font-size: 0.66rem; font-weight: 700; padding: 3px 9px; border-radius: 6px; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+        .rt-body :global(.code-copy-btn:hover) { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .rt-body :global(.code-copy-btn.copied) { background: #22863a; color: #fff; border-color: #22863a; }
+        .rt-body :global(.rt-pre) { position: relative; background: transparent; border: none; border-radius: 0; padding: 12px 16px 14px; overflow: visible; margin: 0; }
         .rt-body :global(.rt-pre code) { display: block; font-size: 0.82rem; font-family: 'Fira Code','Cascadia Code','Consolas',monospace; white-space: pre; color: #e2e8f0; line-height: 1.75; overflow-x: auto; padding-bottom: 2px; }
         .rt-body :global(.hljs-keyword) { color: #c792ea; }
         .rt-body :global(.hljs-string) { color: #c3e88d; }

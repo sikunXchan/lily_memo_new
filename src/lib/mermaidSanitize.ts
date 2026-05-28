@@ -165,3 +165,77 @@ export function autoQuoteFlowchart(src: string): string {
   if (!/^\s*(graph|flowchart)\b/i.test(src.trimStart())) return src;
   return src.split('\n').map(quoteOneLine).join('\n');
 }
+
+// ── Sequence diagram recovery ──────────────────────────────────────────────
+// LLMs reliably trip Mermaid v11's sequence parser by:
+//   * giving participants names with spaces / parens / Japanese punctuation
+//     without an `as` alias (e.g. `participant Web Server`),
+//   * using a full-width arrow `→` instead of `->>`,
+//   * lower-casing the `Note` keyword,
+//   * leaving tabs / CRLF / trailing whitespace around.
+// Like the flowchart recovery this only runs as a fallback after the natural
+// code fails to parse, so it can be aggressive.
+
+// A participant/actor declaration. Captures indent, keyword and the rest of
+// the line (which may already contain an `as` alias).
+const SEQ_DECL = /^(\s*)(participant|actor)\s+(.+?)\s*$/;
+
+export function autoFixSequence(src: string): string {
+  if (!/^\s*sequenceDiagram\b/.test(src.trimStart())) return src;
+
+  let s = src
+    .replace(/^﻿/, '')          // BOM
+    .replace(/\r\n?/g, '\n')          // CRLF
+    .replace(/\t/g, '  ')             // tabs → 2 spaces
+    .replace(/[ \t]+$/gm, '');        // trailing spaces
+
+  // Full-width / unicode arrows the parser doesn't understand.
+  s = s.replace(/[⟹⇒]/g, '-->>').replace(/[⟶→➔➜]/g, '->>');
+
+  const lines = s.split('\n');
+
+  // Pass 1: find declared participants whose name isn't a bare identifier and
+  // isn't already aliased — those need an `as` alias to be valid.
+  const aliasMap = new Map<string, string>(); // display name → safe alias id
+  let counter = 0;
+  for (const line of lines) {
+    const m = line.match(SEQ_DECL);
+    if (!m || /\bas\b/i.test(m[3])) continue;
+    const name = m[3].trim();
+    if (/^[A-Za-z0-9_]+$/.test(name)) continue; // already a safe id
+    if (!aliasMap.has(name)) aliasMap.set(name, `P${++counter}`);
+  }
+
+  // Longest names first so substrings ("User" vs "User Service") don't clobber.
+  const names = [...aliasMap.keys()].sort((a, b) => b.length - a.length);
+
+  const out = lines.map((line) => {
+    // Normalise a lower-case `note` keyword (Mermaid expects `Note`).
+    let l = line.replace(/^(\s*)note\b/, '$1Note');
+
+    const decl = l.match(SEQ_DECL);
+    if (decl && !/\bas\b/i.test(decl[3])) {
+      const name = decl[3].trim();
+      const alias = aliasMap.get(name);
+      if (alias) return `${decl[1]}${decl[2]} ${alias} as "${name.replace(/"/g, '#quot;')}"`;
+      return l;
+    }
+
+    // Rewrite references to aliased participants on every other line.
+    for (const name of names) {
+      l = l.split(name).join(aliasMap.get(name)!);
+    }
+    return l;
+  });
+
+  return out.join('\n');
+}
+
+// Pick the right recovery pass for whatever diagram the source declares. Used
+// as the single fallback after a natural parse fails.
+export function recoverMermaid(src: string): string {
+  const head = src.trimStart();
+  if (/^sequenceDiagram\b/.test(head)) return autoFixSequence(src);
+  if (/^(graph|flowchart)\b/i.test(head)) return autoQuoteFlowchart(src);
+  return src;
+}

@@ -385,6 +385,32 @@ graph TD
 \`\`\`
 役割の例: start（開始/ピンク）, process（処理/青）, decision（分岐/黄）, success（成功/緑）, danger（エラー/赤）, data（データ/紫）。ノード数が多い時も、色分けすると一目で構造が分かる。
 
+⚠️【シーケンス図 (sequenceDiagram) の鉄則 — 違反すると "構文エラー" になる】
+シーケンス図はフローチャートとは構文が全く違う。次を必ず守る:
+- 1行目は必ず \`sequenceDiagram\`。
+- **登場者は必ず最初に participant で宣言し、IDは半角英数字にする**。日本語名・スペース・括弧を含む表示名は \`as "..."\` で付ける:
+  - ❌ \`participant ユーザー管理(認証)\` / \`participant Web Server\`
+  - ✅ \`participant U as "ユーザー"\` / \`participant WS as "Web サーバー"\`
+- メッセージは \`ID 矢印 ID: 内容\` の形。矢印は \`->>\`（実線/要求）, \`-->>\`（破線/応答）, \`-x\`（失敗）を使う。全角矢印 → は禁止:
+  - ✅ \`U->>WS: ログイン要求\` / \`WS-->>U: トークン返却\`
+- 分岐は \`alt 〜 / else 〜 / end\`、繰り返しは \`loop 〜 / end\`、注釈は \`Note over U,WS: 内容\`。**ブロックは必ず end で閉じる**。
+- 1行に1メッセージ。生の改行を入れない。
+例:
+\`\`\`mermaid
+sequenceDiagram
+  participant U as "ユーザー"
+  participant S as "サーバー"
+  participant DB as "データベース"
+  U->>S: ログイン要求
+  S->>DB: 認証情報を照会
+  DB-->>S: 結果を返す
+  alt 認証成功
+    S-->>U: トークンを発行
+  else 認証失敗
+    S-->>U: エラーを表示
+  end
+\`\`\`
+
 【マインドマップの例】
 アイデア出し・ブレストを頼まれたら積極的にマインドマップを使う:
 \`\`\`mermaid
@@ -408,11 +434,22 @@ mindmap
 - クォートする場合は " のみ使用（' 不可）
 
 【コードスニペットの書き方】
-コードを示す時は必ず言語付きフェンスで囲む。解説を求められたら、コードの後に「何をしているか」を箇条書きやステップで初心者にもわかるように説明する。
+コードを示す時は必ず言語付きフェンスで囲む。**インデント（半角スペース）はそのまま正確に保つ**こと。解説を求められたら、コードの後に「何をしているか」を箇条書きやステップで初心者にもわかるように説明する。
 \`\`\`python
 def greet(name):
     return f"こんにちは、{name}さん！"
 \`\`\`
+
+【補足・注意を目立たせる — コールアウト】
+補足・コツ・注意点を強調したい時は、GitHub風のコールアウト記法が使える（専用の色付きボックスで表示される）。乱用せず、ここぞという1〜2箇所で使う:
+> [!NOTE] 補足や前提知識
+> [!TIP] 便利なコツ・おすすめ
+> [!IMPORTANT] 特に大事なポイント
+> [!WARNING] 注意が必要なこと
+> [!CAUTION] 危険・やってはいけないこと
+例:
+> [!TIP]
+> \`f-string\` を使うと変数を \`{}\` で埋め込めるよ。
 
 【グラフ (Chart.js) を作成する場合】
 以下の形式でJSONを出力。必ずこの形式を守る。
@@ -766,6 +803,18 @@ graph TD
   classDef infra fill:#fff3e0,stroke:#fb8c00,color:#1a1a1a,stroke-width:2px
   classDef app fill:#e3f2fd,stroke:#1976d2,color:#1a1a1a,stroke-width:2px
   classDef data fill:#f3e5f5,stroke:#7b1fa2,color:#1a1a1a,stroke-width:2px
+\`\`\`
+
+⚠️【シーケンス図 (sequenceDiagram) の鉄則】フローチャートと構文が違う。違反すると構文エラーになる:
+- 登場者は \`participant\` で宣言し、IDは半角英数字。日本語名は \`participant U as "ユーザー"\` のように \`as\` で付ける（IDに日本語・スペース・括弧は禁止）。
+- メッセージは \`U->>S: 内容\`（実線/要求）、\`S-->>U: 内容\`（破線/応答）。全角矢印 → は禁止。
+- 分岐 \`alt/else/end\`、繰り返し \`loop/end\`、注釈 \`Note over U,S: 内容\`。ブロックは必ず \`end\` で閉じる。1行1メッセージ。
+\`\`\`mermaid
+sequenceDiagram
+  participant C as "クライアント"
+  participant S as "APIサーバ"
+  C->>S: リクエスト
+  S-->>C: レスポンス
 \`\`\`
 
 ⚠️【マインドマップ構文の厳守事項 — 違反するとレンダリングエラーになる】

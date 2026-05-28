@@ -3,28 +3,10 @@
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-import { sanitizeMindmap, autoQuoteFlowchart } from '@/lib/mermaidSanitize';
+import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
+import { initMermaid } from '@/lib/mermaidConfig';
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#fce4ec',
-    primaryTextColor: '#1a1a1a',
-    primaryBorderColor: '#e84393',
-    lineColor: '#e84393',
-    secondaryColor: '#fff3e0',
-    secondaryBorderColor: '#fb8c00',
-    secondaryTextColor: '#1a1a1a',
-    tertiaryColor: '#e3f2fd',
-    tertiaryBorderColor: '#1976d2',
-    tertiaryTextColor: '#1a1a1a',
-    fontFamily: 'inherit',
-  },
-  securityLevel: 'loose',
-  suppressErrors: true,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any);
+initMermaid();
 
 export default function MermaidComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const [svg, setSvg] = useState('');
@@ -46,7 +28,7 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
         // First attempt: as-is. If it fails parsing, retry with autoquote.
         let ok = await parse(source, { suppressErrors: true });
         if (!ok) {
-          const recovered = autoQuoteFlowchart(source);
+          const recovered = recoverMermaid(source);
           if (recovered !== source) {
             ok = await parse(recovered, { suppressErrors: true });
             if (ok) source = recovered;
