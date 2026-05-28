@@ -29,7 +29,7 @@ import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
-import { sanitizeMindmap } from '@/lib/mermaidSanitize';
+import { sanitizeMindmap, autoQuoteFlowchart } from '@/lib/mermaidSanitize';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
@@ -688,14 +688,22 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const sanitized = sanitizeMindmap(code);
+      const parse = (mermaid as unknown as { parse(t: string, o: object): Promise<boolean> }).parse;
+      let source = sanitizeMindmap(code);
       try {
         // Pre-validate to prevent Mermaid v11 from injecting a bomb SVG on error.
-        const ok = await (mermaid as unknown as { parse(t: string, o: object): Promise<boolean> })
-          .parse(sanitized, { suppressErrors: true });
+        let ok = await parse(source, { suppressErrors: true });
+        if (!ok) {
+          // Recovery: auto-quote unquoted flowchart labels with problematic chars.
+          const recovered = autoQuoteFlowchart(source);
+          if (recovered !== source) {
+            ok = await parse(recovered, { suppressErrors: true });
+            if (ok) source = recovered;
+          }
+        }
         if (!ok) { if (!cancelled) setErr(true); return; }
         const id = `lily-mmd-${Math.random().toString(36).slice(2, 9)}`;
-        const { svg: out } = await mermaid.render(id, sanitized);
+        const { svg: out } = await mermaid.render(id, source);
         if (!cancelled) { setSvg(out); setErr(false); }
       } catch {
         if (!cancelled) setErr(true);
@@ -1470,9 +1478,9 @@ function LilyBubble({
         .rt-body :global(td) { border: 1px solid var(--border); padding: 4px 10px; }
         .rt-body :global(tbody tr:nth-child(even)) { background: rgba(0,0,0,0.03); }
         .rt-body :global(.rt-code) { background: rgba(0,0,0,0.07); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 0.83em; font-family: 'Fira Code','Consolas',monospace; color: var(--primary); }
-        .rt-body :global(.rt-pre) { position: relative; background: #1a1a2e; border: none; border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 0.6em 0; }
-        .rt-body :global(.rt-pre[data-lang]::before) { content: attr(data-lang); position: absolute; top: 7px; right: 12px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #4b5563; pointer-events: none; }
-        .rt-body :global(.rt-pre code) { display: block; font-size: 0.8rem; font-family: 'Fira Code','Cascadia Code','Consolas',monospace; white-space: pre; color: #e2e8f0; line-height: 1.6; }
+        .rt-body :global(.rt-pre) { position: relative; background: #1a1a2e; border: none; border-radius: 10px; padding: 30px 16px 14px; overflow: visible; margin: 0.6em 0; }
+        .rt-body :global(.rt-pre[data-lang]::before) { content: attr(data-lang); position: absolute; top: 8px; right: 12px; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #8b95b3; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); pointer-events: none; z-index: 1; }
+        .rt-body :global(.rt-pre code) { display: block; font-size: 0.82rem; font-family: 'Fira Code','Cascadia Code','Consolas',monospace; white-space: pre; color: #e2e8f0; line-height: 1.75; overflow-x: auto; padding-bottom: 2px; }
         .rt-body :global(.hljs-keyword) { color: #c792ea; }
         .rt-body :global(.hljs-string) { color: #c3e88d; }
         .rt-body :global(.hljs-comment) { color: #546e7a; font-style: italic; }
