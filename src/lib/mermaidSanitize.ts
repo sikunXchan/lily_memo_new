@@ -105,3 +105,63 @@ export function sanitizeMindmap(src: string): string {
   if (!rootEmitted) out.push('  root');
   return out.join('\n');
 }
+
+// ── Flowchart / graph recovery ─────────────────────────────────────────────
+// LLMs frequently produce labels that the Mermaid v11 parser rejects:
+// unquoted full-width parens, ":", "?", "&", etc. inside [], (), {} shapes.
+// Running this always would risk false positives, so we only invoke it as a
+// fallback *after* the natural code fails to parse. It walks each line and
+// rewrites unquoted labels containing problematic chars into quoted form,
+// escaping inner `"` as `#quot;`.
+
+const PROBLEM_CHARS = /[()（）[\]{}<>"'#&:：;,、!?！？|\\/]/;
+
+function maybeQuote(label: string): string {
+  const t = label.trim();
+  if (!t) return label;
+  // Already quoted? leave it.
+  if (/^".*"$/.test(t) && !t.slice(1, -1).includes('"')) return label;
+  if (!PROBLEM_CHARS.test(t)) return label;
+  return `"${t.replace(/"/g, '#quot;')}"`;
+}
+
+// Lines that introduce blocks / styling — never rewrite, the shapes here
+// mean something different (e.g. classDef has no node labels).
+const STRUCTURAL = /^\s*(graph|flowchart|subgraph|end|classDef|class\b|style\b|click\b|linkStyle\b|direction\b|%%)/;
+
+function quoteOneLine(line: string): string {
+  if (STRUCTURAL.test(line)) return line;
+
+  let out = line;
+
+  // Process double-bracket shapes first so the single-bracket pass below
+  // doesn't reach inside them. Each pattern: opener, label (no shape chars),
+  // closer.
+  // [[label]] — subroutine
+  out = out.replace(/(\[\[)([^[\]]+?)(\]\])/g, (_m, a, l, b) => `${a}${maybeQuote(l)}${b}`);
+  // ((label)) — circle
+  out = out.replace(/(\(\()([^()]+?)(\)\))/g, (_m, a, l, b) => `${a}${maybeQuote(l)}${b}`);
+  // {{label}} — hexagon
+  out = out.replace(/(\{\{)([^{}]+?)(\}\})/g, (_m, a, l, b) => `${a}${maybeQuote(l)}${b}`);
+  // [(label)] — cylinder
+  out = out.replace(/(\[\()([^[\]()]+?)(\)\])/g, (_m, a, l, b) => `${a}${maybeQuote(l)}${b}`);
+
+  // Single-bracket shapes. The "label" capture rejects bracket chars so we
+  // don't munge nested shapes we already handled.
+  // [label]
+  out = out.replace(/(\[)([^[\]]+?)(\])/g, (_m, a, l, b) => `${a}${maybeQuote(l)}${b}`);
+  // {label} — only when preceded by an identifier (skip stray braces).
+  out = out.replace(/(\b[A-Za-z_]\w*\s*)(\{)([^{}]+?)(\})/g, (_m, id, a, l, b) => `${id}${a}${maybeQuote(l)}${b}`);
+  // (label) — only when preceded by an identifier (avoid "graph TD" etc.).
+  out = out.replace(/(\b[A-Za-z_]\w*\s*)(\()([^()]+?)(\))/g, (_m, id, a, l, b) => `${id}${a}${maybeQuote(l)}${b}`);
+
+  // |edge label|
+  out = out.replace(/(\|)([^|\n]+)(\|)/g, (_m, a, l, b) => `${a}${maybeQuote(l)}${b}`);
+
+  return out;
+}
+
+export function autoQuoteFlowchart(src: string): string {
+  if (!/^\s*(graph|flowchart)\b/i.test(src.trimStart())) return src;
+  return src.split('\n').map(quoteOneLine).join('\n');
+}

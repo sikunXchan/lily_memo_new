@@ -3,7 +3,7 @@
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-import { sanitizeMindmap } from '@/lib/mermaidSanitize';
+import { sanitizeMindmap, autoQuoteFlowchart } from '@/lib/mermaidSanitize';
 
 mermaid.initialize({
   startOnLoad: false,
@@ -40,9 +40,23 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
     let cancelled = false;
     const doRender = async () => {
       if (!attrs.content) return;
+      const parse = (mermaid as unknown as { parse(t: string, o: object): Promise<boolean> }).parse;
+      let source = sanitizeMindmap(attrs.content as string);
       try {
-        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-        const source = sanitizeMindmap(attrs.content as string);
+        // First attempt: as-is. If it fails parsing, retry with autoquote.
+        let ok = await parse(source, { suppressErrors: true });
+        if (!ok) {
+          const recovered = autoQuoteFlowchart(source);
+          if (recovered !== source) {
+            ok = await parse(recovered, { suppressErrors: true });
+            if (ok) source = recovered;
+          }
+        }
+        if (!ok) {
+          if (!cancelled) { setError('構文エラー'); setEditing(true); }
+          return;
+        }
+        const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
         const { svg: renderedSvg } = await mermaid.render(id, source);
         if (!cancelled) { setSvg(renderedSvg); setError(''); }
       } catch (err) {
