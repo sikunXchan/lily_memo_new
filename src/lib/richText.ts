@@ -85,6 +85,56 @@ function sanitize(html: string): string {
   return doc.body.innerHTML;
 }
 
+// ── GitHub-style callouts ─────────────────────────────────────────────────────
+// > [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]
+const CALLOUTS: Record<string, { label: string; icon: string; cls: string }> = {
+  NOTE:      { label: 'ノート', icon: '📝', cls: 'note' },
+  TIP:       { label: 'ヒント', icon: '💡', cls: 'tip' },
+  IMPORTANT: { label: '重要',   icon: '❗', cls: 'important' },
+  WARNING:   { label: '注意',   icon: '⚠️', cls: 'warning' },
+  CAUTION:   { label: '警告',   icon: '🚨', cls: 'caution' },
+};
+
+// Collapse consecutive `> ...` blockquote lines that open with a `[!TYPE]`
+// marker into a styled callout box. The body is rendered as Markdown so it can
+// hold lists, bold, inline code, etc. Stashed as a block so `marked` leaves it
+// alone. Runs after code/math have been stashed, so any RT placeholders inside
+// the body survive to the (looped) restore pass.
+function transformCallouts(src: string, stash: (html: string) => string): string {
+  const lines = src.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; ) {
+    const m = lines[i].match(/^\s{0,3}>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$/i);
+    if (!m) { out.push(lines[i]); i++; continue; }
+    const meta = CALLOUTS[m[1].toUpperCase()];
+    const body: string[] = [];
+    if (m[2].trim()) body.push(m[2].trim());
+    i++;
+    while (i < lines.length && /^\s{0,3}>/.test(lines[i])) {
+      body.push(lines[i].replace(/^\s{0,3}>\s?/, ''));
+      i++;
+    }
+    const inner = marked.parse(body.join('\n'), { async: false }) as string;
+    out.push(stash(
+      `<div class="rt-callout rt-callout-${meta.cls}">` +
+      `<div class="rt-callout-head">${meta.icon} ${meta.label}</div>` +
+      `<div class="rt-callout-body">${inner}</div>` +
+      `</div>`
+    ));
+  }
+  return out.join('\n');
+}
+
+// Append a per-section copy button to every h1–h3. The chat bubble's click
+// handler walks the heading's siblings to gather the section text.
+function addSectionCopyButtons(html: string): string {
+  return html.replace(
+    /(<h([123])[^>]*>)([\s\S]*?)(<\/h\2>)/g,
+    (_m, open: string, _lvl: string, inner: string, close: string) =>
+      `${open}${inner}<button type="button" class="section-copy-btn" aria-label="このセクションをコピー">⎘</button>${close}`
+  );
+}
+
 // ── Main export ──────────────────────────────────────────────────────────────
 export function renderRich(src: string): string {
   if (!src) return '';
@@ -149,8 +199,16 @@ export function renderRich(src: string): string {
     }
   }
 
+  // 6. Callouts (after code/math stashing so their bodies are protected).
+  s = transformCallouts(s, stashBlock);
+
   let html = marked.parse(s, { async: false }) as string;
-  // restore stash placeholders (block-level — no surrounding <p> wrapping issues)
-  html = html.replace(/RT(\d+)STASH/g, (_m, i: string) => store[Number(i)] ?? '');
+  // Restore stash placeholders. Loop because a stashed callout can itself
+  // contain placeholders (inline code etc.) and a single global replace won't
+  // re-scan inserted text. Bounded so a stray token can never spin forever.
+  for (let pass = 0; pass < 6 && /RT\d+STASH/.test(html); pass++) {
+    html = html.replace(/RT(\d+)STASH/g, (_m, i: string) => store[Number(i)] ?? '');
+  }
+  html = addSectionCopyButtons(html);
   return sanitize(html);
 }

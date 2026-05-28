@@ -4,27 +4,9 @@ import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
+import { initMermaid } from '@/lib/mermaidConfig';
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'base',
-  themeVariables: {
-    primaryColor: '#fce4ec',
-    primaryTextColor: '#1a1a1a',
-    primaryBorderColor: '#e84393',
-    lineColor: '#e84393',
-    secondaryColor: '#fff3e0',
-    secondaryBorderColor: '#fb8c00',
-    secondaryTextColor: '#1a1a1a',
-    tertiaryColor: '#e3f2fd',
-    tertiaryBorderColor: '#1976d2',
-    tertiaryTextColor: '#1a1a1a',
-    fontFamily: 'inherit',
-  },
-  securityLevel: 'loose',
-  suppressErrors: true,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any);
+initMermaid();
 
 export default function MermaidComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const [svg, setSvg] = useState('');
