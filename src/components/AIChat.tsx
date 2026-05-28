@@ -29,7 +29,7 @@ import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
-import { sanitizeMindmap, autoQuoteFlowchart } from '@/lib/mermaidSanitize';
+import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
@@ -366,12 +366,26 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     }
   }
 
-  // Never let internal directives leak into the visible chat bubble.
+  // Never let internal directives leak into the visible chat bubble. The
+  // whitespace-collapsing below would otherwise wreck indentation inside
+  // fenced code snippets (```python ... ```), so stash every fence — closed
+  // pairs first, then any trailing unclosed fence from a streaming reply —
+  // run the cleanup on prose only, then restore the code verbatim.
+  const fences: string[] = [];
+  const stashFence = (m: string) => {
+    fences.push(m);
+    // Sentinel with no space/tab/word chars, so the whitespace and directive
+    // cleanups below can't touch it or the code it stands in for.
+    return `§§FENCE${fences.length - 1}§§`;
+  };
   const cleanText = textContent
+    .replace(/```[\s\S]*?```/g, stashFence)
+    .replace(/```[\s\S]*$/, stashFence)
     .replace(/[（(]\s*@@[^）)]*[）)]/g, '')
     .replace(/@@\w+\s*:\s*[^\s、,）)]*/g, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
+    .replace(/§§FENCE(\d+)§§/g, (_m, i: string) => fences[Number(i)] ?? '')
     .trim();
 
   return { textContent: cleanText, blocks, questions };
@@ -694,8 +708,8 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
         // Pre-validate to prevent Mermaid v11 from injecting a bomb SVG on error.
         let ok = await parse(source, { suppressErrors: true });
         if (!ok) {
-          // Recovery: auto-quote unquoted flowchart labels with problematic chars.
-          const recovered = autoQuoteFlowchart(source);
+          // Recovery: auto-quote flowchart labels / alias sequence participants.
+          const recovered = recoverMermaid(source);
           if (recovered !== source) {
             ok = await parse(recovered, { suppressErrors: true });
             if (ok) source = recovered;
@@ -1375,6 +1389,24 @@ function LilyBubble({
   const fileBlocks = allBlocks.filter(b => b.type === 'file');
   const copyText = stripBlockMarkers(message.text);
 
+  // Per-code-block copy. The code blocks are injected as raw HTML, so we use
+  // event delegation: a click on a `.code-copy-btn` copies its sibling
+  // <code>'s text (entities already decoded by the browser) and flashes feedback.
+  const handleCodeCopy = (e: React.MouseEvent<HTMLDivElement>) => {
+    const btn = (e.target as HTMLElement).closest('.code-copy-btn');
+    if (!btn) return;
+    const code = btn.closest('.rt-codeblock')?.querySelector('pre code');
+    if (!code) return;
+    void navigator.clipboard.writeText(code.textContent ?? '');
+    const prev = btn.textContent;
+    btn.textContent = '✓ コピー済み';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = prev;
+      btn.classList.remove('copied');
+    }, 1600);
+  };
+
   const renderBlock = (block: InsertableBlock) =>
     block.type === 'folder_create' || block.type === 'note_move' ? (
       <FolderActionCard key={block.id} block={block} allNotes={allNotes} />
@@ -1395,7 +1427,7 @@ function LilyBubble({
         <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div className="lily-bubble">
+        <div className="lily-bubble" onClick={handleCodeCopy}>
           {inlineParts.map((p, i) =>
             p.kind === 'text' ? (
               <div
@@ -1478,8 +1510,13 @@ function LilyBubble({
         .rt-body :global(td) { border: 1px solid var(--border); padding: 4px 10px; }
         .rt-body :global(tbody tr:nth-child(even)) { background: rgba(0,0,0,0.03); }
         .rt-body :global(.rt-code) { background: rgba(0,0,0,0.07); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 0.83em; font-family: 'Fira Code','Consolas',monospace; color: var(--primary); }
-        .rt-body :global(.rt-pre) { position: relative; background: #1a1a2e; border: none; border-radius: 10px; padding: 30px 16px 14px; overflow: visible; margin: 0.6em 0; }
-        .rt-body :global(.rt-pre[data-lang]::before) { content: attr(data-lang); position: absolute; top: 8px; right: 12px; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #8b95b3; background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); pointer-events: none; z-index: 1; }
+        .rt-body :global(.rt-codeblock) { margin: 0.6em 0; border-radius: 10px; overflow: hidden; background: #1a1a2e; border: 1px solid rgba(255,255,255,0.07); }
+        .rt-body :global(.rt-pre-head) { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px 5px 14px; background: rgba(255,255,255,0.045); border-bottom: 1px solid rgba(255,255,255,0.07); }
+        .rt-body :global(.rt-pre-lang) { font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #8b95b3; }
+        .rt-body :global(.code-copy-btn) { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: #c7d0e8; font-size: 0.66rem; font-weight: 700; padding: 3px 9px; border-radius: 6px; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+        .rt-body :global(.code-copy-btn:hover) { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .rt-body :global(.code-copy-btn.copied) { background: #22863a; color: #fff; border-color: #22863a; }
+        .rt-body :global(.rt-pre) { position: relative; background: transparent; border: none; border-radius: 0; padding: 12px 16px 14px; overflow: visible; margin: 0; }
         .rt-body :global(.rt-pre code) { display: block; font-size: 0.82rem; font-family: 'Fira Code','Cascadia Code','Consolas',monospace; white-space: pre; color: #e2e8f0; line-height: 1.75; overflow-x: auto; padding-bottom: 2px; }
         .rt-body :global(.hljs-keyword) { color: #c792ea; }
         .rt-body :global(.hljs-string) { color: #c3e88d; }

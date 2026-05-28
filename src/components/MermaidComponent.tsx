@@ -3,7 +3,7 @@
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-import { sanitizeMindmap, autoQuoteFlowchart } from '@/lib/mermaidSanitize';
+import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
 
 mermaid.initialize({
   startOnLoad: false,
@@ -46,7 +46,7 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
         // First attempt: as-is. If it fails parsing, retry with autoquote.
         let ok = await parse(source, { suppressErrors: true });
         if (!ok) {
-          const recovered = autoQuoteFlowchart(source);
+          const recovered = recoverMermaid(source);
           if (recovered !== source) {
             ok = await parse(recovered, { suppressErrors: true });
             if (ok) source = recovered;

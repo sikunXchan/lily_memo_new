@@ -107,13 +107,23 @@ export function renderRich(src: string): string {
   let s = src;
 
   // 1. Fenced code blocks — extract language, apply highlight, stash.
+  // Wrapped in `.rt-codeblock` with a header bar (language label + per-block
+  // copy button) so each snippet can be copied on its own. The copy handler
+  // lives in the chat bubble (event delegation), reading the <code> text.
   s = s.replace(/```(\w*)[^\n]*\n([\s\S]*?)```/g, (_, lang: string, code: string) => {
     const raw = code.replace(/\n$/, '');
     const body = highlightCode(lang, raw);
     const escLang = lang ? lang.replace(/[^a-zA-Z0-9_-]/g, '') : '';
     const langAttr = escLang ? ` data-lang="${escLang}"` : '';
     const codeClass = `hljs${escLang ? ` language-${escLang}` : ''}`;
-    return stashBlock(`<pre class="rt-pre"${langAttr}><code class="${codeClass}">${body}</code></pre>`);
+    const head =
+      `<div class="rt-pre-head">` +
+      `<span class="rt-pre-lang">${escLang || 'code'}</span>` +
+      `<button type="button" class="code-copy-btn" aria-label="このコードをコピー">⎘ コピー</button>` +
+      `</div>`;
+    return stashBlock(
+      `<div class="rt-codeblock">${head}<pre class="rt-pre"${langAttr}><code class="${codeClass}">${body}</code></pre></div>`
+    );
   });
 
   // 2. Inline code — stash to protect from math processing.
