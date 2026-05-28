@@ -212,18 +212,25 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     return '';
   });
 
+  // Block markers use a control char so they survive markdown / cleanup
+  // regexes without being touched, and so users can't accidentally type them.
+  // LilyBubble splits message.text on these and renders each captured block
+  // inline at the exact position where Lily produced it.
+  const blockMarker = (id: string) => `\n\nLBLK:${id}\n\n`;
+
   // Generic downloadable file blocks (filename on the first line).
   const FILE_RE = /```file\s*\n@@filename:\s*([^\n]+)\n([\s\S]*?)```/g;
   const work = afterAsk.replace(FILE_RE, (_full, name: string, content: string) => {
     const fileName = name.trim();
+    const id = crypto.randomUUID();
     blocks.push({
-      id: crypto.randomUUID(),
+      id,
       type: 'file',
       rawCode: content.replace(/\n$/, ''),
       previewLabel: fileName,
       fileName,
     });
-    return `\n✨ [ファイル「${fileName}」を作ったよ]\n`;
+    return blockMarker(id);
   });
 
   // Fallback: catch geometry JSON that Gemini accidentally put in ```json fences or bare
@@ -233,7 +240,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       parseGeometry(jsonStr.trim());
       const id = crypto.randomUUID();
       blocks.push({ id, type: 'geometry', rawCode: jsonStr.trim(), previewLabel: '数学・幾何の図' });
-      return `\n✨ [数学の図を描いたよ]\n`;
+      return blockMarker(id);
     } catch {
       return _full; // not a geometry block, leave it
     }
@@ -245,24 +252,24 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     const id = crypto.randomUUID();
     if (type === 'mermaid') {
       blocks.push({ id, type: 'mermaid', rawCode: trimmed, previewLabel: detectMermaidLabel(trimmed) });
-      return `\n✨ [${detectMermaidLabel(trimmed)}を作ったよ]\n`;
+      return blockMarker(id);
     }
     if (type === 'chart') {
       try { JSON.parse(trimmed); } catch { return '\n[グラフの生成に失敗しちゃった]\n'; }
       blocks.push({ id, type: 'chart', rawCode: trimmed, previewLabel: detectChartLabel(trimmed) });
-      return `\n✨ [${detectChartLabel(trimmed)}を作ったよ]\n`;
+      return blockMarker(id);
     }
     if (type === 'qa') {
       const pairs = parseQAPairs(trimmed);
       if (pairs.length === 0) return '\n[Q&Aの解析に失敗しちゃった]\n';
       const label = `${pairs.length}問の${QA_KIND_LABEL[parseQAKind(trimmed)]}`;
       blocks.push({ id, type: 'qa', rawCode: trimmed, previewLabel: label });
-      return `\n✨ [${label}を作ったよ]\n`;
+      return blockMarker(id);
     }
     if (type === 'geometry') {
       try { parseGeometry(trimmed); } catch { return '\n[図の生成に失敗しちゃった]\n'; }
       blocks.push({ id, type: 'geometry', rawCode: trimmed, previewLabel: '数学・幾何の図' });
-      return `\n✨ [数学の図を描いたよ]\n`;
+      return blockMarker(id);
     }
     if (type === 'memo_create' && allowMemoBlocks) {
       const firstLine = trimmed.split('\n')[0] || '';
@@ -270,7 +277,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const memoTitle = titleMatch?.[1]?.trim() || '新しいメモ';
       const content = trimmed.split('\n').slice(1).join('\n').trim();
       blocks.push({ id, type: 'memo_create', rawCode: content, previewLabel: `メモ作成: ${memoTitle}`, memoTitle });
-      return `\n✨ [「${memoTitle}」というメモを作る準備ができたよ]\n`;
+      return blockMarker(id);
     }
     if (type === 'memo_overwrite' && allowMemoBlocks) {
       const firstLine = trimmed.split('\n')[0] || '';
@@ -278,7 +285,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const memoId = idMatch ? Number(idMatch[1]) : undefined;
       const content = trimmed.split('\n').slice(1).join('\n').trim();
       blocks.push({ id, type: 'memo_overwrite', rawCode: content, previewLabel: `メモ上書き: ID ${memoId ?? '不明'}`, memoId });
-      return `\n✨ [メモを書き換える準備ができたよ]\n`;
+      return blockMarker(id);
     }
     if (type === 'folder_create') {
       const lines = trimmed.split('\n');
@@ -287,7 +294,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const folderName = nameMatch?.[1]?.trim() || '新しいフォルダ';
       const folderColor = colorMatch?.[1]?.trim();
       blocks.push({ id, type: 'folder_create', rawCode: trimmed, previewLabel: `フォルダ作成: 📁 ${folderName}`, folderName, folderColor });
-      return `\n📁 [「${folderName}」フォルダを作る準備ができたよ]\n`;
+      return blockMarker(id);
     }
     if (type === 'note_move') {
       const lines = trimmed.split('\n');
@@ -296,11 +303,11 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const memoId = idMatch ? Number(idMatch[1]) : undefined;
       const targetFolderName = folderMatch?.[1]?.trim() || '未分類';
       blocks.push({ id, type: 'note_move', rawCode: trimmed, previewLabel: `移動: ID ${memoId ?? '?'} → 📁 ${targetFolderName}`, memoId, targetFolderName });
-      return `\n📁 [メモを「${targetFolderName}」に移動する準備ができたよ]\n`;
+      return blockMarker(id);
     }
     if (type === 'table') {
       blocks.push({ id, type: 'table', rawCode: trimmed, previewLabel: '表' });
-      return '\n✨ [表を作ったよ]\n';
+      return blockMarker(id);
     }
     return '';
   }).trim();
@@ -1293,6 +1300,17 @@ function CopyButton({ text, light }: { text: string; light?: boolean }) {
   );
 }
 
+// Matches the markers parseAIResponse emits for each extracted block.
+// Capturing group is the block id. Surrounding newlines are absorbed so the
+// marker doesn't leave blank paragraphs behind when it's split out.
+const LBLK_RE = /\n*LBLK:([0-9a-fA-F-]+)\n*/g;
+
+// Strip the LBLK markers from text destined for copy/clipboard so users
+// don't paste opaque "LBLK:…" tokens.
+function stripBlockMarkers(text: string): string {
+  return text.replace(LBLK_RE, '\n\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function LilyBubble({
   message, allNotes, selectedNoteId, model, onNoteCreated, onRegenerate,
 }: {
@@ -1306,6 +1324,44 @@ function LilyBubble({
   const avatarSrc = model === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png';
   const avatarAlt = model === 'sikunlily' ? 'sikunlily' : 'Lily';
   const [thinkingOpen, setThinkingOpen] = useState(false);
+
+  // Interleave text segments and block components in the order Lily produced
+  // them. Any block not referenced by a marker (e.g. older saved messages)
+  // falls through to the trailing block list so it still renders.
+  const allBlocks = message.extractedBlocks ?? [];
+  const blockMap = new Map(allBlocks.map(b => [b.id, b]));
+  const consumed = new Set<string>();
+  const inlineParts: Array<{ kind: 'text'; value: string } | { kind: 'block'; id: string }> = [];
+  if (allBlocks.length === 0) {
+    inlineParts.push({ kind: 'text', value: stripBlockMarkers(message.text) });
+  } else {
+    const parts = message.text.split(LBLK_RE);
+    parts.forEach((part, i) => {
+      if (i % 2 === 0) {
+        if (part.trim()) inlineParts.push({ kind: 'text', value: part });
+      } else if (blockMap.has(part)) {
+        consumed.add(part);
+        inlineParts.push({ kind: 'block', id: part });
+      }
+    });
+  }
+  const orphanBlocks = allBlocks.filter(b => !consumed.has(b.id));
+  const fileBlocks = allBlocks.filter(b => b.type === 'file');
+  const copyText = stripBlockMarkers(message.text);
+
+  const renderBlock = (block: InsertableBlock) =>
+    block.type === 'folder_create' || block.type === 'note_move' ? (
+      <FolderActionCard key={block.id} block={block} allNotes={allNotes} />
+    ) : (
+      <InsertableBlockCard
+        key={block.id}
+        block={block}
+        allNotes={allNotes}
+        defaultNoteId={selectedNoteId}
+        onNoteCreated={onNoteCreated}
+      />
+    );
+
   return (
     <div className="lily-bubble-row">
       <div className="lily-avatar">
@@ -1313,10 +1369,21 @@ function LilyBubble({
         <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div
-          className="lily-bubble rt-body"
-          dangerouslySetInnerHTML={{ __html: renderRich(message.text) }}
-        />
+        <div className="lily-bubble">
+          {inlineParts.map((p, i) =>
+            p.kind === 'text' ? (
+              <div
+                key={`t-${i}`}
+                className="rt-body"
+                dangerouslySetInnerHTML={{ __html: renderRich(p.value) }}
+              />
+            ) : (
+              <div key={p.id} className="inline-block-wrap">
+                {renderBlock(blockMap.get(p.id)!)}
+              </div>
+            )
+          )}
+        </div>
         {message.questions && message.questions.length > 0 && (
           <div className="ask-asked-hint">❓ {message.questions.length}件の質問をしたよ</div>
         )}
@@ -1333,28 +1400,16 @@ function LilyBubble({
             )}
           </div>
         )}
-        {message.extractedBlocks && message.extractedBlocks.length > 0 && (
+        {(orphanBlocks.length > 0 || fileBlocks.length >= 2) && (
           <div className="block-list">
-            {message.extractedBlocks.map(block =>
-              block.type === 'folder_create' || block.type === 'note_move' ? (
-                <FolderActionCard key={block.id} block={block} allNotes={allNotes} />
-              ) : (
-                <InsertableBlockCard
-                  key={block.id}
-                  block={block}
-                  allNotes={allNotes}
-                  defaultNoteId={selectedNoteId}
-                  onNoteCreated={onNoteCreated}
-                />
-              )
-            )}
-            {message.extractedBlocks.filter(b => b.type === 'file').length >= 2 && (
-              <ZipDownloadButton blocks={message.extractedBlocks.filter(b => b.type === 'file')} />
+            {orphanBlocks.map(renderBlock)}
+            {fileBlocks.length >= 2 && (
+              <ZipDownloadButton blocks={fileBlocks} />
             )}
           </div>
         )}
         <div className="msg-actions">
-          <CopyButton text={message.text} />
+          <CopyButton text={copyText} />
           {onRegenerate && (
             <button className="msg-regen-btn" onClick={onRegenerate} title="再生成">
               <RotateCcw size={13} />
@@ -1369,6 +1424,9 @@ function LilyBubble({
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
         .lily-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
+        .inline-block-wrap { margin: 8px 0; }
+        .inline-block-wrap:first-child { margin-top: 0; }
+        .inline-block-wrap:last-child { margin-bottom: 0; }
         .msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
         .msg-regen-btn { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted, #888); font-size: 0.78rem; cursor: pointer; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: background 0.14s, color 0.14s, border-color 0.14s; }
         .msg-regen-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--accent); }
