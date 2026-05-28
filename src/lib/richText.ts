@@ -89,9 +89,19 @@ function sanitize(html: string): string {
 export function renderRich(src: string): string {
   if (!src) return '';
   const store: string[] = [];
-  const stash = (html: string) => {
+  // Block-level stash: wrap with blank lines so the placeholder becomes its
+  // own paragraph (needed for <pre>, display math, etc.).
+  const stashBlock = (html: string) => {
     store.push(html);
     return `\n\nRT${store.length - 1}STASH\n\n`;
+  };
+  // Inline stash: no surrounding newlines, so the placeholder stays inside
+  // whatever paragraph / list item / sentence it came from. Critical for
+  // inline code and inline math — wrapping with \n\n would split bullets
+  // like "* `rst`: 説明" into three separate blocks.
+  const stashInline = (html: string) => {
+    store.push(html);
+    return `RT${store.length - 1}STASH`;
   };
 
   let s = src;
@@ -103,29 +113,29 @@ export function renderRich(src: string): string {
     const escLang = lang ? lang.replace(/[^a-zA-Z0-9_-]/g, '') : '';
     const langAttr = escLang ? ` data-lang="${escLang}"` : '';
     const codeClass = `hljs${escLang ? ` language-${escLang}` : ''}`;
-    return stash(`<pre class="rt-pre"${langAttr}><code class="${codeClass}">${body}</code></pre>`);
+    return stashBlock(`<pre class="rt-pre"${langAttr}><code class="${codeClass}">${body}</code></pre>`);
   });
 
   // 2. Inline code — stash to protect from math processing.
   s = s.replace(/`([^`\n]+)`/g, (_m, c: string) =>
-    stash(`<code class="rt-code">${c.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code>`));
+    stashInline(`<code class="rt-code">${c.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code>`));
 
   // 3. Block math: $$...$$ and \[...\]
-  s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_m, t: string) => stash(renderMath(t.trim(), true)));
-  s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_m, t: string) => stash(renderMath(t.trim(), true)));
+  s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_m, t: string) => stashBlock(renderMath(t.trim(), true)));
+  s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_m, t: string) => stashBlock(renderMath(t.trim(), true)));
   // 4. Inline math: \(...\) and $...$
-  s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, t: string) => stash(renderMath(t.trim(), false)));
-  s = s.replace(/\$(?!\s)([^\n$]+?)(?<!\s)\$/g, (_m, t: string) => stash(renderMath(t.trim(), false)));
+  s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, t: string) => stashInline(renderMath(t.trim(), false)));
+  s = s.replace(/\$(?!\s)([^\n$]+?)(?<!\s)\$/g, (_m, t: string) => stashInline(renderMath(t.trim(), false)));
 
   // 5. Graceful trailing open math
   const openBlock = s.match(/\$\$([\s\S]+)$/);
   if (openBlock && !openBlock[1].includes('$')) {
-    s = s.slice(0, openBlock.index) + stash(renderMath(openBlock[1].trim(), true));
+    s = s.slice(0, openBlock.index) + stashBlock(renderMath(openBlock[1].trim(), true));
   } else {
     const openInline = s.match(/(?:^|[^$])\$(?!\s)([^\n$]+)$/);
     if (openInline && /[\\^_{}]/.test(openInline[1])) {
       const idx = s.lastIndexOf('$');
-      s = s.slice(0, idx) + stash(renderMath(s.slice(idx + 1).trim(), false));
+      s = s.slice(0, idx) + stashInline(renderMath(s.slice(idx + 1).trim(), false));
     }
   }
 
