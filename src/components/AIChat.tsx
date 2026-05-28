@@ -1294,13 +1294,14 @@ function CopyButton({ text, light }: { text: string; light?: boolean }) {
 }
 
 function LilyBubble({
-  message, allNotes, selectedNoteId, model, onNoteCreated,
+  message, allNotes, selectedNoteId, model, onNoteCreated, onRegenerate,
 }: {
   message: ChatMessage;
   allNotes: Note[];
   selectedNoteId?: number;
   model?: 'lily' | 'sikunlily';
   onNoteCreated?: (id: number) => void;
+  onRegenerate?: () => void;
 }) {
   const avatarSrc = model === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png';
   const avatarAlt = model === 'sikunlily' ? 'sikunlily' : 'Lily';
@@ -1312,13 +1313,10 @@ function LilyBubble({
         <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div className="lily-bubble-header">
-          <div
-            className="lily-bubble rt-body"
-            dangerouslySetInnerHTML={{ __html: renderRich(message.text) }}
-          />
-          <CopyButton text={message.text} />
-        </div>
+        <div
+          className="lily-bubble rt-body"
+          dangerouslySetInnerHTML={{ __html: renderRich(message.text) }}
+        />
         {message.questions && message.questions.length > 0 && (
           <div className="ask-asked-hint">❓ {message.questions.length}件の質問をしたよ</div>
         )}
@@ -1355,15 +1353,25 @@ function LilyBubble({
             )}
           </div>
         )}
+        <div className="msg-actions">
+          <CopyButton text={message.text} />
+          {onRegenerate && (
+            <button className="msg-regen-btn" onClick={onRegenerate} title="再生成">
+              <RotateCcw size={13} />
+              <span>再生成</span>
+            </button>
+          )}
+        </div>
       </div>
       <style jsx>{`
         .lily-bubble-row { display: flex; align-items: flex-start; gap: 10px; align-self: flex-start; max-width: 85%; }
         .lily-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--accent); border: 2px solid var(--border); }
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
-        .lily-bubble-header { display: flex; align-items: flex-start; gap: 6px; }
-        .lily-bubble-header:hover :global(.copy-btn) { opacity: 1; }
-        .lily-bubble { flex: 1; min-width: 0; background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
+        .lily-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
+        .msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+        .msg-regen-btn { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted, #888); font-size: 0.78rem; cursor: pointer; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: background 0.14s, color 0.14s, border-color 0.14s; }
+        .msg-regen-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--accent); }
         .rt-body :global(p) { margin: 0 0 0.6em; }
         .rt-body :global(p:last-child) { margin-bottom: 0; }
         .rt-body :global(h1) { font-size: 1.15rem; font-weight: 800; margin: 0.9em 0 0.35em; color: var(--primary); border-bottom: 2px solid var(--primary); padding-bottom: 2px; }
@@ -1988,6 +1996,113 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     }
   }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch, economy]);
 
+  const handleRegenerate = useCallback(async () => {
+    if (isLoading) return;
+
+    // Find the last lily message
+    let lilyIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'lily') { lilyIdx = i; break; }
+    }
+    if (lilyIdx < 0) return;
+
+    // Capture the history to send (everything before the last lily response)
+    const histMsgs = messages.slice(0, lilyIdx);
+    const recentMsgs = histMsgs.slice(-10);
+    const lastUserIdx = recentMsgs.reduce(
+      (acc, m, idx) => (m.role === 'user' && m.attachments?.length ? idx : acc), -1
+    );
+    const history: ChatTurn[] = recentMsgs.map((m, idx) => {
+      const turn: ChatTurn = { role: m.role === 'user' ? 'user' : 'model', text: m.text };
+      if (idx === lastUserIdx && m.attachments?.length) {
+        turn.attachments = m.attachments.map<ChatAttachment>(a => ({
+          mimeType: a.mimeType,
+          data: a.fileUri || a.extractedText || a.pdfPageImages ? '' : a.data,
+          fileUri: a.fileUri,
+          extractedText: a.extractedText,
+          pdfPageImages: a.pdfPageImages,
+          pdfTotalPages: a.pdfTotalPages,
+        }));
+      }
+      return turn;
+    });
+
+    // Remove the last lily message from display
+    setMessages(prev => prev.slice(0, lilyIdx));
+    setIsLoading(true);
+
+    try {
+      const contextNotes: Note[] = [];
+      if (activeModel === 'sikunlily') {
+        if (sikunAllNotes) {
+          contextNotes.push(...(allNotes ?? []));
+        } else {
+          for (const id of sikunNoteIds) {
+            const n = await db.notes.get(id);
+            if (n) contextNotes.push(n);
+          }
+        }
+      } else if (selectedNoteId) {
+        const n = await db.notes.get(selectedNoteId);
+        if (n) contextNotes.push(n);
+      }
+
+      let aiText: string;
+      if (activeModel === 'sikunlily') {
+        const folders = allFolders ?? [];
+        const sikunSystemPrompt = buildSikunSystemPrompt(contextNotes, folders, activeMode ?? undefined);
+        setSikunLiveThinking('');
+        let thinkingAccum = '';
+        const budget = economy ? 0 : (activeMode ? (SIKU_THINKING_BUDGETS[activeMode] ?? 8192) : 8192);
+        const sikunModels = economy ? ['gemini-2.5-flash-lite', 'gemini-2.5-flash'] : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+        setSikunProgress(budget !== 0 ? '🧠 深く思考中...' : '考え中...');
+        aiText = await streamSikunlilyChat(
+          history, sikunSystemPrompt, apiKey, budget,
+          {
+            onThinkingDelta: (delta) => { thinkingAccum += delta; setSikunLiveThinking(thinkingAccum); },
+            onResponseDelta: () => { setSikunProgress('✍️ 回答を生成中...'); },
+          },
+          sikunModels, false, economy ? 8192 : 65536,
+        );
+        setSikunProgress('');
+        setSikunLiveThinking('');
+        pendingThinkingRef.current = thinkingAccum;
+      } else {
+        const systemPrompt = buildSystemPrompt(contextNotes);
+        aiText = await callGeminiChat(history, systemPrompt, apiKey, {
+          webSearch,
+          models: economy ? ['gemini-2.5-flash-lite'] : undefined,
+          maxOutputTokens: economy ? 8192 : undefined,
+        });
+      }
+
+      const { textContent, blocks, questions } = parseAIResponse(aiText, true);
+      const capturedThinking = pendingThinkingRef.current;
+      pendingThinkingRef.current = '';
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'lily',
+        text: textContent || (questions.length > 0 ? `${questions.map(q => q.question).join('\n')}\n\n下のフォームから教えてね！🐶` : '...'),
+        timestamp: Date.now(),
+        extractedBlocks: blocks.length > 0 ? blocks : undefined,
+        questions: questions.length > 0 ? questions : undefined,
+        thinking: capturedThinking || undefined,
+      }]);
+    } catch (e) {
+      setSikunProgress('');
+      setSikunLiveThinking('');
+      pendingThinkingRef.current = '';
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'lily',
+        text: `ごめんね、エラーが起きちゃった 🐶\n${e instanceof Error ? e.message : '不明なエラー'}`,
+        timestamp: Date.now(),
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading, messages, activeModel, sikunAllNotes, allNotes, sikunNoteIds, selectedNoteId, allFolders, activeMode, economy, apiKey, webSearch]);
+
   const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
 
   if (!apiKey) {
@@ -2217,8 +2332,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             </div>
           </div>
         )}
-        {messages.map(msg =>
-          msg.role === 'user' ? (
+        {messages.map((msg, idx) => {
+          const isLastLily = msg.role === 'lily' &&
+            !messages.slice(idx + 1).some(m => m.role === 'lily');
+          return msg.role === 'user' ? (
             <UserBubble key={msg.id} message={msg} />
           ) : (
             <LilyBubble
@@ -2228,9 +2345,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               selectedNoteId={selectedNoteId}
               model={activeModel}
               onNoteCreated={onNoteCreated}
+              onRegenerate={isLastLily && !isLoading ? handleRegenerate : undefined}
             />
-          )
-        )}
+          );
+        })}
         {isLoading && (
           <>
             <TypingIndicator />
