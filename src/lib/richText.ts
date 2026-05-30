@@ -7,7 +7,7 @@ import { marked } from 'marked';
 import katex from 'katex';
 import { common, createLowlight } from 'lowlight';
 
-marked.setOptions({ breaks: true, gfm: true });
+marked.use({ breaks: true, gfm: true });
 
 // ── Lowlight (syntax highlight) ──────────────────────────────────────────────
 type HastNode = {
@@ -114,7 +114,7 @@ function transformCallouts(src: string, stash: (html: string) => string): string
       body.push(lines[i].replace(/^\s{0,3}>\s?/, ''));
       i++;
     }
-    const inner = marked.parse(body.join('\n'), { async: false }) as string;
+    const inner = marked.parse(body.join('\n')) as string;
     out.push(stash(
       `<div class="rt-callout rt-callout-${meta.cls}">` +
       `<div class="rt-callout-head">${meta.icon} ${meta.label}</div>` +
@@ -202,7 +202,7 @@ export function renderRich(src: string): string {
   // 6. Callouts (after code/math stashing so their bodies are protected).
   s = transformCallouts(s, stashBlock);
 
-  let html = marked.parse(s, { async: false }) as string;
+  let html = marked.parse(s) as string;
   // Restore stash placeholders. Loop because a stashed callout can itself
   // contain placeholders (inline code etc.) and a single global replace won't
   // re-scan inserted text. Bounded so a stray token can never spin forever.
