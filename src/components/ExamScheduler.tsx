@@ -124,7 +124,7 @@ function buildSystemPrompt(exams: Exam[], scheduleDays: ScheduleDay[]): string {
   const future = scheduleDays.filter(d => d.date >= today).sort((a, b) => a.date.localeCompare(b.date));
   if (future.length > 0) {
     prompt += '\n\n## 現在のスケジュール（今日以降）\n';
-    for (const d of future.slice(0, 30)) {
+    for (const d of future.slice(0, 200)) {
       const tasks = JSON.parse(d.tasks) as string[];
       const st = d.completed ? '[完了]' : d.skipped ? '[スキップ]' : '';
       prompt += `- ${d.date}${st ? ' ' + st : ''}: ${tasks.join(', ')}\n`;
@@ -262,9 +262,22 @@ export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSched
   const today = todayStr();
   const upcomingDays = scheduleDays
     .filter(d => d.date >= today && !d.completed)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 21);
+    .sort((a, b) => a.date.localeCompare(b.date));
   const hasSchedule = scheduleDays.some(d => d.date >= today);
+
+  // Group by month: "YYYY-MM"
+  const monthGroups: Record<string, ScheduleDay[]> = upcomingDays.reduce<Record<string, ScheduleDay[]>>((acc, day) => {
+    const key = day.date.slice(0, 7);
+    (acc[key] ??= []).push(day);
+    return acc;
+  }, {});
+  const todayMonth = today.slice(0, 7);
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set([todayMonth]));
+  const toggleMonth = (m: string) => setExpandedMonths(prev => {
+    const next = new Set(prev);
+    next.has(m) ? next.delete(m) : next.add(m);
+    return next;
+  });
 
   if (!apiKey) {
     return (
@@ -337,32 +350,46 @@ export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSched
             </div>
           ) : (
             <div className="days-list">
-              {upcomingDays.map(day => {
-                const tasks = JSON.parse(day.tasks) as string[];
-                const isToday = day.date === today;
+              {Object.entries(monthGroups).map(([month, days]) => {
+                const [y, m] = month.split('-');
+                const label = `${y}年${parseInt(m)}月`;
+                const isOpen = expandedMonths.has(month);
                 return (
-                  <div
-                    key={day.id}
-                    className={`day-card ${isToday ? 'today' : ''} ${day.skipped ? 'skipped' : ''}`}
-                  >
-                    <div className="day-head">
-                      <span className="day-label">{formatDayLabel(day.date)}</span>
-                      {isToday && !day.skipped && <span className="badge today-badge">今日</span>}
-                      {day.skipped && <span className="badge skip-badge">スキップ済</span>}
-                    </div>
-                    <ul className="task-list">
-                      {tasks.map((t, i) => <li key={i} className="task-item">{t}</li>)}
-                    </ul>
-                    {isToday && !day.skipped && (
-                      <div className="day-actions">
-                        <button className="action-btn done-btn" onClick={() => handleComplete(day)}>
-                          <CheckCircle2 size={14} /> 完了
-                        </button>
-                        <button className="action-btn skip-btn" onClick={() => handleSkip(day)}>
-                          <SkipForward size={14} /> スキップして再配分
-                        </button>
-                      </div>
-                    )}
+                  <div key={month} className="month-group">
+                    <button className="month-header" onClick={() => toggleMonth(month)}>
+                      <span className="month-label">{label}</span>
+                      <span className="month-count">{days.length}日</span>
+                      <span className="month-chevron">{isOpen ? '▲' : '▼'}</span>
+                    </button>
+                    {isOpen && days.map(day => {
+                      const tasks = JSON.parse(day.tasks) as string[];
+                      const isToday = day.date === today;
+                      return (
+                        <div
+                          key={day.id}
+                          className={`day-card ${isToday ? 'today' : ''} ${day.skipped ? 'skipped' : ''}`}
+                        >
+                          <div className="day-head">
+                            <span className="day-label">{formatDayLabel(day.date)}</span>
+                            {isToday && !day.skipped && <span className="badge today-badge">今日</span>}
+                            {day.skipped && <span className="badge skip-badge">スキップ済</span>}
+                          </div>
+                          <ul className="task-list">
+                            {tasks.map((t, i) => <li key={i} className="task-item">{t}</li>)}
+                          </ul>
+                          {isToday && !day.skipped && (
+                            <div className="day-actions">
+                              <button className="action-btn done-btn" onClick={() => handleComplete(day)}>
+                                <CheckCircle2 size={14} /> 完了
+                              </button>
+                              <button className="action-btn skip-btn" onClick={() => handleSkip(day)}>
+                                <SkipForward size={14} /> スキップして再配分
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -485,6 +512,12 @@ const styles = `
   .create-btn:hover { opacity: 0.88; }
 
   .days-list { display: flex; flex-direction: column; gap: 10px; }
+  .month-group { display: flex; flex-direction: column; gap: 8px; }
+  .month-header { display: flex; align-items: center; gap: 8px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 10px; padding: 8px 14px; cursor: pointer; width: 100%; text-align: left; }
+  .month-header:hover { border-color: var(--primary); }
+  .month-label { font-size: 0.9rem; font-weight: 800; color: var(--foreground); flex: 1; }
+  .month-count { font-size: 0.75rem; color: var(--fg-muted); font-weight: 600; }
+  .month-chevron { font-size: 0.65rem; color: var(--fg-muted); }
   .day-card { background: var(--accent); border: 1.5px solid var(--border); border-radius: 14px; padding: 13px 14px; }
   .day-card.today { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
   .day-card.skipped { opacity: 0.55; }
