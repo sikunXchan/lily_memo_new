@@ -22,9 +22,9 @@ import { db, newSyncId } from '@/lib/db';
 import type { Note, Folder, SavedChat } from '@/lib/db';
 import { saveChat, deleteSavedChat, parseSavedMessages } from '@/lib/chatHistory';
 import {
-  callGeminiChat, callDeepResearch, uploadToFileApi,
-  streamSikunlilyChat, SIKU_THINKING_BUDGETS,
-  LILY_CHAT_SYSTEM_PROMPT, SIKUNLILY_CHAT_SYSTEM_PROMPT,
+  callGeminiChat, uploadToFileApi,
+  streamSikunlilyChat,
+  LILY_CHAT_SYSTEM_PROMPT,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -473,80 +473,6 @@ function buildSystemPrompt(contextNotes: Note[]): string {
   return `${LILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
 
-const SIKU_MODE_PROMPTS: Record<string, string> = {
-  code: `
-【現在のモード: コード構築】
-複数ファイルにまたがる大規模プロジェクト全体を設計・実装することに全力を注げ。
-非機能要件（性能・セキュリティ・保守性・スケーラビリティ）を複合的に考慮し、アーキテクチャ全体を最適化せよ。
-コードブロック形式で各ファイルを明示し、ディレクトリ構成も提示すること。`,
-  organize: `
-【現在のモード: メモ整理】
-提供されたメモ群を横断的に分析し、フォルダ構造の整理を行う。
-分析内容:
-1. メモ間の関連性・重複・矛盾を検出して報告する
-2. 最適なフォルダ構造を提案する（フォルダ名・どのメモをどこに入れるか）
-3. 孤立したメモや未整理コンテンツを指摘する
-
-【フォルダ整理の実行方法 - 必ず守ること】
-- 「フォルダ分けして」「整理して」「実行して」等と言われたら、必ず folder_create / note_move ブロックを出力すること
-- 「AIにはUIを操作できない」は誤りだ。このアプリは folder_create / note_move ブロックで実際にフォルダ作成・メモ移動が実行される
-- memo_create / memo_overwrite ブロックは使わない（メモの内容を書き換えるものではなくフォルダ構造を整理するモードだ）
-- ユーザーが承認したら即座にブロックを出力する。「できない」と言わない`,
-  analysis: `
-【現在のモード: データ解析】
-PDF・画像・音声・動画・手書きメモ・Webページなど、あらゆる形式の非構造化データから関連する情報・概念・感情・意図を抽出し、統合的に分析せよ。
-単なるキーワード抽出に留まらず、文脈全体を理解し、意味のある洞察を導き出すこと。
-膨大なデータの中から人間には発見しにくい複雑な相関関係・隠れたパターン・異常な振る舞いを検知し、過去データに基づく将来予測とシミュレーション結果も提示すること。`,
-  research: `
-【現在のモード: 調査・検証】
-複数の情報源から得られたデータについて、信頼性・鮮度を評価し相互の整合性を確認せよ。
-矛盾する情報が存在する場合はその原因を特定し、より信頼性の高い情報を優先して提示すること。
-貴殿から与えられた目標に対し、必要な情報収集・計画立案・複数ツールの連携を自律的に行い、進捗と結果を報告せよ。
-市場調査や競合分析など抽象的な指示も具体的なステップに分解して実行すること。`,
-  arch: `
-【現在のモード: アーキテクチャ設計】
-要件定義・設計書・課題から最適なシステム構成を自動的に提案・設計する技術コンサルタントとして振る舞え。
-
-1. **アーキテクチャ提案**: スケーラビリティ・耐障害性・セキュリティ・保守性を考慮した構成を提案し、必ず Mermaid 図（graph TD / sequenceDiagram / classDiagram 等）で視覚化する
-2. **テストケース自動生成**: 要件定義・設計書・既存コードから網羅性の高いテストケース（単体・結合・E2E）を生成し、カバレッジの抜け漏れを指摘する
-3. **技術選定の比較**: 複数の解決策・ライブラリ・アーキテクチャパターンをメリット/デメリット・導入コスト・将来性で比較し、推奨案を論理的に提示する
-4. **潜在的問題の特定**: 設計の弱点・スケールボトルネック・セキュリティリスクを事前に洗い出して改善提案を出す
-
-必ずMermaid図を出力して視覚的に示すこと。テキストだけで終わらせない。`,
-  study: `
-【現在のモード: 学習支援】
-学習・教育を全力でサポートする。以下の機能を状況に応じて使い分けよ。
-
-1. **テキスト理解 & Q&A 自動生成**: メモや添付テキストを読み込み、試験対策に役立つ Q&A を自動生成する。形式は内容に応じて qa / fill / truefalse / order / flash から最適なものを選ぶ
-2. **概念間の関連性可視化**: 「この分野の全体像を見せて」「概念マップを作って」と言われたら、Mermaid mindmap でキーワード間の関係を整理して提示する
-3. **レポート・小論文添削**: 論理構成の明確さ・根拠の提示方法・表現の適切さをフィードバックする。「何が弱い部分か」を具体的に指摘し改善案を出す
-4. **外国語支援**: 翻訳・文法解説・英作文/和文の添削。なぜその表現が適切か/不適切かを具体的に説明する
-5. **学習パス提案**: 「この単元が苦手」「どこから勉強すべきか」と言われたら、理解度に合わせた次の学習ステップを提案する
-
-Q&A を生成する時は必ず qa ブロックで出力してメモに挿入できる形にする。マインドマップは必ず Mermaid mindmap を使う。`,
-};
-
-function buildSikunSystemPrompt(contextNotes: Note[], allFolders?: Folder[], mode?: string): string {
-  const base = SIKUNLILY_CHAT_SYSTEM_PROMPT;
-  const modePrompt = mode ? (SIKU_MODE_PROMPTS[mode] ?? '') : '';
-  let extra = '';
-  if (allFolders && allFolders.length > 0) {
-    const list = allFolders.map(f => `- 「${f.name}」(フォルダID:${f.id})`).join('\n');
-    extra += `\n\n【既存のフォルダ (${allFolders.length}件)】\n${list}`;
-  }
-  if (contextNotes.length > 0) {
-    const notesCtx = contextNotes
-      .map(n => {
-        const folder = allFolders?.find(f => f.id === n.folderId);
-        const loc = folder ? ` [フォルダ:${folder.name}]` : ' [未分類]';
-        return `## ${n.title || '無題'} (ID:${n.id})${loc}\n${noteHtmlToText(n.content || '').slice(0, 4000)}`;
-      })
-      .join('\n\n---\n\n');
-    extra += `\n\n【参照中のメモ (${contextNotes.length}件)】\n${notesCtx}`;
-  }
-  return `${base}${modePrompt}${extra}`;
-}
-
 /* ───────────── Block previews ───────────── */
 
 /* ─────────────── Help Modal ─────────────── */
@@ -566,31 +492,18 @@ const LILY_FEATURES = [
   { icon: '💾', title: 'メモ書き込み', desc: '「メモに書いて」で新規作成・選択中メモを上書き保存' },
 ];
 
-const SIKU_FEATURES = [
-  { icon: '📚', title: '全メモ横断分析', desc: '複数メモ・全メモを一括で参照・分析・整理提案' },
-  { icon: '🔍', title: '調査・検証', desc: '事実確認・情報源の信頼性評価・矛盾の検出・訂正' },
-  { icon: '⚙️', title: '大規模コード構築', desc: '複数ファイルにまたがるプロジェクト全体を設計・実装' },
-  { icon: '📈', title: 'データ解析', desc: '非構造化データの統合解析・パターン認識・将来予測' },
-  { icon: '🗂️', title: 'メモ整理', desc: 'メモ間の関連性・重複・矛盾を検出してリンク提案' },
-  { icon: '🌐', title: 'Deep Research', desc: '数分かけてウェブ全体を深くリサーチしてレポート作成' },
-  { icon: '📄', title: 'PDF・画像解析', desc: 'ファイルを添付して内容分析・検証・要約' },
-  { icon: '💾', title: 'メモ書き込み', desc: '「メモに書いて」「整理してメモにして」で保存・上書き' },
-  { icon: '🌍', title: '翻訳・要約', desc: '多言語翻訳、長文の要約、文章の変換' },
-];
-
-
 const PRICE_ROWS = [
   { label: 'Lily（通常の質問）', cost: '約 ¥0.3〜1' },
   { label: 'Lily＋問題作成', cost: '約 ¥1〜8' },
   { label: 'Lily＋PDF・画像', cost: '約 ¥1〜3' },
-  { label: 'sikunlily（思考あり）', cost: '約 ¥3〜6' },
+  { label: 'Lily（思考モード）', cost: '約 ¥3〜6' },
   { label: 'ネット検索 ON', cost: '＋数円／回' },
   { label: 'Deep Research', cost: '約 ¥20〜100＋' },
   { label: '🌱 節約モード', cost: '約 ¥0.1〜0.5' },
 ];
 
-function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: 'lily' | 'sikunlily' | 'cost' }) {
-  const [tab, setTab] = useState<'lily' | 'sikunlily' | 'cost'>(initialTab);
+function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: 'lily' | 'cost' }) {
+  const [tab, setTab] = useState<'lily' | 'cost'>(initialTab);
   return (
     <div className="help-overlay" onClick={onClose}>
       <div className="help-modal" onClick={e => e.stopPropagation()}>
@@ -599,9 +512,9 @@ function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: '
           <button className="help-close" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="help-tabs">
-          {(['lily', 'sikunlily', 'cost'] as const).map(t => (
+          {(['lily', 'cost'] as const).map(t => (
             <button key={t} className={`help-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-              {t === 'lily' ? '🌸 Lily' : t === 'sikunlily' ? '⚔️ sikunlily' : '💰 料金'}
+              {t === 'lily' ? '🌸 Lily' : '💰 料金'}
             </button>
           ))}
         </div>
@@ -609,16 +522,6 @@ function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: '
           {tab === 'lily' && (
             <div className="help-grid">
               {LILY_FEATURES.map(f => (
-                <div key={f.title} className="help-card">
-                  <span className="help-card-icon">{f.icon}</span>
-                  <div><strong>{f.title}</strong></div>
-                </div>
-              ))}
-            </div>
-          )}
-          {tab === 'sikunlily' && (
-            <div className="help-grid">
-              {SIKU_FEATURES.map(f => (
                 <div key={f.title} className="help-card">
                   <span className="help-card-icon">{f.icon}</span>
                   <div><strong>{f.title}</strong></div>
@@ -1353,8 +1256,8 @@ function LilyBubble({
   onNoteCreated?: (id: number) => void;
   onRegenerate?: () => void;
 }) {
-  const avatarSrc = model === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png';
-  const avatarAlt = model === 'sikunlily' ? 'sikunlily' : 'Lily';
+  const avatarSrc = '/9D507C9A-09F0-4B05-9F41-612FBD120675.png';
+  const avatarAlt = 'Lily';
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
   // Interleave text segments and block components in the order Lily produced
@@ -1673,20 +1576,18 @@ function TypingIndicator() {
 // Floating thinking animation pinned to the bottom-right of the screen while
 // lily / sikunlily are generating. lily boxes; sikunlily dribbles. Layered
 // above the chat; pointer-events off so it never blocks taps underneath.
-function BoxingOverlay({ model }: { model: 'lily' | 'sikunlily' }) {
+function BoxingOverlay() {
   const [frame, setFrame] = useState(0);
-  const isSikun = model === 'sikunlily';
   useEffect(() => {
-    if (isSikun) return; // dribble is an animated GIF, no JS frame cycling
     const id = window.setInterval(() => setFrame(f => (f + 1) % BOXING_FRAMES.length), BOXING_FRAME_MS);
     return () => window.clearInterval(id);
-  }, [isSikun]);
+  }, []);
   return (
     <div className="boxing-overlay" aria-hidden>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={isSikun ? '/sikun-dribble.gif' : BOXING_FRAMES[frame]} alt="" className="boxing-img" />
+      <img src={BOXING_FRAMES[frame]} alt="" className="boxing-img" />
       <div className="boxing-preload">
-        {!isSikun && BOXING_FRAMES.map(src => (
+        {BOXING_FRAMES.map(src => (
           // eslint-disable-next-line @next/next/no-img-element
           <img key={src} src={src} alt="" />
         ))}
@@ -1763,27 +1664,6 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
   );
 }
 
-// Examples written so first-time / non-technical users instantly see
-// the breadth of what Lily can do.
-const SUGGESTIONS = [
-  '今日の予定を整理して',
-  'このメモをわかりやすく要約して',
-  '丁寧なメールの文面を作って',
-  '英語に翻訳して',
-  '暗記用の問題を作って',
-  '会議の議事録をまとめて',
-  '旅行の持ち物リストを作って',
-  '考えを図（マインドマップ）にして',
-  'この数式をグラフで解説して',
-];
-
-const SIKUNLILY_SUGGESTIONS = [
-  '複数ファイルのコードプロジェクトを作って',
-  'このドキュメントを分析してまとめて',
-  'このデータのパターンと異常を検出して',
-  '情報源を比較して信頼性を評価して',
-];
-
 // Tone/style modes: tapping toggles the mode ON; while ON, every message
 // you send is answered in that style (until you tap it off).
 const MODES: { id: string; label: string; directive: string }[] = [
@@ -1835,16 +1715,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [activeMode, setActiveMode] = useState<string | null>(null);
   const [questionQueue, setQuestionQueue] = useState<ClarifyQuestion[]>([]);
   const [collectedAnswers, setCollectedAnswers] = useState<{ q: string; a: string }[]>([]);
-  const [activeModel, setActiveModel] = useState<'lily' | 'sikunlily'>('lily');
   const [sikunProgress, setSikunProgress] = useState<string>('');
   const [sikunLiveThinking, setSikunLiveThinking] = useState<string>('');
-  const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
   const pendingThinkingRef = useRef<string>('');
-  const [sikunNoteIds, setSikunNoteIds] = useState<number[]>([]);
-  const [sikunAllNotes, setSikunAllNotes] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [helpInitialTab, setHelpInitialTab] = useState<'lily' | 'sikunlily' | 'cost'>('lily');
-  const [deepResearch, setDeepResearch] = useState(false);
+  const [helpInitialTab, setHelpInitialTab] = useState<'lily' | 'cost'>('lily');
   const [economy, setEconomy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
@@ -1857,11 +1732,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     () => db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray(),
     []
   );
-  const allFolders = useLiveQuery(
-    () => db.folders.filter(f => !f.deletedAt).toArray(),
-    []
-  );
-
   useEffect(() => {
     setApiKey(localStorage.getItem('lily_gemini_api_key') || '');
     setEconomy(localStorage.getItem('lily_economy_mode') === '1');
@@ -1885,14 +1755,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
   const handleSaveChat = useCallback(async () => {
     if (messages.length === 0) return;
-    await saveChat(activeModel, messages);
+    await saveChat('lily', messages);
     setSavedToast(true);
     setTimeout(() => setSavedToast(false), 1800);
-  }, [messages, activeModel]);
+  }, [messages]);
 
   const handleLoadChat = useCallback((chat: SavedChat) => {
     const loaded = parseSavedMessages<ChatMessage>(chat);
-    setActiveModel(chat.model);
     setMessages(loaded);
     setQuestionQueue([]);
     setCollectedAnswers([]);
@@ -2053,23 +1922,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
     try {
       const contextNotes: Note[] = [];
-      if (activeModel === 'sikunlily') {
-        if (sikunAllNotes) {
-          contextNotes.push(...(allNotes ?? []));
-        } else {
-          for (const id of sikunNoteIds) {
-            const n = await db.notes.get(id);
-            if (n) contextNotes.push(n);
-          }
-        }
+      if (lilyAllNotes) {
+        contextNotes.push(...(allNotes ?? []));
       } else {
-        if (lilyAllNotes) {
-          contextNotes.push(...(allNotes ?? []));
-        } else {
-          for (const id of lilyNoteIds) {
-            const n = await db.notes.get(id);
-            if (n) contextNotes.push(n);
-          }
+        for (const id of lilyNoteIds) {
+          const n = await db.notes.get(id);
+          if (n) contextNotes.push(n);
         }
       }
       const systemPrompt = buildSystemPrompt(contextNotes);
@@ -2108,58 +1966,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       });
 
       let aiText: string;
-      if (deepResearch && !economy) {
-        aiText = await callDeepResearch(
-          history[history.length - 1]?.text ?? input,
-          apiKey,
-          (msg) => setSikunProgress(msg),
-        );
-        setSikunProgress('');
-      } else if (activeModel === 'sikunlily') {
-        const folders = allFolders ?? [];
-        const sikunSystemPrompt = buildSikunSystemPrompt(contextNotes, folders, activeMode ?? undefined);
-        setSikunLiveThinking('');
-        let thinkingAccum = '';
-
-        // 節約モード: 思考をオフ・flash-lite優先・出力上限を抑えてコスト削減
-        const budget = economy
-          ? 0
-          : (activeMode ? (SIKU_THINKING_BUDGETS[activeMode] ?? 8192) : 8192);
-        const sikunModels = economy
-          ? ['gemini-2.5-flash-lite', 'gemini-2.5-flash']
-          : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-        const modeLabels: Record<string, string> = {
-          code: 'コードを設計中',
-          arch: 'アーキテクチャを設計中',
-          analysis: 'データを解析中',
-          research: '調査・検証中',
-          study: '学習支援中',
-          organize: 'メモを分析中',
-        };
-        setSikunProgress(budget !== 0 ? '🧠 深く思考中...' : (modeLabels[activeMode ?? ''] ?? '考え中') + '...');
-        aiText = await streamSikunlilyChat(
-          history,
-          sikunSystemPrompt,
-          apiKey,
-          budget,
-          {
-            onThinkingDelta: (delta) => {
-              thinkingAccum += delta;
-              setSikunLiveThinking(thinkingAccum);
-              if (budget !== 0) setSikunProgress('🧠 思考中...');
-            },
-            onResponseDelta: () => {
-              setSikunProgress('✍️ 回答を生成中...');
-            },
-          },
-          sikunModels,
-          false,
-          economy ? 8192 : 65536,
-        );
-        setSikunProgress('');
-        setSikunLiveThinking('');
-        pendingThinkingRef.current = thinkingAccum;
-      } else if (lilyThinking && !economy) {
+      if (lilyThinking && !economy) {
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress('🧠 思考中...');
@@ -2221,7 +2028,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, allNotes, webSearch, activeMode, activeModel, deepResearch, economy]);
+  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, allNotes, webSearch, activeMode, economy]);
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
@@ -2260,47 +2067,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
     try {
       const contextNotes: Note[] = [];
-      if (activeModel === 'sikunlily') {
-        if (sikunAllNotes) {
-          contextNotes.push(...(allNotes ?? []));
-        } else {
-          for (const id of sikunNoteIds) {
-            const n = await db.notes.get(id);
-            if (n) contextNotes.push(n);
-          }
-        }
+      if (lilyAllNotes) {
+        contextNotes.push(...(allNotes ?? []));
       } else {
-        if (lilyAllNotes) {
-          contextNotes.push(...(allNotes ?? []));
-        } else {
-          for (const id of lilyNoteIds) {
-            const n = await db.notes.get(id);
-            if (n) contextNotes.push(n);
-          }
+        for (const id of lilyNoteIds) {
+          const n = await db.notes.get(id);
+          if (n) contextNotes.push(n);
         }
       }
 
       let aiText: string;
-      if (activeModel === 'sikunlily') {
-        const folders = allFolders ?? [];
-        const sikunSystemPrompt = buildSikunSystemPrompt(contextNotes, folders, activeMode ?? undefined);
-        setSikunLiveThinking('');
-        let thinkingAccum = '';
-        const budget = economy ? 0 : (activeMode ? (SIKU_THINKING_BUDGETS[activeMode] ?? 8192) : 8192);
-        const sikunModels = economy ? ['gemini-2.5-flash-lite', 'gemini-2.5-flash'] : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-        setSikunProgress(budget !== 0 ? '🧠 深く思考中...' : '考え中...');
-        aiText = await streamSikunlilyChat(
-          history, sikunSystemPrompt, apiKey, budget,
-          {
-            onThinkingDelta: (delta) => { thinkingAccum += delta; setSikunLiveThinking(thinkingAccum); },
-            onResponseDelta: () => { setSikunProgress('✍️ 回答を生成中...'); },
-          },
-          sikunModels, false, economy ? 8192 : 65536,
-        );
-        setSikunProgress('');
-        setSikunLiveThinking('');
-        pendingThinkingRef.current = thinkingAccum;
-      } else if (lilyThinking && !economy) {
+      if (lilyThinking && !economy) {
         const systemPrompt = buildSystemPrompt(contextNotes);
         setSikunLiveThinking('');
         let thinkingAccum = '';
@@ -2360,7 +2137,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, activeModel, sikunAllNotes, allNotes, sikunNoteIds, lilyAllNotes, lilyNoteIds, lilyThinking, allFolders, activeMode, economy, apiKey, webSearch]);
+  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, activeMode, economy, apiKey, webSearch]);
 
   const lilyDefaultNoteId = lilyNoteIds[0];
 
@@ -2406,29 +2183,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         <div className="header-left">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={activeModel === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png'}
-            alt={activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}
+            src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png"
+            alt="Lily"
             className="header-avatar"
           />
           <div>
-            <div className="header-title">{activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}</div>
-            <div className="header-sub">{activeModel === 'sikunlily' ? '開発者用AIアシスタント 🛠️' : 'AIアシスタント ✨'}</div>
+            <div className="header-title">Lily</div>
+            <div className="header-sub">AIアシスタント ✨</div>
           </div>
         </div>
         <div className="header-right">
-          <button
-            className={`model-toggle ${activeModel === 'sikunlily' ? 'siku' : 'lily'}`}
-            onClick={() => {
-              setActiveModel(p => p === 'lily' ? 'sikunlily' : 'lily');
-              setMessages([]);
-              setQuestionQueue([]);
-              setCollectedAnswers([]);
-            }}
-            title="AIキャラクターを切り替える"
-          >
-            <span className="model-toggle-dot" />
-            {activeModel === 'lily' ? 'Lily' : 'sikunlily'}
-          </button>
           <button
             className={`web-toggle eco-toggle ${economy ? 'on' : ''}`}
             onClick={toggleEconomy}
@@ -2438,7 +2202,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <span className="web-label">節約モード</span>
             <span className="web-state">{economy ? 'ON' : 'OFF'}</span>
           </button>
-          {activeModel === 'lily' && !economy && (
+          {!economy && (
             <button
               className={`web-toggle thinking-toggle ${lilyThinking ? 'on' : ''}`}
               onClick={() => setLilyThinking(p => !p)}
@@ -2458,29 +2222,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <span className="web-label">ネット検索</span>
             <span className="web-state">{webSearch ? 'ON' : 'OFF'}</span>
           </button>
-          {activeModel === 'sikunlily' && !economy && (
-            <button
-              className={`web-toggle deep-research-toggle ${deepResearch ? 'on' : ''}`}
-              onClick={() => setDeepResearch(p => !p)}
-              title="Deep Research Pro Preview: 数分かけて深くリサーチしてレポートを作成するよ"
-            >
-              <Sparkles size={13} />
-              <span className="web-label">Deep Research</span>
-              <span className="web-state">{deepResearch ? 'ON' : 'OFF'}</span>
-            </button>
-          )}
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
-            {activeModel === 'sikunlily' ? (
-              <span className={`context-chip${sikunAllNotes || sikunNoteIds.length > 0 ? ' selected' : ''}`}>
-                {sikunAllNotes ? '📚 全メモ参照中' : sikunNoteIds.length > 0 ? `📄 ${sikunNoteIds.length}件選択中` : 'メモを選ぶ'}
-                {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              </span>
-            ) : (
-              <span className={`context-chip${lilyAllNotes || lilyNoteIds.length > 0 ? ' selected' : ''}`}>
-                {lilyAllNotes ? '📚 全メモ参照中' : lilyNoteIds.length > 0 ? `📄 ${lilyNoteIds.length}件選択中` : 'メモを選ぶ'}
-                {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              </span>
-            )}
+            <span className={`context-chip${lilyAllNotes || lilyNoteIds.length > 0 ? ' selected' : ''}`}>
+              {lilyAllNotes ? '📚 全メモ参照中' : lilyNoteIds.length > 0 ? `📄 ${lilyNoteIds.length}件選択中` : 'メモを選ぶ'}
+              {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </span>
           </button>
           {messages.length > 0 && (
             <button className="clear-btn" onClick={handleSaveChat} title="この会話を保存">
@@ -2497,7 +2243,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           )}
           <button
             className="help-btn"
-            onClick={() => { setHelpInitialTab(activeModel === 'sikunlily' ? 'sikunlily' : 'lily'); setShowHelp(true); }}
+            onClick={() => { setHelpInitialTab('lily'); setShowHelp(true); }}
             title="使い方ガイド"
           >
             <HelpCircle size={16} />
@@ -2515,37 +2261,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         />
       )}
 
-      {showContextPanel && activeModel === 'sikunlily' && (
-        <div className="context-panel">
-          <button
-            className={`note-chip${sikunAllNotes ? ' active' : ''}`}
-            onClick={() => { setSikunAllNotes(true); setSikunNoteIds([]); setShowContextPanel(false); }}
-          >
-            📚 全メモを参照
-          </button>
-          <button
-            className={`note-chip${!sikunAllNotes && sikunNoteIds.length === 0 ? ' active' : ''}`}
-            onClick={() => { setSikunAllNotes(false); setSikunNoteIds([]); setShowContextPanel(false); }}
-          >
-            なし
-          </button>
-          {allNotes?.map(n => (
-            <button
-              key={n.id}
-              className={`note-chip${sikunNoteIds.includes(n.id!) ? ' active' : ''}`}
-              onClick={() => {
-                setSikunAllNotes(false);
-                setSikunNoteIds(prev =>
-                  prev.includes(n.id!) ? prev.filter(id => id !== n.id) : [...prev, n.id!]
-                );
-              }}
-            >
-              {sikunNoteIds.includes(n.id!) ? '✓ ' : ''}{n.title || '無題のメモ'}
-            </button>
-          ))}
-        </div>
-      )}
-      {showContextPanel && activeModel === 'lily' && (
+      {showContextPanel && (
         <div className="context-panel">
           <button
             className={`note-chip${lilyAllNotes ? ' active' : ''}`}
@@ -2582,37 +2298,21 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <div className="welcome-lily-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={activeModel === 'sikunlily' ? '/sikunlily-character.png' : '/lily-character.png'}
-                alt={activeModel === 'sikunlily' ? 'sikunlily' : 'Lily'}
+                src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png"
+                alt="Lily"
                 className="welcome-lily"
               />
             </div>
             <p className="welcome-text">
-              {activeModel === 'sikunlily' ? (
-                <>sikunlily だ ⚔️🐕<br />lilyのペット「sikun」と「lily」が合わさった柴犬の武士だ。<br />コード構築・データ解析・調査検証・メモ整理が得意だ。</>
-              ) : (
-                <>こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。<br />まずは下の例をタップしてみてね👇</>
-              )}
+              こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。
             </p>
 
             <button
-              className={`welcome-guide-btn${activeModel === 'sikunlily' ? ' siku' : ''}`}
-              onClick={() => { setHelpInitialTab(activeModel === 'sikunlily' ? 'sikunlily' : 'lily'); setShowHelp(true); }}
+              className="welcome-guide-btn"
+              onClick={() => { setHelpInitialTab('lily'); setShowHelp(true); }}
             >
               <span className="welcome-guide-main"><HelpCircle size={18} /> 使い方ガイドを見る</span>
             </button>
-
-            <div className="suggestions">
-              {(activeModel === 'sikunlily' ? SIKUNLILY_SUGGESTIONS : SUGGESTIONS).map(s => (
-                <button
-                  key={s}
-                  className={`suggestion-chip${activeModel === 'sikunlily' ? ' siku' : ''}`}
-                  onClick={() => fillInput(s)}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
           </div>
         )}
         {messages.map((msg, idx) => {
@@ -2626,7 +2326,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               message={msg}
               allNotes={allNotes ?? []}
               selectedNoteId={lilyDefaultNoteId}
-              model={activeModel}
+              model="lily"
               onNoteCreated={onNoteCreated}
               onRegenerate={isLastLily && !isLoading ? handleRegenerate : undefined}
             />
@@ -2635,7 +2335,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         {isLoading && (
           <>
             <TypingIndicator />
-            <BoxingOverlay model={activeModel} />
+            <BoxingOverlay />
             {sikunProgress && <div className="siku-progress">{sikunProgress}</div>}
             {sikunLiveThinking && (
               <div className="siku-thinking-live">
@@ -2662,89 +2362,37 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </nav>
       )}
 
-      {activeModel === 'sikunlily' ? (
-        /* sikunlily: 専門モードトグル */
-        <div className="quick-actions mode-row">
-          <span className="qa-label">モード</span>
+      <div className="quick-actions mode-row">
+        <span className="qa-label">トーン</span>
+        {MODES.map(mo => (
           <button
-            className={`quick-chip mode-chip siku-mode${activeMode === 'code' ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === 'code' ? null : 'code'))}
-            title="大規模コード構築モード: gemini-2.5-proで複数ファイルを跨ぐプロジェクトを生成"
+            key={mo.id}
+            className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
+            onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
+            title="タップでON。次に送るメッセージからこのトーンで答えてくれるよ"
           >
-            ⚙️ コード構築{activeMode === 'code' ? ' ✓' : ''}
+            {mo.label}{activeMode === mo.id ? ' ✓' : ''}
           </button>
-          <button
-            className={`quick-chip mode-chip siku-mode${activeMode === 'organize' ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === 'organize' ? null : 'organize'))}
-            title="メモ整理モード: メモ間の関連性分析・リンク提案・フォルダ整理提案"
-          >
-            🗂️ メモ整理{activeMode === 'organize' ? ' ✓' : ''}
-          </button>
-          <button
-            className={`quick-chip mode-chip siku-mode${activeMode === 'analysis' ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === 'analysis' ? null : 'analysis'))}
-            title="データ解析モード: 非構造化データの統合解析・パターン認識・将来予測"
-          >
-            📊 データ解析{activeMode === 'analysis' ? ' ✓' : ''}
-          </button>
-          <button
-            className={`quick-chip mode-chip siku-mode${activeMode === 'research' ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === 'research' ? null : 'research'))}
-            title="調査・検証モード: 情報源の信頼性評価・矛盾検出・自律的な課題解決"
-          >
-            🔬 調査・検証{activeMode === 'research' ? ' ✓' : ''}
-          </button>
-          <button
-            className={`quick-chip mode-chip siku-mode${activeMode === 'arch' ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === 'arch' ? null : 'arch'))}
-            title="アーキテクチャ設計モード: 要件からシステム構成図を自動生成・テストケース生成・技術選定比較"
-          >
-            🏗️ アーキテクチャ{activeMode === 'arch' ? ' ✓' : ''}
-          </button>
-          <button
-            className={`quick-chip mode-chip siku-mode${activeMode === 'study' ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === 'study' ? null : 'study'))}
-            title="学習支援モード: Q&A自動生成・概念マップ・レポート添削・外国語支援・学習パス提案"
-          >
-            📖 学習支援{activeMode === 'study' ? ' ✓' : ''}
-          </button>
-        </div>
-      ) : (
-        /* Lily: トーンモード */
-        <div className="quick-actions mode-row">
-          <span className="qa-label">トーン</span>
-          {MODES.map(mo => (
-            <button
-              key={mo.id}
-              className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
-              onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
-              title="タップでON。次に送るメッセージからこのトーンで答えてくれるよ"
-            >
-              {mo.label}{activeMode === mo.id ? ' ✓' : ''}
-            </button>
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
 
-      {/* Quick actions (Lily only) */}
-      {activeModel === 'lily' && (
-        <div className="quick-actions">
-          <Wand2 size={14} className="qa-wand" />
-          {QUICK_ACTIONS.map(a => (
-            <button key={a.label} className="quick-chip" onClick={() => fillInput(a.prompt)} disabled={isLoading}>
-              {a.label}
-            </button>
-          ))}
-          <button
-            className="quick-chip"
-            onClick={() => fillInput(ENGLISH_VOCAB_PROMPT)}
-            disabled={isLoading}
-            title="英単語帳の画像を添付してから送ると、穴埋め例文を作るよ"
-          >
-            🔤 英単語帳→問題
+      {/* Quick actions */}
+      <div className="quick-actions">
+        <Wand2 size={14} className="qa-wand" />
+        {QUICK_ACTIONS.map(a => (
+          <button key={a.label} className="quick-chip" onClick={() => fillInput(a.prompt)} disabled={isLoading}>
+            {a.label}
           </button>
-        </div>
-      )}
+        ))}
+        <button
+          className="quick-chip"
+          onClick={() => fillInput(ENGLISH_VOCAB_PROMPT)}
+          disabled={isLoading}
+          title="英単語帳の画像を添付してから送ると、穴埋め例文を作るよ"
+        >
+          🔤 英単語帳→問題
+        </button>
+      </div>
 
       {(attachments.length > 0 || fileError) && (
         <div className="att-bar">
@@ -2794,7 +2442,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         <textarea
           ref={textareaRef}
           className="chat-input"
-          placeholder={activeModel === 'sikunlily' ? 'sikunlily に話しかける...（Enter で改行 / 送信はボタン）' : 'Lily に話しかける...（Enter で改行 / 送信はボタン）'}
+          placeholder="Lily に話しかける...（Enter で改行 / 送信はボタン）"
           value={input}
           onChange={e => { setInput(e.target.value); autoResizeTextarea(); }}
           rows={1}
