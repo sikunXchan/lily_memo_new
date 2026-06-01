@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Send, CheckCircle2, SkipForward, ArrowLeft,
   Book, FileText, Brush, Sparkles, Settings as SettingsIcon,
-  CalendarDays, MessageSquare,
+  CalendarDays, MessageSquare, RefreshCw,
 } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { Exam, ScheduleDay } from '@/lib/db';
@@ -77,17 +77,18 @@ const EXAM_BASE_PROMPT = `あなたは学習スケジュール管理の専門AI�
 
 \`\`\`schedule
 [
-  {"date": "YYYY-MM-DD", "tasks": ["タスク1", "タスク2"]},
-  {"date": "YYYY-MM-DD", "tasks": ["タスク1"]}
+  {"date": "YYYY-MM-DD", "tasks": ["教科名1", "教科名2"]},
+  {"date": "YYYY-MM-DD", "tasks": ["教科名1"]}
 ]
 \`\`\`
 
 ## スケジュール作成のルール
 - 今日以降の日程のみ含める（過去の日は含めない）
-- 1日あたりのタスクは最大3個（現実的な量に）
-- 試験2〜3日前は復習・総まとめを入れる
+- tasks には「教科名」のみを入れる（例: "数学", "英語", "物理"）。細かい内容は書かない
+- 1日あたりのタスクは最大3教科（現実的な量に）
+- 試験2〜3日前は復習の教科を入れる
 - ユーザーが忙しいと言った日はタスクなしにする（その日をJSONから除く）
-- 複数試験がある場合はタスクに "(試験名)" の形で付記する
+- 複数試験がある場合は教科名に "(試験名)" の形で付記する（例: "数学 (期末)"）
 
 ## 試験登録
 試験を追加・更新する場合は以下も出力してください（試験情報が変わった時のみ）:
@@ -98,10 +99,14 @@ const EXAM_BASE_PROMPT = `あなたは学習スケジュール管理の専門AI�
 ]
 \`\`\`
 
+## 再作成・作り直し
+ユーザーが「作り直して」「最初から」「やり直して」「再生成して」と言った場合:
+- 必ず新しいscheduleブロックを出力すること
+- 試験日から逆算して、今日から試験前日までの全日程を再構築する
+
 ## スキップ・再配分
 ユーザーが「スキップした」「今日できなかった」と言った場合:
 - 残りの日数で学習内容を再分配する
-- スキップした日は除外し、試験直前に復習を集中させる
 - 必ず新しいscheduleブロックを出力すること
 
 フレンドリーで励ましのある日本語で会話すること。`;
@@ -119,7 +124,7 @@ function buildSystemPrompt(exams: Exam[], scheduleDays: ScheduleDay[]): string {
   const future = scheduleDays.filter(d => d.date >= today).sort((a, b) => a.date.localeCompare(b.date));
   if (future.length > 0) {
     prompt += '\n\n## 現在のスケジュール（今日以降）\n';
-    for (const d of future.slice(0, 30)) {
+    for (const d of future.slice(0, 200)) {
       const tasks = JSON.parse(d.tasks) as string[];
       const st = d.completed ? '[完了]' : d.skipped ? '[スキップ]' : '';
       prompt += `- ${d.date}${st ? ' ' + st : ''}: ${tasks.join(', ')}\n`;
@@ -257,9 +262,22 @@ export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSched
   const today = todayStr();
   const upcomingDays = scheduleDays
     .filter(d => d.date >= today && !d.completed)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 21);
+    .sort((a, b) => a.date.localeCompare(b.date));
   const hasSchedule = scheduleDays.some(d => d.date >= today);
+
+  // Group by month: "YYYY-MM"
+  const monthGroups: Record<string, ScheduleDay[]> = upcomingDays.reduce<Record<string, ScheduleDay[]>>((acc, day) => {
+    const key = day.date.slice(0, 7);
+    (acc[key] ??= []).push(day);
+    return acc;
+  }, {});
+  const todayMonth = today.slice(0, 7);
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set([todayMonth]));
+  const toggleMonth = (m: string) => setExpandedMonths(prev => {
+    const next = new Set(prev);
+    next.has(m) ? next.delete(m) : next.add(m);
+    return next;
+  });
 
   if (!apiKey) {
     return (
@@ -332,32 +350,46 @@ export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSched
             </div>
           ) : (
             <div className="days-list">
-              {upcomingDays.map(day => {
-                const tasks = JSON.parse(day.tasks) as string[];
-                const isToday = day.date === today;
+              {Object.entries(monthGroups).map(([month, days]) => {
+                const [y, m] = month.split('-');
+                const label = `${y}年${parseInt(m)}月`;
+                const isOpen = expandedMonths.has(month);
                 return (
-                  <div
-                    key={day.id}
-                    className={`day-card ${isToday ? 'today' : ''} ${day.skipped ? 'skipped' : ''}`}
-                  >
-                    <div className="day-head">
-                      <span className="day-label">{formatDayLabel(day.date)}</span>
-                      {isToday && !day.skipped && <span className="badge today-badge">今日</span>}
-                      {day.skipped && <span className="badge skip-badge">スキップ済</span>}
-                    </div>
-                    <ul className="task-list">
-                      {tasks.map((t, i) => <li key={i} className="task-item">{t}</li>)}
-                    </ul>
-                    {!day.skipped && (
-                      <div className="day-actions">
-                        <button className="action-btn done-btn" onClick={() => handleComplete(day)}>
-                          <CheckCircle2 size={14} /> 完了
-                        </button>
-                        <button className="action-btn skip-btn" onClick={() => handleSkip(day)}>
-                          <SkipForward size={14} /> スキップして再配分
-                        </button>
-                      </div>
-                    )}
+                  <div key={month} className="month-group">
+                    <button className="month-header" onClick={() => toggleMonth(month)}>
+                      <span className="month-label">{label}</span>
+                      <span className="month-count">{days.length}日</span>
+                      <span className="month-chevron">{isOpen ? '▲' : '▼'}</span>
+                    </button>
+                    {isOpen && days.map(day => {
+                      const tasks = JSON.parse(day.tasks) as string[];
+                      const isToday = day.date === today;
+                      return (
+                        <div
+                          key={day.id}
+                          className={`day-card ${isToday ? 'today' : ''} ${day.skipped ? 'skipped' : ''}`}
+                        >
+                          <div className="day-head">
+                            <span className="day-label">{formatDayLabel(day.date)}</span>
+                            {isToday && !day.skipped && <span className="badge today-badge">今日</span>}
+                            {day.skipped && <span className="badge skip-badge">スキップ済</span>}
+                          </div>
+                          <ul className="task-list">
+                            {tasks.map((t, i) => <li key={i} className="task-item">{t}</li>)}
+                          </ul>
+                          {isToday && !day.skipped && (
+                            <div className="day-actions">
+                              <button className="action-btn done-btn" onClick={() => handleComplete(day)}>
+                                <CheckCircle2 size={14} /> 完了
+                              </button>
+                              <button className="action-btn skip-btn" onClick={() => handleSkip(day)}>
+                                <SkipForward size={14} /> スキップして再配分
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -371,6 +403,17 @@ export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSched
 
       {view === 'chat' && (
         <>
+          {hasSchedule && (
+            <div className="regen-bar">
+              <button
+                className="regen-btn"
+                disabled={isLoading}
+                onClick={() => void sendMessage('スケジュールを最初から作り直してください。試験日から逆算して、今日から全日程を再構築してください。')}
+              >
+                <RefreshCw size={13} /> スケジュールを再作成
+              </button>
+            </div>
+          )}
           <div className="chat-area">
             {messages.length === 0 && (
               <div className="chat-welcome">
@@ -408,11 +451,11 @@ export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSched
                 const ta = textareaRef.current;
                 if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 100) + 'px'; }
               }}
-              placeholder="試験情報・生活パターンを教えて..."
+              placeholder="試験情報・生活パターンを教えて... (Ctrl+Enterで送信)"
               rows={1}
               disabled={isLoading}
               onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void sendMessage(); }
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void sendMessage(); }
               }}
             />
             <button
@@ -469,6 +512,12 @@ const styles = `
   .create-btn:hover { opacity: 0.88; }
 
   .days-list { display: flex; flex-direction: column; gap: 10px; }
+  .month-group { display: flex; flex-direction: column; gap: 8px; }
+  .month-header { display: flex; align-items: center; gap: 8px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 10px; padding: 8px 14px; cursor: pointer; width: 100%; text-align: left; }
+  .month-header:hover { border-color: var(--primary); }
+  .month-label { font-size: 0.9rem; font-weight: 800; color: var(--foreground); flex: 1; }
+  .month-count { font-size: 0.75rem; color: var(--fg-muted); font-weight: 600; }
+  .month-chevron { font-size: 0.65rem; color: var(--fg-muted); }
   .day-card { background: var(--accent); border: 1.5px solid var(--border); border-radius: 14px; padding: 13px 14px; }
   .day-card.today { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
   .day-card.skipped { opacity: 0.55; }
@@ -488,6 +537,10 @@ const styles = `
   .skip-btn:hover { background: rgba(99,102,241,0.1); border-color: #6366f1; }
   .all-done { text-align: center; padding: 40px 16px; font-size: 1rem; font-weight: 700; color: var(--primary); }
 
+  .regen-bar { display: flex; justify-content: flex-end; padding: 6px 14px; border-bottom: 1px solid var(--border); background: var(--accent); flex-shrink: 0; }
+  .regen-btn { display: flex; align-items: center; gap: 5px; background: transparent; border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 0.75rem; font-weight: 600; color: var(--fg-muted); cursor: pointer; transition: all 0.15s; }
+  .regen-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+  .regen-btn:disabled { opacity: 0.4; cursor: default; }
   .chat-area { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   .chat-welcome { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 0; text-align: center; }
   .welcome-lily { width: 110px; height: 110px; object-fit: contain; animation: float 3s ease-in-out infinite; }
