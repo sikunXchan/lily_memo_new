@@ -15,15 +15,36 @@ export interface PdfAllPages {
   truncated: boolean;
 }
 
+// Annotation written by Sikun AI onto the current PDF page.
+// All coordinates are normalized 0..1 (x=right, y=down, origin=top-left).
+export interface SikunAnnotation {
+  type: 'highlight' | 'underline' | 'text' | 'arrow';
+  x0: number; y0: number;   // top-left (highlight/underline: start of region)
+  x1?: number; y1?: number; // bottom-right for highlight; endpoint for arrow
+  text?: string;             // label text for 'text' type
+  color?: string;            // optional override; defaults to indigo
+}
+
 type PageProvider = () => PdfSnapshot | null;
 type AllProvider = (maxPages: number) => Promise<PdfAllPages | null>;
+type AnnotatorFn = (anns: SikunAnnotation[], page: number) => void;
 
 let pageProvider: PageProvider | null = null;
 let allProvider: AllProvider | null = null;
+let annotatorFn: AnnotatorFn | null = null;
 
 export function registerPdfProvider(page: PageProvider | null, all: AllProvider | null = null): void {
   pageProvider = page;
   allProvider = all;
+}
+
+export function registerPdfAnnotator(fn: AnnotatorFn | null): void {
+  annotatorFn = fn;
+}
+
+export function addPdfAnnotation(anns: SikunAnnotation[], page: number): boolean {
+  if (!annotatorFn) return false;
+  try { annotatorFn(anns, page); return true; } catch { return false; }
 }
 
 export function getPdfSnapshot(): PdfSnapshot | null {

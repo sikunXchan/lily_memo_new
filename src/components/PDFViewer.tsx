@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { registerPdfProvider } from '@/lib/pdfBridge';
+import { registerPdfProvider, registerPdfAnnotator, type SikunAnnotation } from '@/lib/pdfBridge';
 
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -190,6 +190,11 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const [textInputValue, setTextInputValue] = useState('');
   const [showComments, setShowComments] = useState(false);
 
+  // Sikun AI annotations (keyed by page, separate from user annotations)
+  const [sikunAnnotations, setSikunAnnotations] = useState<Record<number, SikunAnnotation[]>>({});
+  const sikunAnnotationsRef = useRef<Record<number, SikunAnnotation[]>>({});
+  sikunAnnotationsRef.current = sikunAnnotations;
+
   // App-level fullscreen (hides the top bar to maximize canvas area)
   const [isAppFullscreen, setIsAppFullscreen] = useState(false);
 
@@ -278,7 +283,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     setPdfDoc(null); setCurrentPage(1); setTotalPages(0);
     setError(''); setIsLoading(false); setTimerRunning(false);
     setOpenUrl(''); setAnnotations({}); setAnnotationMode('none');
-    setTextInputPos(null); setShowComments(false);
+    setTextInputPos(null); setShowComments(false); setSikunAnnotations({});
   };
 
   // ---- Overlay drawing ----
@@ -317,6 +322,80 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
         ctx.stroke();
       }
       // 'text' type is rendered as HTML overlay, not on canvas
+    }
+
+    // ── Sikun AI annotations ──────────────────────────────────────────────────
+    const sikunAnns = sikunAnnotationsRef.current[currentPageRef.current] || [];
+    const W = overlay.width;
+    const H = overlay.height;
+    const INDIGO = '#6366f1';
+    const INDIGO_HL = 'rgba(99,102,241,0.28)';
+
+    for (const ann of sikunAnns) {
+      const color = ann.color || INDIGO;
+      const x0 = ann.x0 * W;
+      const y0 = ann.y0 * H;
+      const x1 = (ann.x1 ?? ann.x0) * W;
+      const y1 = (ann.y1 ?? ann.y0) * H;
+
+      if (ann.type === 'highlight') {
+        ctx.fillStyle = ann.color ? ann.color + '55' : INDIGO_HL;
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+        // thin border so the box is visible
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      } else if (ann.type === 'underline') {
+        ctx.beginPath();
+        ctx.moveTo(x0, y1);
+        ctx.lineTo(x1, y1);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      } else if (ann.type === 'arrow') {
+        const dx = x1 - x0; const dy = y1 - y0;
+        const angle = Math.atan2(dy, dx);
+        const headLen = 14;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x1 - headLen * Math.cos(angle - 0.42), y1 - headLen * Math.sin(angle - 0.42));
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x1 - headLen * Math.cos(angle + 0.42), y1 - headLen * Math.sin(angle + 0.42));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      } else if (ann.type === 'text') {
+        // Draw a label bubble at (x0, y0)
+        const label = ann.text || '';
+        const fontSize = Math.max(12, Math.round(H * 0.022));
+        ctx.font = `700 ${fontSize}px -apple-system, sans-serif`;
+        const tw = ctx.measureText(label).width;
+        const padX = 8; const padY = 5;
+        const bw = tw + padX * 2; const bh = fontSize + padY * 2;
+        // position bubble so it doesn't fall off edges
+        const bx = Math.min(x0, W - bw - 4);
+        const by = Math.max(4, y0 - bh - 6);
+        // background
+        ctx.fillStyle = INDIGO;
+        ctx.beginPath();
+        ctx.roundRect?.(bx, by, bw, bh, 6);
+        ctx.fill();
+        // text
+        ctx.fillStyle = '#fff';
+        ctx.fillText(label, bx + padX, by + padY + fontSize * 0.82);
+        // tail triangle
+        ctx.beginPath();
+        ctx.moveTo(Math.min(x0 + 4, W - 4), by + bh);
+        ctx.lineTo(Math.min(x0 + 14, W - 4), by + bh);
+        ctx.lineTo(Math.min(x0 + 4, W - 4), by + bh + 8);
+        ctx.closePath();
+        ctx.fillStyle = INDIGO;
+        ctx.fill();
+      }
     }
   }, []);
 
@@ -405,12 +484,21 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
       return { images, total, truncated: n < total };
     };
 
+    const annotator = (anns: SikunAnnotation[], page: number) => {
+      setSikunAnnotations(prev => ({
+        ...prev,
+        [page]: [...(prev[page] || []), ...anns],
+      }));
+      setOverlayVersion(v => v + 1);
+    };
+
     registerPdfProvider(getCurrentPage, getAllPages);
-    return () => registerPdfProvider(null);
+    registerPdfAnnotator(annotator);
+    return () => { registerPdfProvider(null); registerPdfAnnotator(null); };
   }, [hasPDF, totalPages]);
 
   // Overlay redraw when annotations or page version changes
-  useEffect(() => { drawOverlay(); }, [overlayVersion, annotations, drawOverlay]);
+  useEffect(() => { drawOverlay(); }, [overlayVersion, annotations, sikunAnnotations, drawOverlay]);
 
   // Keyboard navigation
   useEffect(() => {

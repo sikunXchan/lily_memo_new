@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Play, Pause, X, Camera, CameraOff, BookOpen, Coffee } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, Pause, X, Camera, CameraOff, BookOpen, Coffee, Volume2, VolumeX } from 'lucide-react';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const FOCUS_SECS = 25 * 60;
@@ -37,6 +37,120 @@ function playTone(freq: number, dur: number, vol = 0.25) {
 }
 function playChime() {
   playTone(660, 0.4); setTimeout(() => playTone(880, 0.5), 350);
+}
+
+// ── Brown noise generator (Web Audio API) ─────────────────────────────────────
+function createBrownNoise(vol: number): { ctx: AudioContext; stop: () => void } | null {
+  try {
+    const AudioCtx = window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AudioCtx();
+    const bufferSize = ctx.sampleRate * 2;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    let lastOut = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      data[i] = (lastOut + 0.02 * white) / 1.02;
+      lastOut = data[i];
+      data[i] *= 3.5; // amplify
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const gain = ctx.createGain();
+    gain.gain.value = vol;
+    source.connect(gain); gain.connect(ctx.destination);
+    source.start();
+    return { ctx, stop: () => { try { source.stop(); ctx.close(); } catch {} } };
+  } catch { return null; }
+}
+
+// ── Nature canvas (animated rain) ────────────────────────────────────────────
+type RainDrop = { x: number; y: number; speed: number; length: number; opacity: number };
+
+function initRain(w: number, h: number, count = 120): RainDrop[] {
+  return Array.from({ length: count }, () => ({
+    x: Math.random() * w,
+    y: Math.random() * h,
+    speed: 4 + Math.random() * 6,
+    length: 12 + Math.random() * 22,
+    opacity: 0.08 + Math.random() * 0.22,
+  }));
+}
+
+function drawNature(ctx: CanvasRenderingContext2D, w: number, h: number, drops: RainDrop[], t: number) {
+  // Sky gradient (dark forest night)
+  const sky = ctx.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, '#0b1a2e');
+  sky.addColorStop(0.55, '#0d2b1e');
+  sky.addColorStop(1, '#071a0f');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h);
+
+  // Moon glow
+  const mx = w * 0.78; const my = h * 0.18;
+  const moonGlow = ctx.createRadialGradient(mx, my, 0, mx, my, h * 0.28);
+  moonGlow.addColorStop(0, 'rgba(200,220,255,0.13)');
+  moonGlow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = moonGlow;
+  ctx.fillRect(0, 0, w, h);
+
+  // Moon disc
+  ctx.beginPath();
+  ctx.arc(mx, my, h * 0.06, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(230,240,255,0.82)';
+  ctx.fill();
+
+  // Stars (twinkle with time)
+  const seed = 42;
+  for (let i = 0; i < 60; i++) {
+    const sx = ((seed * (i * 7 + 3)) % 997 / 997) * w;
+    const sy = ((seed * (i * 13 + 5)) % 991 / 991) * h * 0.55;
+    const tw = Math.sin(t * 0.001 + i) * 0.5 + 0.5;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.8 + tw * 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,215,255,${0.3 + tw * 0.55})`;
+    ctx.fill();
+  }
+
+  // Forest silhouette
+  const treeCount = 14;
+  for (let i = 0; i < treeCount; i++) {
+    const tx = (i / (treeCount - 1)) * w;
+    const th = h * (0.35 + Math.sin(i * 2.3) * 0.12 + Math.cos(i * 1.7) * 0.08);
+    const tw2 = w / treeCount * 0.7;
+    ctx.fillStyle = '#061209';
+    ctx.beginPath();
+    // triangle tree
+    ctx.moveTo(tx, h - h * 0.05);
+    ctx.lineTo(tx - tw2 / 2, h - h * 0.05);
+    ctx.lineTo(tx - tw2 * 0.1, h - h * 0.05 - th * 0.5);
+    ctx.lineTo(tx - tw2 * 0.3, h - h * 0.05 - th * 0.5);
+    ctx.lineTo(tx, h - h * 0.05 - th);
+    ctx.lineTo(tx + tw2 * 0.3, h - h * 0.05 - th * 0.5);
+    ctx.lineTo(tx + tw2 * 0.1, h - h * 0.05 - th * 0.5);
+    ctx.lineTo(tx + tw2 / 2, h - h * 0.05);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Ground
+  ctx.fillStyle = '#050e07';
+  ctx.fillRect(0, h * 0.95, w, h * 0.05);
+
+  // Rain drops
+  ctx.lineCap = 'round';
+  for (const d of drops) {
+    ctx.beginPath();
+    ctx.moveTo(d.x, d.y);
+    ctx.lineTo(d.x - 1, d.y + d.length);
+    ctx.strokeStyle = `rgba(160,200,255,${d.opacity})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    d.y += d.speed;
+    if (d.y > h + d.length) { d.y = -d.length; d.x = Math.random() * w; }
+  }
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -142,8 +256,15 @@ export default function FocusMode({ onClose }: FocusModeProps) {
   const [showResult, setShowResult] = useState(false);
   const [camActive, setCamActive] = useState(false);
 
+  const [soundOn, setSoundOn] = useState(true);
+  const [soundVol, setSoundVol] = useState(0.18);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null);
+  const rainRef = useRef<RainDrop[]>([]);
+  const bgRafRef = useRef<number>(0);
+  const noiseRef = useRef<{ ctx: AudioContext; stop: () => void } | null>(null);
   const accFocusRef = useRef(0);
   const phaseRef = useRef(phase);
   const remainingRef = useRef(remaining);
@@ -195,6 +316,45 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     return () => clearInterval(id);
   }, [running]);
 
+  // Nature background canvas animation
+  useEffect(() => {
+    const canvas = bgCanvasRef.current;
+    if (!canvas) return;
+    const resize = () => {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      rainRef.current = initRain(canvas.width, canvas.height);
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+    let t = 0;
+    const loop = () => {
+      const ctx = canvas.getContext('2d');
+      if (ctx && canvas.width > 0) {
+        drawNature(ctx, canvas.width, canvas.height, rainRef.current, t++);
+      }
+      bgRafRef.current = requestAnimationFrame(loop);
+    };
+    bgRafRef.current = requestAnimationFrame(loop);
+    return () => { cancelAnimationFrame(bgRafRef.current); ro.disconnect(); };
+  }, []);
+
+  // White noise — start/stop based on soundOn + running
+  const stopNoise = useCallback(() => {
+    noiseRef.current?.stop();
+    noiseRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (soundOn && running && phase === 'focus') {
+      if (!noiseRef.current) noiseRef.current = createBrownNoise(soundVol);
+    } else {
+      stopNoise();
+    }
+    return stopNoise;
+  }, [soundOn, running, phase, soundVol, stopNoise]);
+
   // Camera helpers
   const startCam = async () => {
     try {
@@ -213,8 +373,10 @@ export default function FocusMode({ onClose }: FocusModeProps) {
   // Cleanup on unmount
   useEffect(() => () => {
     stopCam();
+    stopNoise();
+    cancelAnimationFrame(bgRafRef.current);
     (screen.orientation as unknown as { unlock?: () => void })?.unlock?.();
-  }, []);
+  }, [stopNoise]);
 
   const handleEnd = () => {
     // Credit partial current focus session
@@ -249,6 +411,9 @@ export default function FocusMode({ onClose }: FocusModeProps) {
 
   return (
     <div className="fm-outer">
+      {/* Nature background canvas — fills fm-outer */}
+      <canvas ref={bgCanvasRef} className="fm-bg-canvas" aria-hidden />
+
       <div className="fm-screen">
 
         {/* ── Left: Character area ── */}
@@ -322,11 +487,26 @@ export default function FocusMode({ onClose }: FocusModeProps) {
             <span className="fm-stat">{doneRounds} ポモドーロ完了</span>
           </div>
 
-          {/* Camera toggle */}
-          <button className="fm-cam-toggle" onClick={() => camActive ? stopCam() : startCam()}>
-            {camActive ? <CameraOff size={12} /> : <Camera size={12} />}
-            {camActive ? 'カメラOFF' : '集中確認カメラ'}
-          </button>
+          {/* Sound & Camera controls row */}
+          <div className="fm-extra-controls">
+            <button className="fm-cam-toggle" onClick={() => { setSoundOn(v => !v); }}>
+              {soundOn ? <Volume2 size={12} /> : <VolumeX size={12} />}
+              {soundOn ? 'ノイズON' : 'ノイズOFF'}
+            </button>
+            {soundOn && (
+              <input
+                type="range" min="0.02" max="0.5" step="0.02"
+                value={soundVol}
+                onChange={e => setSoundVol(Number(e.target.value))}
+                className="fm-vol-slider"
+                aria-label="音量"
+              />
+            )}
+            <button className="fm-cam-toggle" onClick={() => camActive ? stopCam() : startCam()}>
+              {camActive ? <CameraOff size={12} /> : <Camera size={12} />}
+              {camActive ? 'カメラOFF' : '集中確認カメラ'}
+            </button>
+          </div>
         </div>
 
         {/* Camera preview (small, top-right) */}
@@ -345,8 +525,17 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           position: fixed;
           inset: 0;
           z-index: 9500;
-          background: #0f172a;
+          background: #0b1a2e;
           overflow: hidden;
+        }
+
+        /* Nature background canvas */
+        .fm-bg-canvas {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          z-index: 0;
         }
 
         /* ── Screen (landscape-sized, rotated when portrait) ── */
@@ -356,6 +545,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           display: flex;
           align-items: stretch;
           overflow: hidden;
+          z-index: 1;
         }
 
         /* Force landscape layout when the device is held in portrait */
@@ -380,7 +570,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           justify-content: flex-end;
           padding: 20px 16px 32px;
           overflow: hidden;
-          background: radial-gradient(ellipse 80% 70% at 50% 80%, rgba(30,58,138,.45) 0%, transparent 70%);
+          background: radial-gradient(ellipse 80% 70% at 50% 80%, rgba(15,40,80,.55) 0%, transparent 70%);
         }
 
         .fm-char-glow {
@@ -429,7 +619,8 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           justify-content: center;
           padding: 24px 28px;
           gap: 14px;
-          background: linear-gradient(160deg, rgba(15,23,42,0) 0%, rgba(30,27,75,.3) 100%);
+          background: linear-gradient(160deg, rgba(5,10,20,0.15) 0%, rgba(10,15,50,.35) 100%);
+          backdrop-filter: blur(2px);
         }
 
         /* Phase badge */
@@ -570,6 +761,34 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           font-size: .73rem;
           color: rgba(255,255,255,.45);
           font-weight: 600;
+        }
+
+        /* Extra controls (sound + camera) */
+        .fm-extra-controls {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+
+        /* Volume slider */
+        .fm-vol-slider {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 72px;
+          height: 4px;
+          border-radius: 99px;
+          background: rgba(255,255,255,.18);
+          outline: none;
+          cursor: pointer;
+        }
+        .fm-vol-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 14px; height: 14px;
+          border-radius: 50%;
+          background: #6366f1;
+          cursor: pointer;
         }
 
         /* Camera toggle button */
