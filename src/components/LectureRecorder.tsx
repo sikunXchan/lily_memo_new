@@ -58,6 +58,10 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const elapsedRef = useRef(0);
   const liveScrollRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const audioCtxRef = useRef<any>(null);       // Web Audio context for silent loop
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const silentSourceRef = useRef<any>(null);   // BufferSource playing silent loop
 
   // Keep refs in sync with state
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -133,6 +137,32 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     if (chunkTimerRef.current) { clearInterval(chunkTimerRef.current); chunkTimerRef.current = null; }
   }, []);
 
+  // Play a 1-sample silent loop via Web Audio to keep the iOS audio session alive.
+  // Without this, iOS Safari kills SpeechRecognition after ~60s and plays a sound on restart.
+  const startSilentKeepAlive = useCallback(() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.connect(ctx.destination);
+      src.start(0);
+      audioCtxRef.current = ctx;
+      silentSourceRef.current = src;
+    } catch { /* non-critical */ }
+  }, []);
+
+  const stopSilentKeepAlive = useCallback(() => {
+    try { silentSourceRef.current?.stop(); } catch { /* ignore */ }
+    try { audioCtxRef.current?.close(); } catch { /* ignore */ }
+    silentSourceRef.current = null;
+    audioCtxRef.current = null;
+  }, []);
+
   const startRecognition = useCallback((): boolean => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR: (new () => any) | undefined = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -197,9 +227,13 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     baseElapsedRef.current = 0;
     chunkBaseElapsedRef.current = 0;
     elapsedRef.current = 0;
+    discardResultsRef.current = false;
+
+    // Start silent keep-alive BEFORE recognition so iOS audio session is already active
+    startSilentKeepAlive();
 
     const ok = startRecognition();
-    if (!ok) return;
+    if (!ok) { stopSilentKeepAlive(); return; }
 
     const now = Date.now();
     sessionStartRef.current = now;
@@ -212,7 +246,7 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     setError('');
     setPhase('recording');
     startIntervals();
-  }, [startRecognition, startIntervals]);
+  }, [startRecognition, startIntervals, startSilentKeepAlive, stopSilentKeepAlive]);
 
   const pauseRecording = useCallback(() => {
     // Keep recognition running — just discard results to avoid stop/start sounds
@@ -241,6 +275,7 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
 
   const stopRecording = useCallback(async () => {
     discardResultsRef.current = true;
+    stopSilentKeepAlive();
     // abort() is quieter than stop() on some browsers (no "done" chime)
     try { recognitionRef.current?.abort(); } catch { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }
     stopIntervals();
@@ -332,10 +367,11 @@ ${allText}`;
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      stopSilentKeepAlive();
       try { recognitionRef.current?.abort(); } catch { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }
       stopIntervals();
     };
-  }, [stopIntervals]);
+  }, [stopIntervals, stopSilentKeepAlive]);
 
   // Auto-scroll live transcript
   useEffect(() => {
