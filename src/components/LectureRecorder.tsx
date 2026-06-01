@@ -49,6 +49,7 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   const accumulatedRef = useRef('');
   const chunksRef = useRef<Chunk[]>([]);
   const phaseRef = useRef<Phase>('idle');
+  const discardResultsRef = useRef(false); // true during pause — recognition keeps running but results are dropped
   const baseElapsedRef = useRef(0);
   const sessionStartRef = useRef(0);
   const chunkBaseElapsedRef = useRef(0);
@@ -148,6 +149,8 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (event: any) => {
+      // Drop results while paused — recognition keeps running to avoid stop/start sounds
+      if (discardResultsRef.current) return;
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
@@ -212,7 +215,8 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   }, [startRecognition, startIntervals]);
 
   const pauseRecording = useCallback(() => {
-    recognitionRef.current?.stop();
+    // Keep recognition running — just discard results to avoid stop/start sounds
+    discardResultsRef.current = true;
     stopIntervals();
     const now = Date.now();
     baseElapsedRef.current += now - sessionStartRef.current;
@@ -221,20 +225,27 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   }, [stopIntervals]);
 
   const resumeRecording = useCallback(() => {
-    const ok = startRecognition();
-    if (!ok) return;
+    discardResultsRef.current = false;
     const now = Date.now();
     sessionStartRef.current = now;
     chunkSessionStartRef.current = now;
     setPhase('recording');
     startIntervals();
+    // iOS may have stopped recognition during the pause — restart it if needed
+    if (recognitionRef.current) {
+      try { recognitionRef.current.start(); } catch { /* already running */ }
+    } else {
+      startRecognition();
+    }
   }, [startRecognition, startIntervals]);
 
   const stopRecording = useCallback(async () => {
-    recognitionRef.current?.stop();
+    discardResultsRef.current = true;
+    // abort() is quieter than stop() on some browsers (no "done" chime)
+    try { recognitionRef.current?.abort(); } catch { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }
     stopIntervals();
-    if (phaseRef.current === 'recording') {
-      baseElapsedRef.current += Date.now() - sessionStartRef.current;
+    if (phaseRef.current === 'recording' || phaseRef.current === 'paused') {
+      if (phaseRef.current === 'recording') baseElapsedRef.current += Date.now() - sessionStartRef.current;
     }
     flushChunk();
     setPhase('finalizing');
@@ -321,7 +332,7 @@ ${allText}`;
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      recognitionRef.current?.stop();
+      try { recognitionRef.current?.abort(); } catch { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }
       stopIntervals();
     };
   }, [stopIntervals]);
