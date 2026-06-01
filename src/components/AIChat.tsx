@@ -6,7 +6,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
-  Save, History, Trash2, Mic, CalendarDays,
+  Save, History, Trash2, Mic, CalendarDays, Phone,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -37,6 +37,7 @@ import {
 import dynamic from 'next/dynamic';
 
 const LectureRecorder = dynamic(() => import('@/components/LectureRecorder'), { ssr: false });
+const VoiceChat = dynamic(() => import('@/components/VoiceChat'), { ssr: false });
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, PointElement, LineElement,
@@ -1672,6 +1673,8 @@ const MODES: { id: string; label: string; directive: string }[] = [
   { id: 'detailed', label: '📚 くわしく', directive: '背景や具体例も交えて、くわしく丁寧に説明して。' },
   { id: 'easy', label: '🍼 やさしく', directive: '専門用語を避けて、初心者にもわかるやさしい言葉で説明して。' },
   { id: 'socratic', label: '🧠 ソクラテス式', directive: '答えを直接教えず、ヒントや誘導質問でユーザー自身が気づけるよう導いてください（ソクラテス式対話）。間違いがあっても正解を言わず、「なぜそう思う？」「別の見方は？」など考えるきっかけの質問を返してください。' },
+  { id: 'interviewer', label: '😈 面接官', directive: 'あなたは意地悪で容赦ない面接官です。ユーザーが説明や回答をするたびに「それって本当に理解してますか？」「もっと具体的に言ってください」「その根拠は？」「曖昧すぎます」など厳しく突っ込んでください。知識の穴や矛盾を積極的に突き、ごまかしや浅い理解は即座に見抜いて指摘してください。褒めるのは本当に正確・深い説明のときだけにして、それ以外は容赦なく圧をかけてください。ただし最終的には学習者のためになることを意識してください。' },
+  { id: 'student', label: '🙋 生徒役', directive: 'あなたは何も知らない生徒です。ユーザーが先生役となって説明してくれます。あなたは授業を受ける無知な生徒として振る舞い、「それってどういう意味ですか？」「なんでそうなるんですか？」「もっとわかりやすく教えてください」「〇〇って何ですか？」のように素朴な疑問をどんどん投げかけてください。専門用語が出たら必ず「それ何ですか？」と聞き返してください。ユーザーが説明に詰まったり、説明が曖昧なときは「よくわかりませんでした…」と正直に伝えてください。ユーザーが本当に理解しているかを説明させることで確認するのが目的です。' },
 ];
 
 // One-tap actions: sending a prompt immediately.
@@ -1723,6 +1726,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const [showLectureRecorder, setShowLectureRecorder] = useState(false);
+  const [showVoiceChat, setShowVoiceChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2259,6 +2263,20 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           onComplete={handleLectureComplete}
         />
       )}
+      {showVoiceChat && (
+        <VoiceChat
+          apiKey={apiKey}
+          systemPrompt={
+            buildSystemPrompt(
+              lilyAllNotes
+                ? (allNotes ?? [])
+                : (allNotes ?? []).filter(n => lilyNoteIds.includes(n.id!))
+            ) + (activeMode ? `\n\n（${MODES.find(m => m.id === activeMode)?.directive ?? ''}）` : '')
+          }
+          modeLabel={MODES.find(m => m.id === activeMode)?.label}
+          onClose={() => setShowVoiceChat(false)}
+        />
+      )}
 
       {showContextPanel && (
         <div className="context-panel">
@@ -2437,6 +2455,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           title="授業リアルタイム要約 — 音声を文字起こし→Geminiでまとめ"
         >
           <Mic size={20} />
+        </button>
+        <button
+          className="attach-btn voice-chat-btn"
+          onClick={() => setShowVoiceChat(true)}
+          disabled={isLoading}
+          title="音声対話 — Lily と声で会話する"
+        >
+          <Phone size={20} />
         </button>
         <textarea
           ref={textareaRef}
