@@ -180,14 +180,18 @@ export function renderRich(src: string): string {
   s = s.replace(/`([^`\n]+)`/g, (_m, c: string) =>
     stashInline(`<code class="rt-code">${c.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code>`));
 
-  // 3. Block math: $$...$$ and \[...\]
+  // 3. Highlight: ==text== → <mark>
+  s = s.replace(/==([^=\n]+)==/g, (_m, t: string) =>
+    stashInline(`<mark class="rt-mark">${t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</mark>`));
+
+  // 4. Block math: $$...$$ and \[...\]
   s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_m, t: string) => stashBlock(renderMath(t.trim(), true)));
   s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_m, t: string) => stashBlock(renderMath(t.trim(), true)));
-  // 4. Inline math: \(...\) and $...$
+  // 5. Inline math: \(...\) and $...$
   s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, t: string) => stashInline(renderMath(t.trim(), false)));
   s = s.replace(/\$(?!\s)([^\n$]+?)(?<!\s)\$/g, (_m, t: string) => stashInline(renderMath(t.trim(), false)));
 
-  // 5. Graceful trailing open math
+  // 6. Graceful trailing open math
   const openBlock = s.match(/\$\$([\s\S]+)$/);
   if (openBlock && !openBlock[1].includes('$')) {
     s = s.slice(0, openBlock.index) + stashBlock(renderMath(openBlock[1].trim(), true));
@@ -199,7 +203,7 @@ export function renderRich(src: string): string {
     }
   }
 
-  // 6. Callouts (after code/math stashing so their bodies are protected).
+  // 7. Callouts (after code/math stashing so their bodies are protected).
   s = transformCallouts(s, stashBlock);
 
   let html = marked.parse(s) as string;
