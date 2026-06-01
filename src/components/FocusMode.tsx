@@ -8,18 +8,6 @@ const FOCUS_SECS = 25 * 60;
 const BREAK_SECS = 5 * 60;
 const MAX_ROUNDS_DISPLAY = 8;
 
-const STUDY_FRAMES = [
-  '/sikun-book-open.png',
-  '/sikun-book-read.png',
-  '/sikun-book-read.png',
-  '/sikun-book-hand.png',
-  '/sikun-book-read.png',
-  '/sikun-book-hand.png',
-  '/sikun-book-read.png',
-  '/sikun-book-read.png',
-];
-const FRAME_MS = 1400;
-
 // ── Audio helpers ─────────────────────────────────────────────────────────────
 function playTone(freq: number, dur: number, vol = 0.25) {
   try {
@@ -252,7 +240,6 @@ export default function FocusMode({ onClose }: FocusModeProps) {
   const [round, setRound] = useState(1);
   const [doneRounds, setDoneRounds] = useState(0);
   const [totalFocusSecs, setTotalFocusSecs] = useState(0);
-  const [charFrame, setCharFrame] = useState(0);
   const [showResult, setShowResult] = useState(false);
   const [camActive, setCamActive] = useState(false);
 
@@ -276,20 +263,6 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape').catch(() => {});
     return () => { (screen.orientation as unknown as { unlock?: () => void })?.unlock?.(); };
   }, []);
-
-  // Preload character images
-  useEffect(() => {
-    [...STUDY_FRAMES, '/sikun-character.png'].forEach(src => {
-      const img = new Image(); img.src = src;
-    });
-  }, []);
-
-  // Character frame animation (study phase only)
-  useEffect(() => {
-    if (phase !== 'focus' || !running) { setCharFrame(0); return; }
-    const id = setInterval(() => setCharFrame(f => (f + 1) % STUDY_FRAMES.length), FRAME_MS);
-    return () => clearInterval(id);
-  }, [phase, running]);
 
   // Timer countdown
   useEffect(() => {
@@ -402,7 +375,6 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     : liveFmtH > 0 ? `${liveFmtH}h${liveFmtM > 0 ? liveFmtM + 'm' : ''}`
     : `${liveFmtM}m`;
 
-  const charSrc = phase === 'focus' ? STUDY_FRAMES[charFrame] : '/sikun-character.png';
   const isFirstStart = !running && remaining === (phase === 'focus' ? FOCUS_SECS : BREAK_SECS);
 
   if (showResult) {
@@ -416,25 +388,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
 
       <div className="fm-screen">
 
-        {/* ── Left: Character area ── */}
-        <div className="fm-char-area">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={charSrc}
-            alt="キャラクター"
-            className={`fm-char${phase === 'break' ? ' break' : ''}`}
-          />
-          <p className="fm-char-msg">
-            {running && phase === 'focus' ? '一緒に頑張ろう！📖'
-              : running && phase === 'break' ? 'お疲れ〜 少し休もう☕'
-              : phase === 'break' ? '休憩の準備ができたよ'
-              : 'さあ、始めよう！'}
-          </p>
-          {/* Subtle study desk glow */}
-          <div className="fm-char-glow" />
-        </div>
-
-        {/* ── Right: Timer & controls ── */}
+        {/* ── Timer & controls (centered) ── */}
         <div className="fm-right">
           {/* Phase badge */}
           <div className={`fm-phase-badge ${phase}`}>
@@ -560,66 +514,15 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           }
         }
 
-        /* ── Character area (left 42%) ── */
-        .fm-char-area {
-          width: 42%;
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: flex-end;
-          padding: 20px 16px 32px;
-          overflow: hidden;
-          background: radial-gradient(ellipse 80% 70% at 50% 80%, rgba(15,40,80,.55) 0%, transparent 70%);
-        }
-
-        .fm-char-glow {
-          position: absolute;
-          bottom: 0;
-          width: 80%;
-          height: 60px;
-          background: radial-gradient(ellipse, rgba(99,102,241,.35) 0%, transparent 70%);
-          pointer-events: none;
-        }
-
-        .fm-char {
-          width: clamp(140px, 52%, 280px);
-          height: auto;
-          object-fit: contain;
-          position: relative;
-          z-index: 1;
-          filter: drop-shadow(0 12px 32px rgba(99,102,241,.45));
-          transition: filter .4s;
-        }
-        .fm-char.break {
-          animation: breathe 3.5s ease-in-out infinite;
-          filter: drop-shadow(0 12px 28px rgba(16,185,129,.45));
-        }
-        @keyframes breathe {
-          0%,100% { transform: scale(1) translateY(0); }
-          50% { transform: scale(1.035) translateY(-5px); }
-        }
-
-        .fm-char-msg {
-          margin: 10px 0 0;
-          font-size: .82rem;
-          color: rgba(255,255,255,.65);
-          font-weight: 600;
-          text-align: center;
-          z-index: 1;
-          position: relative;
-        }
-
-        /* ── Right panel ── */
+        /* ── Timer panel (centered, full width) ── */
         .fm-right {
           flex: 1;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          padding: 24px 28px;
-          gap: 14px;
-          background: linear-gradient(160deg, rgba(5,10,20,0.15) 0%, rgba(10,15,50,.35) 100%);
+          padding: 24px 40px;
+          gap: 16px;
           backdrop-filter: blur(2px);
         }
 
