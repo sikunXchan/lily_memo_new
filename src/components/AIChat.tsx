@@ -70,7 +70,7 @@ interface ChatMessage {
   extractedBlocks?: InsertableBlock[];
   questions?: ClarifyQuestion[];
   attachments?: AttachmentMeta[];
-  thinking?: string; // sikunlily extended thinking log
+  thinking?: string;
 }
 
 interface InsertableBlock {
@@ -1252,7 +1252,7 @@ function LilyBubble({
   message: ChatMessage;
   allNotes: Note[];
   selectedNoteId?: number;
-  model?: 'lily' | 'sikunlily';
+  model?: 'lily';
   onNoteCreated?: (id: number) => void;
   onRegenerate?: () => void;
 }) {
@@ -1545,7 +1545,7 @@ function UserBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-// 18-frame boxing combo looped while lily / sikunlily are thinking.
+// 18-frame boxing combo looped while Lily is thinking.
 const BOXING_FRAMES = [
   '/sikun-box-01.png', '/sikun-box-02.png', '/sikun-box-03.png', '/sikun-box-04.png',
   '/sikun-box-05.png', '/sikun-box-06.png', '/sikun-box-07.png', '/sikun-box-08.png',
@@ -1574,7 +1574,7 @@ function TypingIndicator() {
 }
 
 // Floating thinking animation pinned to the bottom-right of the screen while
-// lily / sikunlily are generating. lily boxes; sikunlily dribbles. Layered
+// Floating thinking animation while Lily is generating. Layered
 // above the chat; pointer-events off so it never blocks taps underneath.
 function BoxingOverlay() {
   const [frame, setFrame] = useState(0);
@@ -1624,7 +1624,7 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
           {chats?.map(c => (
             <div key={c.id} className="history-item">
               <button className="history-item-main" onClick={() => onLoad(c)}>
-                <span className={`history-badge ${c.model}`}>{c.model === 'sikunlily' ? 'sikunlily' : 'Lily'}</span>
+                <span className="history-badge lily">Lily</span>
                 <span className="history-texts">
                   <span className="history-title">{c.title}</span>
                   <span className="history-meta">
@@ -1652,7 +1652,6 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
           .history-item-main:hover { background: var(--border); }
           .history-badge { flex-shrink: 0; font-size: 0.66rem; font-weight: 800; padding: 3px 7px; border-radius: 6px; }
           .history-badge.lily { color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); }
-          .history-badge.sikunlily { color: #8B4513; background: color-mix(in srgb, #8B4513 14%, transparent); }
           .history-texts { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
           .history-title { font-size: 0.88rem; font-weight: 600; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .history-meta { font-size: 0.72rem; color: var(--fg-muted); }
