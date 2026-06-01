@@ -6,7 +6,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
-  Save, History, Trash2, Mic, CalendarDays,
+  Save, History, Trash2, Mic, CalendarDays, Phone,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -37,6 +37,7 @@ import {
 import dynamic from 'next/dynamic';
 
 const LectureRecorder = dynamic(() => import('@/components/LectureRecorder'), { ssr: false });
+const VoiceChat = dynamic(() => import('@/components/VoiceChat'), { ssr: false });
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, PointElement, LineElement,
@@ -1725,6 +1726,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const [showLectureRecorder, setShowLectureRecorder] = useState(false);
+  const [showVoiceChat, setShowVoiceChat] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2261,6 +2263,20 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           onComplete={handleLectureComplete}
         />
       )}
+      {showVoiceChat && (
+        <VoiceChat
+          apiKey={apiKey}
+          systemPrompt={
+            buildSystemPrompt(
+              lilyAllNotes
+                ? (allNotes ?? [])
+                : (allNotes ?? []).filter(n => lilyNoteIds.includes(n.id!))
+            ) + (activeMode ? `\n\n（${MODES.find(m => m.id === activeMode)?.directive ?? ''}）` : '')
+          }
+          modeLabel={MODES.find(m => m.id === activeMode)?.label}
+          onClose={() => setShowVoiceChat(false)}
+        />
+      )}
 
       {showContextPanel && (
         <div className="context-panel">
@@ -2439,6 +2455,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           title="授業リアルタイム要約 — 音声を文字起こし→Geminiでまとめ"
         >
           <Mic size={20} />
+        </button>
+        <button
+          className="attach-btn voice-chat-btn"
+          onClick={() => setShowVoiceChat(true)}
+          disabled={isLoading}
+          title="音声対話 — Lily と声で会話する"
+        >
+          <Phone size={20} />
         </button>
         <textarea
           ref={textareaRef}
