@@ -6,7 +6,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
-  Save, History, Trash2, Mic,
+  Save, History, Trash2, Mic, CalendarDays,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -94,7 +94,7 @@ interface ClarifyQuestion {
 
 interface AIChatProps {
   onOpenSettings: () => void;
-  onSwitchTab?: (tab: 'memos' | 'sketch' | 'pdf' | 'settings') => void;
+  onSwitchTab?: (tab: 'memos' | 'sketch' | 'pdf' | 'settings' | 'exam') => void;
   onNoteCreated?: (noteId: number) => void;
 }
 
@@ -2657,6 +2657,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           <button className="ai-nav-item" onClick={() => onSwitchTab('sketch')}><Brush size={22} /><span>落書き</span></button>
           <button className="ai-nav-item" onClick={() => onSwitchTab('pdf')}><FileText size={22} /><span>PDF</span></button>
           <button className="ai-nav-item active"><Sparkles size={22} /><span>AI</span></button>
+          <button className="ai-nav-item" onClick={() => onSwitchTab('exam')}><CalendarDays size={22} /><span>試験</span></button>
           <button className="ai-nav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}><SettingsIcon size={22} /><span>設定</span></button>
         </nav>
       )}
