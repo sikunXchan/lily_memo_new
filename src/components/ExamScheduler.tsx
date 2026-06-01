@@ -142,13 +142,6 @@ export interface ExamSchedulerProps {
   onOpenSettings: () => void;
 }
 
-const SUGGESTIONS = [
-  '1ヶ月後に数学の期末試験があります',
-  '3ヶ月後に英検2級を受けます',
-  '週2回ボクシングがあって火・金は忙しいです',
-  '今日スキップしてしまいました',
-];
-
 // ─── Main Component ───
 
 export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSchedulerProps) {
@@ -330,19 +323,12 @@ export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSched
           {!hasSchedule ? (
             <div className="empty-state">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/lily-character.png" alt="Lily" className="empty-lily" />
+              <img src="/allstar.PNG" alt="Lily" className="empty-lily" />
               <p className="empty-title">まだスケジュールがないよ！</p>
               <p className="empty-desc">試験情報を教えてくれると<br />日割りカリキュラムを作るよ 📚</p>
               <button className="create-btn" onClick={() => setView('chat')}>
                 <MessageSquare size={15} /> AIに相談してスケジュールを作る
               </button>
-              <div className="sug-row">
-                {SUGGESTIONS.slice(0, 3).map(s => (
-                  <button key={s} className="sug-chip" onClick={() => { setView('chat'); setInput(s); }}>
-                    {s}
-                  </button>
-                ))}
-              </div>
             </div>
           ) : (
             <div className="days-list">
@@ -389,15 +375,8 @@ export default function ExamScheduler({ onSwitchTab, onOpenSettings }: ExamSched
             {messages.length === 0 && (
               <div className="chat-welcome">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/lily-character.png" alt="Lily" className="welcome-lily" />
+                <img src="/allstar.PNG" alt="Lily" className="welcome-lily" />
                 <p className="welcome-text">試験情報を教えてね！<br />日割りスケジュールを作るよ 📚</p>
-                <div className="sug-row">
-                  {SUGGESTIONS.map(s => (
-                    <button key={s} className="sug-chip" onClick={() => sendMessage(s)} disabled={isLoading}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
             {messages.map(m => (
