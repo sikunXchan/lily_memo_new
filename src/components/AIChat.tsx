@@ -6,7 +6,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
   FileText, Settings as SettingsIcon, Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
-  Save, History, Trash2,
+  Save, History, Trash2, Mic,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -34,6 +34,9 @@ import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
+import dynamic from 'next/dynamic';
+
+const LectureRecorder = dynamic(() => import('@/components/LectureRecorder'), { ssr: false });
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, PointElement, LineElement,
@@ -1842,6 +1845,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [economy, setEconomy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [showLectureRecorder, setShowLectureRecorder] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1890,6 +1894,26 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     setQuestionQueue([]);
     setCollectedAnswers([]);
     setShowHistory(false);
+  }, []);
+
+  const handleLectureComplete = useCallback((summary: string) => {
+    setShowLectureRecorder(false);
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      text: '📖 授業録音が終わりました。まとめをチャットに表示してください。',
+      timestamp: Date.now(),
+    };
+    const { textContent, blocks, questions } = parseAIResponse(summary, true);
+    const lilyMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'lily',
+      text: textContent || '授業まとめを作成しました！',
+      timestamp: Date.now(),
+      extractedBlocks: blocks.length > 0 ? blocks : undefined,
+      questions: questions.length > 0 ? questions : undefined,
+    };
+    setMessages(prev => [...prev, userMsg, lilyMsg]);
   }, []);
 
   useEffect(() => {
@@ -2411,6 +2435,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} initialTab={helpInitialTab} />}
       {showHistory && <ChatHistoryModal onClose={() => setShowHistory(false)} onLoad={handleLoadChat} />}
       {savedToast && <div className="chat-saved-toast">会話を保存しました ✓</div>}
+      {showLectureRecorder && (
+        <LectureRecorder
+          apiKey={apiKey}
+          onClose={() => setShowLectureRecorder(false)}
+          onComplete={handleLectureComplete}
+        />
+      )}
 
       {showContextPanel && activeModel === 'sikunlily' && (
         <div className="context-panel">
@@ -2668,6 +2699,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         >
           <Paperclip size={20} />
         </button>
+        <button
+          className="attach-btn lecture-btn"
+          onClick={() => setShowLectureRecorder(true)}
+          disabled={isLoading}
+          title="授業リアルタイム要約 — 音声を文字起こし→Geminiでまとめ"
+        >
+          <Mic size={20} />
+        </button>
         <textarea
           ref={textareaRef}
           className="chat-input"
@@ -2798,6 +2837,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .attach-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--accent); color: var(--fg-muted); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
         .attach-btn:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
         .attach-btn:disabled { opacity: 0.4; cursor: default; }
+        .lecture-btn { color: #6366f1; border-color: rgba(99,102,241,0.35); }
+        .lecture-btn:hover:not(:disabled) { color: #6366f1; border-color: #6366f1; background: rgba(99,102,241,0.1); }
         .send-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--primary); color: white; border: none; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s; }
         .send-btn:disabled { opacity: 0.4; cursor: default; }
         .web-toggle.eco-toggle.on { background: color-mix(in srgb, #16a34a 15%, transparent); border-color: #16a34a; color: #16a34a; }
