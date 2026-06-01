@@ -142,7 +142,7 @@ const PDF_ANNOTATE_ADDON = `
 - JSONの配列はそのまま出力（コードフェンス不要）。
 - 1ページにつき注釈は最大8個まで。
 - highlight は太い帯にならないよう y1-y0 は 0.04〜0.10 程度に。
-- text のラベルは10文字以内の簡潔な日本語で。`;`
+- text のラベルは10文字以内の簡潔な日本語で。`;
 
 interface Pos { x: number; y: number }
 
