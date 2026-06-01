@@ -84,11 +84,29 @@ export interface SavedChat {
   createdAt: number;
 }
 
+export interface Exam {
+  id?: number;
+  name: string;
+  examDate: string;  // YYYY-MM-DD
+  createdAt: number;
+}
+
+export interface ScheduleDay {
+  id?: number;
+  date: string;        // YYYY-MM-DD
+  tasks: string;       // JSON: string[]
+  completed: boolean;
+  skipped: boolean;
+  createdAt: number;
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
   images!: Table<ImageAsset>;
   savedChats!: Table<SavedChat>;
+  exams!: Table<Exam>;
+  scheduleDays!: Table<ScheduleDay>;
 
   constructor() {
     super('LilyDatabase');
@@ -132,6 +150,10 @@ export class LilyDatabase extends Dexie {
     });
     this.version(8).stores({
       savedChats: '++id, model, createdAt',
+    });
+    this.version(9).stores({
+      exams: '++id, name, examDate, createdAt',
+      scheduleDays: '++id, date, completed, skipped, createdAt',
     });
   }
 }

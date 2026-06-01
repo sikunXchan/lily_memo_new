@@ -49,6 +49,7 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   const accumulatedRef = useRef('');
   const chunksRef = useRef<Chunk[]>([]);
   const phaseRef = useRef<Phase>('idle');
+  const discardResultsRef = useRef(false); // true during pause — recognition keeps running but results are dropped
   const baseElapsedRef = useRef(0);
   const sessionStartRef = useRef(0);
   const chunkBaseElapsedRef = useRef(0);
@@ -57,6 +58,10 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const elapsedRef = useRef(0);
   const liveScrollRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const audioCtxRef = useRef<any>(null);       // Web Audio context for silent loop
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const silentSourceRef = useRef<any>(null);   // BufferSource playing silent loop
 
   // Keep refs in sync with state
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -132,6 +137,32 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     if (chunkTimerRef.current) { clearInterval(chunkTimerRef.current); chunkTimerRef.current = null; }
   }, []);
 
+  // Play a 1-sample silent loop via Web Audio to keep the iOS audio session alive.
+  // Without this, iOS Safari kills SpeechRecognition after ~60s and plays a sound on restart.
+  const startSilentKeepAlive = useCallback(() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      src.connect(ctx.destination);
+      src.start(0);
+      audioCtxRef.current = ctx;
+      silentSourceRef.current = src;
+    } catch { /* non-critical */ }
+  }, []);
+
+  const stopSilentKeepAlive = useCallback(() => {
+    try { silentSourceRef.current?.stop(); } catch { /* ignore */ }
+    try { audioCtxRef.current?.close(); } catch { /* ignore */ }
+    silentSourceRef.current = null;
+    audioCtxRef.current = null;
+  }, []);
+
   const startRecognition = useCallback((): boolean => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR: (new () => any) | undefined = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -148,6 +179,8 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rec.onresult = (event: any) => {
+      // Drop results while paused — recognition keeps running to avoid stop/start sounds
+      if (discardResultsRef.current) return;
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
@@ -194,9 +227,13 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     baseElapsedRef.current = 0;
     chunkBaseElapsedRef.current = 0;
     elapsedRef.current = 0;
+    discardResultsRef.current = false;
+
+    // Start silent keep-alive BEFORE recognition so iOS audio session is already active
+    startSilentKeepAlive();
 
     const ok = startRecognition();
-    if (!ok) return;
+    if (!ok) { stopSilentKeepAlive(); return; }
 
     const now = Date.now();
     sessionStartRef.current = now;
@@ -209,10 +246,11 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     setError('');
     setPhase('recording');
     startIntervals();
-  }, [startRecognition, startIntervals]);
+  }, [startRecognition, startIntervals, startSilentKeepAlive, stopSilentKeepAlive]);
 
   const pauseRecording = useCallback(() => {
-    recognitionRef.current?.stop();
+    // Keep recognition running — just discard results to avoid stop/start sounds
+    discardResultsRef.current = true;
     stopIntervals();
     const now = Date.now();
     baseElapsedRef.current += now - sessionStartRef.current;
@@ -221,20 +259,28 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   }, [stopIntervals]);
 
   const resumeRecording = useCallback(() => {
-    const ok = startRecognition();
-    if (!ok) return;
+    discardResultsRef.current = false;
     const now = Date.now();
     sessionStartRef.current = now;
     chunkSessionStartRef.current = now;
     setPhase('recording');
     startIntervals();
+    // iOS may have stopped recognition during the pause — restart it if needed
+    if (recognitionRef.current) {
+      try { recognitionRef.current.start(); } catch { /* already running */ }
+    } else {
+      startRecognition();
+    }
   }, [startRecognition, startIntervals]);
 
   const stopRecording = useCallback(async () => {
-    recognitionRef.current?.stop();
+    discardResultsRef.current = true;
+    stopSilentKeepAlive();
+    // abort() is quieter than stop() on some browsers (no "done" chime)
+    try { recognitionRef.current?.abort(); } catch { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }
     stopIntervals();
-    if (phaseRef.current === 'recording') {
-      baseElapsedRef.current += Date.now() - sessionStartRef.current;
+    if (phaseRef.current === 'recording' || phaseRef.current === 'paused') {
+      if (phaseRef.current === 'recording') baseElapsedRef.current += Date.now() - sessionStartRef.current;
     }
     flushChunk();
     setPhase('finalizing');
@@ -321,10 +367,11 @@ ${allText}`;
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      recognitionRef.current?.stop();
+      stopSilentKeepAlive();
+      try { recognitionRef.current?.abort(); } catch { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }
       stopIntervals();
     };
-  }, [stopIntervals]);
+  }, [stopIntervals, stopSilentKeepAlive]);
 
   // Auto-scroll live transcript
   useEffect(() => {
