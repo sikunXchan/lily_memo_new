@@ -1792,6 +1792,7 @@ const MODES: { id: string; label: string; directive: string }[] = [
   { id: 'concise', label: '⚡ 簡潔に', directive: '要点だけを簡潔に短く答えて。' },
   { id: 'detailed', label: '📚 くわしく', directive: '背景や具体例も交えて、くわしく丁寧に説明して。' },
   { id: 'easy', label: '🍼 やさしく', directive: '専門用語を避けて、初心者にもわかるやさしい言葉で説明して。' },
+  { id: 'socratic', label: '🧠 ソクラテス式', directive: '答えを直接教えず、ヒントや誘導質問でユーザー自身が気づけるよう導いてください（ソクラテス式対話）。間違いがあっても正解を言わず、「なぜそう思う？」「別の見方は？」など考えるきっかけの質問を返してください。' },
 ];
 
 // One-tap actions: sending a prompt immediately.
@@ -1823,7 +1824,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedNoteId, setSelectedNoteId] = useState<number | undefined>();
+  const [lilyAllNotes, setLilyAllNotes] = useState(false);
+  const [lilyNoteIds, setLilyNoteIds] = useState<number[]>([]);
+  const [lilyThinking, setLilyThinking] = useState(false);
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [apiKey, setApiKey] = useState<string>('');
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
@@ -2059,9 +2062,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             if (n) contextNotes.push(n);
           }
         }
-      } else if (selectedNoteId) {
-        const n = await db.notes.get(selectedNoteId);
-        if (n) contextNotes.push(n);
+      } else {
+        if (lilyAllNotes) {
+          contextNotes.push(...(allNotes ?? []));
+        } else {
+          for (const id of lilyNoteIds) {
+            const n = await db.notes.get(id);
+            if (n) contextNotes.push(n);
+          }
+        }
       }
       const systemPrompt = buildSystemPrompt(contextNotes);
 
@@ -2150,6 +2159,31 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         setSikunProgress('');
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
+      } else if (lilyThinking && !economy) {
+        setSikunLiveThinking('');
+        let thinkingAccum = '';
+        setSikunProgress('🧠 思考中...');
+        aiText = await streamSikunlilyChat(
+          history,
+          systemPrompt,
+          apiKey,
+          2048,
+          {
+            onThinkingDelta: (delta) => {
+              thinkingAccum += delta;
+              setSikunLiveThinking(thinkingAccum);
+            },
+            onResponseDelta: () => {
+              setSikunProgress('✍️ 回答を生成中...');
+            },
+          },
+          ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+          webSearch,
+          65536,
+        );
+        setSikunProgress('');
+        setSikunLiveThinking('');
+        pendingThinkingRef.current = thinkingAccum;
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
@@ -2187,7 +2221,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, selectedNoteId, webSearch, activeMode, activeModel, deepResearch, economy]);
+  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, allNotes, webSearch, activeMode, activeModel, deepResearch, economy]);
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
@@ -2235,9 +2269,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             if (n) contextNotes.push(n);
           }
         }
-      } else if (selectedNoteId) {
-        const n = await db.notes.get(selectedNoteId);
-        if (n) contextNotes.push(n);
+      } else {
+        if (lilyAllNotes) {
+          contextNotes.push(...(allNotes ?? []));
+        } else {
+          for (const id of lilyNoteIds) {
+            const n = await db.notes.get(id);
+            if (n) contextNotes.push(n);
+          }
+        }
       }
 
       let aiText: string;
@@ -2256,6 +2296,32 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             onResponseDelta: () => { setSikunProgress('✍️ 回答を生成中...'); },
           },
           sikunModels, false, economy ? 8192 : 65536,
+        );
+        setSikunProgress('');
+        setSikunLiveThinking('');
+        pendingThinkingRef.current = thinkingAccum;
+      } else if (lilyThinking && !economy) {
+        const systemPrompt = buildSystemPrompt(contextNotes);
+        setSikunLiveThinking('');
+        let thinkingAccum = '';
+        setSikunProgress('🧠 思考中...');
+        aiText = await streamSikunlilyChat(
+          history,
+          systemPrompt,
+          apiKey,
+          2048,
+          {
+            onThinkingDelta: (delta) => {
+              thinkingAccum += delta;
+              setSikunLiveThinking(thinkingAccum);
+            },
+            onResponseDelta: () => {
+              setSikunProgress('✍️ 回答を生成中...');
+            },
+          },
+          ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+          webSearch,
+          65536,
         );
         setSikunProgress('');
         setSikunLiveThinking('');
@@ -2294,9 +2360,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, activeModel, sikunAllNotes, allNotes, sikunNoteIds, selectedNoteId, allFolders, activeMode, economy, apiKey, webSearch]);
+  }, [isLoading, messages, activeModel, sikunAllNotes, allNotes, sikunNoteIds, lilyAllNotes, lilyNoteIds, lilyThinking, allFolders, activeMode, economy, apiKey, webSearch]);
 
-  const selectedNote = allNotes?.find(n => n.id === selectedNoteId);
+  const lilyDefaultNoteId = lilyNoteIds[0];
 
   if (!apiKey) {
     return (
@@ -2372,6 +2438,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <span className="web-label">節約モード</span>
             <span className="web-state">{economy ? 'ON' : 'OFF'}</span>
           </button>
+          {activeModel === 'lily' && !economy && (
+            <button
+              className={`web-toggle thinking-toggle ${lilyThinking ? 'on' : ''}`}
+              onClick={() => setLilyThinking(p => !p)}
+              title="思考モード: Geminiの拡張思考機能でじっくり考えてから答えるよ（APIコスト増）"
+            >
+              <span style={{ fontSize: '11px' }}>🧠</span>
+              <span className="web-label">思考モード</span>
+              <span className="web-state">{lilyThinking ? 'ON' : 'OFF'}</span>
+            </button>
+          )}
           <button
             className={`web-toggle ${webSearch ? 'on' : ''}`}
             onClick={() => setWebSearch(p => !p)}
@@ -2398,14 +2475,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                 {sikunAllNotes ? '📚 全メモ参照中' : sikunNoteIds.length > 0 ? `📄 ${sikunNoteIds.length}件選択中` : 'メモを選ぶ'}
                 {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </span>
-            ) : selectedNote ? (
-              <span className="context-chip selected">
-                📄 {selectedNote.title || '無題'}
-                {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              </span>
             ) : (
-              <span className="context-chip">
-                メモを選ぶ
+              <span className={`context-chip${lilyAllNotes || lilyNoteIds.length > 0 ? ' selected' : ''}`}>
+                {lilyAllNotes ? '📚 全メモ参照中' : lilyNoteIds.length > 0 ? `📄 ${lilyNoteIds.length}件選択中` : 'メモを選ぶ'}
                 {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </span>
             )}
@@ -2476,18 +2548,29 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       {showContextPanel && activeModel === 'lily' && (
         <div className="context-panel">
           <button
-            className={`note-chip ${!selectedNoteId ? 'active' : ''}`}
-            onClick={() => { setSelectedNoteId(undefined); setShowContextPanel(false); }}
+            className={`note-chip${lilyAllNotes ? ' active' : ''}`}
+            onClick={() => { setLilyAllNotes(true); setLilyNoteIds([]); setShowContextPanel(false); }}
+          >
+            📚 全メモを参照
+          </button>
+          <button
+            className={`note-chip${!lilyAllNotes && lilyNoteIds.length === 0 ? ' active' : ''}`}
+            onClick={() => { setLilyAllNotes(false); setLilyNoteIds([]); setShowContextPanel(false); }}
           >
             なし
           </button>
           {allNotes?.map(n => (
             <button
               key={n.id}
-              className={`note-chip ${selectedNoteId === n.id ? 'active' : ''}`}
-              onClick={() => { setSelectedNoteId(n.id); setShowContextPanel(false); }}
+              className={`note-chip${lilyNoteIds.includes(n.id!) ? ' active' : ''}`}
+              onClick={() => {
+                setLilyAllNotes(false);
+                setLilyNoteIds(prev =>
+                  prev.includes(n.id!) ? prev.filter(id => id !== n.id) : [...prev, n.id!]
+                );
+              }}
             >
-              {n.title || '無題のメモ'}
+              {lilyNoteIds.includes(n.id!) ? '✓ ' : ''}{n.title || '無題のメモ'}
             </button>
           ))}
         </div>
@@ -2542,7 +2625,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               key={msg.id}
               message={msg}
               allNotes={allNotes ?? []}
-              selectedNoteId={selectedNoteId}
+              selectedNoteId={lilyDefaultNoteId}
               model={activeModel}
               onNoteCreated={onNoteCreated}
               onRegenerate={isLastLily && !isLoading ? handleRegenerate : undefined}
