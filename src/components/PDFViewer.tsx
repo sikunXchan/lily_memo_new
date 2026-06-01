@@ -6,6 +6,7 @@ import {
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
   Play, Pause, RotateCcw, Highlighter, Pencil, Trash2,
   Image as ImageIcon, Plus, Maximize2, Minimize2,
+  Minus, MessageSquare, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -30,7 +31,18 @@ type PenAnn = {
   id: string; type: 'pen';
   points: Array<{ x: number; y: number }>; color: string; lineWidth: number;
 };
-type AnnotationItem = HighlightAnn | PenAnn;
+type LineAnn = {
+  id: string; type: 'line';
+  x1: number; y1: number; x2: number; y2: number;
+  color: string; lineWidth: number;
+};
+// TextAnn coordinates are stored in "logical CSS px at scale=1.0"
+type TextAnn = {
+  id: string; type: 'text';
+  x: number; y: number; text: string; color: string;
+};
+type AnnotationItem = HighlightAnn | PenAnn | LineAnn | TextAnn;
+type AnnMode = 'none' | 'highlight' | 'pen' | 'line' | 'text';
 
 // ---- PDF builder from JPEG images ----
 function buildPDFBlob(pages: Array<{ jpegBytes: Uint8Array; w: number; h: number }>): Blob {
@@ -167,12 +179,16 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const [timerAlert, setTimerAlert] = useState(false);
 
   // Annotations
-  const [annotationMode, setAnnotationMode] = useState<'none' | 'highlight' | 'pen'>('none');
+  const [annotationMode, setAnnotationMode] = useState<AnnMode>('none');
   const [hlColorIdx, setHlColorIdx] = useState(0);
   const [penColorIdx, setPenColorIdx] = useState(5); // black
   const [penWidthIdx, setPenWidthIdx] = useState(1); // medium
   const [annotations, setAnnotations] = useState<Record<number, AnnotationItem[]>>({});
   const [overlayVersion, setOverlayVersion] = useState(0);
+  // Text annotation input
+  const [textInputPos, setTextInputPos] = useState<{ x: number; y: number; screenX: number; screenY: number } | null>(null);
+  const [textInputValue, setTextInputValue] = useState('');
+  const [showComments, setShowComments] = useState(false);
 
   // App-level fullscreen (hides the top bar to maximize canvas area)
   const [isAppFullscreen, setIsAppFullscreen] = useState(false);
@@ -200,7 +216,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const annotationsRef = useRef(annotations);
   const scaleRef = useRef(ZOOM_LEVELS[DEFAULT_ZOOM_INDEX]);
   const currentPageRef = useRef(1);
-  const annotationModeRef = useRef<'none' | 'highlight' | 'pen'>('none');
+  const annotationModeRef = useRef<AnnMode>('none');
   const hlColorRef = useRef(HL_COLORS[0]);
   const penColorRef = useRef(PEN_COLORS[5]);
   const penWidthRef = useRef(PEN_WIDTHS[1]);
@@ -262,6 +278,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     setPdfDoc(null); setCurrentPage(1); setTotalPages(0);
     setError(''); setIsLoading(false); setTimerRunning(false);
     setOpenUrl(''); setAnnotations({}); setAnnotationMode('none');
+    setTextInputPos(null); setShowComments(false);
   };
 
   // ---- Overlay drawing ----
@@ -283,14 +300,23 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
       if (ann.type === 'highlight') {
         ctx.fillStyle = ann.color;
         ctx.fillRect(ann.x * sc, ann.y * sc, ann.w * sc, ann.h * sc);
-      } else {
+      } else if (ann.type === 'pen') {
         if (ann.points.length < 2) continue;
         drawSmoothPath(ctx, ann.points, sc);
         ctx.strokeStyle = ann.color;
         ctx.lineWidth = ann.lineWidth * sc;
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         ctx.stroke();
+      } else if (ann.type === 'line') {
+        ctx.beginPath();
+        ctx.moveTo(ann.x1 * sc, ann.y1 * sc);
+        ctx.lineTo(ann.x2 * sc, ann.y2 * sc);
+        ctx.strokeStyle = ann.color;
+        ctx.lineWidth = ann.lineWidth * sc;
+        ctx.lineCap = 'round';
+        ctx.stroke();
       }
+      // 'text' type is rendered as HTML overlay, not on canvas
     }
   }, []);
 
@@ -441,6 +467,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const resetTimer = () => { setTimerSeconds(0); setTimerRunning(false); setTimerAlert(false); };
 
   // ---- Annotation pointer events ----
+  // Returns canvas physical pixel coords (for canvas drawing ops)
   const getOverlayPos = (clientX: number, clientY: number) => {
     const o = overlayCanvasRef.current!;
     const r = o.getBoundingClientRect();
@@ -449,10 +476,25 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
       y: (clientY - r.top)  * (o.height / r.height),
     };
   };
+  // Returns CSS pixel coords relative to canvas top-left (for HTML annotations)
+  const getOverlayCssPos = (clientX: number, clientY: number) => {
+    const o = overlayCanvasRef.current!;
+    const r = o.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const mode = annotationModeRef.current;
     if (mode === 'none') return;
+
+    if (mode === 'text') {
+      const css = getOverlayCssPos(e.clientX, e.clientY);
+      const sc = scaleRef.current;
+      setTextInputPos({ x: css.x / sc, y: css.y / sc, screenX: css.x, screenY: css.y });
+      setTextInputValue('');
+      return;
+    }
+
     (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
     const pos = getOverlayPos(e.clientX, e.clientY);
     drawingRef.current = pos;
@@ -464,7 +506,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const mode = annotationModeRef.current;
-    if (!drawingRef.current || mode === 'none') return;
+    if (!drawingRef.current || (mode !== 'highlight' && mode !== 'pen' && mode !== 'line')) return;
     const pos = getOverlayPos(e.clientX, e.clientY);
     const overlay = overlayCanvasRef.current!;
     const ctx = overlay.getContext('2d')!;
@@ -475,7 +517,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
       ctx.fillStyle = hlColorRef.current;
       const { x: sx, y: sy } = drawingRef.current;
       ctx.fillRect(sx, sy, pos.x - sx, pos.y - sy);
-    } else {
+    } else if (mode === 'pen') {
       currentPenPathRef.current.push({ x: pos.x / sc, y: pos.y / sc });
       drawOverlay();
       const pts = currentPenPathRef.current;
@@ -486,12 +528,22 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         ctx.stroke();
       }
+    } else if (mode === 'line') {
+      drawOverlay();
+      const { x: sx, y: sy } = drawingRef.current;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.strokeStyle = penColorRef.current;
+      ctx.lineWidth = penWidthRef.current * sc;
+      ctx.lineCap = 'round';
+      ctx.stroke();
     }
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const mode = annotationModeRef.current;
-    if (!drawingRef.current || mode === 'none') return;
+    if (!drawingRef.current || (mode !== 'highlight' && mode !== 'pen' && mode !== 'line')) return;
     const pos = getOverlayPos(e.clientX, e.clientY);
     const sc = scaleRef.current;
     const pg = currentPageRef.current;
@@ -506,13 +558,23 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           x: x/sc, y: y/sc, w: w/sc, h: h/sc, color: hlColorRef.current };
         setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
       } else { drawOverlay(); }
-    } else {
+    } else if (mode === 'pen') {
       drawingRef.current = null;
       const pts = currentPenPathRef.current;
       currentPenPathRef.current = [];
       if (pts.length >= 2) {
         const ann: AnnotationItem = { id: Date.now().toString(), type: 'pen',
           points: pts, color: penColorRef.current, lineWidth: penWidthRef.current };
+        setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
+      } else { drawOverlay(); }
+    } else if (mode === 'line') {
+      const { x: sx, y: sy } = drawingRef.current;
+      drawingRef.current = null;
+      const dx = pos.x - sx, dy = pos.y - sy;
+      if (Math.sqrt(dx*dx + dy*dy) >= 8) {
+        const ann: AnnotationItem = { id: Date.now().toString(), type: 'line',
+          x1: sx/sc, y1: sy/sc, x2: pos.x/sc, y2: pos.y/sc,
+          color: penColorRef.current, lineWidth: penWidthRef.current };
         setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
       } else { drawOverlay(); }
     }
@@ -522,6 +584,26 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     drawingRef.current = null;
     currentPenPathRef.current = [];
     drawOverlay();
+  };
+
+  // ---- Text annotation helpers ----
+  const confirmTextAnnotation = () => {
+    if (!textInputPos || !textInputValue.trim()) { setTextInputPos(null); return; }
+    const pg = currentPageRef.current;
+    const ann: AnnotationItem = {
+      id: Date.now().toString(), type: 'text',
+      x: textInputPos.x, y: textInputPos.y,
+      text: textInputValue.trim(),
+      color: penColorRef.current,
+    };
+    setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
+    setTextInputPos(null);
+    setTextInputValue('');
+  };
+  const cancelTextAnnotation = () => { setTextInputPos(null); setTextInputValue(''); };
+  const deleteAnnotation = (id: string) => {
+    const pg = currentPageRef.current;
+    setAnnotations(prev => ({ ...prev, [pg]: (prev[pg]||[]).filter(a => a.id !== id) }));
   };
 
   const clearPageAnnotations = () => {
@@ -648,15 +730,31 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
         {/* Annotation toolbar */}
         {annotationMode !== 'none' && (
           <div className="annotation-bar">
-            <div className="ann-mode-tabs">
-              <button className={`ann-tab${annotationMode === 'highlight' ? ' active' : ''}`} onClick={() => setAnnotationMode('highlight')}>
-                <Highlighter size={13} /> ハイライト
+            {/* Tool selector */}
+            <div className="ann-tool-group">
+              <button className={`ann-tool-btn${annotationMode === 'highlight' ? ' active hl' : ''}`}
+                onClick={() => setAnnotationMode('highlight')} title="ハイライト">
+                <Highlighter size={14} />
+                <span>HL</span>
               </button>
-              <button className={`ann-tab${annotationMode === 'pen' ? ' active' : ''}`} onClick={() => setAnnotationMode('pen')}>
-                <Pencil size={13} /> ペン
+              <button className={`ann-tool-btn${annotationMode === 'pen' ? ' active pen' : ''}`}
+                onClick={() => setAnnotationMode('pen')} title="ペン">
+                <Pencil size={14} />
+                <span>ペン</span>
+              </button>
+              <button className={`ann-tool-btn${annotationMode === 'line' ? ' active pen' : ''}`}
+                onClick={() => setAnnotationMode('line')} title="直線">
+                <Minus size={14} />
+                <span>直線</span>
+              </button>
+              <button className={`ann-tool-btn${annotationMode === 'text' ? ' active text' : ''}`}
+                onClick={() => setAnnotationMode('text')} title="テキストコメント">
+                <MessageSquare size={14} />
+                <span>メモ</span>
               </button>
             </div>
 
+            {/* Color swatches (HL mode) */}
             {annotationMode === 'highlight' && (
               <div className="color-swatches">
                 {HL_COLORS.map((c, i) => (
@@ -665,7 +763,9 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
                 ))}
               </div>
             )}
-            {annotationMode === 'pen' && (
+
+            {/* Color + width (pen / line / text modes) */}
+            {(annotationMode === 'pen' || annotationMode === 'line' || annotationMode === 'text') && (
               <>
                 <div className="color-swatches">
                   {PEN_COLORS.map((c, i) => (
@@ -673,25 +773,54 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
                       style={{ background: c }} onClick={() => setPenColorIdx(i)} />
                   ))}
                 </div>
-                <div className="pen-widths">
-                  {PEN_WIDTHS.map((w, i) => (
-                    <button key={w} className={`pen-width-btn${penWidthIdx === i ? ' active' : ''}`}
-                      onClick={() => setPenWidthIdx(i)} title={['細','中','太'][i]}>
-                      <span className="pen-dot" style={{ width: 4+i*4, height: 4+i*4, background: PEN_COLORS[penColorIdx] }} />
-                    </button>
-                  ))}
-                </div>
+                {annotationMode !== 'text' && (
+                  <div className="pen-widths">
+                    {PEN_WIDTHS.map((w, i) => (
+                      <button key={w} className={`pen-width-btn${penWidthIdx === i ? ' active' : ''}`}
+                        onClick={() => setPenWidthIdx(i)} title={['細','中','太'][i]}>
+                        <span className="pen-dot" style={{ width: 4+i*4, height: 4+i*4, background: PEN_COLORS[penColorIdx] }} />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </>
             )}
 
-            <div className="ann-actions">
-              <button className="ann-action-btn undo-btn" onClick={undoLastAnnotation} title="元に戻す">
-                ↩
+            {/* Text mode hint */}
+            {annotationMode === 'text' && (
+              <span className="ann-hint">📍 PDFをタップしてメモを追加</span>
+            )}
+
+            {/* Comments toggle */}
+            {(annotations[currentPage]||[]).some(a => a.type === 'text') && (
+              <button className="ann-comments-toggle" onClick={() => setShowComments(v => !v)}>
+                <MessageSquare size={13} />
+                {(annotations[currentPage]||[]).filter(a => a.type === 'text').length}件
+                {showComments ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
+            )}
+
+            <div className="ann-actions">
+              <button className="ann-action-btn undo-btn" onClick={undoLastAnnotation} title="元に戻す">↩</button>
               <button className="ann-action-btn clear-btn" onClick={clearPageAnnotations} title="このページを消去">
                 <Trash2 size={14} />
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Comments list panel */}
+        {showComments && annotationMode !== 'none' && (
+          <div className="comments-panel">
+            {(annotations[currentPage]||[]).filter((a): a is TextAnn => a.type === 'text').map(ann => (
+              <div key={ann.id} className="comment-item">
+                <span className="comment-dot" style={{ background: ann.color }} />
+                <span className="comment-text">{ann.text}</span>
+                <button className="comment-del" onClick={() => deleteAnnotation(ann.id)} title="削除">
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
@@ -757,12 +886,71 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
               <canvas ref={canvasRef} className="pdf-canvas" />
               <canvas
                 ref={overlayCanvasRef}
-                className={`pdf-overlay${annotationMode !== 'none' ? ' drawing' : ''}`}
+                className={`pdf-overlay${annotationMode !== 'none' ? ' drawing' : ''}${annotationMode === 'text' ? ' text-mode' : ''}`}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
               />
+
+              {/* HTML overlay: text annotation bubbles */}
+              <div className="text-ann-layer">
+                {(annotations[currentPage]||[]).filter((a): a is TextAnn => a.type === 'text').map(ann => (
+                  <div
+                    key={ann.id}
+                    className="text-ann-bubble"
+                    style={{ left: ann.x * scale, top: ann.y * scale }}
+                  >
+                    <div className="text-ann-inner" style={{ borderColor: ann.color, color: '#5c3d11' }}>
+                      {ann.text}
+                      <button className="text-ann-del" onClick={() => deleteAnnotation(ann.id)} title="削除">
+                        <X size={10} />
+                      </button>
+                    </div>
+                    <div className="text-ann-tail" style={{ borderTopColor: ann.color }} />
+                  </div>
+                ))}
+              </div>
+
+              {/* Text annotation input popup */}
+              {textInputPos && (
+                <div
+                  className="text-ann-input-popup"
+                  style={{
+                    left: Math.min(textInputPos.screenX, Math.max(0, (overlayCanvasRef.current?.getBoundingClientRect().width ?? 300) - 220)),
+                    top: Math.max(0, textInputPos.screenY - 120),
+                  }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <div className="text-ann-popup-header">
+                    <MessageSquare size={13} />
+                    <span>コメントを追加</span>
+                  </div>
+                  <textarea
+                    className="text-ann-textarea"
+                    value={textInputValue}
+                    onChange={e => setTextInputValue(e.target.value)}
+                    placeholder="コメントを入力..."
+                    rows={3}
+                    autoFocus
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmTextAnnotation(); }
+                      if (e.key === 'Escape') cancelTextAnnotation();
+                    }}
+                  />
+                  <div className="text-ann-popup-actions">
+                    <button className="text-ann-cancel" onClick={cancelTextAnnotation}>キャンセル</button>
+                    <button
+                      className="text-ann-ok"
+                      onClick={confirmTextAnnotation}
+                      disabled={!textInputValue.trim()}
+                      style={{ background: penColorRef.current }}
+                    >
+                      追加
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -847,17 +1035,20 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           /* Annotation bar */
           .annotation-bar {
             background:var(--background); border-bottom:1px solid var(--border);
-            padding:7px 12px; display:flex; align-items:center;
-            gap:10px; flex-shrink:0; flex-wrap:wrap;
+            padding:6px 10px; display:flex; align-items:center;
+            gap:8px; flex-shrink:0; flex-wrap:wrap;
           }
-          .ann-mode-tabs { display:flex; background:var(--accent); border-radius:8px; padding:2px; }
-          .ann-tab {
-            display:flex; align-items:center; gap:4px;
-            padding:4px 10px; border-radius:6px;
-            font-size:0.78rem; font-weight:600;
+          .ann-tool-group { display:flex; gap:3px; background:var(--accent); border-radius:10px; padding:3px; }
+          .ann-tool-btn {
+            display:flex; align-items:center; gap:3px;
+            padding:4px 9px; border-radius:7px;
+            font-size:0.72rem; font-weight:700;
             background:transparent; color:#888; cursor:pointer; transition:all 0.15s;
           }
-          .ann-tab.active { background:var(--background); color:var(--primary); box-shadow:0 1px 4px rgba(0,0,0,0.1); }
+          .ann-tool-btn:hover { background:var(--background); color:var(--foreground); }
+          .ann-tool-btn.active.hl { background:#fef9c3; color:#854d0e; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+          .ann-tool-btn.active.pen { background:var(--background); color:var(--primary); box-shadow:0 1px 4px rgba(0,0,0,.1); }
+          .ann-tool-btn.active.text { background:#eff6ff; color:#1d4ed8; box-shadow:0 1px 4px rgba(0,0,0,.1); }
           .color-swatches { display:flex; gap:5px; }
           .color-swatch {
             width:20px; height:20px; border-radius:50%;
@@ -875,6 +1066,14 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           .pen-width-btn:hover { background:var(--accent); }
           .pen-width-btn.active { background:var(--accent); box-shadow:0 0 0 2px var(--primary); }
           .pen-dot { border-radius:50%; display:block; }
+          .ann-hint { font-size:0.73rem; color:var(--primary); font-weight:600; opacity:0.8; }
+          .ann-comments-toggle {
+            display:flex; align-items:center; gap:4px;
+            padding:4px 10px; border-radius:20px; font-size:0.74rem; font-weight:700;
+            background:rgba(59,130,246,.1); color:#1d4ed8; border:1px solid rgba(59,130,246,.25);
+            cursor:pointer; transition:all 0.15s;
+          }
+          .ann-comments-toggle:hover { background:rgba(59,130,246,.18); }
           .ann-actions { margin-left:auto; display:flex; gap:4px; }
           .ann-action-btn {
             display:flex; align-items:center; justify-content:center;
@@ -885,6 +1084,95 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           .undo-btn:hover { background:var(--accent); }
           .clear-btn { background:transparent; color:#f87171; border:1px solid var(--border); }
           .clear-btn:hover { background:rgba(248,113,113,0.1); }
+          /* Comments list panel */
+          .comments-panel {
+            background:var(--background); border-bottom:1px solid var(--border);
+            padding:6px 12px; display:flex; flex-direction:column; gap:5px;
+            max-height:140px; overflow-y:auto; flex-shrink:0;
+          }
+          .comment-item {
+            display:flex; align-items:flex-start; gap:7px;
+            padding:5px 8px; background:var(--accent); border-radius:8px;
+            border:1px solid var(--border);
+          }
+          .comment-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:4px; }
+          .comment-text { flex:1; font-size:0.78rem; color:var(--foreground); line-height:1.4; word-break:break-word; }
+          .comment-del {
+            flex-shrink:0; display:flex; align-items:center; justify-content:center;
+            width:18px; height:18px; border-radius:50%;
+            background:transparent; color:var(--fg-muted); cursor:pointer;
+            transition:background 0.1s, color 0.1s;
+          }
+          .comment-del:hover { background:#fecaca; color:#ef4444; }
+          /* Text annotation HTML layer */
+          .text-ann-layer {
+            position:absolute; top:0; left:0; width:100%; height:100%;
+            pointer-events:none; overflow:visible;
+          }
+          .text-ann-bubble {
+            position:absolute; pointer-events:auto; z-index:10;
+            transform:translate(4px, -100%);
+            filter:drop-shadow(0 2px 6px rgba(0,0,0,.2));
+          }
+          .text-ann-inner {
+            position:relative;
+            background:#fffde7;
+            border:2px solid;
+            border-radius:8px 8px 8px 2px;
+            padding:5px 24px 5px 8px;
+            font-size:0.75rem; line-height:1.45; font-weight:600;
+            max-width:180px; word-break:break-word;
+            box-shadow:2px 3px 0 rgba(0,0,0,.08);
+          }
+          .text-ann-del {
+            position:absolute; top:-7px; right:-7px;
+            width:17px; height:17px; border-radius:50%;
+            background:#ef4444; color:#fff;
+            display:flex; align-items:center; justify-content:center;
+            cursor:pointer; opacity:0; transition:opacity 0.15s;
+          }
+          .text-ann-bubble:hover .text-ann-del { opacity:1; }
+          .text-ann-tail {
+            width:0; height:0;
+            border-left:6px solid transparent;
+            border-right:6px solid transparent;
+            border-top:7px solid;
+            margin-left:8px;
+          }
+          /* Text annotation input popup */
+          .text-ann-input-popup {
+            position:absolute; z-index:20;
+            width:220px;
+            background:var(--background); border:1px solid var(--border);
+            border-radius:12px; padding:12px;
+            box-shadow:0 8px 24px rgba(0,0,0,.18);
+          }
+          .text-ann-popup-header {
+            display:flex; align-items:center; gap:6px;
+            font-size:0.78rem; font-weight:700; color:var(--primary);
+            margin-bottom:8px;
+          }
+          .text-ann-textarea {
+            width:100%; background:var(--accent); border:1px solid var(--border);
+            border-radius:8px; padding:7px 8px; font-size:0.82rem;
+            color:var(--foreground); outline:none; resize:none; line-height:1.45;
+            transition:border-color 0.15s;
+          }
+          .text-ann-textarea:focus { border-color:var(--primary); }
+          .text-ann-popup-actions { display:flex; gap:6px; margin-top:8px; justify-content:flex-end; }
+          .text-ann-cancel {
+            padding:5px 12px; border-radius:7px; font-size:0.78rem; font-weight:700;
+            background:var(--accent); color:var(--fg-muted); cursor:pointer; border:none;
+            transition:background 0.15s;
+          }
+          .text-ann-cancel:hover { background:var(--border); }
+          .text-ann-ok {
+            padding:5px 14px; border-radius:7px; font-size:0.78rem; font-weight:700;
+            color:#fff; cursor:pointer; border:none; transition:opacity 0.15s;
+          }
+          .text-ann-ok:disabled { opacity:0.45; cursor:default; }
+          /* Cursor for text mode */
+          .pdf-overlay.text-mode { cursor:text; }
           /* Timer */
           .timer-panel {
             background:var(--background); border-bottom:1px solid var(--border);

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
-import { Book, Settings as SettingsIcon, FileText, Brush, Sparkles } from 'lucide-react';
+import { Book, Settings as SettingsIcon, FileText, Brush, Sparkles, GraduationCap } from 'lucide-react';
 
 // Heavy components are loaded only when their tab is opened so the
 // initial bundle stays small enough for mobile Safari to parse without
@@ -17,6 +17,7 @@ const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
 const AIChat = dynamic(() => import('@/components/AIChat'), { ssr: false });
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
 const SplashScreen = dynamic(() => import('@/components/SplashScreen'), { ssr: false });
+const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false });
 
 type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai';
 
@@ -33,6 +34,7 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [recentNotes, setRecentNotes] = useState<number[]>([]);
+  const [showFocusMode, setShowFocusMode] = useState(false);
 
   useEffect(() => {
     const checkLayout = () => {
@@ -231,6 +233,10 @@ export default function Home() {
         )}
       </main>
 
+      {showFocusMode && (
+        <FocusMode onClose={() => setShowFocusMode(false)} />
+      )}
+
       {sikunEnabled && activeTab !== 'sketch' && (
         <InstanceSikun
           activeNoteId={activeNoteId}
@@ -261,6 +267,10 @@ export default function Home() {
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setActiveNoteId(undefined); }}>
             <SettingsIcon size={24} />
             <span>設定</span>
+          </button>
+          <button className="nav-item focus-nav-item" onClick={() => setShowFocusMode(true)} title="超集中モード">
+            <GraduationCap size={24} />
+            <span>集中</span>
           </button>
         </nav>
       )}
@@ -349,6 +359,14 @@ export default function Home() {
         .nav-item span {
           font-size: 0.7rem;
           font-weight: 600;
+        }
+
+        .focus-nav-item {
+          color: #6366f1;
+        }
+        .focus-nav-item:hover {
+          background: rgba(99,102,241,0.08);
+          border-radius: 8px;
         }
 
       `}</style>
