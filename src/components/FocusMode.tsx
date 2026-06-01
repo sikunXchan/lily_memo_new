@@ -38,9 +38,6 @@ function playTone(freq: number, dur: number, vol = 0.25) {
 function playChime() {
   playTone(660, 0.4); setTimeout(() => playTone(880, 0.5), 350);
 }
-function playAlert() {
-  playTone(440, 0.3); setTimeout(() => playTone(440, 0.3), 350);
-}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -144,14 +141,12 @@ export default function FocusMode({ onClose }: FocusModeProps) {
   const [charFrame, setCharFrame] = useState(0);
   const [showResult, setShowResult] = useState(false);
   const [camActive, setCamActive] = useState(false);
-  const [attentionCheck, setAttentionCheck] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const accFocusRef = useRef(0);
   const phaseRef = useRef(phase);
   const remainingRef = useRef(remaining);
-  const lastActivityRef = useRef(Date.now());
   phaseRef.current = phase;
   remainingRef.current = remaining;
 
@@ -200,31 +195,6 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     return () => clearInterval(id);
   }, [running]);
 
-  // Activity tracking for attention check
-  useEffect(() => {
-    const mark = () => { lastActivityRef.current = Date.now(); };
-    document.addEventListener('touchstart', mark, { passive: true });
-    document.addEventListener('mousemove', mark);
-    document.addEventListener('keydown', mark);
-    return () => {
-      document.removeEventListener('touchstart', mark);
-      document.removeEventListener('mousemove', mark);
-      document.removeEventListener('keydown', mark);
-    };
-  }, []);
-
-  // Check attention every 30s; trigger if >2min idle and focus phase is running
-  useEffect(() => {
-    if (!running || phase !== 'focus') return;
-    const id = setInterval(() => {
-      if (Date.now() - lastActivityRef.current > 2 * 60 * 1000) {
-        setAttentionCheck(true);
-        playAlert();
-      }
-    }, 30_000);
-    return () => clearInterval(id);
-  }, [running, phase]);
-
   // Camera helpers
   const startCam = async () => {
     try {
@@ -258,11 +228,6 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     setRunning(false);
     stopCam();
     setShowResult(true);
-  };
-
-  const handleAttentionOk = () => {
-    setAttentionCheck(false);
-    lastActivityRef.current = Date.now();
   };
 
   const fmt = (s: number) =>
@@ -341,7 +306,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           <div className="fm-controls">
             <button
               className={`fm-btn-main ${phase}`}
-              onClick={() => { setRunning(v => !v); lastActivityRef.current = Date.now(); }}
+              onClick={() => setRunning(v => !v)}
             >
               {running ? <Pause size={18} /> : <Play size={18} />}
               {running ? '一時停止' : isFirstStart ? 'スタート！' : '再開'}
@@ -369,20 +334,6 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           <div className="fm-cam-box">
             <video ref={videoRef} autoPlay muted playsInline className="fm-cam-video" />
             <div className="fm-cam-lbl">集中確認中 👀</div>
-          </div>
-        )}
-
-        {/* Attention check overlay */}
-        {attentionCheck && (
-          <div className="fm-attention-overlay" onClick={handleAttentionOk}>
-            <div className="fm-attention-card" onClick={e => e.stopPropagation()}>
-              <div className="fm-att-emoji">😴</div>
-              <div className="fm-att-title">まだ集中してる？</div>
-              <p className="fm-att-sub">2分間、操作がなかったよ</p>
-              <button className="fm-att-ok" onClick={handleAttentionOk}>
-                集中してます！👊
-              </button>
-            </div>
           </div>
         )}
 
@@ -663,50 +614,6 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           background: rgba(0,0,0,.75);
         }
 
-        /* Attention overlay */
-        .fm-attention-overlay {
-          position: absolute;
-          inset: 0;
-          background: rgba(0,0,0,.72);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 20;
-          backdrop-filter: blur(6px);
-        }
-        .fm-attention-card {
-          background: #1e293b;
-          border: 1px solid rgba(255,255,255,.18);
-          border-radius: 20px;
-          padding: 32px 40px;
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 12px;
-          box-shadow: 0 24px 64px rgba(0,0,0,.5);
-        }
-        .fm-att-emoji { font-size: 3rem; animation: shake .5s ease-in-out 2; }
-        @keyframes shake {
-          0%,100% { transform:rotate(0); }
-          25% { transform:rotate(-12deg); }
-          75% { transform:rotate(12deg); }
-        }
-        .fm-att-title { font-size: 1.3rem; font-weight: 800; color: #e2e8f0; }
-        .fm-att-sub { font-size: .8rem; color: rgba(255,255,255,.5); margin: 0; }
-        .fm-att-ok {
-          padding: 11px 30px;
-          background: #6366f1;
-          color: #fff;
-          border: none;
-          border-radius: 50px;
-          font-size: .95rem;
-          font-weight: 700;
-          cursor: pointer;
-          margin-top: 8px;
-          transition: transform .15s;
-        }
-        .fm-att-ok:hover { transform: scale(1.05); }
       `}</style>
     </div>
   );
