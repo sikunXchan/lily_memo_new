@@ -235,7 +235,7 @@ export default function Home() {
         <FocusMode onClose={() => setShowFocusMode(false)} />
       )}
 
-      {sikunEnabled && activeTab !== 'sketch' && (
+      {sikunEnabled && activeTab !== 'sketch' && !showFocusMode && (
         <InstanceSikun
           activeNoteId={activeNoteId}
           prevNoteId={recentNotes.find(id => id !== activeNoteId)}
