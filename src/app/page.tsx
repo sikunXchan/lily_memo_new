@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
+import { initLiveSync, stopLiveSync } from '@/lib/liveSync';
 
 // Heavy components are loaded only when their tab is opened so the
 // initial bundle stays small enough for mobile Safari to parse without
@@ -64,6 +65,16 @@ export default function Home() {
       navigator.storage.persist();
     }
 
+    // Live sync
+    const applyLiveSync = () => {
+      const key     = localStorage.getItem('lily_livesync_key') ?? '';
+      const enabled = localStorage.getItem('lily_livesync_enabled') === '1';
+      if (key && enabled) initLiveSync(key);
+      else stopLiveSync();
+    };
+    applyLiveSync();
+    window.addEventListener('lily-settings-changed', applyLiveSync);
+
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
@@ -71,6 +82,8 @@ export default function Home() {
     return () => {
       window.removeEventListener('resize', checkLayout);
       window.removeEventListener('lily-settings-changed', onSettingsChange);
+      window.removeEventListener('lily-settings-changed', applyLiveSync);
+      stopLiveSync();
     };
   }, []);
 
