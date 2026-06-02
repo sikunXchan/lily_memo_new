@@ -5,11 +5,10 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Play, Square, Plus, Trash2, BarChart2, Timer, ArrowLeft,
   Book, FileText, Brush, Sparkles, Settings as SettingsIcon, GraduationCap,
-  Flame, Share2, X, Copy, Check,
+  Flame, X, ChevronLeft, ChevronRight, Zap, Pencil, Check,
 } from 'lucide-react';
 import { db } from '@/lib/db';
-import type { StudyCategory } from '@/lib/db';
-import { buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
+import type { StudyCategory, StudySession } from '@/lib/db';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LS_KEY_START     = 'study_timer_start';
@@ -51,11 +50,16 @@ function fmtDur(secs: number): string {
   return secs > 0 ? `${secs}s` : '0m';
 }
 
-function pastDays(n: number): string[] {
+function fmtDateTime(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function pastDays(n: number, offset: number = 0): string[] {
   const today = new Date(todayStr() + 'T00:00:00');
   return Array.from({ length: n }, (_, i) => {
     const d = new Date(today);
-    d.setDate(d.getDate() - (n - 1 - i));
+    d.setDate(d.getDate() - (n - 1 - i) - (offset * n));
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   });
 }
@@ -74,7 +78,7 @@ function calcStreak(dates: Set<string>): number {
     if (dates.has(ds)) {
       streak++;
     } else if (i === 0) {
-      continue; // today might not have study yet
+      continue;
     } else {
       break;
     }
@@ -82,20 +86,18 @@ function calcStreak(dates: Set<string>): number {
   return streak;
 }
 
-function randCode(): string {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
-}
-
 // ── Props ─────────────────────────────────────────────────────────────────────
 export interface StudyTrackerProps {
   onSwitchTab?: (tab: string) => void;
   onOpenSettings: () => void;
+  onOpenFocus?: () => void;
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrackerProps) {
+export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus }: StudyTrackerProps) {
   const [view, setView] = useState<'timer' | 'stats'>('timer');
   const [statsDays, setStatsDays] = useState<7 | 30>(7);
+  const [statsOffset, setStatsOffset] = useState(0);
 
   // Timer
   const [isRunning, setIsRunning] = useState(false);
@@ -110,14 +112,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
   const [newCatColor, setNewCatColor] = useState(PRESET_COLORS[0]);
   const [editCats, setEditCats] = useState(false);
 
-  // Sync modal
-  const [showSync, setShowSync] = useState(false);
-  const [syncMode, setSyncMode] = useState<'export' | 'import'>('export');
-  const [syncCode, setSyncCode] = useState('');
-  const [syncInput, setSyncInput] = useState('');
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
-  const [syncMsg, setSyncMsg] = useState('');
-  const [copied, setCopied] = useState(false);
+  // Recent sessions editing
+  const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
+  const [editingMinutes, setEditingMinutes] = useState('');
 
   // DB
   const categories = useLiveQuery(() => db.studyCategories.orderBy('createdAt').toArray(), []) ?? [];
@@ -220,15 +217,33 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
     if (selectedCatId === id) selectCat(null);
   }, [selectedCatId, selectCat]);
 
+  const startEditSession = (s: StudySession) => {
+    setEditingSessionId(s.id!);
+    setEditingMinutes(String(Math.max(1, Math.round(s.duration / 60))));
+  };
+
+  const saveEditSession = useCallback(async (id: number) => {
+    const mins = parseInt(editingMinutes, 10);
+    if (!isNaN(mins) && mins >= 1) {
+      await db.studySessions.update(id, { duration: mins * 60 });
+    }
+    setEditingSessionId(null);
+    setEditingMinutes('');
+  }, [editingMinutes]);
+
+  const deleteSession = useCallback(async (id: number) => {
+    await db.studySessions.delete(id);
+  }, []);
+
   // ── Stats ──────────────────────────────────────────────────────────────────
   const today = todayStr();
   const todayTotal = sessions.filter(s => s.date === today).reduce((sum, s) => sum + s.duration, 0);
   const sessionDates = new Set<string>(sessions.map(s => s.date as string));
   const streak = calcStreak(sessionDates);
-  const days = pastDays(statsDays);
+  const days = pastDays(statsDays, statsOffset);
   const dayTotals = days.map(d => sessions.filter(s => s.date === d).reduce((sum, s) => sum + s.duration, 0));
   const maxTotal = Math.max(...dayTotals, 60);
-  const periodSessions = sessions.filter(s => s.date >= days[0]);
+  const periodSessions = sessions.filter(s => s.date >= days[0] && s.date <= days[days.length - 1]);
   const periodTotal = periodSessions.reduce((sum, s) => sum + s.duration, 0);
   const catMap = new Map<string, { name: string; color: string; secs: number }>();
   for (const s of periodSessions) {
@@ -238,54 +253,11 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
   }
   const catTotals = [...catMap.values()].sort((a, b) => b.secs - a.secs);
   const selectedCat = categories.find(c => c.id === selectedCatId) ?? null;
+  const recentSessions = [...sessions].reverse().slice(0, 10);
 
-  // ── Sync ──────────────────────────────────────────────────────────────────
-  const doExport = useCallback(async () => {
-    setSyncStatus('loading');
-    setSyncMsg('');
-    try {
-      const code = randCode();
-      const payload = await buildSyncJson();
-      const res = await fetch(`/api/sync/${code}`, {
-        method: 'POST',
-        body: payload,
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setSyncCode(code);
-      setSyncStatus('ok');
-      setSyncMsg('コードを相手のデバイスに入力してください。5分間有効です。');
-    } catch (e) {
-      setSyncStatus('error');
-      setSyncMsg(e instanceof Error ? e.message : 'エラーが発生しました');
-    }
-  }, []);
-
-  const doImport = useCallback(async () => {
-    const code = syncInput.trim().toUpperCase();
-    if (!code) return;
-    setSyncStatus('loading');
-    setSyncMsg('');
-    try {
-      const res = await fetch(`/api/sync/${code}`);
-      if (res.status === 404) throw new Error('コードが見つかりません。期限切れか間違いがあります。');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const jsonText = await res.text();
-      await restoreSyncFromJson(jsonText);
-      setSyncStatus('ok');
-      setSyncMsg('同期完了！すべてのデータを取り込みました。');
-      setSyncInput('');
-    } catch (e) {
-      setSyncStatus('error');
-      setSyncMsg(e instanceof Error ? e.message : 'エラーが発生しました');
-    }
-  }, [syncInput]);
-
-  const copyCode = useCallback(() => {
-    navigator.clipboard.writeText(syncCode).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [syncCode]);
+  const periodLabel = statsOffset === 0
+    ? `直近${statsDays}日間`
+    : `${shortLabel(days[0])} 〜 ${shortLabel(days[days.length - 1])}`;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -306,9 +278,6 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
             <BarChart2 size={13} /> 記録
           </button>
         </div>
-        <button className="sync-icon-btn" onClick={() => { setShowSync(true); setSyncStatus('idle'); setSyncMsg(''); setSyncCode(''); setSyncInput(''); }} title="デバイス同期">
-          <Share2 size={16} />
-        </button>
       </div>
 
       {/* ── Timer view ── */}
@@ -404,6 +373,53 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
             <span className="today-label">今日の学習</span>
             <span className="today-total">{fmtDur(todayTotal + (isRunning ? elapsed : 0))}</span>
           </div>
+
+          {/* Recent sessions */}
+          {recentSessions.length > 0 && (
+            <div className="recent-section">
+              <p className="recent-title">直近の記録</p>
+              {recentSessions.map(s => (
+                <div key={s.id} className="recent-row">
+                  <span className="recent-dot" style={{ background: s.categoryColor ?? '#94a3b8' }} />
+                  <div className="recent-info">
+                    <span className="recent-cat">{s.categoryName ?? 'なし'}</span>
+                    <span className="recent-time">{fmtDateTime(s.startTime)}</span>
+                  </div>
+                  <div className="recent-dur-wrap">
+                    {editingSessionId === s.id ? (
+                      <div className="recent-edit-row">
+                        <input
+                          className="recent-edit-input"
+                          type="number"
+                          min="1"
+                          max="1440"
+                          value={editingMinutes}
+                          onChange={e => setEditingMinutes(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') void saveEditSession(s.id!);
+                            if (e.key === 'Escape') { setEditingSessionId(null); setEditingMinutes(''); }
+                          }}
+                          autoFocus
+                        />
+                        <span className="recent-edit-unit">分</span>
+                        <button className="recent-confirm-btn" onClick={() => void saveEditSession(s.id!)}>
+                          <Check size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="recent-dur-btn" onClick={() => startEditSession(s)} title="時間を修正">
+                        {fmtDur(s.duration)}
+                        <Pencil size={10} className="recent-edit-icon" />
+                      </button>
+                    )}
+                  </div>
+                  <button className="recent-del-btn" onClick={() => void deleteSession(s.id!)} title="削除">
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -411,8 +427,17 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
       {view === 'stats' && (
         <div className="st-scroll">
           <div className="period-row">
-            <button className={`period-btn ${statsDays === 7 ? 'active' : ''}`} onClick={() => setStatsDays(7)}>7日間</button>
-            <button className={`period-btn ${statsDays === 30 ? 'active' : ''}`} onClick={() => setStatsDays(30)}>30日間</button>
+            <button className={`period-btn ${statsDays === 7 ? 'active' : ''}`} onClick={() => { setStatsDays(7); setStatsOffset(0); }}>7日間</button>
+            <button className={`period-btn ${statsDays === 30 ? 'active' : ''}`} onClick={() => { setStatsDays(30); setStatsOffset(0); }}>30日間</button>
+            <div className="period-nav">
+              <button className="period-nav-btn" onClick={() => setStatsOffset(o => o + 1)} title="前の期間">
+                <ChevronLeft size={16} />
+              </button>
+              <span className="period-nav-label">{periodLabel}</span>
+              <button className="period-nav-btn" onClick={() => setStatsOffset(o => Math.max(0, o - 1))} disabled={statsOffset === 0} title="次の期間">
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="summary-row">
@@ -423,7 +448,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
             </div>
             <div className="summary-card">
               <span className="summary-val">{fmtDur(periodTotal)}</span>
-              <span className="summary-lbl">{statsDays}日間合計</span>
+              <span className="summary-lbl">{periodLabel}合計</span>
             </div>
           </div>
 
@@ -479,66 +504,6 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
         </div>
       )}
 
-      {/* ── Sync modal ── */}
-      {showSync && (
-        <div className="sync-overlay" onClick={e => { if (e.target === e.currentTarget) setShowSync(false); }}>
-          <div className="sync-modal">
-            <div className="sync-modal-head">
-              <span className="sync-modal-title">📡 デバイス同期</span>
-              <button className="sync-close" onClick={() => setShowSync(false)}><X size={18} /></button>
-            </div>
-            <p className="sync-desc">メモ・フォルダ・学習記録など、すべてのデータをデバイス間でコピーします。受信側のデータは送信側で上書きされます。</p>
-            <div className="sync-mode-row">
-              <button className={`sync-mode-btn ${syncMode === 'export' ? 'active' : ''}`} onClick={() => { setSyncMode('export'); setSyncStatus('idle'); setSyncMsg(''); setSyncCode(''); }}>
-                このデバイスから送る
-              </button>
-              <button className={`sync-mode-btn ${syncMode === 'import' ? 'active' : ''}`} onClick={() => { setSyncMode('import'); setSyncStatus('idle'); setSyncMsg(''); }}>
-                コードを受け取る
-              </button>
-            </div>
-
-            {syncMode === 'export' && (
-              <div className="sync-body">
-                {syncStatus !== 'ok' ? (
-                  <button className="sync-action-btn" onClick={() => void doExport()} disabled={syncStatus === 'loading'}>
-                    {syncStatus === 'loading' ? '処理中...' : 'コードを生成して送信'}
-                  </button>
-                ) : (
-                  <div className="sync-code-display">
-                    <span className="sync-code-label">同期コード</span>
-                    <div className="sync-code-row">
-                      <span className="sync-code">{syncCode}</span>
-                      <button className="sync-copy-btn" onClick={copyCode}>
-                        {copied ? <Check size={14} /> : <Copy size={14} />}
-                        {copied ? 'コピー済み' : 'コピー'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {syncMsg && <p className={`sync-msg ${syncStatus}`}>{syncMsg}</p>}
-              </div>
-            )}
-
-            {syncMode === 'import' && (
-              <div className="sync-body">
-                <p className="sync-warn">⚠️ このデバイスの全データが送信元で上書きされます</p>
-                <input
-                  className="sync-input"
-                  value={syncInput}
-                  onChange={e => setSyncInput(e.target.value.toUpperCase())}
-                  placeholder="コードを入力 (例: AB12CD)"
-                  maxLength={8}
-                />
-                <button className="sync-action-btn" onClick={() => void doImport()} disabled={syncStatus === 'loading' || !syncInput.trim()}>
-                  {syncStatus === 'loading' ? '取得中...' : '全データを同期'}
-                </button>
-                {syncMsg && <p className={`sync-msg ${syncStatus}`}>{syncMsg}</p>}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Bottom nav */}
       {onSwitchTab && (
         <nav className="st-bottom-nav">
@@ -547,6 +512,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
           <button className="snav-item" onClick={() => onSwitchTab('pdf')}><FileText size={22}/><span>PDF</span></button>
           <button className="snav-item" onClick={() => onSwitchTab('ai')}><Sparkles size={22}/><span>AI</span></button>
           <button className="snav-item active"><GraduationCap size={22}/><span>学習</span></button>
+          {onOpenFocus && (
+            <button className="snav-item snav-focus" onClick={onOpenFocus}><Zap size={22}/><span>集中</span></button>
+          )}
           <button className="snav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}><SettingsIcon size={22}/><span>設定</span></button>
         </nav>
       )}
@@ -560,8 +528,6 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
         .st-tabs { display:flex; gap:4px; }
         .st-tab { display:flex; align-items:center; gap:4px; background:var(--accent); border:1px solid var(--border); border-radius:16px; padding:5px 11px; font-size:.75rem; font-weight:600; color:var(--fg-muted); cursor:pointer; white-space:nowrap; transition:all .15s; }
         .st-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); }
-        .sync-icon-btn { width:32px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:8px; background:transparent; border:1px solid var(--border); color:var(--fg-muted); cursor:pointer; flex-shrink:0; }
-        .sync-icon-btn:hover { color:var(--primary); border-color:var(--primary); }
 
         .st-scroll { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
 
@@ -602,14 +568,38 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
         .today-label { font-size:.8rem; font-weight:600; color:var(--fg-muted); }
         .today-total { font-size:1.6rem; font-weight:800; color:var(--primary); }
 
+        /* ── Recent sessions ── */
+        .recent-section { display:flex; flex-direction:column; gap:6px; }
+        .recent-title { font-size:.75rem; font-weight:700; color:var(--fg-muted); margin-bottom:2px; }
+        .recent-row { display:flex; align-items:center; gap:8px; background:var(--accent); border:1px solid var(--border); border-radius:12px; padding:8px 10px; }
+        .recent-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+        .recent-info { flex:1; display:flex; flex-direction:column; gap:1px; min-width:0; }
+        .recent-cat { font-size:.78rem; font-weight:600; color:var(--foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .recent-time { font-size:.65rem; color:var(--fg-muted); }
+        .recent-dur-wrap { flex-shrink:0; }
+        .recent-dur-btn { display:flex; align-items:center; gap:4px; font-size:.8rem; font-weight:700; color:var(--primary); background:transparent; border:none; cursor:pointer; padding:3px 6px; border-radius:6px; }
+        .recent-dur-btn:hover { background:color-mix(in srgb,var(--primary) 10%,transparent); }
+        .recent-edit-icon { opacity:.5; }
+        .recent-edit-row { display:flex; align-items:center; gap:4px; }
+        .recent-edit-input { width:48px; background:var(--background); border:1.5px solid var(--primary); border-radius:6px; padding:3px 6px; font-size:.8rem; font-weight:700; color:var(--foreground); outline:none; text-align:center; font-variant-numeric:tabular-nums; font-family:inherit; }
+        .recent-edit-unit { font-size:.72rem; color:var(--fg-muted); font-weight:600; }
+        .recent-confirm-btn { width:22px; height:22px; border-radius:6px; background:var(--primary); border:none; color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+        .recent-del-btn { width:22px; height:22px; border-radius:6px; background:transparent; border:1px solid var(--border); color:var(--fg-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .recent-del-btn:hover { background:rgba(239,68,68,0.12); border-color:#ef4444; color:#ef4444; }
+
         /* ── Stats ── */
-        .period-row { display:flex; gap:8px; }
+        .period-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
         .period-btn { padding:7px 20px; border-radius:20px; font-size:.8rem; font-weight:700; cursor:pointer; background:var(--accent); border:1.5px solid var(--border); color:var(--fg-muted); transition:all .15s; }
         .period-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+        .period-nav { display:flex; align-items:center; gap:4px; margin-left:auto; }
+        .period-nav-btn { width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:8px; background:var(--accent); border:1px solid var(--border); color:var(--fg-muted); cursor:pointer; transition:all .15s; }
+        .period-nav-btn:hover:not(:disabled) { color:var(--primary); border-color:var(--primary); }
+        .period-nav-btn:disabled { opacity:.3; cursor:default; }
+        .period-nav-label { font-size:.72rem; font-weight:600; color:var(--fg-muted); white-space:nowrap; padding:0 4px; min-width:80px; text-align:center; }
         .summary-row { display:flex; gap:10px; }
         .summary-card { flex:1; background:var(--accent); border:1px solid var(--border); border-radius:14px; padding:14px; display:flex; flex-direction:column; align-items:center; gap:4px; }
         .summary-val { font-size:1.5rem; font-weight:800; color:var(--foreground); }
-        .summary-lbl { font-size:.68rem; font-weight:600; color:var(--fg-muted); }
+        .summary-lbl { font-size:.68rem; font-weight:600; color:var(--fg-muted); text-align:center; }
 
         .chart-card { background:var(--accent); border:1px solid var(--border); border-radius:14px; padding:14px; }
         .chart-title { font-size:.75rem; font-weight:700; color:var(--fg-muted); margin-bottom:10px; }
@@ -636,31 +626,6 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
         .no-sessions-sub { font-size:.78rem; }
         @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
 
-        /* ── Sync modal ── */
-        .sync-overlay { position:fixed; inset:0; z-index:8000; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; padding:20px; }
-        .sync-modal { background:var(--background); border:1px solid var(--border); border-radius:20px; padding:20px; width:100%; max-width:380px; display:flex; flex-direction:column; gap:14px; }
-        .sync-modal-head { display:flex; align-items:center; justify-content:space-between; }
-        .sync-modal-title { font-size:1rem; font-weight:800; color:var(--foreground); }
-        .sync-close { width:30px; height:30px; display:flex; align-items:center; justify-content:center; border-radius:8px; background:var(--accent); border:1px solid var(--border); color:var(--fg-muted); cursor:pointer; }
-        .sync-desc { font-size:.78rem; color:var(--fg-muted); line-height:1.5; }
-        .sync-mode-row { display:flex; gap:8px; }
-        .sync-mode-btn { flex:1; padding:8px 12px; border-radius:10px; font-size:.78rem; font-weight:600; cursor:pointer; background:var(--accent); border:1.5px solid var(--border); color:var(--fg-muted); transition:all .15s; }
-        .sync-mode-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
-        .sync-body { display:flex; flex-direction:column; gap:10px; }
-        .sync-action-btn { background:var(--primary); color:#fff; border:none; border-radius:12px; padding:11px 20px; font-size:.9rem; font-weight:700; cursor:pointer; }
-        .sync-action-btn:disabled { opacity:.5; cursor:default; }
-        .sync-code-display { display:flex; flex-direction:column; gap:6px; background:var(--accent); border:1px solid var(--border); border-radius:12px; padding:14px; }
-        .sync-code-label { font-size:.72rem; font-weight:600; color:var(--fg-muted); }
-        .sync-code-row { display:flex; align-items:center; gap:10px; }
-        .sync-code { font-size:2rem; font-weight:900; letter-spacing:.15em; color:var(--primary); font-variant-numeric:tabular-nums; flex:1; }
-        .sync-copy-btn { display:flex; align-items:center; gap:5px; background:var(--background); border:1px solid var(--border); border-radius:8px; padding:7px 12px; font-size:.75rem; font-weight:600; cursor:pointer; color:var(--fg-muted); }
-        .sync-input { width:100%; background:var(--accent); border:1.5px solid var(--border); border-radius:10px; padding:10px 14px; font-size:1.1rem; font-weight:700; letter-spacing:.1em; color:var(--foreground); outline:none; font-family:inherit; text-transform:uppercase; }
-        .sync-input:focus { border-color:var(--primary); }
-        .sync-msg { font-size:.8rem; font-weight:600; padding:8px 12px; border-radius:8px; }
-        .sync-warn { font-size:.75rem; font-weight:600; color:#f59e0b; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); border-radius:8px; padding:7px 10px; }
-        .sync-msg.ok { background:rgba(16,185,129,0.12); color:#10b981; }
-        .sync-msg.error { background:rgba(239,68,68,0.12); color:#ef4444; }
-
         /* ── Bottom nav ── */
         .st-bottom-nav { display:none; flex-shrink:0; }
         @media (max-width:1023px) {
@@ -668,6 +633,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
           .snav-item { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:transparent; color:var(--fg-muted); transition:color .15s; border:none; cursor:pointer; }
           .snav-item.active { color:var(--primary); }
           .snav-item span { font-size:.65rem; font-weight:600; }
+          .snav-focus { color:#6366f1; }
+          .snav-focus:hover { background:rgba(99,102,241,0.08); border-radius:8px; }
         }
       `}</style>
     </div>
