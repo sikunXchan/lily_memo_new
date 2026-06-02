@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff, Share2, Copy, Check } from 'lucide-react';
+import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff, Share2, Copy, Check, Wifi } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
@@ -24,7 +24,12 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [sikunTone, setSikunTone] = useState('tame');
 
-  // Sync state
+  // Live sync state
+  const [liveKey, setLiveKey]         = useState('');
+  const [liveEnabled, setLiveEnabled] = useState(false);
+  const [liveSaved, setLiveSaved]     = useState(false);
+
+  // Manual sync state
   const [syncMode, setSyncMode] = useState<'export' | 'import'>('export');
   const [syncCode, setSyncCode] = useState('');
   const [syncInput, setSyncInput] = useState('');
@@ -37,6 +42,8 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
       navigator.storage.persisted().then(setIsPersisted);
     }
     setGeminiKey(localStorage.getItem('lily_gemini_api_key') || '');
+    setLiveKey(localStorage.getItem('lily_livesync_key') || '');
+    setLiveEnabled(localStorage.getItem('lily_livesync_enabled') === '1');
     setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
     // 武士モードは廃止。旧設定が残っていればタメ口に移行する。
     const savedTone = localStorage.getItem('lily_sikun_tone');
@@ -58,6 +65,22 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   const changeTone = (tone: string) => {
     setSikunTone(tone);
     localStorage.setItem('lily_sikun_tone', tone);
+  };
+
+  const saveLiveSync = () => {
+    const k = liveKey.trim();
+    localStorage.setItem('lily_livesync_key', k);
+    localStorage.setItem('lily_livesync_enabled', liveEnabled && k ? '1' : '0');
+    window.dispatchEvent(new Event('lily-settings-changed'));
+    setLiveSaved(true);
+    setTimeout(() => setLiveSaved(false), 2000);
+  };
+
+  const toggleLiveSync = () => {
+    const next = !liveEnabled;
+    setLiveEnabled(next);
+    localStorage.setItem('lily_livesync_enabled', next && liveKey.trim() ? '1' : '0');
+    window.dispatchEvent(new Event('lily-settings-changed'));
   };
 
   const saveGeminiKey = () => {
@@ -282,8 +305,52 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
 
         <section className="settings-section">
           <div className="section-title">
+            <Wifi size={20} />
+            <h3>自動同期</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">
+              同じ共有キーを設定した端末間で、メモ・フォルダ・勉強記録を自動で同期します。
+              何も操作しなくても、変更から約30秒以内にもう一方の端末に反映されます。
+            </p>
+            <div className="toggle-row" style={{ marginBottom: 16 }}>
+              <span className="toggle-state">{liveEnabled ? '同期中' : '停止中'}</span>
+              <button
+                className={`toggle-switch ${liveEnabled ? 'on' : ''}`}
+                onClick={toggleLiveSync}
+                role="switch"
+                aria-checked={liveEnabled}
+                aria-label="自動同期"
+              >
+                <span className="toggle-knob" />
+              </button>
+              {liveEnabled && liveKey.trim() && (
+                <span className="live-badge">● LIVE</span>
+              )}
+            </div>
+            <div className="api-key-wrap">
+              <input
+                type="text"
+                className="api-key-input"
+                placeholder="共有キー（例: mystudy2024）"
+                value={liveKey}
+                onChange={e => setLiveKey(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveLiveSync(); }}
+              />
+            </div>
+            <p className="desc" style={{ marginBottom: 12, marginTop: -8 }}>
+              両方の端末で同じキーを入力して保存してください。英数字なら何でもOK。
+            </p>
+            <button className={`btn-action ${liveSaved ? 'saved' : ''}`} onClick={saveLiveSync}>
+              {liveSaved ? '✓ 保存しました' : '保存する'}
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
             <Share2 size={20} />
-            <h3>デバイス同期</h3>
+            <h3>デバイス同期（手動）</h3>
           </div>
           <div className="section-content">
             <p className="desc">メモ・フォルダ・学習記録など、すべてのデータをデバイス間でコピーします。同じWi-Fiに繋がっている必要はありません。受信側のデータは送信側で上書きされます。</p>
@@ -585,6 +652,18 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         }
         .toggle-switch.on .toggle-knob {
           transform: translateX(22px);
+        }
+
+        .live-badge {
+          font-size: 0.68rem;
+          font-weight: 800;
+          color: #10b981;
+          letter-spacing: 0.08em;
+          animation: live-pulse 2s ease-in-out infinite;
+        }
+        @keyframes live-pulse {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.4; }
         }
 
         .sync-mode-row {
