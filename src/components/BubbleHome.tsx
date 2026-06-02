@@ -91,6 +91,27 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
 
       {/* Bubble cluster */}
       <div className="bh-cluster">
+        <div className="bh-wave-bottom" aria-hidden="true">
+          <div className="bh-wave-blob bh-wave-blob1" />
+          <div className="bh-wave-blob bh-wave-blob2" />
+          <div className="bh-wave-blob bh-wave-blob3" />
+          <svg className="bh-wave-svg" viewBox="0 0 390 90" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M0,56 C60,20 120,80 195,48 C270,16 330,72 390,44 L390,90 L0,90 Z" fill="url(#wg1)" opacity="0.55"/>
+            <path d="M0,68 C80,36 150,82 240,58 C310,38 360,76 390,60 L390,90 L0,90 Z" fill="url(#wg2)" opacity="0.45"/>
+            <defs>
+              <linearGradient id="wg1" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#ffcdd8"/>
+                <stop offset="50%" stopColor="#c4b5fd"/>
+                <stop offset="100%" stopColor="#93c5fd"/>
+              </linearGradient>
+              <linearGradient id="wg2" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#fde68a"/>
+                <stop offset="50%" stopColor="#fbcfe8"/>
+                <stop offset="100%" stopColor="#a5f3fc"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
         {BUBBLES.map(b => (
           <div key={b.key} className="bh-bubble-wrap" style={{ ...b.pos, position: 'absolute' }}>
             <button
@@ -252,6 +273,52 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         }
         .bh-bubble-new .bh-label { color: #e07090; }
 
+        /* ── Bottom wave decoration ── */
+        .bh-wave-bottom {
+          position: absolute;
+          bottom: 0;
+          left: -14px;
+          right: -14px;
+          height: 130px;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .bh-wave-svg {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+        }
+        .bh-wave-blob {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(28px);
+          opacity: 0;
+          animation: bh-blob-drift 8s ease-in-out infinite;
+        }
+        .bh-wave-blob1 {
+          width: 180px; height: 80px;
+          bottom: 20px; left: 5%;
+          background: radial-gradient(ellipse, rgba(255,182,193,.55), transparent 70%);
+          animation-delay: 0s;
+        }
+        .bh-wave-blob2 {
+          width: 160px; height: 70px;
+          bottom: 30px; left: 40%;
+          background: radial-gradient(ellipse, rgba(196,181,253,.5), transparent 70%);
+          animation-delay: 2.2s;
+        }
+        .bh-wave-blob3 {
+          width: 140px; height: 65px;
+          bottom: 14px; right: 4%;
+          background: radial-gradient(ellipse, rgba(147,197,253,.48), transparent 70%);
+          animation-delay: 4.5s;
+        }
+        @keyframes bh-blob-drift {
+          0%, 100% { opacity: .7; transform: translateY(0) scaleX(1); }
+          50%       { opacity: 1;  transform: translateY(-8px) scaleX(1.06); }
+        }
       `}</style>
     </div>
   );
