@@ -1,12 +1,13 @@
 'use client';
 
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useEffect, useRef, useState } from 'react';
 import {
   Book, Brush, FileText, Sparkles, GraduationCap, Settings,
-  Crosshair, Plus, Bell, ListTodo,
+  Crosshair, Plus, Bell, ListTodo, Camera, X,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
-import type { Note, Todo } from '@/lib/db';
+import type { Note, Todo, AlbumPhoto } from '@/lib/db';
 import { useTheme } from './ThemeContext';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -91,6 +92,62 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
   const pinnedTodos = useLiveQuery<Todo[]>(() =>
     db.todos.filter(t => t.pinned && !t.done).toArray()
   ) ?? [];
+
+  const albumPhotos = useLiveQuery<AlbumPhoto[]>(() =>
+    db.albumPhotos.orderBy('createdAt').toArray()
+  ) ?? [];
+
+  const [albumUrls, setAlbumUrls] = useState<string[]>([]);
+  const [deleteOverlayId, setDeleteOverlayId] = useState<number | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const urls = albumPhotos.map(p => URL.createObjectURL(p.blob));
+    setAlbumUrls(urls);
+    return () => {
+      urls.forEach(u => URL.revokeObjectURL(u));
+    };
+  }, [albumPhotos]);
+
+  const handleAddPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    for (const file of files) {
+      const buf = await file.arrayBuffer();
+      await db.albumPhotos.add({
+        blob: new Blob([buf], { type: file.type }),
+        mimeType: file.type,
+        createdAt: Date.now(),
+      });
+    }
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleLongPressStart = (id: number) => {
+    longPressTimer.current = setTimeout(() => {
+      setDeleteOverlayId(id);
+    }, 600);
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handlePhotoTap = (id: number) => {
+    if (deleteOverlayId === id) {
+      setDeleteOverlayId(null);
+    }
+  };
+
+  const handleDeletePhoto = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await db.albumPhotos.delete(id);
+    setDeleteOverlayId(null);
+  };
 
   const now     = new Date();
   const tod     = getTimeOfDay(now.getHours());
@@ -197,12 +254,62 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
       </div>
 
       {/* Album strip */}
-      <div className="bh-album" aria-hidden="true">
+      <div className="bh-album" aria-hidden={albumPhotos.length === 0 ? 'true' : undefined}>
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleAddPhotos}
+        />
+        {/* Camera add button */}
+        <button
+          className="bh-album-add-btn"
+          aria-label="写真を追加"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Camera size={16} color="rgba(255,255,255,0.9)" />
+        </button>
         <div className="bh-album-track">
-          {[...SPLASH_IMAGES, ...SPLASH_IMAGES].map((src, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} className="bh-album-img" src={src} alt="" draggable={false} />
-          ))}
+          {albumPhotos.length > 0
+            ? [...albumUrls, ...albumUrls].map((src, i) => {
+                const photo = albumPhotos[i % albumPhotos.length];
+                const photoId = photo?.id ?? i;
+                return (
+                  <button
+                    key={i}
+                    className="bh-album-btn"
+                    onTouchStart={() => handleLongPressStart(photoId)}
+                    onTouchEnd={handleLongPressEnd}
+                    onTouchCancel={handleLongPressEnd}
+                    onMouseDown={() => handleLongPressStart(photoId)}
+                    onMouseUp={handleLongPressEnd}
+                    onMouseLeave={handleLongPressEnd}
+                    onClick={() => handlePhotoTap(photoId)}
+                    aria-label="写真"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img className="bh-album-img" src={src} alt="" draggable={false} />
+                    {deleteOverlayId === photoId && (
+                      <span
+                        className="bh-album-del"
+                        role="button"
+                        aria-label="削除"
+                        onClick={(e) => void handleDeletePhoto(photoId, e)}
+                      >
+                        <X size={12} color="#fff" strokeWidth={3} />
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            : [...SPLASH_IMAGES, ...SPLASH_IMAGES].map((src, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={i} className="bh-album-img" src={src} alt="" draggable={false} />
+              ))
+          }
         </div>
       </div>
 
@@ -441,6 +548,28 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         @keyframes bh-marquee {
           from { transform: translateX(0); }
           to   { transform: translateX(-50%); }
+        }
+        .bh-album-btn {
+          position: relative; flex-shrink: 0;
+          background: none; border: none; padding: 0; cursor: pointer;
+        }
+        .bh-album-del {
+          position: absolute; top: 4px; right: 4px;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: rgba(220, 38, 38, 0.9);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; z-index: 10;
+          box-shadow: 0 2px 6px rgba(0,0,0,.35);
+        }
+        .bh-album-add-btn {
+          position: absolute; top: 6px; right: 6px; z-index: 10;
+          width: 30px; height: 30px; border-radius: 50%;
+          background: rgba(0,0,0,.42);
+          backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+          border: 1px solid rgba(255,255,255,.3);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer;
+          box-shadow: 0 2px 8px rgba(0,0,0,.3);
         }
 
         /* ── Recent notes ── */

@@ -127,6 +127,13 @@ export interface Todo {
   createdAt: number;
 }
 
+export interface AlbumPhoto {
+  id?: number;
+  blob: Blob;
+  mimeType: string;
+  createdAt: number;
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
@@ -137,6 +144,7 @@ export class LilyDatabase extends Dexie {
   studyCategories!: Table<StudyCategory>;
   studySessions!: Table<StudySession>;
   todos!: Table<Todo>;
+  albumPhotos!: Table<AlbumPhoto>;
 
   constructor() {
     super('LilyDatabase');
@@ -191,6 +199,9 @@ export class LilyDatabase extends Dexie {
     });
     this.version(11).stores({
       todos: '++id, done, pinned, createdAt',
+    });
+    this.version(12).stores({
+      albumPhotos: '++id, createdAt',
     });
   }
 }
