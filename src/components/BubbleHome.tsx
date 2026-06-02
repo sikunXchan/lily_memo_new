@@ -1,12 +1,10 @@
 'use client';
 
-import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Book, Brush, FileText, Sparkles, GraduationCap, Settings,
-  Crosshair, Plus, Pin,
+  Crosshair, Plus,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
-import type { Note } from '@/lib/db';
 import { useTheme } from './ThemeContext';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -22,14 +20,14 @@ interface BubbleItem {
 }
 
 const BUBBLES: BubbleItem[] = [
-  { key: 'memos',    label: 'メモ',   tint: '#ffb6c1', size: 106, pos: { left: '6%',   top: 4   }, floatDelay: 0   },
-  { key: 'ai',       label: 'AI',     tint: '#ffb6c1', size: 84,  pos: { right: '4%',  top: 18  }, floatDelay: 1.1 },
-  { key: 'sketch',   label: '落書き', tint: '#93c5fd', size: 76,  pos: { left: '32%',  top: 96  }, floatDelay: 2.0 },
-  { key: 'study',    label: '学習',   tint: '#86efac', size: 78,  pos: { right: '2%',  top: 148 }, floatDelay: 0.6 },
-  { key: 'pdf',      label: 'PDF',    tint: '#c4b5fd', size: 68,  pos: { left: '2%',   top: 162 }, floatDelay: 1.6 },
-  { key: 'focus',    label: '集中',   tint: '#a5b4fc', size: 62,  pos: { left: '38%',  top: 214 }, floatDelay: 2.4 },
-  { key: 'settings', label: '設定',   tint: '#e7e1e4', size: 56,  pos: { right: '22%', top: 228 }, floatDelay: 0.3 },
-  { key: 'new',      label: '新規',   tint: '#fff0f5', size: 54,  pos: { left: '12%',  top: 262 }, floatDelay: 1.8, isNew: true },
+  { key: 'memos',    label: 'メモ',   tint: '#ffb6c1', size: 124, pos: { left: '4%',   top: 0   }, floatDelay: 0   },
+  { key: 'ai',       label: 'AI',     tint: '#ffb6c1', size: 102, pos: { right: '2%',  top: 14  }, floatDelay: 1.1 },
+  { key: 'sketch',   label: '落書き', tint: '#93c5fd', size: 90,  pos: { left: '26%',  top: 108 }, floatDelay: 2.0 },
+  { key: 'study',    label: '学習',   tint: '#86efac', size: 92,  pos: { right: '1%',  top: 148 }, floatDelay: 0.6 },
+  { key: 'pdf',      label: 'PDF',    tint: '#c4b5fd', size: 82,  pos: { left: '1%',   top: 224 }, floatDelay: 1.6 },
+  { key: 'focus',    label: '集中',   tint: '#a5b4fc', size: 74,  pos: { left: '34%',  top: 268 }, floatDelay: 2.4 },
+  { key: 'settings', label: '設定',   tint: '#e7e1e4', size: 66,  pos: { right: '14%', top: 312 }, floatDelay: 0.3 },
+  { key: 'new',      label: '新規',   tint: '#fff0f5', size: 62,  pos: { left: '8%',   top: 352 }, floatDelay: 1.8, isNew: true },
 ];
 
 function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
@@ -57,10 +55,6 @@ interface BubbleHomeProps {
 export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: BubbleHomeProps) {
   const { cycleTheme, nextThemeName } = useTheme();
 
-  const pinnedNotes = useLiveQuery<Note[]>(() =>
-    db.notes.filter(n => !!n.pinned && !n.deletedAt).sortBy('updatedAt').then(l => l.reverse())
-  ) ?? [];
-
   const now = new Date();
   const dateLabel = `${WEEKDAYS[now.getDay()]} · ${now.getMonth() + 1}月${now.getDate()}日`;
 
@@ -81,7 +75,6 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
 
   return (
     <div className="bh-root">
-      {/* Aura decorations */}
       <div className="bh-aura" />
 
       {/* Header */}
@@ -95,49 +88,8 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         </button>
       </div>
 
-      {/* Pinned notes */}
-      {pinnedNotes.length > 0 && (
-        <div className="bh-pinned">
-          <div className="bh-pinned-label">
-            <Pin size={11} color="#ff8da1" />
-            <span>ピン留め</span>
-          </div>
-          <div className="bh-pinned-scroll">
-            {pinnedNotes.map(n => (
-              <button key={n.id} className="bh-pin-card" onClick={() => onSelectNote(n.id!)}>
-                <span className="bh-pin-title">{n.title || '無題のメモ'}</span>
-                <span className="bh-pin-preview">
-                  {(n.content ?? '').replace(/<[^>]+>/g, '').slice(0, 40) || '…'}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Bubble cluster */}
       <div className="bh-cluster">
-        <div className="bh-wave-bottom" aria-hidden="true">
-          <div className="bh-wave-blob bh-wave-blob1" />
-          <div className="bh-wave-blob bh-wave-blob2" />
-          <div className="bh-wave-blob bh-wave-blob3" />
-          <svg className="bh-wave-svg" viewBox="0 0 390 90" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0,56 C60,20 120,80 195,48 C270,16 330,72 390,44 L390,90 L0,90 Z" fill="url(#wg1)" opacity="0.55"/>
-            <path d="M0,68 C80,36 150,82 240,58 C310,38 360,76 390,60 L390,90 L0,90 Z" fill="url(#wg2)" opacity="0.45"/>
-            <defs>
-              <linearGradient id="wg1" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#ffcdd8"/>
-                <stop offset="50%" stopColor="#c4b5fd"/>
-                <stop offset="100%" stopColor="#93c5fd"/>
-              </linearGradient>
-              <linearGradient id="wg2" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#fde68a"/>
-                <stop offset="50%" stopColor="#fbcfe8"/>
-                <stop offset="100%" stopColor="#a5f3fc"/>
-              </linearGradient>
-            </defs>
-          </svg>
-        </div>
         {BUBBLES.map(b => (
           <div key={b.key} className="bh-bubble-wrap" style={{ ...b.pos, position: 'absolute' }}>
             <button
@@ -158,6 +110,30 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
             </button>
           </div>
         ))}
+
+        {/* Tide waves */}
+        <div className="bh-waves" aria-hidden="true">
+          <div className="bh-wave bh-wave-l1">
+            <svg viewBox="0 0 800 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M0,95 C100,68 300,115 400,95 C500,68 700,115 800,95 L800,120 L0,120 Z" fill="rgba(165,243,252,.52)"/>
+            </svg>
+          </div>
+          <div className="bh-wave bh-wave-l2">
+            <svg viewBox="0 0 800 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M0,82 C100,50 300,108 400,82 C500,50 700,108 800,82 L800,120 L0,120 Z" fill="rgba(147,197,253,.56)"/>
+            </svg>
+          </div>
+          <div className="bh-wave bh-wave-l3">
+            <svg viewBox="0 0 800 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M0,70 C100,38 300,96 400,70 C500,38 700,96 800,70 L800,120 L0,120 Z" fill="rgba(196,181,253,.60)"/>
+            </svg>
+          </div>
+          <div className="bh-wave bh-wave-l4">
+            <svg viewBox="0 0 800 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M0,56 C100,22 300,82 400,56 C500,22 700,82 800,56 L800,120 L0,120 Z" fill="rgba(255,182,193,.65)"/>
+            </svg>
+          </div>
+        </div>
       </div>
 
       <style jsx>{`
@@ -207,14 +183,11 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           color: transparent;
         }
         .bh-theme-btn {
-          width: 32px;
-          height: 32px;
+          width: 32px; height: 32px;
           border-radius: 99px;
           border: 1px solid #ffe0e8;
           background: rgba(255,255,255,.75);
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          display: flex; align-items: center; justify-content: center;
           cursor: pointer;
           box-shadow: 0 2px 8px rgba(255,182,193,.25);
           flex-shrink: 0;
@@ -229,7 +202,6 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           margin: 2px 0;
           overflow: hidden;
         }
-        .bh-bubble-wrap { }
         .bh-bubble {
           display: flex;
           flex-direction: column;
@@ -248,7 +220,6 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         }
         .bh-skin {
           position: relative;
-          display: block;
           width: 100%;
           aspect-ratio: 1;
           border-radius: 50%;
@@ -299,114 +270,34 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         }
         .bh-bubble-new .bh-label { color: #e07090; }
 
-        /* ── Pinned notes ── */
-        .bh-pinned {
-          flex-shrink: 0;
-          padding: 0 4px 10px;
-          position: relative;
-          z-index: 2;
-        }
-        .bh-pinned-label {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: .12em;
-          text-transform: uppercase;
-          color: #c79aa8;
-          margin-bottom: 7px;
-        }
-        .bh-pinned-scroll {
-          display: flex;
-          gap: 8px;
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-          scrollbar-width: none;
-          padding-bottom: 2px;
-        }
-        .bh-pinned-scroll::-webkit-scrollbar { display: none; }
-        .bh-pin-card {
-          flex-shrink: 0;
-          min-width: 140px;
-          max-width: 200px;
-          background: rgba(255,255,255,.82);
-          border: 1px solid #ffe6ec;
-          border-radius: 16px;
-          padding: 10px 13px;
-          text-align: left;
-          cursor: pointer;
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          box-shadow: 0 4px 14px rgba(255,182,193,.18);
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        .bh-pin-card:active { transform: scale(.96); }
-        .bh-pin-title {
-          font-size: 13px;
-          font-weight: 700;
-          color: #4a4045;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          display: block;
-        }
-        .bh-pin-preview {
-          font-size: 11px;
-          color: #b09aa8;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          display: block;
-        }
-
-        /* ── Bottom wave decoration ── */
-        .bh-wave-bottom {
+        /* ── Tide waves ── */
+        .bh-waves {
           position: absolute;
-          bottom: 0;
-          left: -14px;
-          right: -14px;
-          height: 130px;
+          bottom: 0; left: -14px; right: -14px;
+          height: 120px;
           pointer-events: none;
           z-index: 0;
+          overflow: hidden;
         }
-        .bh-wave-svg {
+        .bh-wave {
           position: absolute;
           bottom: 0;
-          left: 0;
-          width: 100%;
+          width: 200%;
           height: 100%;
+          will-change: transform;
         }
-        .bh-wave-blob {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(28px);
-          opacity: 0;
-          animation: bh-blob-drift 8s ease-in-out infinite;
+        .bh-wave svg { display: block; width: 100%; height: 100%; }
+        .bh-wave-l1 { animation: bh-tide    15s ease-in-out infinite; }
+        .bh-wave-l2 { animation: bh-tide-r  11s ease-in-out infinite; }
+        .bh-wave-l3 { animation: bh-tide     8s ease-in-out infinite; }
+        .bh-wave-l4 { animation: bh-tide-r   6s ease-in-out infinite; }
+        @keyframes bh-tide {
+          0%, 100% { transform: translateX(0); }
+          50%       { transform: translateX(-50%); }
         }
-        .bh-wave-blob1 {
-          width: 180px; height: 80px;
-          bottom: 20px; left: 5%;
-          background: radial-gradient(ellipse, rgba(255,182,193,.55), transparent 70%);
-          animation-delay: 0s;
-        }
-        .bh-wave-blob2 {
-          width: 160px; height: 70px;
-          bottom: 30px; left: 40%;
-          background: radial-gradient(ellipse, rgba(196,181,253,.5), transparent 70%);
-          animation-delay: 2.2s;
-        }
-        .bh-wave-blob3 {
-          width: 140px; height: 65px;
-          bottom: 14px; right: 4%;
-          background: radial-gradient(ellipse, rgba(147,197,253,.48), transparent 70%);
-          animation-delay: 4.5s;
-        }
-        @keyframes bh-blob-drift {
-          0%, 100% { opacity: .7; transform: translateY(0) scaleX(1); }
-          50%       { opacity: 1;  transform: translateY(-8px) scaleX(1.06); }
+        @keyframes bh-tide-r {
+          0%, 100% { transform: translateX(-50%); }
+          50%       { transform: translateX(0); }
         }
       `}</style>
     </div>

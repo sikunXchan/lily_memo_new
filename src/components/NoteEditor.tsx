@@ -17,7 +17,7 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck, Link2, Sparkles, Table2, Pin, PinOff
+  Search, ChevronUp, ChevronDown, SquareCheck, Link2, Sparkles, Table2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
@@ -513,12 +513,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     }
   };
 
-  const togglePin = async () => {
-    const next = !note?.pinned;
-    setNote(prev => prev ? { ...prev, pinned: next } : null);
-    await db.notes.update(noteId, { pinned: next });
-  };
-
   const dispatchSearch = useCallback((query: string, index: number) => {
     if (!editor) return;
     editor.view.dispatch(
@@ -850,9 +844,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
             <button className="btn-tool" onClick={openSearch} title="メモ内検索"><Search size={18} /></button>
             <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
-            <button className={`btn-tool ${note?.pinned ? 'btn-tool-pinned' : ''}`} onClick={() => void togglePin()} title={note?.pinned ? 'ピン留め解除' : 'ピン留め'}>
-              {note?.pinned ? <PinOff size={18} /> : <Pin size={18} />}
-            </button>
             <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
 
             <div className="header-divider" />
@@ -1200,9 +1191,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
         .btn-tool.btn-tool-delete {
           color: #ef4444;
-        }
-        .btn-tool.btn-tool-pinned {
-          color: #ff8da1;
         }
 
         .btn-tool.btn-tool-mode.active {

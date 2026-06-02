@@ -20,7 +20,6 @@ export interface Note {
   content: string;
   folderId?: number;
   color?: string;
-  pinned?: boolean;
   createdAt: number;
   updatedAt: number;
   type?: NoteType;
@@ -180,9 +179,6 @@ export class LilyDatabase extends Dexie {
     this.version(10).stores({
       studyCategories: '++id, name, color, createdAt',
       studySessions: '++id, date, startTime, categoryId',
-    });
-    this.version(11).stores({
-      notes: '++id, syncId, title, folderId, color, pinned, createdAt, updatedAt, type, deletedAt',
     });
   }
 }
