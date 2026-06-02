@@ -17,7 +17,7 @@ export default function BackBubble({ onGoHome }: BackBubbleProps) {
       <style jsx>{`
         .bb-wrap {
           position: fixed;
-          right: 16px;
+          left: 16px;
           bottom: calc(20px + env(safe-area-inset-bottom));
           z-index: 3000;
           display: flex;
