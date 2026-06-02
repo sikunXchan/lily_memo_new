@@ -534,7 +534,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         </div>
       )}
 
-      {/* Bottom nav */}
+      {/* Bottom nav — desktop only, hidden on mobile (BackBubble handles mobile nav) */}
       {onSwitchTab && (
         <nav className="st-bottom-nav">
           <button className="snav-item" onClick={() => onSwitchTab('memos')}><Book size={22}/><span>メモ</span></button>
@@ -658,16 +658,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .no-sessions-sub { font-size:.78rem; }
         @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
 
-        /* ── Bottom nav ── */
-        .st-bottom-nav { display:none; flex-shrink:0; }
-        @media (max-width:1023px) {
-          .st-bottom-nav { display:flex; height:calc(56px + env(safe-area-inset-bottom)); background:var(--glass-tint,rgba(255,255,255,0.9)); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-top:1px solid var(--border); padding-bottom:env(safe-area-inset-bottom); order:99; }
-          .snav-item { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; background:transparent; color:var(--fg-muted); transition:color .15s; border:none; cursor:pointer; }
-          .snav-item.active { color:var(--primary); }
-          .snav-item span { font-size:.65rem; font-weight:600; }
-          .snav-focus { color:#6366f1; }
-          .snav-focus:hover { background:rgba(99,102,241,0.08); border-radius:8px; }
-        }
+        /* ── Bottom nav — hidden everywhere (mobile uses BackBubble) ── */
+        .st-bottom-nav { display:none; }
       `}</style>
     </div>
   );

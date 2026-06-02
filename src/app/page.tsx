@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
-import { Book, Settings as SettingsIcon, FileText, Brush, Sparkles, GraduationCap } from 'lucide-react';
 
 // Heavy components are loaded only when their tab is opened so the
 // initial bundle stays small enough for mobile Safari to parse without
@@ -14,6 +13,8 @@ const SearchModal = dynamic(() => import('@/components/SearchModal'), { ssr: fal
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
 const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
+const BubbleHome = dynamic(() => import('@/components/BubbleHome'), { ssr: false });
+const BackBubble = dynamic(() => import('@/components/BackBubble'), { ssr: false });
 const AIChat = dynamic(() => import('@/components/AIChat'), { ssr: false });
 const StudyTracker = dynamic(() => import('@/components/StudyTracker'), { ssr: false });
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
@@ -29,8 +30,6 @@ export default function Home() {
   const [highlightFolderReq, setHighlightFolderReq] = useState<{ id: number; seq: number } | null>(null);
   const highlightSeq = useRef(0);
   const [isMobile, setIsMobile] = useState(false);
-  const [isLandscape, setIsLandscape] = useState(false);
-  const [isInputFocused, setIsInputFocused] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [recentNotes, setRecentNotes] = useState<number[]>([]);
@@ -41,28 +40,12 @@ export default function Home() {
       const w = window.innerWidth;
       const h = window.innerHeight;
       const landscape = w > h;
-      // Portrait: treat up to 1023px as mobile (covers iPad Air/Pro portrait)
-      // Landscape: min-dimension up to 1024 is mobile (covers all iPads incl.
-      // 12.9" Pro) so tablets in landscape get the Hero + bottom nav, no sidebar
       setIsMobile(landscape ? Math.min(w, h) <= 1024 : w < 1024);
-      setIsLandscape(landscape);
     };
     const initialize = () => { checkLayout(); setMounted(true); };
     initialize();
     window.addEventListener('resize', checkLayout);
 
-    const handleFocus = (e: FocusEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        setIsInputFocused(true);
-      }
-    };
-    const handleBlur = () => setIsInputFocused(false);
-
-    window.addEventListener('focusin', handleFocus);
-    window.addEventListener('focusout', handleBlur);
-
-    // Restore sidebar view mode (after mount to avoid hydration mismatch).
     const savedViewMode = localStorage.getItem('sidebarViewMode');
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (savedViewMode === 'graph' || savedViewMode === 'tree') setSidebarViewMode(savedViewMode);
@@ -78,19 +61,14 @@ export default function Home() {
       navigator.storage.persist();
     }
 
-    // Register the offline service worker. Memos/folders/handwriting
-    // already live in IndexedDB; the SW just caches the HTML/JS/CSS
-    // shell so cold loads work without a network connection.
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
 
     return () => {
       window.removeEventListener('resize', checkLayout);
-      window.removeEventListener('focusin', handleFocus);
-      window.removeEventListener('focusout', handleBlur);
       window.removeEventListener('lily-settings-changed', onSettingsChange);
-    }
+    };
   }, []);
 
   useEffect(() => {
@@ -104,7 +82,6 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Track recently viewed memos so Instance Sikun can jump back.
   useEffect(() => {
     if (activeNoteId === undefined) return;
     setRecentNotes(prev => [activeNoteId, ...prev.filter(id => id !== activeNoteId)].slice(0, 10));
@@ -114,43 +91,37 @@ export default function Home() {
 
   const isDesktopLayout = !isMobile;
 
-  const openSettings = () => {
-    setActiveTab('settings');
-    setActiveNoteId(undefined);
-  };
-
-  const openPDF = () => {
-    setActiveTab('pdf');
-    setActiveNoteId(undefined);
-  };
-
-  const openSketch = () => {
-    setActiveTab('sketch');
-    setActiveNoteId(undefined);
-  };
-
-  const openAI = () => {
-    setActiveTab('ai');
-    setActiveNoteId(undefined);
-  };
+  const openSettings = () => { setActiveTab('settings'); setActiveNoteId(undefined); };
+  const openPDF = () => { setActiveTab('pdf'); setActiveNoteId(undefined); };
+  const openSketch = () => { setActiveTab('sketch'); setActiveNoteId(undefined); };
+  const openAI = () => { setActiveTab('ai'); setActiveNoteId(undefined); };
+  const goHome = () => { setActiveTab('memos'); setActiveNoteId(undefined); };
 
   const changeSidebarViewMode = (mode: 'tree' | 'graph') => {
     setSidebarViewMode(mode);
     localStorage.setItem('sidebarViewMode', mode);
   };
 
-  // Desktop dashboard → switch the Sidebar to graph view.
-  const openConnection = () => {
-    changeSidebarViewMode('graph');
-  };
+  const openConnection = () => { changeSidebarViewMode('graph'); };
 
-  // Desktop dashboard → expand/highlight a folder in the Sidebar.
   const selectFolder = (id: number) => {
     highlightSeq.current += 1;
     setHighlightFolderReq({ id, seq: highlightSeq.current });
   };
 
   const handleSelectNote = (id: number) => { setActiveNoteId(id); setActiveTab('memos'); };
+
+  const handleMobileNavigate = (tab: string) => {
+    if (tab === 'sketch') { openSketch(); return; }
+    setActiveTab(tab as TabType);
+    setActiveNoteId(undefined);
+  };
+
+  // Show BackBubble on mobile when not on the home screen
+  const showBackBubble = isMobile
+    && !showFocusMode
+    && activeTab !== 'sketch'
+    && !(activeTab === 'memos' && !activeNoteId);
 
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
@@ -190,24 +161,22 @@ export default function Home() {
           <>
             {activeTab === 'settings' && (
               <div className={isDesktopLayout ? 'settings-panel' : 'settings-overlay'}>
-                <SettingsModal onClose={() => setActiveTab('memos')} />
+                <SettingsModal onClose={goHome} />
               </div>
             )}
             {activeTab !== 'settings' && (
               <div className="tab-content">
-                {/* Mobile (portrait & landscape) — self-contained Hero home */}
+                {/* Mobile home — bubble cluster design */}
                 {isMobile && activeTab === 'memos' && (
-                  <HomeHero
+                  <BubbleHome
                     onSelectNote={(id) => setActiveNoteId(id)}
-                    onOpenSketch={openSketch}
-                    isDesktop={false}
+                    onNavigate={handleMobileNavigate}
+                    onOpenFocus={() => setShowFocusMode(true)}
                   />
                 )}
-                {activeTab === 'pdf' && (
-                  <PDFViewer />
-                )}
+                {activeTab === 'pdf' && <PDFViewer />}
                 {activeTab === 'sketch' && (
-                  <SketchTab onClose={() => setActiveTab('memos')} />
+                  <SketchTab onClose={goHome} />
                 )}
                 {activeTab === 'ai' && (
                   <AIChat
@@ -223,7 +192,7 @@ export default function Home() {
                     onOpenFocus={() => setShowFocusMode(true)}
                   />
                 )}
-                {/* Desktop / iPad / iPhone landscape — Hero in main content area */}
+                {/* Desktop — Hero in main content area */}
                 {isDesktopLayout && activeTab === 'memos' && (
                   <HomeHero
                     onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
@@ -252,38 +221,7 @@ export default function Home() {
         />
       )}
 
-      {isMobile && !isInputFocused && !activeNoteId && (activeTab as string) !== 'ai' && (activeTab as string) !== 'study' && (
-        <nav className="bottom-nav">
-          <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
-            <Book size={24} />
-            <span>メモ</span>
-          </button>
-          <button className={`nav-item ${activeTab === 'sketch' ? 'active' : ''}`} onClick={() => { setActiveTab('sketch'); setActiveNoteId(undefined); }}>
-            <Brush size={24} />
-            <span>落書き</span>
-          </button>
-          <button className={`nav-item ${activeTab === 'pdf' ? 'active' : ''}`} onClick={() => { setActiveTab('pdf'); setActiveNoteId(undefined); }}>
-            <FileText size={24} />
-            <span>PDF</span>
-          </button>
-          <button className={`nav-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => { setActiveTab('ai'); setActiveNoteId(undefined); }}>
-            <Sparkles size={24} />
-            <span>AI</span>
-          </button>
-          <button className={`nav-item ${activeTab === 'study' ? 'active' : ''}`} onClick={() => { setActiveTab('study'); setActiveNoteId(undefined); }}>
-            <GraduationCap size={24} />
-            <span>学習</span>
-          </button>
-          <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setActiveNoteId(undefined); }}>
-            <SettingsIcon size={24} />
-            <span>設定</span>
-          </button>
-          <button className="nav-item focus-nav-item" onClick={() => setShowFocusMode(true)} title="超集中モード">
-            <GraduationCap size={24} />
-            <span>集中</span>
-          </button>
-        </nav>
-      )}
+      {showBackBubble && <BackBubble onGoHome={goHome} />}
 
       <style jsx>{`
         .app-container {
@@ -308,7 +246,7 @@ export default function Home() {
           top: 0;
           left: 0;
           right: 0;
-          bottom: calc(60px + env(safe-area-inset-bottom));
+          bottom: 0;
           z-index: 2000;
           background: var(--background);
           display: flex;
@@ -329,56 +267,6 @@ export default function Home() {
           overflow: hidden;
           min-height: 0;
         }
-
-        .bottom-nav {
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: calc(60px + env(safe-area-inset-bottom));
-          background: var(--glass-tint, rgba(255, 255, 255, 0.9));
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          display: flex;
-          border-top: 1px solid var(--border);
-          padding-bottom: env(safe-area-inset-bottom);
-          z-index: 3000;
-        }
-        /* Sketch tab is a full-screen overlay — hide bottom nav so the
-           sketch toolbar isn't covered. */
-        .app-container.sketch-mode .bottom-nav {
-          display: none;
-        }
-
-        .nav-item {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-          background: transparent;
-          color: var(--fg-muted);
-          transition: all 0.2s;
-        }
-
-        .nav-item.active {
-          color: var(--primary);
-        }
-
-        .nav-item span {
-          font-size: 0.7rem;
-          font-weight: 600;
-        }
-
-        .focus-nav-item {
-          color: #6366f1;
-        }
-        .focus-nav-item:hover {
-          background: rgba(99,102,241,0.08);
-          border-radius: 8px;
-        }
-
       `}</style>
     </div>
   );
