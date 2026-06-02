@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  Sparkles, Send, ChevronDown, ChevronUp, RotateCcw, Book, Brush,
-  FileText, Settings as SettingsIcon, Paperclip, X, Search,
+  Sparkles, Send, ChevronDown, ChevronUp, RotateCcw,
+  Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
-  Save, History, Trash2, Mic, GraduationCap, Phone,
+  Save, History, Trash2, Mic, Phone,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -2368,16 +2368,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         <div ref={messagesEndRef} />
       </div>
 
-      {onSwitchTab && (
-        <nav className="ai-bottom-nav">
-          <button className="ai-nav-item" onClick={() => onSwitchTab('memos')}><Book size={22} /><span>メモ</span></button>
-          <button className="ai-nav-item" onClick={() => onSwitchTab('sketch')}><Brush size={22} /><span>落書き</span></button>
-          <button className="ai-nav-item" onClick={() => onSwitchTab('pdf')}><FileText size={22} /><span>PDF</span></button>
-          <button className="ai-nav-item active"><Sparkles size={22} /><span>AI</span></button>
-          <button className="ai-nav-item" onClick={() => onSwitchTab('study')}><GraduationCap size={22} /><span>学習</span></button>
-          <button className="ai-nav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}><SettingsIcon size={22} /><span>設定</span></button>
-        </nav>
-      )}
 
       <div className="quick-actions mode-row">
         <span className="qa-label">トーン</span>
@@ -2607,12 +2597,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .att-chip-name { font-size: 0.78rem; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
         .att-remove { background: transparent; border: none; cursor: pointer; color: var(--fg-muted); display: flex; align-items: center; padding: 2px; }
         .att-error { font-size: 0.78rem; color: #cc0000; flex-shrink: 0; }
-        .ai-bottom-nav { display: none; flex-shrink: 0; }
         @media (max-width: 1023px) {
-          .ai-bottom-nav { display: flex; height: calc(56px + env(safe-area-inset-bottom)); background: var(--glass-tint, rgba(255,255,255,0.9)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); order: 99; }
-          .ai-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: transparent; color: var(--fg-muted); transition: color 0.15s; }
-          .ai-nav-item.active { color: var(--primary); }
-          .ai-nav-item span { font-size: 0.65rem; font-weight: 600; }
           .messages-list { padding-bottom: 16px; }
         }
       `}</style>
