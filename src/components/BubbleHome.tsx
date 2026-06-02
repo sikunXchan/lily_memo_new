@@ -275,7 +275,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         /* ── Cluster ── */
         .bh-cluster {
           position: relative; flex: 1; min-height: 0;
-          margin: 2px 0; overflow: hidden; z-index: 1;
+          margin: 2px 0;
         }
 
         /* ── Bubbles ── */
