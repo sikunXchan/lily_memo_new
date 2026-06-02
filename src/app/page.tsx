@@ -220,6 +220,7 @@ export default function Home() {
                   <StudyTracker
                     onOpenSettings={openSettings}
                     onSwitchTab={(tab) => { setActiveTab(tab as TabType); setActiveNoteId(undefined); }}
+                    onOpenFocus={() => setShowFocusMode(true)}
                   />
                 )}
                 {/* Desktop / iPad / iPhone landscape — Hero in main content area */}

@@ -1,10 +1,14 @@
 'use client';
 
-import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { buildBackupJson, restoreBackupFromJson } from '@/lib/backup';
+import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff, Share2, Copy, Check } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
 import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
+
+function randCode(): string {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -19,6 +23,14 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   const [keySaved, setKeySaved] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [sikunTone, setSikunTone] = useState('tame');
+
+  // Sync state
+  const [syncMode, setSyncMode] = useState<'export' | 'import'>('export');
+  const [syncCode, setSyncCode] = useState('');
+  const [syncInput, setSyncInput] = useState('');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [syncMsg, setSyncMsg] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
@@ -53,6 +65,53 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
     setKeySaved(true);
     setTimeout(() => setKeySaved(false), 2000);
   };
+
+  const doExport = useCallback(async () => {
+    setSyncStatus('loading');
+    setSyncMsg('');
+    try {
+      const code = randCode();
+      const payload = await buildSyncJson();
+      const res = await fetch(`/api/sync/${code}`, {
+        method: 'POST',
+        body: payload,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSyncCode(code);
+      setSyncStatus('ok');
+      setSyncMsg('コードを相手のデバイスに入力してください。5分間有効です。');
+    } catch (e) {
+      setSyncStatus('error');
+      setSyncMsg(e instanceof Error ? e.message : 'エラーが発生しました');
+    }
+  }, []);
+
+  const doImport = useCallback(async () => {
+    const code = syncInput.trim().toUpperCase();
+    if (!code) return;
+    setSyncStatus('loading');
+    setSyncMsg('');
+    try {
+      const res = await fetch(`/api/sync/${code}`);
+      if (res.status === 404) throw new Error('コードが見つかりません。期限切れか間違いがあります。');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const jsonText = await res.text();
+      await restoreSyncFromJson(jsonText);
+      setSyncStatus('ok');
+      setSyncMsg('同期完了！すべてのデータを取り込みました。');
+      setSyncInput('');
+    } catch (e) {
+      setSyncStatus('error');
+      setSyncMsg(e instanceof Error ? e.message : 'エラーが発生しました');
+    }
+  }, [syncInput]);
+
+  const copyCode = useCallback(() => {
+    navigator.clipboard.writeText(syncCode).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [syncCode]);
 
   const downloadBackup = async () => {
     const json = await buildBackupJson();
@@ -217,6 +276,69 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
                   ))}
                 </div>
               </>
+            )}
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Share2 size={20} />
+            <h3>デバイス同期</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">メモ・フォルダ・学習記録など、すべてのデータをデバイス間でコピーします。同じWi-Fiに繋がっている必要はありません。受信側のデータは送信側で上書きされます。</p>
+            <div className="sync-mode-row">
+              <button
+                className={`sync-mode-btn ${syncMode === 'export' ? 'active' : ''}`}
+                onClick={() => { setSyncMode('export'); setSyncStatus('idle'); setSyncMsg(''); setSyncCode(''); }}
+              >
+                このデバイスから送る
+              </button>
+              <button
+                className={`sync-mode-btn ${syncMode === 'import' ? 'active' : ''}`}
+                onClick={() => { setSyncMode('import'); setSyncStatus('idle'); setSyncMsg(''); }}
+              >
+                コードを受け取る
+              </button>
+            </div>
+
+            {syncMode === 'export' && (
+              <div className="sync-body">
+                {syncStatus !== 'ok' ? (
+                  <button className="btn-action" onClick={() => void doExport()} disabled={syncStatus === 'loading'}>
+                    {syncStatus === 'loading' ? '処理中...' : 'コードを生成して送信'}
+                  </button>
+                ) : (
+                  <div className="sync-code-display">
+                    <span className="sync-code-label">同期コード</span>
+                    <div className="sync-code-row">
+                      <span className="sync-code-val">{syncCode}</span>
+                      <button className="sync-copy-btn" onClick={copyCode}>
+                        {copied ? <Check size={14} /> : <Copy size={14} />}
+                        {copied ? 'コピー済み' : 'コピー'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {syncMsg && <p className={`sync-msg sync-${syncStatus}`}>{syncMsg}</p>}
+              </div>
+            )}
+
+            {syncMode === 'import' && (
+              <div className="sync-body">
+                <p className="sync-warn">⚠️ このデバイスの全データが送信元で上書きされます</p>
+                <input
+                  className="sync-input"
+                  value={syncInput}
+                  onChange={e => setSyncInput(e.target.value.toUpperCase())}
+                  placeholder="コードを入力 (例: AB12CD)"
+                  maxLength={8}
+                />
+                <button className="btn-action" onClick={() => void doImport()} disabled={syncStatus === 'loading' || !syncInput.trim()}>
+                  {syncStatus === 'loading' ? '取得中...' : '全データを同期'}
+                </button>
+                {syncMsg && <p className={`sync-msg sync-${syncStatus}`}>{syncMsg}</p>}
+              </div>
             )}
           </div>
         </section>
@@ -464,6 +586,109 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         .toggle-switch.on .toggle-knob {
           transform: translateX(22px);
         }
+
+        .sync-mode-row {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 14px;
+        }
+        .sync-mode-btn {
+          flex: 1;
+          padding: 9px 12px;
+          border-radius: 10px;
+          font-size: 0.78rem;
+          font-weight: 600;
+          cursor: pointer;
+          background: var(--background);
+          border: 1.5px solid var(--border);
+          color: var(--fg-muted);
+          transition: all 0.15s;
+          font-family: inherit;
+        }
+        .sync-mode-btn.active {
+          background: var(--primary);
+          color: #fff;
+          border-color: var(--primary);
+        }
+        .sync-body {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .sync-code-display {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 14px;
+        }
+        .sync-code-label {
+          font-size: 0.72rem;
+          font-weight: 600;
+          color: var(--fg-muted);
+        }
+        .sync-code-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .sync-code-val {
+          font-size: 2rem;
+          font-weight: 900;
+          letter-spacing: 0.15em;
+          color: var(--primary);
+          font-variant-numeric: tabular-nums;
+          flex: 1;
+        }
+        .sync-copy-btn {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          background: var(--accent);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 7px 12px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          cursor: pointer;
+          color: var(--fg-muted);
+          font-family: inherit;
+        }
+        .sync-input {
+          width: 100%;
+          background: var(--background);
+          border: 1.5px solid var(--border);
+          border-radius: 10px;
+          padding: 10px 14px;
+          font-size: 1.1rem;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          color: var(--foreground);
+          outline: none;
+          font-family: inherit;
+          text-transform: uppercase;
+          box-sizing: border-box;
+        }
+        .sync-input:focus { border-color: var(--primary); }
+        .sync-msg {
+          font-size: 0.8rem;
+          font-weight: 600;
+          padding: 8px 12px;
+          border-radius: 8px;
+        }
+        .sync-warn {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #f59e0b;
+          background: rgba(245,158,11,0.1);
+          border: 1px solid rgba(245,158,11,0.3);
+          border-radius: 8px;
+          padding: 7px 10px;
+        }
+        .sync-msg.sync-ok { background: rgba(16,185,129,0.12); color: #10b981; }
+        .sync-msg.sync-error { background: rgba(239,68,68,0.12); color: #ef4444; }
 
         @media (max-width: 768px) {
           .settings-view {
