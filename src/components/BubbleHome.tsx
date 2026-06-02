@@ -3,10 +3,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Book, Brush, FileText, Sparkles, GraduationCap, Settings,
-  Crosshair, Plus,
+  Crosshair, Plus, Bell, ListTodo,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
-import type { Note } from '@/lib/db';
+import type { Note, Todo } from '@/lib/db';
 import { useTheme } from './ThemeContext';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -45,14 +45,16 @@ interface BubbleItem {
 }
 
 const BUBBLES: BubbleItem[] = [
-  { key: 'memos',    label: 'メモ',   tint: '#ffb6c1', size: 124, pos: { left: '4%',   top: 0   }, floatDelay: 0,   windAnim: 0, windDur: 6.2 },
-  { key: 'ai',       label: 'AI',     tint: '#c7d2fe', size: 102, pos: { right: '2%',  top: 14  }, floatDelay: 1.1, windAnim: 1, windDur: 5.8 },
-  { key: 'sketch',   label: '落書き', tint: '#93c5fd', size: 90,  pos: { left: '26%',  top: 108 }, floatDelay: 2.0, windAnim: 2, windDur: 7.0 },
-  { key: 'study',    label: '学習',   tint: '#86efac', size: 92,  pos: { right: '1%',  top: 148 }, floatDelay: 0.6, windAnim: 0, windDur: 6.5 },
-  { key: 'pdf',      label: 'PDF',    tint: '#c4b5fd', size: 82,  pos: { left: '1%',   top: 224 }, floatDelay: 1.6, windAnim: 1, windDur: 5.5 },
-  { key: 'focus',    label: '集中',   tint: '#a5b4fc', size: 74,  pos: { left: '34%',  top: 268 }, floatDelay: 2.4, windAnim: 2, windDur: 6.8 },
-  { key: 'settings', label: '設定',   tint: '#e2e8f0', size: 66,  pos: { right: '14%', top: 312 }, floatDelay: 0.3, windAnim: 0, windDur: 7.2 },
-  { key: 'new',      label: '新規',   tint: '#fecdd3', size: 62,  pos: { left: '8%',   top: 352 }, floatDelay: 1.8, windAnim: 1, windDur: 5.9, isNew: true },
+  { key: 'memos',    label: 'メモ',      tint: '#ffb6c1', size: 124, pos: { left: '4%',   top: 0   }, floatDelay: 0,   windAnim: 0, windDur: 6.2 },
+  { key: 'ai',       label: 'AI',        tint: '#c7d2fe', size: 102, pos: { right: '2%',  top: 14  }, floatDelay: 1.1, windAnim: 1, windDur: 5.8 },
+  { key: 'sketch',   label: '落書き',    tint: '#93c5fd', size: 90,  pos: { left: '26%',  top: 108 }, floatDelay: 2.0, windAnim: 2, windDur: 7.0 },
+  { key: 'study',    label: '学習',      tint: '#86efac', size: 92,  pos: { right: '1%',  top: 148 }, floatDelay: 0.6, windAnim: 0, windDur: 6.5 },
+  { key: 'news',     label: 'お知らせ', tint: '#fde68a', size: 68,  pos: { left: '47%',  top: 162 }, floatDelay: 1.3, windAnim: 1, windDur: 6.1 },
+  { key: 'pdf',      label: 'PDF',       tint: '#c4b5fd', size: 82,  pos: { left: '1%',   top: 224 }, floatDelay: 1.6, windAnim: 1, windDur: 5.5 },
+  { key: 'todo',     label: 'ToDo',      tint: '#bbf7d0', size: 72,  pos: { left: '44%',  top: 256 }, floatDelay: 0.9, windAnim: 2, windDur: 6.4 },
+  { key: 'focus',    label: '集中',      tint: '#a5b4fc', size: 74,  pos: { left: '34%',  top: 340 }, floatDelay: 2.4, windAnim: 2, windDur: 6.8 },
+  { key: 'settings', label: '設定',      tint: '#e2e8f0', size: 66,  pos: { right: '14%', top: 312 }, floatDelay: 0.3, windAnim: 0, windDur: 7.2 },
+  { key: 'new',      label: '新規',      tint: '#fecdd3', size: 62,  pos: { left: '8%',   top: 352 }, floatDelay: 1.8, windAnim: 1, windDur: 5.9, isNew: true },
 ];
 
 function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
@@ -63,7 +65,9 @@ function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
     case 'ai':       return <Sparkles {...p} />;
     case 'sketch':   return <Brush {...p} />;
     case 'study':    return <GraduationCap {...p} />;
+    case 'news':     return <Bell {...p} />;
     case 'pdf':      return <FileText {...p} />;
+    case 'todo':     return <ListTodo {...p} />;
     case 'focus':    return <Crosshair {...p} />;
     case 'settings': return <Settings {...p} />;
     case 'new':      return <Plus size={Math.round(size * 0.34)} color="#ff8da1" strokeWidth={2.6} />;
@@ -82,6 +86,10 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
 
   const recentNotes = useLiveQuery<Note[]>(() =>
     db.notes.filter(n => !n.deletedAt).sortBy('updatedAt').then(l => l.reverse().slice(0, 6))
+  ) ?? [];
+
+  const pinnedTodos = useLiveQuery<Todo[]>(() =>
+    db.todos.filter(t => t.pinned && !t.done).toArray()
   ) ?? [];
 
   const now     = new Date();
@@ -144,6 +152,20 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           <Sparkles size={14} color={isLight ? '#ff8da1' : '#e2e8f0'} />
         </button>
       </div>
+
+      {/* Pinned ToDo ticker */}
+      {pinnedTodos.length > 0 && (
+        <div className="bh-ticker" aria-live="polite">
+          <span className="bh-ticker-badge">📌 ToDo</span>
+          <div className="bh-ticker-track-wrap">
+            <div className="bh-ticker-track">
+              {[...pinnedTodos, ...pinnedTodos].map((t, i) => (
+                <span key={i} className="bh-ticker-item">● {t.text}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bubble cluster */}
       <div className="bh-cluster">
@@ -356,18 +378,54 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           text-shadow: 0 1px 5px rgba(0,0,0,.25);
         }
 
+        /* ── Pinned ToDo ticker ── */
+        .bh-ticker {
+          flex-shrink: 0;
+          display: flex; align-items: center;
+          height: 32px; overflow: hidden;
+          background: rgba(245,158,11,.18);
+          border-top: 1px solid rgba(245,158,11,.3);
+          border-bottom: 1px solid rgba(245,158,11,.3);
+          margin: 0 -14px;
+          position: relative; z-index: 3;
+        }
+        .bh-ticker-badge {
+          flex-shrink: 0;
+          font-size: 0.64rem; font-weight: 800;
+          color: #f59e0b; letter-spacing: .05em;
+          padding: 0 10px; white-space: nowrap;
+          border-right: 1px solid rgba(245,158,11,.3);
+          height: 100%; display: flex; align-items: center;
+        }
+        .bh-ticker-track-wrap {
+          flex: 1; overflow: hidden; height: 100%;
+        }
+        .bh-ticker-track {
+          display: flex; align-items: center; gap: 40px;
+          height: 100%; width: max-content;
+          animation: bh-ticker-scroll 18s linear infinite;
+        }
+        .bh-ticker-item {
+          font-size: 0.75rem; font-weight: 600;
+          color: rgba(245,158,11,.95); white-space: nowrap;
+        }
+        @keyframes bh-ticker-scroll {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-50%); }
+        }
+
         /* ── Album strip ── */
         .bh-album {
           flex-shrink: 0;
+          height: 114px;
           overflow: hidden;
-          padding: 6px 0 10px;
           margin: 0 -14px;
           position: relative; z-index: 2;
         }
         .bh-album-track {
-          display: flex; gap: 10px;
-          padding: 0 14px;
-          width: max-content;
+          display: flex; align-items: center; gap: 10px;
+          padding: 8px 14px;
+          width: max-content; height: 100%;
           animation: bh-marquee 32s linear infinite;
         }
         .bh-album-img {

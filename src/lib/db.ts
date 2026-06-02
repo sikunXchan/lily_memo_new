@@ -119,6 +119,14 @@ export interface StudySession {
   source: 'stopwatch' | 'pomodoro';
 }
 
+export interface Todo {
+  id?: number;
+  text: string;
+  done: boolean;
+  pinned: boolean;
+  createdAt: number;
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
@@ -128,6 +136,7 @@ export class LilyDatabase extends Dexie {
   scheduleDays!: Table<ScheduleDay>;
   studyCategories!: Table<StudyCategory>;
   studySessions!: Table<StudySession>;
+  todos!: Table<Todo>;
 
   constructor() {
     super('LilyDatabase');
@@ -179,6 +188,9 @@ export class LilyDatabase extends Dexie {
     this.version(10).stores({
       studyCategories: '++id, name, color, createdAt',
       studySessions: '++id, date, startTime, categoryId',
+    });
+    this.version(11).stores({
+      todos: '++id, done, pinned, createdAt',
     });
   }
 }

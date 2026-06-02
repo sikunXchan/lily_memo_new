@@ -256,6 +256,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
   const accFocusRef = useRef(0);
   const phaseRef = useRef(phase);
   const remainingRef = useRef(remaining);
+  const phaseEndTsRef = useRef<number | null>(null);
   phaseRef.current = phase;
   remainingRef.current = remaining;
 
@@ -265,30 +266,49 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     return () => { (screen.orientation as unknown as { unlock?: () => void })?.unlock?.(); };
   }, []);
 
-  // Timer countdown
+  // Timer countdown — timestamp-based so backgrounding/screen-lock doesn't pause it
   useEffect(() => {
     if (!running) return;
+    // Anchor the end time from the current remaining when (re)starting
+    phaseEndTsRef.current = Date.now() + remainingRef.current * 1000;
+
     const id = setInterval(() => {
-      setRemaining(r => {
-        if (r <= 1) {
-          playChime();
-          if (phaseRef.current === 'focus') {
-            accFocusRef.current += FOCUS_SECS;
-            setTotalFocusSecs(accFocusRef.current);
-            setDoneRounds(d => d + 1);
-            setPhase('break');
-            return BREAK_SECS;
-          } else {
-            setPhase('focus');
-            setRound(n => n + 1);
-            return FOCUS_SECS;
-          }
+      if (!phaseEndTsRef.current) return;
+      const r = Math.max(0, Math.ceil((phaseEndTsRef.current - Date.now()) / 1000));
+      if (r <= 0) {
+        playChime();
+        if (phaseRef.current === 'focus') {
+          accFocusRef.current += FOCUS_SECS;
+          setTotalFocusSecs(accFocusRef.current);
+          setDoneRounds(d => d + 1);
+          setPhase('break');
+          setRemaining(BREAK_SECS);
+          phaseEndTsRef.current = Date.now() + BREAK_SECS * 1000;
+        } else {
+          setPhase('focus');
+          setRound(n => n + 1);
+          setRemaining(FOCUS_SECS);
+          phaseEndTsRef.current = Date.now() + FOCUS_SECS * 1000;
         }
-        return r - 1;
-      });
-    }, 1000);
+      } else {
+        setRemaining(r);
+      }
+    }, 500);
     return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running]);
+
+  // Re-sync remaining when app returns to foreground after being backgrounded
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && phaseEndTsRef.current) {
+        const r = Math.max(0, Math.ceil((phaseEndTsRef.current - Date.now()) / 1000));
+        setRemaining(r);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
   // Nature background canvas animation
   useEffect(() => {
