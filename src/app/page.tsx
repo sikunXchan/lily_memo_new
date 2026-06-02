@@ -34,6 +34,8 @@ export default function Home() {
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [recentNotes, setRecentNotes] = useState<number[]>([]);
   const [showFocusMode, setShowFocusMode] = useState(false);
+  // 'bubbles' = BubbleHome, 'notes' = old HomeHero note list
+  const [mobilePage, setMobilePage] = useState<'bubbles' | 'notes'>('bubbles');
 
   useEffect(() => {
     const checkLayout = () => {
@@ -95,7 +97,11 @@ export default function Home() {
   const openPDF = () => { setActiveTab('pdf'); setActiveNoteId(undefined); };
   const openSketch = () => { setActiveTab('sketch'); setActiveNoteId(undefined); };
   const openAI = () => { setActiveTab('ai'); setActiveNoteId(undefined); };
-  const goHome = () => { setActiveTab('memos'); setActiveNoteId(undefined); };
+  const goHome = () => {
+    setActiveTab('memos');
+    setActiveNoteId(undefined);
+    setMobilePage('bubbles');
+  };
 
   const changeSidebarViewMode = (mode: 'tree' | 'graph') => {
     setSidebarViewMode(mode);
@@ -109,19 +115,21 @@ export default function Home() {
     setHighlightFolderReq({ id, seq: highlightSeq.current });
   };
 
-  const handleSelectNote = (id: number) => { setActiveNoteId(id); setActiveTab('memos'); };
+  const handleSelectNote = (id: number) => {
+    setActiveNoteId(id);
+    setActiveTab('memos');
+  };
 
   const handleMobileNavigate = (tab: string) => {
     if (tab === 'sketch') { openSketch(); return; }
+    if (tab === 'memos') { setMobilePage('notes'); setActiveTab('memos'); setActiveNoteId(undefined); return; }
     setActiveTab(tab as TabType);
     setActiveNoteId(undefined);
   };
 
-  // Show BackBubble on mobile when not on the home screen
-  const showBackBubble = isMobile
-    && !showFocusMode
-    && activeTab !== 'sketch'
-    && !(activeTab === 'memos' && !activeNoteId);
+  // BackBubble: shown on mobile when not on bubble home
+  const onBubbleHome = isMobile && activeTab === 'memos' && !activeNoteId && mobilePage === 'bubbles';
+  const showBackBubble = isMobile && !showFocusMode && activeTab !== 'sketch' && !onBubbleHome;
 
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
@@ -166,12 +174,20 @@ export default function Home() {
             )}
             {activeTab !== 'settings' && (
               <div className="tab-content">
-                {/* Mobile home — bubble cluster design */}
-                {isMobile && activeTab === 'memos' && (
+                {/* Mobile home — bubble cluster */}
+                {isMobile && activeTab === 'memos' && mobilePage === 'bubbles' && (
                   <BubbleHome
                     onSelectNote={(id) => setActiveNoteId(id)}
                     onNavigate={handleMobileNavigate}
                     onOpenFocus={() => setShowFocusMode(true)}
+                  />
+                )}
+                {/* Mobile notes list — old HomeHero */}
+                {isMobile && activeTab === 'memos' && mobilePage === 'notes' && (
+                  <HomeHero
+                    onSelectNote={(id) => setActiveNoteId(id)}
+                    onOpenSketch={openSketch}
+                    isDesktop={false}
                   />
                 )}
                 {activeTab === 'pdf' && <PDFViewer />}

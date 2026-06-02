@@ -88,7 +88,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
     onNavigate(key);
   };
 
-  const shownFolders = folders.slice(0, 3);
+  const shownFolders = folders;
 
   return (
     <div className="bh-root">
@@ -167,7 +167,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
               </div>
             );
           })}
-          {notes.filter(n => !n.folderId).slice(0, 2).map(n => (
+          {notes.filter(n => !n.folderId).map(n => (
             <button key={n.id} className="bh-note bh-loose-note" onClick={() => onSelectNote(n.id!)}>
               <FileIcon size={13} color="#cab9bf" />
               <span>{n.title || '無題のメモ'}</span>
@@ -317,7 +317,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
 
         /* ── Tree card ── */
         .bh-card {
-          flex: 0 0 186px;
+          flex: 0 0 220px;
           min-height: 0;
           background: rgba(255,255,255,.78);
           border: 1px solid #ffe6ec;
