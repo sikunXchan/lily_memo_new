@@ -221,7 +221,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   }, [selectedCatId, selectCat]);
 
   const startEditSession = (s: StudySession) => {
-    setConfirmingDeleteId(null);
+    setSwipedId(null);
     setEditingSessionId(s.id!);
     const toHHMM = (ts: number) => {
       const d = new Date(ts);
