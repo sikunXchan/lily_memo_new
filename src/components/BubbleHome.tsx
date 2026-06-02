@@ -1,10 +1,12 @@
 'use client';
 
+import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Book, Brush, FileText, Sparkles, GraduationCap, Settings,
-  Crosshair, Plus,
+  Crosshair, Plus, Pin,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
+import type { Note } from '@/lib/db';
 import { useTheme } from './ThemeContext';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -55,6 +57,10 @@ interface BubbleHomeProps {
 export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: BubbleHomeProps) {
   const { cycleTheme, nextThemeName } = useTheme();
 
+  const pinnedNotes = useLiveQuery<Note[]>(() =>
+    db.notes.filter(n => !!n.pinned && !n.deletedAt).sortBy('updatedAt').then(l => l.reverse())
+  ) ?? [];
+
   const now = new Date();
   const dateLabel = `${WEEKDAYS[now.getDay()]} · ${now.getMonth() + 1}月${now.getDate()}日`;
 
@@ -88,6 +94,26 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           <Sparkles size={14} color="#ff8da1" />
         </button>
       </div>
+
+      {/* Pinned notes */}
+      {pinnedNotes.length > 0 && (
+        <div className="bh-pinned">
+          <div className="bh-pinned-label">
+            <Pin size={11} color="#ff8da1" />
+            <span>ピン留め</span>
+          </div>
+          <div className="bh-pinned-scroll">
+            {pinnedNotes.map(n => (
+              <button key={n.id} className="bh-pin-card" onClick={() => onSelectNote(n.id!)}>
+                <span className="bh-pin-title">{n.title || '無題のメモ'}</span>
+                <span className="bh-pin-preview">
+                  {(n.content ?? '').replace(/<[^>]+>/g, '').slice(0, 40) || '…'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Bubble cluster */}
       <div className="bh-cluster">
@@ -272,6 +298,69 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           white-space: nowrap;
         }
         .bh-bubble-new .bh-label { color: #e07090; }
+
+        /* ── Pinned notes ── */
+        .bh-pinned {
+          flex-shrink: 0;
+          padding: 0 4px 10px;
+          position: relative;
+          z-index: 2;
+        }
+        .bh-pinned-label {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: .12em;
+          text-transform: uppercase;
+          color: #c79aa8;
+          margin-bottom: 7px;
+        }
+        .bh-pinned-scroll {
+          display: flex;
+          gap: 8px;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+          padding-bottom: 2px;
+        }
+        .bh-pinned-scroll::-webkit-scrollbar { display: none; }
+        .bh-pin-card {
+          flex-shrink: 0;
+          min-width: 140px;
+          max-width: 200px;
+          background: rgba(255,255,255,.82);
+          border: 1px solid #ffe6ec;
+          border-radius: 16px;
+          padding: 10px 13px;
+          text-align: left;
+          cursor: pointer;
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          box-shadow: 0 4px 14px rgba(255,182,193,.18);
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .bh-pin-card:active { transform: scale(.96); }
+        .bh-pin-title {
+          font-size: 13px;
+          font-weight: 700;
+          color: #4a4045;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          display: block;
+        }
+        .bh-pin-preview {
+          font-size: 11px;
+          color: #b09aa8;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          display: block;
+        }
 
         /* ── Bottom wave decoration ── */
         .bh-wave-bottom {

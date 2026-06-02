@@ -206,6 +206,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
                     <button key={n.id} className="mt-note-row" onClick={() => onSelectNote(n.id!)}>
                       <FileText size={14} color="#cab9bf" />
                       <span className="mt-note-title">{n.title || '無題のメモ'}</span>
+                      {n.pinned && <span className="mt-pin-badge">📌</span>}
                     </button>
                   ))}
                   <button className="mt-note-row mt-add-note" onClick={() => void createNote(f.id)}>
@@ -225,6 +226,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           <button key={n.id} className="mt-loose-row" onClick={() => onSelectNote(n.id!)}>
             <FileText size={15} color="#cab9bf" />
             <span className="mt-note-title">{n.title || '無題のメモ'}</span>
+            {n.pinned && <span className="mt-pin-badge">📌</span>}
           </button>
         ))}
 
@@ -453,6 +455,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           font-family: inherit;
         }
         .mt-loose-row:active { background: rgba(255,182,193,.12); }
+        .mt-pin-badge { font-size: 11px; flex-shrink: 0; }
         .mt-empty {
           display: flex; flex-direction: column; align-items: center; gap: 14px;
           padding: 40px 0; color: #c7b8be; font-size: .88rem; text-align: center;
