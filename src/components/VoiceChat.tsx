@@ -54,21 +54,31 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
     onClose();
   }, [stopAll, onClose]);
 
-  // Speak text via browser TTS, resolve when done
+  // Speak text via browser TTS, resolve when done.
+  // On iOS Safari the audio session is suspended after any async gap (e.g.
+  // after `await callGeminiChat`), so we must call synth.resume() before
+  // speak() and add a short delay after cancel() to let the engine reset.
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise(resolve => {
       const synth = window.speechSynthesis;
       if (!synth) { resolve(); return; }
       synth.cancel();
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.lang = 'ja-JP';
-      utter.rate = 1.05;
-      // Safari/iOS sometimes delays voiceschanged — try to grab a Japanese voice
-      const jaVoice = synth.getVoices().find(v => v.lang.startsWith('ja'));
-      if (jaVoice) utter.voice = jaVoice;
-      utter.onend = () => resolve();
-      utter.onerror = () => resolve();
-      synth.speak(utter);
+      const doSpeak = () => {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'ja-JP';
+        utter.rate = 1.05;
+        // Safari/iOS sometimes delays voiceschanged — try to grab a Japanese voice
+        const voices = synth.getVoices();
+        const jaVoice = voices.find(v => v.lang.startsWith('ja')) ?? voices.find(v => v.lang.includes('JP'));
+        if (jaVoice) utter.voice = jaVoice;
+        utter.onend = () => resolve();
+        utter.onerror = () => resolve();
+        // resume() wakes the iOS audio context that was suspended after the async API call
+        synth.resume();
+        synth.speak(utter);
+      };
+      // Small delay after cancel() so the TTS engine finishes resetting
+      setTimeout(doSpeak, 80);
     });
   }, []);
 
