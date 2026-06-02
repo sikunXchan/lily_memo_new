@@ -1,17 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Book, Brush, FileText, Sparkles, GraduationCap, Settings,
-  Crosshair, Plus, Folder, Search, ChevronRight, FileIcon,
+  Crosshair, Plus,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import { useTheme } from './ThemeContext';
-import type { Folder as FolderType, Note } from '@/lib/db';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-const FALLBACK_COLORS = ['#ffb6c1', '#93c5fd', '#86efac', '#fde68a', '#c4b5fd'];
 
 interface BubbleItem {
   key: string;
@@ -50,11 +46,6 @@ function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
   }
 }
 
-function folderColor(f: FolderType, idx: number): string {
-  if (f.color?.startsWith('--')) return `var(${f.color}, ${FALLBACK_COLORS[idx % FALLBACK_COLORS.length]})`;
-  return f.color || FALLBACK_COLORS[idx % FALLBACK_COLORS.length];
-}
-
 interface BubbleHomeProps {
   onSelectNote: (id: number) => void;
   onNavigate: (tab: string) => void;
@@ -63,12 +54,6 @@ interface BubbleHomeProps {
 
 export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: BubbleHomeProps) {
   const { cycleTheme, nextThemeName } = useTheme();
-  const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
-
-  const folders = useLiveQuery<FolderType[]>(() => db.folders.filter(f => !f.deletedAt).toArray()) ?? [];
-  const notes = useLiveQuery<Note[]>(() =>
-    db.notes.filter(n => !n.deletedAt).sortBy('updatedAt').then(l => l.reverse())
-  ) ?? [];
 
   const now = new Date();
   const dateLabel = `${WEEKDAYS[now.getDay()]} · ${now.getMonth() + 1}月${now.getDate()}日`;
@@ -87,8 +72,6 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
     if (key === 'focus') { onOpenFocus(); return; }
     onNavigate(key);
   };
-
-  const shownFolders = folders;
 
   return (
     <div className="bh-root">
@@ -128,52 +111,6 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
             </button>
           </div>
         ))}
-      </div>
-
-      {/* Tree card */}
-      <div className="bh-card">
-        <div className="bh-card-head">
-          <Folder size={14} color="#ff8da1" />
-          <span className="bh-card-title">メモツリー</span>
-          <button className="bh-card-search" onClick={() => onNavigate('memos')} title="検索">
-            <Search size={14} color="#c7b8be" />
-          </button>
-        </div>
-        <div className="bh-tree">
-          {shownFolders.length === 0 && notes.length === 0 && (
-            <div className="bh-tree-empty">メモはまだありません</div>
-          )}
-          {shownFolders.map((f, idx) => {
-            const folderNotes = notes.filter(n => n.folderId === f.id).slice(0, 2);
-            const expanded = !!expandedFolders[f.id!];
-            return (
-              <div key={f.id} className="bh-folder">
-                <button className="bh-frow" onClick={() => setExpandedFolders(p => ({ ...p, [f.id!]: !p[f.id!] }))}>
-                  <ChevronRight size={13} color="#c7b8be" className={`bh-chev ${expanded ? 'open' : ''}`} />
-                  <span className="bh-fdot" style={{ background: folderColor(f, idx) }} />
-                  <span className="bh-fname">{f.name}</span>
-                  <span className="bh-fcount">{notes.filter(n => n.folderId === f.id).length}</span>
-                </button>
-                {expanded && (
-                  <div className="bh-notes">
-                    {folderNotes.map(n => (
-                      <button key={n.id} className="bh-note" onClick={() => onSelectNote(n.id!)}>
-                        <FileIcon size={13} color="#cab9bf" />
-                        <span>{n.title || '無題のメモ'}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {notes.filter(n => !n.folderId).map(n => (
-            <button key={n.id} className="bh-note bh-loose-note" onClick={() => onSelectNote(n.id!)}>
-              <FileIcon size={13} color="#cab9bf" />
-              <span>{n.title || '無題のメモ'}</span>
-            </button>
-          ))}
-        </div>
       </div>
 
       <style jsx>{`
@@ -242,7 +179,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           position: relative;
           flex: 1;
           min-height: 0;
-          margin: 2px 0 10px;
+          margin: 2px 0;
           overflow: hidden;
         }
         .bh-bubble-wrap { }
@@ -315,131 +252,6 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         }
         .bh-bubble-new .bh-label { color: #e07090; }
 
-        /* ── Tree card ── */
-        .bh-card {
-          flex: 0 0 220px;
-          min-height: 0;
-          background: rgba(255,255,255,.78);
-          border: 1px solid #ffe6ec;
-          border-radius: 22px;
-          padding: 13px 14px;
-          box-shadow: 0 8px 26px rgba(255,182,193,.22);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          margin-bottom: 12px;
-          position: relative;
-          z-index: 2;
-        }
-        .bh-card-head {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          margin-bottom: 9px;
-          flex-shrink: 0;
-        }
-        .bh-card-title {
-          font-family: 'Outfit', sans-serif;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: .14em;
-          color: #b07d8c;
-          text-transform: uppercase;
-          flex: 1;
-        }
-        .bh-card-search {
-          background: none;
-          border: none;
-          cursor: pointer;
-          display: flex;
-          padding: 2px;
-        }
-        .bh-tree {
-          overflow-y: auto;
-          flex: 1;
-          min-height: 0;
-        }
-        .bh-tree-empty {
-          font-size: .8rem;
-          color: #c7b8be;
-          text-align: center;
-          padding-top: 16px;
-        }
-        .bh-folder {
-          margin-bottom: 6px;
-        }
-        .bh-frow {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 4px;
-          border-radius: 8px;
-          background: none;
-          border: none;
-          cursor: pointer;
-          width: 100%;
-          text-align: left;
-        }
-        .bh-frow:active { background: rgba(255,182,193,.12); }
-        .bh-chev {
-          transition: transform .15s;
-          flex-shrink: 0;
-        }
-        .bh-chev.open { transform: rotate(90deg); }
-        .bh-fdot {
-          width: 10px;
-          height: 10px;
-          border-radius: 50%;
-          flex-shrink: 0;
-        }
-        .bh-fname {
-          font-size: 13px;
-          font-weight: 700;
-          color: #4a4045;
-          flex: 1;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .bh-fcount {
-          font-size: 10px;
-          font-weight: 700;
-          color: #c7b3bb;
-          background: #fff0f4;
-          padding: 1px 7px;
-          border-radius: 99px;
-        }
-        .bh-notes {
-          margin-left: 24px;
-          border-left: 2px solid #ffe6ec;
-          padding-left: 9px;
-        }
-        .bh-note {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 4px;
-          font-size: 12px;
-          color: #6b5a61;
-          background: none;
-          border: none;
-          cursor: pointer;
-          width: 100%;
-          text-align: left;
-          border-radius: 6px;
-        }
-        .bh-note:active { background: rgba(255,182,193,.12); }
-        .bh-note span {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .bh-loose-note {
-          margin-left: 4px;
-          margin-bottom: 2px;
-        }
       `}</style>
     </div>
   );
