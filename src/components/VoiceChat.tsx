@@ -5,7 +5,7 @@ import { X, Mic, MicOff, Volume2 } from 'lucide-react';
 import { callGeminiChat } from '@/lib/gemini';
 import type { ChatTurn } from '@/lib/gemini';
 
-type Phase = 'idle' | 'listening' | 'thinking' | 'speaking';
+type Phase = 'idle' | 'listening' | 'thinking' | 'speaking' | 'waiting';
 
 interface VoiceChatProps {
   apiKey: string;
@@ -112,8 +112,8 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
       finalTranscriptRef.current = '';
 
       if (!text) {
-        // Silence — restart mic after brief delay
-        setTimeout(() => startListeningRef.current(), 400);
+        // Silence — wait for user to tap again
+        setPhase('waiting');
         return;
       }
 
@@ -138,9 +138,8 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
         await speak(toSpeakText(response));
 
         if (activeRef.current) {
-          setPhase('listening');
+          setPhase('waiting');
           setUserText('');
-          startListeningRef.current();
         }
       } catch {
         setError('通信エラーが発生しました。もう一度試してください。');
@@ -185,10 +184,11 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
   }, [stopAll]);
 
   const phaseConfig: Record<Phase, { label: string; color: string }> = {
-    idle:      { label: '',             color: 'var(--primary)' },
-    listening: { label: '聞いてるよ...', color: 'var(--primary)' },
-    thinking:  { label: '考え中...',     color: '#f59e0b' },
-    speaking:  { label: '話し中...',     color: '#10b981' },
+    idle:      { label: '',               color: 'var(--primary)' },
+    listening: { label: '聞いてるよ...',   color: 'var(--primary)' },
+    thinking:  { label: '考え中...',       color: '#f59e0b' },
+    speaking:  { label: '話し中...',       color: '#10b981' },
+    waiting:   { label: 'あなたの番だよ', color: 'var(--primary)' },
   };
   const { label: phaseLabel, color: phaseColor } = phaseConfig[phase];
   const isActive = phase !== 'idle';
@@ -247,6 +247,15 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
             <button className="vc-btn start" onClick={handleStart}>
               <Mic size={18} /> 会話を始める
             </button>
+          ) : phase === 'waiting' ? (
+            <div className="vc-footer-row">
+              <button className="vc-btn speak" onClick={() => startListeningRef.current()}>
+                <Mic size={18} /> タップして話す
+              </button>
+              <button className="vc-btn stop icon-only" onClick={handleStop} title="終了">
+                <MicOff size={18} />
+              </button>
+            </div>
           ) : (
             <button className="vc-btn stop" onClick={handleStop}>
               <MicOff size={18} /> 終了
@@ -295,6 +304,8 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
         .vc-orb.listening { animation: orb-pulse 1.6s ease-in-out infinite; }
         .vc-orb.speaking  { animation: orb-speak 0.75s ease-in-out infinite; }
         .vc-orb.thinking  { animation: orb-glow 2s linear infinite; }
+        .vc-orb.waiting   { animation: orb-wait 2.4s ease-in-out infinite; }
+        @keyframes orb-wait { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.05);opacity:0.7} }
         @keyframes orb-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.07)} }
         @keyframes orb-speak  { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
         @keyframes orb-glow   {
@@ -323,6 +334,7 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
           padding: 14px 20px; border-top: 1px solid var(--border);
           display: flex; justify-content: center; flex-shrink: 0;
         }
+        .vc-footer-row { display: flex; align-items: center; gap: 10px; width: 100%; }
         .vc-btn {
           display: flex; align-items: center; gap: 8px;
           padding: 12px 30px; border-radius: 14px;
@@ -330,6 +342,8 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
         }
         .vc-btn.start { background: var(--primary); color: #fff; }
         .vc-btn.stop  { background: #ef4444; color: #fff; }
+        .vc-btn.speak { background: var(--primary); color: #fff; flex: 1; justify-content: center; }
+        .vc-btn.icon-only { padding: 12px 14px; flex-shrink: 0; }
         .vc-btn:hover { opacity: 0.85; }
       `}</style>
     </div>
