@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
-import { Book, Settings as SettingsIcon, FileText, Brush, Sparkles, GraduationCap, CalendarDays } from 'lucide-react';
+import { Book, Settings as SettingsIcon, FileText, Brush, Sparkles, GraduationCap } from 'lucide-react';
 
 // Heavy components are loaded only when their tab is opened so the
 // initial bundle stays small enough for mobile Safari to parse without
@@ -15,11 +15,11 @@ const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false }
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
 const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
 const AIChat = dynamic(() => import('@/components/AIChat'), { ssr: false });
-const ExamScheduler = dynamic(() => import('@/components/ExamScheduler'), { ssr: false });
+const StudyTracker = dynamic(() => import('@/components/StudyTracker'), { ssr: false });
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
 const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false });
 
-type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'exam';
+type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'study';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -216,8 +216,8 @@ export default function Home() {
                     onNoteCreated={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
                   />
                 )}
-                {activeTab === 'exam' && (
-                  <ExamScheduler
+                {activeTab === 'study' && (
+                  <StudyTracker
                     onOpenSettings={openSettings}
                     onSwitchTab={(tab) => { setActiveTab(tab as TabType); setActiveNoteId(undefined); }}
                   />
@@ -251,7 +251,7 @@ export default function Home() {
         />
       )}
 
-      {isMobile && !isInputFocused && !activeNoteId && (activeTab as string) !== 'ai' && (activeTab as string) !== 'exam' && (
+      {isMobile && !isInputFocused && !activeNoteId && (activeTab as string) !== 'ai' && (activeTab as string) !== 'study' && (
         <nav className="bottom-nav">
           <button className={`nav-item ${activeTab === 'memos' ? 'active' : ''}`} onClick={() => { setActiveTab('memos'); setActiveNoteId(undefined); }}>
             <Book size={24} />
@@ -269,9 +269,9 @@ export default function Home() {
             <Sparkles size={24} />
             <span>AI</span>
           </button>
-          <button className={`nav-item ${activeTab === 'exam' ? 'active' : ''}`} onClick={() => { setActiveTab('exam'); setActiveNoteId(undefined); }}>
-            <CalendarDays size={24} />
-            <span>試験</span>
+          <button className={`nav-item ${activeTab === 'study' ? 'active' : ''}`} onClick={() => { setActiveTab('study'); setActiveNoteId(undefined); }}>
+            <GraduationCap size={24} />
+            <span>学習</span>
           </button>
           <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setActiveNoteId(undefined); }}>
             <SettingsIcon size={24} />

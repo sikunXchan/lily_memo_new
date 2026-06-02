@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, X, Camera, CameraOff, BookOpen, Coffee, Volume2, VolumeX } from 'lucide-react';
+import { db } from '@/lib/db';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const FOCUS_SECS = 25 * 60;
@@ -351,8 +352,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     (screen.orientation as unknown as { unlock?: () => void })?.unlock?.();
   }, [stopNoise]);
 
-  const handleEnd = () => {
-    // Credit partial current focus session
+  const handleEnd = async () => {
     if (phase === 'focus') {
       const elapsed = FOCUS_SECS - remainingRef.current;
       if (elapsed > 0) {
@@ -362,6 +362,27 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     }
     setRunning(false);
     stopCam();
+
+    // Save focus session to study tracker
+    const focusDuration = accFocusRef.current;
+    if (focusDuration >= 60) {
+      try {
+        const catIdStr = localStorage.getItem('study_selected_category_id');
+        const catId = catIdStr && catIdStr !== 'null' ? parseInt(catIdStr, 10) : null;
+        const catName = localStorage.getItem('study_cat_name') || null;
+        const catColor = localStorage.getItem('study_cat_color') || null;
+        const endTime = Date.now();
+        const startTime = endTime - focusDuration * 1000;
+        const d = new Date(startTime);
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        await db.studySessions.add({
+          date: dateStr, startTime, endTime, duration: focusDuration,
+          categoryId: catId, categoryName: catName || null, categoryColor: catColor || null,
+          source: 'pomodoro',
+        });
+      } catch { /* non-fatal */ }
+    }
+
     setShowResult(true);
   };
 
@@ -430,7 +451,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
               {running ? <Pause size={18} /> : <Play size={18} />}
               {running ? '一時停止' : isFirstStart ? 'スタート！' : '再開'}
             </button>
-            <button className="fm-btn-end" onClick={handleEnd}>
+            <button className="fm-btn-end" onClick={() => void handleEnd()}>
               <X size={15} />終了
             </button>
           </div>
