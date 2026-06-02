@@ -100,6 +100,25 @@ export interface ScheduleDay {
   createdAt: number;
 }
 
+export interface StudyCategory {
+  id?: number;
+  name: string;
+  color: string;
+  createdAt: number;
+}
+
+export interface StudySession {
+  id?: number;
+  date: string;
+  startTime: number;
+  endTime: number;
+  duration: number;      // seconds
+  categoryId: number | null;
+  categoryName: string | null;
+  categoryColor: string | null;
+  source: 'stopwatch' | 'pomodoro';
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
@@ -107,6 +126,8 @@ export class LilyDatabase extends Dexie {
   savedChats!: Table<SavedChat>;
   exams!: Table<Exam>;
   scheduleDays!: Table<ScheduleDay>;
+  studyCategories!: Table<StudyCategory>;
+  studySessions!: Table<StudySession>;
 
   constructor() {
     super('LilyDatabase');
@@ -154,6 +175,10 @@ export class LilyDatabase extends Dexie {
     this.version(9).stores({
       exams: '++id, name, examDate, createdAt',
       scheduleDays: '++id, date, completed, skipped, createdAt',
+    });
+    this.version(10).stores({
+      studyCategories: '++id, name, color, createdAt',
+      studySessions: '++id, date, startTime, categoryId',
     });
   }
 }
