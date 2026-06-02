@@ -11,6 +11,8 @@ import { useTheme } from './ThemeContext';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
+const SPLASH_IMAGES = Array.from({ length: 9 }, (_, i) => `/splash-0${i + 1}.png`);
+
 type TimeOfDay = 'dawn' | 'day' | 'dusk' | 'night';
 
 function getTimeOfDay(h: number): TimeOfDay {
@@ -172,6 +174,16 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
 
       </div>
 
+      {/* Album strip */}
+      <div className="bh-album" aria-hidden="true">
+        <div className="bh-album-track">
+          {[...SPLASH_IMAGES, ...SPLASH_IMAGES].map((src, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={i} className="bh-album-img" src={src} alt="" draggable={false} />
+          ))}
+        </div>
+      </div>
+
       {/* Recent notes */}
       {recentNotes.length > 0 && (
         <div className="bh-recents">
@@ -275,7 +287,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         /* ── Cluster ── */
         .bh-cluster {
           position: relative; flex: 1; min-height: 0;
-          margin: 2px 0; overflow: hidden; z-index: 1;
+          margin: 2px 0;
         }
 
         /* ── Bubbles ── */
@@ -342,6 +354,33 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
           white-space: nowrap; transition: color .4s;
           text-shadow: 0 1px 5px rgba(0,0,0,.25);
+        }
+
+        /* ── Album strip ── */
+        .bh-album {
+          flex-shrink: 0;
+          overflow: hidden;
+          padding: 6px 0 10px;
+          margin: 0 -14px;
+          position: relative; z-index: 2;
+        }
+        .bh-album-track {
+          display: flex; gap: 10px;
+          padding: 0 14px;
+          width: max-content;
+          animation: bh-marquee 32s linear infinite;
+        }
+        .bh-album-img {
+          width: 74px; height: 98px;
+          object-fit: cover;
+          border-radius: 16px;
+          flex-shrink: 0;
+          border: 1.5px solid rgba(255,255,255,.28);
+          box-shadow: 0 4px 14px rgba(0,0,0,.22);
+        }
+        @keyframes bh-marquee {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-50%); }
         }
 
         /* ── Recent notes ── */
