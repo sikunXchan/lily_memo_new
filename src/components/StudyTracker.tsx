@@ -112,10 +112,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const [newCatColor, setNewCatColor] = useState(PRESET_COLORS[0]);
   const [editCats, setEditCats] = useState(false);
 
-  // Recent sessions editing
+  // Recent sessions editing & swipe-to-delete
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
-  const [editingMinutes, setEditingMinutes] = useState('');
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+  const [editingStart, setEditingStart] = useState('');
+  const [editingEnd, setEditingEnd] = useState('');
+  const [swipedId, setSwipedId] = useState<number | null>(null);
+  const touchStartX = useRef(0);
 
   // DB
   const categories = useLiveQuery(() => db.studyCategories.orderBy('createdAt').toArray(), []) ?? [];
@@ -221,21 +223,32 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const startEditSession = (s: StudySession) => {
     setConfirmingDeleteId(null);
     setEditingSessionId(s.id!);
-    setEditingMinutes(String(Math.max(1, Math.round(s.duration / 60))));
+    const toHHMM = (ts: number) => {
+      const d = new Date(ts);
+      return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    };
+    setEditingStart(toHHMM(s.startTime));
+    setEditingEnd(toHHMM(s.endTime));
   };
 
-  const saveEditSession = useCallback(async (id: number) => {
-    const mins = parseInt(editingMinutes, 10);
-    if (!isNaN(mins) && mins >= 1) {
-      await db.studySessions.update(id, { duration: mins * 60 });
+  const saveEditSession = useCallback(async (id: number, date: string) => {
+    const startMs = new Date(`${date}T${editingStart}:00`).getTime();
+    const endMs = new Date(`${date}T${editingEnd}:00`).getTime();
+    if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+      await db.studySessions.update(id, {
+        startTime: startMs,
+        endTime: endMs,
+        duration: Math.round((endMs - startMs) / 1000),
+      });
     }
     setEditingSessionId(null);
-    setEditingMinutes('');
-  }, [editingMinutes]);
+    setEditingStart('');
+    setEditingEnd('');
+  }, [editingStart, editingEnd]);
 
   const deleteSession = useCallback(async (id: number) => {
     await db.studySessions.delete(id);
-    setConfirmingDeleteId(null);
+    setSwipedId(null);
   }, []);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -380,51 +393,59 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           {/* Recent sessions */}
           {recentSessions.length > 0 && (
             <div className="recent-section">
-              <p className="recent-title">直近の記録</p>
+              <p className="recent-title">直近の記録（左スワイプで削除）</p>
               {recentSessions.map(s => (
-                <div key={s.id} className="recent-row">
-                  <span className="recent-dot" style={{ background: s.categoryColor ?? '#94a3b8' }} />
-                  <div className="recent-info">
-                    <span className="recent-cat">{s.categoryName ?? 'なし'}</span>
-                    <span className="recent-time">{fmtDateTime(s.startTime)}</span>
-                  </div>
-                  <div className="recent-dur-wrap">
-                    {editingSessionId === s.id ? (
-                      <div className="recent-edit-row">
-                        <input
-                          className="recent-edit-input"
-                          type="number"
-                          min="1"
-                          max="1440"
-                          value={editingMinutes}
-                          onChange={e => setEditingMinutes(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') void saveEditSession(s.id!);
-                            if (e.key === 'Escape') { setEditingSessionId(null); setEditingMinutes(''); }
-                          }}
-                          autoFocus
-                        />
-                        <span className="recent-edit-unit">分</span>
-                        <button className="recent-confirm-btn" onClick={() => void saveEditSession(s.id!)}>
-                          <Check size={12} />
+                <div key={s.id} className="recent-row-wrap">
+                  <div
+                    className={`recent-row-inner ${swipedId === s.id ? 'swiped' : ''}`}
+                    onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
+                    onTouchEnd={e => {
+                      const dx = touchStartX.current - e.changedTouches[0].clientX;
+                      if (dx > 50) { setSwipedId(s.id!); setEditingSessionId(null); }
+                      else if (dx < -20) setSwipedId(null);
+                    }}
+                    onClick={() => { if (swipedId === s.id) setSwipedId(null); }}
+                  >
+                    <span className="recent-dot" style={{ background: s.categoryColor ?? '#94a3b8' }} />
+                    <div className="recent-info">
+                      <span className="recent-cat">{s.categoryName ?? 'なし'}</span>
+                      <span className="recent-time">{fmtDateTime(s.startTime)}</span>
+                    </div>
+                    <div className="recent-dur-wrap">
+                      {editingSessionId === s.id ? (
+                        <div className="recent-edit-row">
+                          <input
+                            type="time"
+                            className="recent-edit-time"
+                            value={editingStart}
+                            onChange={e => setEditingStart(e.target.value)}
+                          />
+                          <span className="recent-edit-sep">〜</span>
+                          <input
+                            type="time"
+                            className="recent-edit-time"
+                            value={editingEnd}
+                            onChange={e => setEditingEnd(e.target.value)}
+                          />
+                          <button className="recent-confirm-btn" onClick={e => { e.stopPropagation(); void saveEditSession(s.id!, s.date); }}>
+                            <Check size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="recent-dur-btn"
+                          onClick={e => { e.stopPropagation(); if (swipedId !== s.id) startEditSession(s); }}
+                          title="開始・終了時刻を修正"
+                        >
+                          {fmtDur(s.duration)}
+                          <Pencil size={10} className="recent-edit-icon" />
                         </button>
-                      </div>
-                    ) : (
-                      <button className="recent-dur-btn" onClick={() => startEditSession(s)} title="時間を修正">
-                        {fmtDur(s.duration)}
-                        <Pencil size={10} className="recent-edit-icon" />
-                      </button>
-                    )}
+                      )}
+                    </div>
                   </div>
-                  {confirmingDeleteId === s.id ? (
-                    <button className="recent-del-btn confirming" onClick={() => void deleteSession(s.id!)} title="タップで削除確定">
-                      <Check size={12} />
-                    </button>
-                  ) : (
-                    <button className="recent-del-btn" onClick={() => setConfirmingDeleteId(s.id!)} title="削除">
-                      <X size={12} />
-                    </button>
-                  )}
+                  <button className="recent-swipe-del" onClick={() => void deleteSession(s.id!)}>
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ))}
             </div>
@@ -580,7 +601,11 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         /* ── Recent sessions ── */
         .recent-section { display:flex; flex-direction:column; gap:6px; }
         .recent-title { font-size:.75rem; font-weight:700; color:var(--fg-muted); margin-bottom:2px; }
-        .recent-row { display:flex; align-items:center; gap:8px; background:var(--accent); border:1px solid var(--border); border-radius:12px; padding:8px 10px; }
+        .recent-row-wrap { position:relative; border-radius:12px; overflow:hidden; }
+        .recent-row-inner { display:flex; align-items:center; gap:8px; background:var(--accent); border:1px solid var(--border); border-radius:12px; padding:8px 10px; transform:translateX(0); transition:transform .22s ease; position:relative; z-index:1; user-select:none; }
+        .recent-row-inner.swiped { transform:translateX(-64px); border-radius:12px 0 0 12px; }
+        .recent-swipe-del { position:absolute; right:0; top:0; bottom:0; width:64px; background:#ef4444; color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; border-radius:0 12px 12px 0; }
+        .recent-swipe-del:active { background:#dc2626; }
         .recent-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
         .recent-info { flex:1; display:flex; flex-direction:column; gap:1px; min-width:0; }
         .recent-cat { font-size:.78rem; font-weight:600; color:var(--foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -589,13 +614,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .recent-dur-btn { display:flex; align-items:center; gap:4px; font-size:.8rem; font-weight:700; color:var(--primary); background:transparent; border:none; cursor:pointer; padding:3px 6px; border-radius:6px; }
         .recent-dur-btn:hover { background:color-mix(in srgb,var(--primary) 10%,transparent); }
         .recent-edit-icon { opacity:.5; }
-        .recent-edit-row { display:flex; align-items:center; gap:4px; }
-        .recent-edit-input { width:48px; background:var(--background); border:1.5px solid var(--primary); border-radius:6px; padding:3px 6px; font-size:.8rem; font-weight:700; color:var(--foreground); outline:none; text-align:center; font-variant-numeric:tabular-nums; font-family:inherit; }
-        .recent-edit-unit { font-size:.72rem; color:var(--fg-muted); font-weight:600; }
-        .recent-confirm-btn { width:22px; height:22px; border-radius:6px; background:var(--primary); border:none; color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-        .recent-del-btn { width:22px; height:22px; border-radius:6px; background:transparent; border:1px solid var(--border); color:var(--fg-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-        .recent-del-btn:hover { background:rgba(239,68,68,0.12); border-color:#ef4444; color:#ef4444; }
-        .recent-del-btn.confirming { background:#ef4444; border-color:#ef4444; color:#fff; }
+        .recent-edit-row { display:flex; align-items:center; gap:3px; }
+        .recent-edit-time { width:76px; background:var(--background); border:1.5px solid var(--primary); border-radius:6px; padding:3px 5px; font-size:.78rem; font-weight:600; color:var(--foreground); outline:none; font-family:inherit; }
+        .recent-edit-sep { font-size:.72rem; color:var(--fg-muted); font-weight:600; }
+        .recent-confirm-btn { width:22px; height:22px; border-radius:6px; background:var(--primary); border:none; color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 
         /* ── Stats ── */
         .period-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
