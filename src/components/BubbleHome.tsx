@@ -1,18 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Book, Brush, FileText, Sparkles, GraduationCap, Settings,
   Crosshair, Plus,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
+import type { Note } from '@/lib/db';
 import { useTheme } from './ThemeContext';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 type TimeOfDay = 'dawn' | 'day' | 'dusk' | 'night';
-type Scene = 'city' | 'sea' | 'forest';
-const SCENES: Scene[] = ['city', 'sea', 'forest'];
 
 function getTimeOfDay(h: number): TimeOfDay {
   if (h >= 5  && h < 7)  return 'dawn';
@@ -28,10 +27,6 @@ const SKY: Record<TimeOfDay, string> = {
   night: 'linear-gradient(180deg, #020617 0%, #0f172a 55%, #1e1b4b 100%)',
 };
 
-const SILHOUETTE: Record<TimeOfDay, string> = {
-  dawn: '#180c20', day: '#0f2027', dusk: '#08030f', night: '#020408',
-};
-
 // Deterministic stars (golden-angle distribution)
 const STARS = Array.from({ length: 55 }, (_, i) => ({
   cx: +((i * 137.508) % 100).toFixed(2),
@@ -40,32 +35,6 @@ const STARS = Array.from({ length: 55 }, (_, i) => ({
   delay: +((i * 0.23) % 2.8).toFixed(2),
 }));
 
-// City skyline path (390×100 viewBox)
-const CITY_PATH =
-  'M0,100 L0,65 L25,65 L25,50 L42,50 L42,38 L55,38 ' +
-  'L55,28 L68,28 L68,18 L78,18 L78,12 L90,12 L90,22 ' +
-  'L105,22 L105,35 L120,35 L120,55 L132,55 L132,38 L148,38 ' +
-  'L148,22 L162,22 L162,8 L175,8 L175,18 L188,18 L188,28 ' +
-  'L200,28 L200,42 L215,42 L215,28 L228,28 L228,15 L242,15 ' +
-  'L242,22 L255,22 L255,35 L270,35 L270,48 L285,48 L285,32 ' +
-  'L300,32 L300,22 L312,22 L312,35 L328,35 L328,52 L342,52 ' +
-  'L342,42 L358,42 L358,58 L372,58 L372,68 L390,68 L390,100 Z';
-
-// Night window lights (x, y) — positioned within building silhouettes
-const WINDOWS = [
-  [70,24],[76,24],[82,24],[88,14],[70,32],[82,32],[88,22],
-  [163,12],[169,18],[176,12],[163,24],[176,22],[170,36],
-  [229,18],[235,18],[241,18],[229,28],[241,28],[235,36],
-  [286,36],[298,26],[303,34],[312,26],[316,34],
-];
-
-// Forest hill + trees
-const HILL_PATH = 'M0,100 C65,72 130,86 195,76 C260,66 325,80 390,70 L390,100 Z';
-const TREES: [number,number,number,number][] = [
-  [18,90,32,22],[48,84,38,28],[80,81,30,22],[112,79,36,26],
-  [148,81,42,32],[178,82,26,20],[210,76,36,28],[242,74,32,24],
-  [272,76,40,30],[302,77,28,22],[334,75,35,26],[366,72,32,24],
-];
 
 interface BubbleItem {
   key: string; label: string; tint: string; size: number;
@@ -108,20 +77,18 @@ interface BubbleHomeProps {
 
 export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: BubbleHomeProps) {
   const { cycleTheme, nextThemeName } = useTheme();
-  const [scene] = useState<Scene>(() => SCENES[Math.floor(Math.random() * SCENES.length)]);
 
-  const now   = new Date();
-  const tod   = getTimeOfDay(now.getHours());
+  const recentNotes = useLiveQuery<Note[]>(() =>
+    db.notes.filter(n => !n.deletedAt).sortBy('updatedAt').then(l => l.reverse().slice(0, 6))
+  ) ?? [];
+
+  const now     = new Date();
+  const tod     = getTimeOfDay(now.getHours());
   const isLight = tod === 'day' || tod === 'dawn';
   const isNight = tod === 'night';
-  const silFill = SILHOUETTE[tod];
   const labelColor = isLight ? '#3a2d32' : 'rgba(255,255,255,.9)';
   const dateColor  = isLight ? '#c79aa8' : 'rgba(255,255,255,.55)';
   const dateLabel  = `${WEEKDAYS[now.getDay()]} · ${now.getMonth() + 1}月${now.getDate()}日`;
-
-  const waterFill: Record<TimeOfDay, string> = {
-    day: '#0c5a8a', dawn: '#2a5a9a', dusk: '#3a0c30', night: '#060e22',
-  };
 
   const createNote = async () => {
     const t = Date.now();
@@ -203,54 +170,24 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           </div>
         ))}
 
-        {/* Ground scenery */}
-        <div className="bh-scenery" aria-hidden="true">
-          {scene === 'city' && (
-            <svg viewBox="0 0 390 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
-              <path d={CITY_PATH} fill={silFill} />
-              {isNight && WINDOWS.map(([x, y], i) => (
-                <rect key={i} x={x} y={y} width={3} height={4} fill="#fef3c7" opacity={0.75} />
-              ))}
-            </svg>
-          )}
-
-          {scene === 'forest' && (
-            <svg viewBox="0 0 390 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
-              <path d={HILL_PATH} fill={silFill} />
-              {TREES.map(([cx, base, h, w], i) => (
-                <g key={i}>
-                  <polygon
-                    points={`${cx - w * .55},${base} ${cx + w * .55},${base} ${cx},${base - h * .58}`}
-                    fill={silFill} />
-                  <polygon
-                    points={`${cx - w * .38},${base - h * .38} ${cx + w * .38},${base - h * .38} ${cx},${base - h}`}
-                    fill={silFill} />
-                  <rect x={cx - 2} y={base} width={4} height={6} fill={silFill} />
-                </g>
-              ))}
-            </svg>
-          )}
-
-          {scene === 'sea' && (
-            <svg viewBox="0 0 390 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
-              {/* Water body */}
-              <path
-                d="M0,100 L0,58 C80,50 160,65 195,55 C230,45 310,60 390,50 L390,100 Z"
-                fill={waterFill[tod]}
-              />
-              {/* Water surface highlight */}
-              <path
-                d="M0,58 C80,50 160,65 195,55 C230,45 310,60 390,50"
-                fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="1.5"
-              />
-              {/* Left cliff */}
-              <path d="M0,100 L0,54 C14,44 28,42 40,53 C52,64 56,80 66,100 Z" fill={silFill} />
-              {/* Right cliff */}
-              <path d="M390,100 L390,47 C376,38 362,42 352,54 C342,66 338,82 324,100 Z" fill={silFill} />
-            </svg>
-          )}
-        </div>
       </div>
+
+      {/* Recent notes */}
+      {recentNotes.length > 0 && (
+        <div className="bh-recents">
+          <div className="bh-recents-label">最近のメモ</div>
+          <div className="bh-recents-scroll">
+            {recentNotes.map(n => (
+              <button key={n.id} className="bh-recent-card" onClick={() => onSelectNote(n.id!)}>
+                <span className="bh-recent-title">{n.title || '無題のメモ'}</span>
+                <span className="bh-recent-preview">
+                  {(n.content ?? '').replace(/<[^>]+>/g, '').trim().slice(0, 38) || '…'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .bh-root {
@@ -407,10 +344,41 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           text-shadow: 0 1px 5px rgba(0,0,0,.25);
         }
 
-        /* ── Scenery ── */
-        .bh-scenery {
-          position: absolute; bottom: 0; left: -14px; right: -14px;
-          height: 100px; pointer-events: none; z-index: 0;
+        /* ── Recent notes ── */
+        .bh-recents {
+          flex-shrink: 0;
+          padding: 6px 4px 12px;
+          position: relative; z-index: 2;
+        }
+        .bh-recents-label {
+          font-size: 9px; font-weight: 700; letter-spacing: .18em;
+          text-transform: uppercase; color: rgba(255,255,255,.45);
+          margin-bottom: 8px; padding-left: 2px;
+        }
+        .bh-recents-scroll {
+          display: flex; gap: 8px;
+          overflow-x: auto; -webkit-overflow-scrolling: touch;
+          scrollbar-width: none; padding-bottom: 2px;
+        }
+        .bh-recents-scroll::-webkit-scrollbar { display: none; }
+        .bh-recent-card {
+          flex-shrink: 0; min-width: 128px; max-width: 180px;
+          background: rgba(255,255,255,.14);
+          backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+          border: 1px solid rgba(255,255,255,.22);
+          border-radius: 16px; padding: 10px 13px;
+          text-align: left; cursor: pointer;
+          display: flex; flex-direction: column; gap: 5px;
+        }
+        .bh-recent-card:active { transform: scale(.95); opacity: .8; }
+        .bh-recent-title {
+          font-size: 12.5px; font-weight: 700;
+          color: rgba(255,255,255,.92);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
+        }
+        .bh-recent-preview {
+          font-size: 10.5px; color: rgba(255,255,255,.52);
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
         }
       `}</style>
     </div>
