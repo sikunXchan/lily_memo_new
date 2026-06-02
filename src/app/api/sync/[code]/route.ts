@@ -6,7 +6,7 @@ import type { NextRequest } from 'next/server';
 const store = new Map<string, { data: string; ts: number }>();
 
 const TTL_MS   = 5 * 60 * 1000; // 5 minutes
-const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
+const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
 function cleanExpired() {
   const now = Date.now();

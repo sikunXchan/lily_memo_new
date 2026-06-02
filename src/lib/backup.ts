@@ -1,4 +1,4 @@
-import { db, type Folder, type Note, type SavedChat, newSyncId } from './db';
+import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -29,6 +29,46 @@ export interface BackupPayload {
   savedChats?: SavedChat[];
   timestamp: number;
   version?: number;
+}
+
+export interface SyncPayload extends BackupPayload {
+  studyCategories?: StudyCategory[];
+  studySessions?: StudySession[];
+}
+
+export async function buildSyncJson(): Promise<string> {
+  const base = JSON.parse(await buildBackupJson()) as BackupPayload;
+  const studyCategories = await db.studyCategories.toArray();
+  const studySessions = await db.studySessions.toArray();
+  const payload: SyncPayload = { ...base, studyCategories, studySessions };
+  return JSON.stringify(payload);
+}
+
+export async function restoreSyncFromJson(jsonText: string): Promise<void> {
+  // Restore notes/folders/savedChats (same as backup)
+  await restoreBackupFromJson(jsonText);
+
+  const data = JSON.parse(jsonText) as Partial<SyncPayload>;
+
+  // Restore study data (full replace)
+  await db.transaction('rw', db.studyCategories, db.studySessions, async () => {
+    await db.studyCategories.clear();
+    await db.studySessions.clear();
+    if (data.studyCategories?.length) {
+      for (const c of data.studyCategories) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = c;
+        await db.studyCategories.add(rest as StudyCategory);
+      }
+    }
+    if (data.studySessions?.length) {
+      for (const s of data.studySessions) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = s;
+        await db.studySessions.add(rest as StudySession);
+      }
+    }
+  });
 }
 
 export async function buildBackupJson(): Promise<string> {

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { StudyCategory } from '@/lib/db';
+import { buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LS_KEY_START     = 'study_timer_start';
@@ -244,14 +245,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
     setSyncMsg('');
     try {
       const code = randCode();
-      const [cats, sess, notes, folders] = await Promise.all([
-        db.studyCategories.toArray(),
-        db.studySessions.toArray(),
-        db.notes.toArray(),
-        db.folders.toArray(),
-      ]);
-      const payload = JSON.stringify({ studyCategories: cats, studySessions: sess, notes, folders, exportedAt: Date.now() });
-      const res = await fetch(`/api/sync/${code}`, { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json' } });
+      const payload = await buildSyncJson();
+      const res = await fetch(`/api/sync/${code}`, {
+        method: 'POST',
+        body: payload,
+        headers: { 'Content-Type': 'application/json' },
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSyncCode(code);
       setSyncStatus('ok');
@@ -271,33 +270,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
       const res = await fetch(`/api/sync/${code}`);
       if (res.status === 404) throw new Error('コードが見つかりません。期限切れか間違いがあります。');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as {
-        studyCategories?: StudyCategory[];
-        studySessions?: { date: string; startTime: number; endTime: number; duration: number; categoryId: number | null; categoryName: string | null; categoryColor: string | null; source: 'stopwatch' | 'pomodoro' }[];
-      };
-      // Merge study data (append, avoid duplicate startTime)
-      const existingStartTimes = new Set((await db.studySessions.toArray()).map(s => s.startTime));
-      const existingCatNames = new Set((await db.studyCategories.toArray()).map(c => c.name));
-      if (data.studyCategories) {
-        for (const cat of data.studyCategories) {
-          if (!existingCatNames.has(cat.name)) {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { id: _id, ...rest } = cat;
-            await db.studyCategories.add(rest as StudyCategory);
-          }
-        }
-      }
-      if (data.studySessions) {
-        for (const sess of data.studySessions) {
-          if (!existingStartTimes.has(sess.startTime)) {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { id: _id, ...rest } = sess as typeof sess & { id?: number };
-            await db.studySessions.add(rest);
-          }
-        }
-      }
+      const jsonText = await res.text();
+      await restoreSyncFromJson(jsonText);
       setSyncStatus('ok');
-      setSyncMsg('同期完了！学習データを取り込みました。');
+      setSyncMsg('同期完了！すべてのデータを取り込みました。');
       setSyncInput('');
     } catch (e) {
       setSyncStatus('error');
@@ -511,7 +487,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
               <span className="sync-modal-title">📡 デバイス同期</span>
               <button className="sync-close" onClick={() => setShowSync(false)}><X size={18} /></button>
             </div>
-            <p className="sync-desc">同じWi-Fiに繋がっていれば使えます。学習データ（カテゴリ・セッション）をデバイス間で同期します。</p>
+            <p className="sync-desc">メモ・フォルダ・学習記録など、すべてのデータをデバイス間でコピーします。受信側のデータは送信側で上書きされます。</p>
             <div className="sync-mode-row">
               <button className={`sync-mode-btn ${syncMode === 'export' ? 'active' : ''}`} onClick={() => { setSyncMode('export'); setSyncStatus('idle'); setSyncMsg(''); setSyncCode(''); }}>
                 このデバイスから送る
@@ -545,6 +521,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
 
             {syncMode === 'import' && (
               <div className="sync-body">
+                <p className="sync-warn">⚠️ このデバイスの全データが送信元で上書きされます</p>
                 <input
                   className="sync-input"
                   value={syncInput}
@@ -553,7 +530,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
                   maxLength={8}
                 />
                 <button className="sync-action-btn" onClick={() => void doImport()} disabled={syncStatus === 'loading' || !syncInput.trim()}>
-                  {syncStatus === 'loading' ? '取得中...' : 'インポート'}
+                  {syncStatus === 'loading' ? '取得中...' : '全データを同期'}
                 </button>
                 {syncMsg && <p className={`sync-msg ${syncStatus}`}>{syncMsg}</p>}
               </div>
@@ -680,6 +657,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings }: StudyTrack
         .sync-input { width:100%; background:var(--accent); border:1.5px solid var(--border); border-radius:10px; padding:10px 14px; font-size:1.1rem; font-weight:700; letter-spacing:.1em; color:var(--foreground); outline:none; font-family:inherit; text-transform:uppercase; }
         .sync-input:focus { border-color:var(--primary); }
         .sync-msg { font-size:.8rem; font-weight:600; padding:8px 12px; border-radius:8px; }
+        .sync-warn { font-size:.75rem; font-weight:600; color:#f59e0b; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.3); border-radius:8px; padding:7px 10px; }
         .sync-msg.ok { background:rgba(16,185,129,0.12); color:#10b981; }
         .sync-msg.error { background:rgba(239,68,68,0.12); color:#ef4444; }
 
