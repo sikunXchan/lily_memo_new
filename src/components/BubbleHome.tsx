@@ -382,20 +382,22 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         .bh-ticker {
           flex-shrink: 0;
           display: flex; align-items: center;
-          height: 32px; overflow: hidden;
-          background: rgba(245,158,11,.18);
-          border-top: 1px solid rgba(245,158,11,.3);
-          border-bottom: 1px solid rgba(245,158,11,.3);
+          height: 34px; overflow: hidden;
+          background: rgba(0,0,0,.52);
+          backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+          border-top: 1px solid rgba(255,255,255,.12);
+          border-bottom: 1px solid rgba(255,255,255,.12);
           margin: 0 -14px;
           position: relative; z-index: 3;
         }
         .bh-ticker-badge {
           flex-shrink: 0;
           font-size: 0.64rem; font-weight: 800;
-          color: #f59e0b; letter-spacing: .05em;
+          color: #fbbf24; letter-spacing: .05em;
           padding: 0 10px; white-space: nowrap;
-          border-right: 1px solid rgba(245,158,11,.3);
+          border-right: 1px solid rgba(255,255,255,.15);
           height: 100%; display: flex; align-items: center;
+          gap: 4px;
         }
         .bh-ticker-track-wrap {
           flex: 1; overflow: hidden; height: 100%;
@@ -407,7 +409,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         }
         .bh-ticker-item {
           font-size: 0.75rem; font-weight: 600;
-          color: rgba(245,158,11,.95); white-space: nowrap;
+          color: rgba(255,255,255,.9); white-space: nowrap;
         }
         @keyframes bh-ticker-scroll {
           from { transform: translateX(0); }
@@ -449,7 +451,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         }
         .bh-recents-label {
           font-size: 9px; font-weight: 700; letter-spacing: .18em;
-          text-transform: uppercase; color: rgba(255,255,255,.45);
+          text-transform: uppercase; color: rgba(255,255,255,.7);
           margin-bottom: 8px; padding-left: 2px;
         }
         .bh-recents-scroll {
@@ -460,9 +462,9 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         .bh-recents-scroll::-webkit-scrollbar { display: none; }
         .bh-recent-card {
           flex-shrink: 0; min-width: 128px; max-width: 180px;
-          background: rgba(255,255,255,.14);
-          backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-          border: 1px solid rgba(255,255,255,.22);
+          background: rgba(0,0,0,.48);
+          backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+          border: 1px solid rgba(255,255,255,.2);
           border-radius: 16px; padding: 10px 13px;
           text-align: left; cursor: pointer;
           display: flex; flex-direction: column; gap: 5px;
@@ -470,11 +472,11 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         .bh-recent-card:active { transform: scale(.95); opacity: .8; }
         .bh-recent-title {
           font-size: 12.5px; font-weight: 700;
-          color: rgba(255,255,255,.92);
+          color: rgba(255,255,255,.95);
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
         }
         .bh-recent-preview {
-          font-size: 10.5px; color: rgba(255,255,255,.52);
+          font-size: 10.5px; color: rgba(255,255,255,.6);
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
         }
       `}</style>
