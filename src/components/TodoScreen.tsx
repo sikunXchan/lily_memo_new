@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, Plus, Pin, Check, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Plus, Pin, Check, Trash2 } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { Todo } from '@/lib/db';
 
@@ -33,64 +33,78 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
     setNewText('');
   }, [newText]);
 
-  const toggleDone = useCallback(async (t: Todo) => {
-    await db.todos.update(t.id!, { done: !t.done });
-  }, []);
-
-  const togglePin = useCallback(async (t: Todo) => {
-    await db.todos.update(t.id!, { pinned: !t.pinned });
-  }, []);
-
-  const deleteTodo = useCallback(async (id: number) => {
-    await db.todos.delete(id);
-    setSwipedId(null);
-  }, []);
+  const toggleDone  = useCallback(async (t: Todo) => { await db.todos.update(t.id!, { done:   !t.done   }); }, []);
+  const togglePin   = useCallback(async (t: Todo) => { await db.todos.update(t.id!, { pinned: !t.pinned }); }, []);
+  const deleteTodo  = useCallback(async (id: number) => { await db.todos.delete(id); setSwipedId(null); }, []);
 
   const pending = todos.filter(t => !t.done);
   const done    = todos.filter(t => t.done);
 
-  const renderItem = (t: Todo) => (
-    <div key={t.id} className="td-row-wrap">
-      <div
-        className={`td-row ${swipedId === t.id ? 'swiped' : ''} ${t.done ? 'done' : ''}`}
-        onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
-        onTouchEnd={e => {
-          const dx = touchStartX.current - e.changedTouches[0].clientX;
-          if (dx > 45) setSwipedId(t.id!);
-          else if (dx < -15) setSwipedId(null);
-        }}
-        onClick={() => { if (swipedId === t.id) setSwipedId(null); }}
-      >
-        <button className={`td-check ${t.done ? 'checked' : ''}`} onClick={() => void toggleDone(t)}>
-          {t.done && <Check size={12} />}
-        </button>
-        <span className="td-text">{t.text}</span>
+  const renderItem = (t: Todo) => {
+    const isSwiped = swipedId === t.id;
+    return (
+      <div key={t.id} className="td-item">
+        {/* ── Delete panel (sits behind the card) ── */}
         <button
-          className={`td-pin ${t.pinned ? 'pinned' : ''}`}
-          onClick={e => { e.stopPropagation(); void togglePin(t); }}
-          title={t.pinned ? 'ピン解除' : 'ピン留め'}
+          className="td-del"
+          onClick={() => void deleteTodo(t.id!)}
+          tabIndex={isSwiped ? 0 : -1}
+          aria-label="削除"
         >
-          <Pin size={13} />
+          <Trash2 size={20} strokeWidth={2} />
+          <span>削除</span>
         </button>
+
+        {/* ── Main card ── */}
+        <div
+          className={`td-card${isSwiped ? ' slid' : ''}${t.done ? ' done' : ''}${t.pinned ? ' pinned-card' : ''}`}
+          onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
+          onTouchEnd={e => {
+            const dx = touchStartX.current - e.changedTouches[0].clientX;
+            if (dx > 42)  setSwipedId(t.id!);
+            else if (dx < -16) setSwipedId(null);
+          }}
+          onClick={() => { if (isSwiped) setSwipedId(null); }}
+        >
+          {/* Check */}
+          <button
+            className={`td-check${t.done ? ' checked' : ''}`}
+            onClick={e => { e.stopPropagation(); void toggleDone(t); }}
+            aria-label={t.done ? '未完了に戻す' : '完了にする'}
+          >
+            {t.done && <Check size={13} strokeWidth={3} />}
+          </button>
+
+          {/* Text */}
+          <span className="td-text">{t.text}</span>
+
+          {/* Pin */}
+          <button
+            className={`td-pin${t.pinned ? ' on' : ''}`}
+            onClick={e => { e.stopPropagation(); void togglePin(t); }}
+            aria-label={t.pinned ? 'ピン解除' : 'ピン留め'}
+          >
+            <Pin size={14} strokeWidth={2.2} />
+          </button>
+        </div>
       </div>
-      <button className="td-del-btn" onClick={() => void deleteTodo(t.id!)}>
-        <Trash2 size={17} />
-        <span>削除</span>
-      </button>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="td-root">
+      {/* Header */}
       <div className="td-header">
-        <button className="td-back" onClick={onGoBack}>
-          <ArrowLeft size={18} />
+        <button className="td-back" onClick={onGoBack} aria-label="戻る">
+          <ArrowLeft size={18} strokeWidth={2.4} />
         </button>
         <span className="td-title">ToDo</span>
-        <span className="td-count">{pending.length}</span>
+        {pending.length > 0 && (
+          <span className="td-badge">{pending.length}</span>
+        )}
       </div>
 
-      {/* Add form */}
+      {/* Add row */}
       <div className="td-add-row">
         <input
           ref={inputRef}
@@ -100,141 +114,222 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           onChange={e => setNewText(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') void addTodo(); }}
         />
-        <button className="td-add-btn" onClick={() => void addTodo()} disabled={!newText.trim()}>
-          <Plus size={16} />
+        <button
+          className="td-add-btn"
+          onClick={() => void addTodo()}
+          disabled={!newText.trim()}
+          aria-label="追加"
+        >
+          <Plus size={18} strokeWidth={2.6} />
         </button>
       </div>
 
+      {/* List */}
       <div className="td-scroll">
         {todos.length === 0 && (
-          <div className="td-empty">タスクはまだありません</div>
+          <div className="td-empty">
+            <span className="td-empty-icon">✅</span>
+            <p>タスクはまだありません</p>
+            <p className="td-empty-sub">上の入力欄から追加してね</p>
+          </div>
         )}
 
         {pending.length > 0 && (
-          <div className="td-section">
-            <div className="td-section-label">未完了 · {pending.length}</div>
+          <section className="td-section">
+            <div className="td-section-label">
+              <span className="td-section-dot pending" />
+              未完了
+              <span className="td-section-count">{pending.length}</span>
+            </div>
             {pending.map(renderItem)}
-          </div>
+          </section>
         )}
 
         {done.length > 0 && (
-          <div className="td-section">
-            <div className="td-section-label">完了 · {done.length}</div>
+          <section className="td-section">
+            <div className="td-section-label">
+              <span className="td-section-dot done" />
+              完了
+              <span className="td-section-count">{done.length}</span>
+            </div>
             {done.map(renderItem)}
-          </div>
+          </section>
         )}
       </div>
 
       <style jsx>{`
+        /* ── Root ── */
         .td-root {
           flex: 1; display: flex; flex-direction: column;
           background: var(--background); overflow: hidden;
         }
+
+        /* ── Header ── */
         .td-header {
-          display: flex; align-items: center; gap: 10px;
-          padding: 12px 16px; border-bottom: 1px solid var(--border);
+          display: flex; align-items: center; gap: 12px;
+          padding: 14px 16px 12px;
+          border-bottom: 1px solid var(--border);
           background: var(--background); flex-shrink: 0;
         }
         .td-back {
-          width: 34px; height: 34px; border-radius: 50%;
-          border: 1px solid var(--border); background: var(--accent);
+          width: 36px; height: 36px; border-radius: 50%;
+          border: 1.5px solid var(--border); background: var(--accent);
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer; color: var(--primary); flex-shrink: 0;
+          cursor: pointer; color: var(--foreground); flex-shrink: 0;
+          transition: background .15s;
         }
+        .td-back:active { background: var(--border); }
         .td-title {
-          font-size: 20px; font-weight: 800; flex: 1;
-          background: linear-gradient(120deg, #86efac, #22d3ee);
+          font-size: 22px; font-weight: 800; flex: 1; letter-spacing: -.02em;
+          background: linear-gradient(120deg, #34d399, #22d3ee);
           -webkit-background-clip: text; background-clip: text; color: transparent;
         }
-        .td-count {
-          font-size: 0.75rem; font-weight: 800; background: var(--accent);
-          border: 1px solid var(--border); border-radius: 99px;
-          padding: 2px 9px; color: var(--fg-muted);
+        .td-badge {
+          min-width: 26px; height: 26px; border-radius: 99px;
+          background: linear-gradient(135deg, #34d399, #22d3ee);
+          color: #fff; font-size: 0.75rem; font-weight: 800;
+          display: flex; align-items: center; justify-content: center;
+          padding: 0 7px;
         }
+
+        /* ── Add row ── */
         .td-add-row {
-          display: flex; gap: 8px; padding: 10px 14px;
+          display: flex; align-items: center; gap: 10px;
+          padding: 12px 16px;
           border-bottom: 1px solid var(--border); flex-shrink: 0;
         }
         .td-input {
-          flex: 1; background: var(--accent); border: 1.5px solid var(--border);
-          border-radius: 20px; padding: 9px 14px; font-size: 0.88rem;
+          flex: 1; background: var(--accent);
+          border: 1.5px solid var(--border); border-radius: 22px;
+          padding: 10px 16px; font-size: 0.9rem;
           color: var(--foreground); outline: none; font-family: inherit;
+          transition: border-color .15s;
         }
-        .td-input:focus { border-color: #86efac; }
+        .td-input::placeholder { color: var(--fg-faint); }
+        .td-input:focus { border-color: #34d399; }
         .td-add-btn {
-          width: 38px; height: 38px; border-radius: 50%; border: none;
-          background: linear-gradient(135deg, #86efac, #22d3ee); color: #fff;
+          width: 42px; height: 42px; border-radius: 50%; border: none; flex-shrink: 0;
+          background: linear-gradient(135deg, #34d399, #22d3ee); color: #fff;
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer; flex-shrink: 0; transition: opacity .15s;
+          cursor: pointer; transition: opacity .15s, transform .12s;
+          box-shadow: 0 3px 10px rgba(52,211,153,.4);
         }
-        .td-add-btn:disabled { opacity: .35; cursor: default; }
+        .td-add-btn:disabled { opacity: .3; cursor: default; box-shadow: none; }
+        .td-add-btn:not(:disabled):active { transform: scale(.9); }
+
+        /* ── Scroll area ── */
         .td-scroll {
-          flex: 1; overflow-y: auto; padding: 10px 12px 32px;
+          flex: 1; overflow-y: auto; padding: 12px 14px 40px;
           -webkit-overflow-scrolling: touch;
         }
+
+        /* ── Empty ── */
         .td-empty {
-          text-align: center; color: var(--fg-faint);
-          font-size: 0.88rem; padding: 40px 0;
-        }
-        .td-section { margin-bottom: 8px; }
-        .td-section-label {
-          font-size: 0.68rem; font-weight: 700; letter-spacing: .14em;
-          text-transform: uppercase; color: var(--fg-faint);
-          padding: 8px 6px 4px;
-        }
-        .td-row-wrap {
-          position: relative; overflow: hidden;
-          border-radius: 14px; margin-bottom: 5px;
-        }
-        .td-row {
-          display: flex; align-items: center; gap: 10px;
-          padding: 11px 10px 11px 12px; background: var(--accent);
-          border: 1px solid var(--border); border-radius: 14px;
-          transition: transform .22s cubic-bezier(.25,.46,.45,.94);
-          cursor: default; position: relative; z-index: 1;
-        }
-        .td-row.swiped { transform: translateX(-72px); }
-        .td-row.done { opacity: .5; }
-        .td-check {
-          width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
-          border: 2px solid var(--border); background: var(--background);
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; transition: all .15s;
-        }
-        .td-check.checked {
-          background: linear-gradient(135deg, #86efac, #22d3ee);
-          border-color: transparent;
-        }
-        .td-check.checked svg { color: #fff; }
-        .td-text {
-          flex: 1; font-size: 0.88rem; color: var(--foreground);
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-        }
-        .td-row.done .td-text {
-          text-decoration: line-through; color: var(--fg-muted);
-        }
-        /* ── Pin button ── */
-        .td-pin {
-          width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
-          border: none; background: transparent;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; color: var(--fg-faint); transition: all .15s;
-          padding: 0;
-        }
-        .td-pin:active { transform: scale(.85); }
-        .td-pin.pinned { color: #f59e0b; }
-        /* ── Swipe-to-delete reveal ── */
-        .td-del-btn {
-          position: absolute; right: 0; top: 0; bottom: 0; width: 72px;
-          background: linear-gradient(135deg, #f87171, #ef4444);
-          color: #fff; border: none; cursor: pointer;
           display: flex; flex-direction: column; align-items: center;
-          justify-content: center; gap: 3px;
-          font-size: 0.6rem; font-weight: 700; letter-spacing: .04em;
+          padding: 56px 0 0; gap: 6px; text-align: center;
+        }
+        .td-empty-icon { font-size: 2.2rem; }
+        .td-empty p { font-size: 0.9rem; color: var(--fg-muted); font-weight: 600; margin: 0; }
+        .td-empty-sub { font-size: 0.78rem; color: var(--fg-faint) !important; font-weight: 400 !important; }
+
+        /* ── Section ── */
+        .td-section { margin-bottom: 16px; }
+        .td-section-label {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 0.72rem; font-weight: 700; letter-spacing: .1em;
+          text-transform: uppercase; color: var(--fg-muted);
+          padding: 0 4px 8px;
+        }
+        .td-section-dot {
+          width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+        }
+        .td-section-dot.pending { background: #34d399; }
+        .td-section-dot.done    { background: var(--fg-faint); }
+        .td-section-count {
+          margin-left: auto;
+          background: var(--accent); border: 1px solid var(--border);
+          border-radius: 99px; padding: 1px 8px;
+          font-size: 0.68rem; color: var(--fg-faint);
+        }
+
+        /* ── Swipe item ──
+           .td-item: overflow:hidden + border-radius clips both layers.
+           .td-del:  absolute, right side, always behind .td-card (z-index).
+           .td-card: NO border-radius so its opaque background fully
+                     covers .td-del. Only the wrapper clips to rounded corners.
+        ── */
+        .td-item {
+          position: relative;
+          overflow: hidden;
+          border-radius: 16px;
+          margin-bottom: 7px;
+          /* Shadow on the wrapper is visible around the card */
+          box-shadow: 0 2px 8px rgba(0,0,0,.06);
+        }
+
+        /* Delete panel */
+        .td-del {
+          position: absolute; right: 0; top: 0; bottom: 0; width: 84px;
+          background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+          border: none; color: #fff; cursor: pointer;
+          display: flex; flex-direction: column; align-items: center;
+          justify-content: center; gap: 4px;
+          font-size: 0.65rem; font-weight: 800; letter-spacing: .06em;
           z-index: 0;
         }
-        .td-del-btn:active { background: linear-gradient(135deg, #ef4444, #dc2626); }
-        .td-del-btn svg { flex-shrink: 0; }
+        .td-del:active { background: #dc2626; }
+
+        /* Card — NO border-radius so its rect background covers the delete panel */
+        .td-card {
+          position: relative; z-index: 1;
+          display: flex; align-items: center; gap: 12px;
+          padding: 13px 12px 13px 14px;
+          background: var(--accent);
+          border: 1px solid var(--border);
+          transition: transform .24s cubic-bezier(.25,.46,.45,.94);
+          user-select: none; -webkit-user-select: none;
+        }
+        .td-card.slid { transform: translateX(-84px); }
+        .td-card.done { opacity: .55; }
+        .td-card.pinned-card {
+          border-color: rgba(251,191,36,.5);
+          background: color-mix(in srgb, var(--accent) 94%, #fbbf24 6%);
+        }
+
+        /* Check circle */
+        .td-check {
+          width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+          border: 2px solid var(--border); background: var(--background);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all .18s;
+        }
+        .td-check.checked {
+          background: linear-gradient(135deg, #34d399, #22d3ee);
+          border-color: transparent;
+          box-shadow: 0 2px 8px rgba(52,211,153,.45);
+        }
+        .td-check.checked svg { color: #fff; }
+
+        /* Text */
+        .td-text {
+          flex: 1; font-size: 0.9rem; font-weight: 500;
+          color: var(--foreground); line-height: 1.35;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .td-card.done .td-text {
+          text-decoration: line-through; color: var(--fg-muted);
+        }
+
+        /* Pin button */
+        .td-pin {
+          width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+          border: none; background: transparent; padding: 0;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; color: var(--fg-faint);
+          transition: color .15s, transform .12s;
+        }
+        .td-pin:active { transform: scale(.82); }
+        .td-pin.on { color: #f59e0b; }
       `}</style>
     </div>
   );
