@@ -115,6 +115,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // Recent sessions editing
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
   const [editingMinutes, setEditingMinutes] = useState('');
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
 
   // DB
   const categories = useLiveQuery(() => db.studyCategories.orderBy('createdAt').toArray(), []) ?? [];
@@ -218,6 +219,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   }, [selectedCatId, selectCat]);
 
   const startEditSession = (s: StudySession) => {
+    setConfirmingDeleteId(null);
     setEditingSessionId(s.id!);
     setEditingMinutes(String(Math.max(1, Math.round(s.duration / 60))));
   };
@@ -233,6 +235,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
   const deleteSession = useCallback(async (id: number) => {
     await db.studySessions.delete(id);
+    setConfirmingDeleteId(null);
   }, []);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -413,9 +416,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                       </button>
                     )}
                   </div>
-                  <button className="recent-del-btn" onClick={() => void deleteSession(s.id!)} title="削除">
-                    <X size={12} />
-                  </button>
+                  {confirmingDeleteId === s.id ? (
+                    <button className="recent-del-btn confirming" onClick={() => void deleteSession(s.id!)} title="タップで削除確定">
+                      <Check size={12} />
+                    </button>
+                  ) : (
+                    <button className="recent-del-btn" onClick={() => setConfirmingDeleteId(s.id!)} title="削除">
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -586,6 +595,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .recent-confirm-btn { width:22px; height:22px; border-radius:6px; background:var(--primary); border:none; color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; }
         .recent-del-btn { width:22px; height:22px; border-radius:6px; background:transparent; border:1px solid var(--border); color:var(--fg-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         .recent-del-btn:hover { background:rgba(239,68,68,0.12); border-color:#ef4444; color:#ef4444; }
+        .recent-del-btn.confirming { background:#ef4444; border-color:#ef4444; color:#fff; }
 
         /* ── Stats ── */
         .period-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
