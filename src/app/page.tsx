@@ -19,6 +19,7 @@ const AIChat = dynamic(() => import('@/components/AIChat'), { ssr: false });
 const StudyTracker = dynamic(() => import('@/components/StudyTracker'), { ssr: false });
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
 const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false });
+const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ssr: false });
 
 type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'study';
 
@@ -129,7 +130,7 @@ export default function Home() {
 
   // BackBubble: shown on mobile when not on bubble home
   const onBubbleHome = isMobile && activeTab === 'memos' && !activeNoteId && mobilePage === 'bubbles';
-  const showBackBubble = isMobile && !showFocusMode && activeTab !== 'sketch' && !onBubbleHome;
+  const showBackBubble = isMobile && !showFocusMode && activeTab !== 'sketch' && activeTab !== 'ai' && !onBubbleHome;
 
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
@@ -182,12 +183,12 @@ export default function Home() {
                     onOpenFocus={() => setShowFocusMode(true)}
                   />
                 )}
-                {/* Mobile notes list — old HomeHero */}
+                {/* Mobile memo tree */}
                 {isMobile && activeTab === 'memos' && mobilePage === 'notes' && (
-                  <HomeHero
+                  <MemoTreeScreen
                     onSelectNote={(id) => setActiveNoteId(id)}
-                    onOpenSketch={openSketch}
-                    isDesktop={false}
+                    onGoBack={goHome}
+                    onOpenSearch={() => setShowSearch(true)}
                   />
                 )}
                 {activeTab === 'pdf' && <PDFViewer />}
