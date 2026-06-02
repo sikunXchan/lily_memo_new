@@ -21,8 +21,10 @@ const StudyTracker = dynamic(() => import('@/components/StudyTracker'), { ssr: f
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
 const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false });
 const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ssr: false });
+const NewsScreen = dynamic(() => import('@/components/NewsScreen'), { ssr: false });
+const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
 
-type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'study';
+type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'study' | 'news' | 'todo';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -195,6 +197,14 @@ export default function Home() {
                     onNavigate={handleMobileNavigate}
                     onOpenFocus={() => setShowFocusMode(true)}
                   />
+                )}
+                {/* News screen */}
+                {isMobile && activeTab === 'news' && (
+                  <NewsScreen onGoBack={goHome} />
+                )}
+                {/* ToDo screen */}
+                {isMobile && activeTab === 'todo' && (
+                  <TodoScreen onGoBack={goHome} />
                 )}
                 {/* Mobile memo tree */}
                 {isMobile && activeTab === 'memos' && mobilePage === 'notes' && (

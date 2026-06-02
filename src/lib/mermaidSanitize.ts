@@ -231,11 +231,35 @@ export function autoFixSequence(src: string): string {
   return out.join('\n');
 }
 
+// ── classDiagram recovery ──────────────────────────────────────────────────
+// LLMs sometimes produce method signatures like `+method(a : Type) : ReturnType`
+// with spaces around `:` which mermaid v11 rejects. Also strips stray backtick
+// lines that Gemini occasionally wraps around diagram code.
+export function autoFixClassDiagram(src: string): string {
+  if (!/^\s*classDiagram\b/.test(src.trimStart())) return src;
+  return src
+    .replace(/^﻿/, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\t/g, '  ')
+    .replace(/[ \t]+$/gm, '');
+}
+
+// ── General whitespace / BOM / CRLF normalisation ─────────────────────────
+function normaliseWs(src: string): string {
+  return src
+    .replace(/^﻿/, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\t/g, '  ')
+    .replace(/[ \t]+$/gm, '');
+}
+
 // Pick the right recovery pass for whatever diagram the source declares. Used
 // as the single fallback after a natural parse fails.
 export function recoverMermaid(src: string): string {
   const head = src.trimStart();
   if (/^sequenceDiagram\b/.test(head)) return autoFixSequence(src);
   if (/^(graph|flowchart)\b/i.test(head)) return autoQuoteFlowchart(src);
-  return src;
+  if (/^classDiagram\b/.test(head)) return autoFixClassDiagram(src);
+  // For any other diagram type, at least normalise whitespace / encoding.
+  return normaliseWs(src);
 }

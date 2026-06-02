@@ -585,32 +585,36 @@ function ImageSaveBar({ children }: { children: React.ReactNode }) {
   );
 }
 
+async function tryRenderMermaid(source: string): Promise<string> {
+  const id = `lily-mmd-${Math.random().toString(36).slice(2, 9)}`;
+  const { svg } = await mermaid.render(id, source);
+  return svg;
+}
+
 function MermaidPreview({ code, baseName }: { code: string; baseName: string }) {
   const [svg, setSvg] = useState('');
   const [err, setErr] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const parse = (mermaid as unknown as { parse(t: string, o: object): Promise<boolean> }).parse;
-      let source = sanitizeMindmap(code);
-      try {
-        // Pre-validate to prevent Mermaid v11 from injecting a bomb SVG on error.
-        let ok = await parse(source, { suppressErrors: true });
-        if (!ok) {
-          // Recovery: auto-quote flowchart labels / alias sequence participants.
-          const recovered = recoverMermaid(source);
-          if (recovered !== source) {
-            ok = await parse(recovered, { suppressErrors: true });
-            if (ok) source = recovered;
-          }
-        }
-        if (!ok) { if (!cancelled) setErr(true); return; }
-        const id = `lily-mmd-${Math.random().toString(36).slice(2, 9)}`;
-        const { svg: out } = await mermaid.render(id, source);
-        if (!cancelled) { setSvg(out); setErr(false); }
-      } catch {
-        if (!cancelled) setErr(true);
+      // With suppressErrorRendering:true in mermaid config, render() throws
+      // immediately on bad syntax (no error-SVG injected into document.body).
+      // We try: original → sanitized mindmap → recovered syntax → give up.
+      const candidates = [
+        sanitizeMindmap(code),           // mindmap normalisation (no-op for others)
+        recoverMermaid(sanitizeMindmap(code)), // flowchart/sequence recovery
+      ];
+      // Deduplicate so we don't run identical sources twice.
+      const seen = new Set<string>();
+      for (const src of candidates) {
+        if (seen.has(src)) continue;
+        seen.add(src);
+        try {
+          const out = await tryRenderMermaid(src);
+          if (!cancelled && out) { setSvg(out); setErr(false); return; }
+        } catch { /* try next candidate */ }
       }
+      if (!cancelled) setErr(true);
     })();
     return () => { cancelled = true; };
   }, [code]);

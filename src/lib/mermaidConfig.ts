@@ -27,7 +27,9 @@ export function initMermaid(): void {
       fontFamily: 'inherit',
     },
     securityLevel: 'loose',
-    suppressErrors: true,
+    // suppressErrorRendering makes render() throw cleanly on bad diagrams
+    // instead of injecting a mermaid "error" SVG into document.body
+    suppressErrorRendering: true,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
 }

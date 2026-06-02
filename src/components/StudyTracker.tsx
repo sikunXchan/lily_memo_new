@@ -116,6 +116,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
   const [editingStart, setEditingStart] = useState('');
   const [editingEnd, setEditingEnd] = useState('');
+  const [editingCatId, setEditingCatId] = useState<number | null>(null);
   const [swipedId, setSwipedId] = useState<number | null>(null);
   const touchStartX = useRef(0);
 
@@ -223,6 +224,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const startEditSession = (s: StudySession) => {
     setSwipedId(null);
     setEditingSessionId(s.id!);
+    setEditingCatId(s.categoryId ?? null);
     const toHHMM = (ts: number) => {
       const d = new Date(ts);
       return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -235,16 +237,21 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
     const startMs = new Date(`${date}T${editingStart}:00`).getTime();
     const endMs = new Date(`${date}T${editingEnd}:00`).getTime();
     if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
+      const cat = editingCatId !== null ? categories.find(c => c.id === editingCatId) ?? null : null;
       await db.studySessions.update(id, {
         startTime: startMs,
         endTime: endMs,
         duration: Math.round((endMs - startMs) / 1000),
+        categoryId: editingCatId,
+        categoryName: cat?.name ?? null,
+        categoryColor: cat?.color ?? null,
       });
     }
     setEditingSessionId(null);
     setEditingStart('');
     setEditingEnd('');
-  }, [editingStart, editingEnd]);
+    setEditingCatId(null);
+  }, [editingStart, editingEnd, editingCatId, categories]);
 
   const deleteSession = useCallback(async (id: number) => {
     await db.studySessions.delete(id);
@@ -397,22 +404,25 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
               {recentSessions.map(s => (
                 <div key={s.id} className="recent-row-wrap">
                   <div
-                    className={`recent-row-inner ${swipedId === s.id ? 'swiped' : ''}`}
-                    onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
+                    className={`recent-row-inner ${swipedId === s.id ? 'swiped' : ''} ${editingSessionId === s.id ? 'editing' : ''}`}
+                    onTouchStart={e => { if (editingSessionId === s.id) return; touchStartX.current = e.touches[0].clientX; }}
                     onTouchEnd={e => {
+                      if (editingSessionId === s.id) return;
                       const dx = touchStartX.current - e.changedTouches[0].clientX;
                       if (dx > 50) { setSwipedId(s.id!); setEditingSessionId(null); }
                       else if (dx < -20) setSwipedId(null);
                     }}
                     onClick={() => { if (swipedId === s.id) setSwipedId(null); }}
                   >
-                    <span className="recent-dot" style={{ background: s.categoryColor ?? '#94a3b8' }} />
-                    <div className="recent-info">
-                      <span className="recent-cat">{s.categoryName ?? 'なし'}</span>
-                      <span className="recent-time">{fmtDateTime(s.startTime)}</span>
+                    <div className="recent-row-top">
+                      <span className="recent-dot" style={{ background: s.categoryColor ?? '#94a3b8' }} />
+                      <div className="recent-info">
+                        <span className="recent-cat">{s.categoryName ?? 'なし'}</span>
+                        <span className="recent-time">{fmtDateTime(s.startTime)}</span>
+                      </div>
                     </div>
-                    <div className="recent-dur-wrap">
-                      {editingSessionId === s.id ? (
+                    {editingSessionId === s.id ? (
+                      <div className="recent-edit-area" onClick={e => e.stopPropagation()}>
                         <div className="recent-edit-row">
                           <input
                             type="time"
@@ -427,21 +437,40 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                             value={editingEnd}
                             onChange={e => setEditingEnd(e.target.value)}
                           />
-                          <button className="recent-confirm-btn" onClick={e => { e.stopPropagation(); void saveEditSession(s.id!, s.date); }}>
+                          <button className="recent-confirm-btn" onClick={() => void saveEditSession(s.id!, s.date)}>
                             <Check size={12} />
                           </button>
                         </div>
-                      ) : (
+                        <div className="recent-cat-edit-row">
+                          <button
+                            className={`rce-chip ${editingCatId === null ? 'rce-chip-active' : ''}`}
+                            onClick={() => setEditingCatId(null)}
+                          >なし</button>
+                          {categories.map(c => (
+                            <button
+                              key={c.id}
+                              className={`rce-chip ${editingCatId === c.id ? 'rce-chip-active' : ''}`}
+                              style={editingCatId === c.id ? { borderColor: c.color, color: c.color } : {}}
+                              onClick={() => setEditingCatId(c.id!)}
+                            >
+                              <span className="rce-dot" style={{ background: c.color }} />
+                              {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="recent-dur-wrap">
                         <button
                           className="recent-dur-btn"
                           onClick={e => { e.stopPropagation(); if (swipedId !== s.id) startEditSession(s); }}
-                          title="開始・終了時刻を修正"
+                          title="開始・終了時刻・カテゴリを修正"
                         >
                           {fmtDur(s.duration)}
                           <Pencil size={10} className="recent-edit-icon" />
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                   <button className="recent-swipe-del" onClick={() => void deleteSession(s.id!)}>
                     <Trash2 size={16} />
@@ -604,6 +633,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .recent-row-wrap { position:relative; border-radius:12px; overflow:hidden; }
         .recent-row-inner { display:flex; align-items:center; gap:8px; background:var(--accent); border:1px solid var(--border); border-radius:12px; padding:8px 10px; transform:translateX(0); transition:transform .22s ease; position:relative; z-index:1; user-select:none; }
         .recent-row-inner.swiped { transform:translateX(-64px); border-radius:12px 0 0 12px; }
+        .recent-row-inner.editing { flex-direction:column; align-items:stretch; gap:6px; }
+        .recent-row-top { display:flex; align-items:center; gap:8px; flex:1; min-width:0; }
         .recent-swipe-del { position:absolute; right:0; top:0; bottom:0; width:64px; background:#ef4444; color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; border-radius:0 12px 12px 0; }
         .recent-swipe-del:active { background:#dc2626; }
         .recent-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
@@ -614,10 +645,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .recent-dur-btn { display:flex; align-items:center; gap:4px; font-size:.8rem; font-weight:700; color:var(--primary); background:transparent; border:none; cursor:pointer; padding:3px 6px; border-radius:6px; }
         .recent-dur-btn:hover { background:color-mix(in srgb,var(--primary) 10%,transparent); }
         .recent-edit-icon { opacity:.5; }
+        .recent-edit-area { display:flex; flex-direction:column; gap:5px; }
         .recent-edit-row { display:flex; align-items:center; gap:3px; }
         .recent-edit-time { width:76px; background:var(--background); border:1.5px solid var(--primary); border-radius:6px; padding:3px 5px; font-size:.78rem; font-weight:600; color:var(--foreground); outline:none; font-family:inherit; }
         .recent-edit-sep { font-size:.72rem; color:var(--fg-muted); font-weight:600; }
         .recent-confirm-btn { width:22px; height:22px; border-radius:6px; background:var(--primary); border:none; color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .recent-cat-edit-row { display:flex; gap:5px; flex-wrap:wrap; align-items:center; padding:2px 0; }
+        .rce-chip { display:flex; align-items:center; gap:4px; padding:3px 9px; border-radius:99px; font-size:.7rem; font-weight:600; background:var(--background); border:1.5px solid var(--border); color:var(--fg-muted); cursor:pointer; white-space:nowrap; transition:all .12s; }
+        .rce-chip.rce-chip-active { border-color:var(--primary); color:var(--primary); background:color-mix(in srgb,var(--primary) 10%,var(--background)); }
+        .rce-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
 
         /* ── Stats ── */
         .period-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
