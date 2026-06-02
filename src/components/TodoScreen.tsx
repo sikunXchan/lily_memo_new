@@ -56,8 +56,8 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
         onTouchEnd={e => {
           const dx = touchStartX.current - e.changedTouches[0].clientX;
-          if (dx > 50) setSwipedId(t.id!);
-          else if (dx < -20) setSwipedId(null);
+          if (dx > 45) setSwipedId(t.id!);
+          else if (dx < -15) setSwipedId(null);
         }}
         onClick={() => { if (swipedId === t.id) setSwipedId(null); }}
       >
@@ -74,7 +74,8 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         </button>
       </div>
       <button className="td-del-btn" onClick={() => void deleteTodo(t.id!)}>
-        <Trash2 size={15} />
+        <Trash2 size={17} />
+        <span>削除</span>
       </button>
     </div>
   );
@@ -183,17 +184,17 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         }
         .td-row-wrap {
           position: relative; overflow: hidden;
-          border-radius: 12px; margin-bottom: 4px;
+          border-radius: 14px; margin-bottom: 5px;
         }
         .td-row {
           display: flex; align-items: center; gap: 10px;
-          padding: 11px 10px; background: var(--accent);
-          border: 1px solid var(--border); border-radius: 12px;
-          transition: transform .18s;
-          cursor: default;
+          padding: 11px 10px 11px 12px; background: var(--accent);
+          border: 1px solid var(--border); border-radius: 14px;
+          transition: transform .22s cubic-bezier(.25,.46,.45,.94);
+          cursor: default; position: relative; z-index: 1;
         }
-        .td-row.swiped { transform: translateX(-64px); border-radius: 12px 0 0 12px; }
-        .td-row.done { opacity: .55; }
+        .td-row.swiped { transform: translateX(-72px); }
+        .td-row.done { opacity: .5; }
         .td-check {
           width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
           border: 2px solid var(--border); background: var(--background);
@@ -212,20 +213,28 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         .td-row.done .td-text {
           text-decoration: line-through; color: var(--fg-muted);
         }
+        /* ── Pin button ── */
         .td-pin {
-          width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
-          border: 1px solid var(--border); background: transparent;
+          width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+          border: none; background: transparent;
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; color: var(--fg-faint); transition: all .15s;
+          padding: 0;
         }
-        .td-pin.pinned { color: #f59e0b; border-color: #f59e0b; background: rgba(245,158,11,.1); }
+        .td-pin:active { transform: scale(.85); }
+        .td-pin.pinned { color: #f59e0b; }
+        /* ── Swipe-to-delete reveal ── */
         .td-del-btn {
-          position: absolute; right: 0; top: 0; bottom: 0; width: 64px;
-          background: #ef4444; color: #fff; border: none; cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          border-radius: 0 12px 12px 0;
+          position: absolute; right: 0; top: 0; bottom: 0; width: 72px;
+          background: linear-gradient(135deg, #f87171, #ef4444);
+          color: #fff; border: none; cursor: pointer;
+          display: flex; flex-direction: column; align-items: center;
+          justify-content: center; gap: 3px;
+          font-size: 0.6rem; font-weight: 700; letter-spacing: .04em;
+          z-index: 0;
         }
-        .td-del-btn:active { background: #dc2626; }
+        .td-del-btn:active { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .td-del-btn svg { flex-shrink: 0; }
       `}</style>
     </div>
   );
