@@ -3,22 +3,10 @@
 import { useState, useCallback, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  ArrowLeft, Plus, Search, ChevronRight, FileText, FolderPlus, Check, X,
+  ArrowLeft, Plus, Search, ChevronRight, Folder, FileText, FolderPlus, Check, X,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Folder as FolderType, Note } from '@/lib/db';
-
-const FOLDER_ICONS = [
-  '📁','🌸','⭐','💡','📚','🎨','🎵','🐱','🍀','🌙',
-  '🦋','🌺','🐰','💫','🍓','🌈','📝','🔮','🎀','🏠',
-  '🎯','🌿','🍭','🐶','🌻','🎮','📷','🧸','🌊','🦄',
-];
-
-function folderIcon(f: FolderType): string {
-  if (!f.color) return '📁';
-  if (f.color.startsWith('--') || f.color.startsWith('#')) return '📁';
-  return f.color;
-}
 
 interface MemoTreeScreenProps {
   onSelectNote: (id: number) => void;
@@ -31,14 +19,9 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
 
-  // New folder creation
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  const [newFolderIcon, setNewFolderIcon] = useState('📁');
   const nameInputRef = useRef<HTMLInputElement>(null);
-
-  // Icon picker for existing folder
-  const [iconPickerFolderId, setIconPickerFolderId] = useState<number | null>(null);
 
   const folders = useLiveQuery<FolderType[]>(() => db.folders.filter(f => !f.deletedAt).toArray()) ?? [];
   const notes = useLiveQuery<Note[]>(() => {
@@ -62,30 +45,22 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
     const name = newFolderName.trim();
     if (!name) return;
     const t = Date.now();
-    await db.folders.add({ syncId: newSyncId(), name, color: newFolderIcon, createdAt: t, updatedAt: t });
+    await db.folders.add({ syncId: newSyncId(), name, createdAt: t, updatedAt: t });
     setNewFolderName('');
-    setNewFolderIcon('📁');
     setShowNewFolder(false);
-  }, [newFolderName, newFolderIcon]);
-
-  const updateFolderIcon = useCallback(async (id: number, icon: string) => {
-    await db.folders.update(id, { color: icon, updatedAt: Date.now() });
-    setIconPickerFolderId(null);
-  }, []);
+  }, [newFolderName]);
 
   const toggleFolder = (id: number) =>
     setExpandedFolders(p => ({ ...p, [id]: !p[id] }));
 
   const openNewFolder = () => {
     setShowNewFolder(true);
-    setIconPickerFolderId(null);
     setTimeout(() => nameInputRef.current?.focus(), 50);
   };
 
   const cancelNewFolder = () => {
     setShowNewFolder(false);
     setNewFolderName('');
-    setNewFolderIcon('📁');
   };
 
   const looseNotes = searchQuery
@@ -127,41 +102,20 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
       {/* New folder form */}
       {showNewFolder && (
         <div className="mt-new-folder-form">
-          <div className="mt-new-folder-row">
-            <button
-              className="mt-icon-preview"
-              onClick={() => setIconPickerFolderId(iconPickerFolderId === -1 ? null : -1)}
-            >
-              {newFolderIcon}
-            </button>
-            <input
-              ref={nameInputRef}
-              className="mt-new-folder-input"
-              value={newFolderName}
-              onChange={e => setNewFolderName(e.target.value)}
-              placeholder="フォルダ名..."
-              onKeyDown={e => { if (e.key === 'Enter') void createFolder(); if (e.key === 'Escape') cancelNewFolder(); }}
-            />
-            <button className="mt-confirm-btn" onClick={() => void createFolder()} disabled={!newFolderName.trim()}>
-              <Check size={16} />
-            </button>
-            <button className="mt-cancel-btn" onClick={cancelNewFolder}>
-              <X size={16} />
-            </button>
-          </div>
-          {iconPickerFolderId === -1 && (
-            <div className="mt-icon-grid">
-              {FOLDER_ICONS.map(ic => (
-                <button
-                  key={ic}
-                  className={`mt-icon-cell ${newFolderIcon === ic ? 'selected' : ''}`}
-                  onClick={() => setNewFolderIcon(ic)}
-                >
-                  {ic}
-                </button>
-              ))}
-            </div>
-          )}
+          <input
+            ref={nameInputRef}
+            className="mt-new-folder-input"
+            value={newFolderName}
+            onChange={e => setNewFolderName(e.target.value)}
+            placeholder="フォルダ名..."
+            onKeyDown={e => { if (e.key === 'Enter') void createFolder(); if (e.key === 'Escape') cancelNewFolder(); }}
+          />
+          <button className="mt-confirm-btn" onClick={() => void createFolder()} disabled={!newFolderName.trim()}>
+            <Check size={16} />
+          </button>
+          <button className="mt-cancel-btn" onClick={cancelNewFolder}>
+            <X size={16} />
+          </button>
         </div>
       )}
 
@@ -170,36 +124,14 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
         {!searchQuery && folders.map((f) => {
           const folderNotes = notes.filter(n => n.folderId === f.id);
           const expanded = !!expandedFolders[f.id!];
-          const icon = folderIcon(f);
-          const isPickingIcon = iconPickerFolderId === f.id;
           return (
             <div key={f.id} className="mt-folder-group">
-              <div className="mt-folder-row-wrap">
-                <button className="mt-folder-row" onClick={() => toggleFolder(f.id!)}>
-                  <ChevronRight size={15} color="#c7b8be" className={`mt-chev ${expanded ? 'open' : ''}`} />
-                  <button
-                    className="mt-ficon"
-                    onClick={e => { e.stopPropagation(); setIconPickerFolderId(isPickingIcon ? null : f.id!); setShowNewFolder(false); }}
-                  >
-                    {icon}
-                  </button>
-                  <span className="mt-fname">{f.name}</span>
-                  <span className="mt-fcount">{folderNotes.length}</span>
-                </button>
-              </div>
-              {isPickingIcon && (
-                <div className="mt-icon-grid mt-icon-grid-indent">
-                  {FOLDER_ICONS.map(ic => (
-                    <button
-                      key={ic}
-                      className={`mt-icon-cell ${icon === ic ? 'selected' : ''}`}
-                      onClick={() => void updateFolderIcon(f.id!, ic)}
-                    >
-                      {ic}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <button className="mt-folder-row" onClick={() => toggleFolder(f.id!)}>
+                <ChevronRight size={15} color="#c7b8be" className={`mt-chev ${expanded ? 'open' : ''}`} />
+                <Folder size={16} color="#ffb6c1" />
+                <span className="mt-fname">{f.name}</span>
+                <span className="mt-fcount">{folderNotes.length}</span>
+              </button>
               {expanded && (
                 <div className="mt-folder-notes">
                   {folderNotes.map(n => (
@@ -243,175 +175,86 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
 
       <style jsx>{`
         .mt-root {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
+          flex: 1; display: flex; flex-direction: column;
           background: linear-gradient(180deg, #fff6f8 0%, #fdeef4 60%, #eef4fd 100%);
           overflow: hidden;
         }
         .mt-header {
-          display: flex;
-          align-items: center;
-          gap: 8px;
+          display: flex; align-items: center; gap: 8px;
           padding: 12px 16px;
           border-bottom: 1px solid #ffe6ec;
           background: rgba(255,255,255,.85);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
+          backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
           flex-shrink: 0;
         }
         .mt-back {
-          width: 34px; height: 34px;
-          border-radius: 50%;
-          border: 1px solid #ffe0e8;
-          background: rgba(255,255,255,.8);
+          width: 34px; height: 34px; border-radius: 50%;
+          border: 1px solid #ffe0e8; background: rgba(255,255,255,.8);
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; color: #ff8da1; flex-shrink: 0;
         }
         .mt-title {
-          font-family: 'Outfit', sans-serif;
-          font-size: 20px;
-          font-weight: 800;
+          font-family: 'Outfit', sans-serif; font-size: 20px; font-weight: 800;
           background: linear-gradient(120deg, #ff8da1, #93c5fd);
-          -webkit-background-clip: text;
-          background-clip: text;
-          color: transparent;
+          -webkit-background-clip: text; background-clip: text; color: transparent;
           flex: 1;
         }
         .mt-search-input {
-          flex: 1;
-          background: rgba(255,240,245,.9);
-          border: 1.5px solid #ffe0e8;
-          border-radius: 20px;
-          padding: 7px 14px;
-          font-size: .88rem;
-          color: #4a4045;
-          outline: none;
-          font-family: inherit;
+          flex: 1; background: rgba(255,240,245,.9); border: 1.5px solid #ffe0e8;
+          border-radius: 20px; padding: 7px 14px; font-size: .88rem;
+          color: #4a4045; outline: none; font-family: inherit;
         }
         .mt-search-input:focus { border-color: #ff8da1; }
         .mt-actions { display: flex; gap: 5px; flex-shrink: 0; }
         .mt-icon-btn {
-          width: 34px; height: 34px;
-          border-radius: 50%;
-          border: 1px solid #ffe0e8;
-          background: rgba(255,255,255,.8);
+          width: 34px; height: 34px; border-radius: 50%;
+          border: 1px solid #ffe0e8; background: rgba(255,255,255,.8);
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; color: #c7b8be;
         }
         .mt-add-btn { color: #ff8da1; border-color: #ffb6c1; background: rgba(255,240,245,.9); }
 
-        /* New folder form */
         .mt-new-folder-form {
+          display: flex; align-items: center; gap: 8px;
+          padding: 10px 14px;
           background: rgba(255,255,255,.9);
           border-bottom: 1px solid #ffe6ec;
-          padding: 10px 14px;
-          flex-shrink: 0;
-        }
-        .mt-new-folder-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-        .mt-icon-preview {
-          font-size: 22px;
-          background: rgba(255,240,245,.9);
-          border: 1.5px solid #ffe0e8;
-          border-radius: 10px;
-          width: 40px; height: 40px;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer;
           flex-shrink: 0;
         }
         .mt-new-folder-input {
-          flex: 1;
-          background: rgba(255,240,245,.9);
-          border: 1.5px solid #ffe0e8;
-          border-radius: 20px;
-          padding: 8px 14px;
-          font-size: .9rem;
-          color: #4a4045;
-          outline: none;
-          font-family: inherit;
+          flex: 1; background: rgba(255,240,245,.9); border: 1.5px solid #ffe0e8;
+          border-radius: 20px; padding: 8px 14px; font-size: .9rem;
+          color: #4a4045; outline: none; font-family: inherit;
         }
         .mt-new-folder-input:focus { border-color: #ff8da1; }
         .mt-confirm-btn {
-          width: 34px; height: 34px;
-          border-radius: 50%;
-          border: none;
-          background: linear-gradient(135deg, #ffb6c1, #ff8da1);
-          color: #fff;
+          width: 34px; height: 34px; border-radius: 50%; border: none;
+          background: linear-gradient(135deg, #ffb6c1, #ff8da1); color: #fff;
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; flex-shrink: 0;
         }
         .mt-confirm-btn:disabled { opacity: .4; cursor: default; }
         .mt-cancel-btn {
-          width: 34px; height: 34px;
-          border-radius: 50%;
-          border: 1px solid #ffe0e8;
-          background: rgba(255,255,255,.8);
-          color: #c7b8be;
+          width: 34px; height: 34px; border-radius: 50%;
+          border: 1px solid #ffe0e8; background: rgba(255,255,255,.8); color: #c7b8be;
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; flex-shrink: 0;
         }
 
-        /* Icon grid */
-        .mt-icon-grid {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 4px;
-          margin-top: 10px;
-        }
-        .mt-icon-grid-indent {
-          margin: 4px 0 8px 28px;
-          padding: 8px 10px;
-          background: rgba(255,240,245,.7);
-          border-radius: 14px;
-          border: 1px solid #ffe6ec;
-        }
-        .mt-icon-cell {
-          font-size: 20px;
-          width: 36px; height: 36px;
-          border-radius: 10px;
-          border: 1.5px solid transparent;
-          background: none;
-          cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          transition: background .1s;
-        }
-        .mt-icon-cell:active { transform: scale(.88); }
-        .mt-icon-cell.selected {
-          background: rgba(255,182,193,.25);
-          border-color: #ffb6c1;
-        }
-
         .mt-scroll {
-          flex: 1;
-          overflow-y: auto;
-          padding: 12px 14px;
+          flex: 1; overflow-y: auto; padding: 12px 14px;
           -webkit-overflow-scrolling: touch;
         }
         .mt-folder-group { margin-bottom: 2px; }
-        .mt-folder-row-wrap { display: flex; align-items: center; }
         .mt-folder-row {
           display: flex; align-items: center; gap: 8px;
-          flex: 1; padding: 9px 8px;
+          width: 100%; padding: 9px 8px;
           background: none; border: none; cursor: pointer;
           border-radius: 12px; text-align: left;
         }
         .mt-folder-row:active { background: rgba(255,182,193,.12); }
         .mt-chev { transition: transform .15s; flex-shrink: 0; }
         .mt-chev.open { transform: rotate(90deg); }
-        .mt-ficon {
-          font-size: 18px;
-          background: none; border: none;
-          cursor: pointer;
-          padding: 0 2px;
-          border-radius: 6px;
-          flex-shrink: 0;
-          line-height: 1;
-        }
-        .mt-ficon:active { transform: scale(.85); }
         .mt-fname {
           flex: 1; font-size: .9rem; font-weight: 700; color: #4a4045;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -421,36 +264,30 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           background: #fff0f4; padding: 2px 8px; border-radius: 99px;
         }
         .mt-folder-notes {
-          margin-left: 24px;
-          border-left: 2px solid #ffe6ec;
-          padding-left: 10px;
-          margin-bottom: 6px;
+          margin-left: 24px; border-left: 2px solid #ffe6ec;
+          padding-left: 10px; margin-bottom: 6px;
         }
         .mt-note-row {
           display: flex; align-items: center; gap: 8px;
           width: 100%; padding: 8px 6px;
           background: none; border: none; cursor: pointer;
-          border-radius: 10px; text-align: left;
-          font-family: inherit;
+          border-radius: 10px; text-align: left; font-family: inherit;
         }
         .mt-note-row:active { background: rgba(255,182,193,.12); }
         .mt-note-title {
           font-size: .85rem; color: #6b5a61;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-          flex: 1;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
         }
         .mt-add-note span { color: #ff8da1; font-size: .82rem; font-weight: 600; }
         .mt-section-label {
           font-size: .7rem; font-weight: 700; color: #c7b8be;
-          letter-spacing: .1em; text-transform: uppercase;
-          padding: 10px 8px 4px;
+          letter-spacing: .1em; text-transform: uppercase; padding: 10px 8px 4px;
         }
         .mt-loose-row {
           display: flex; align-items: center; gap: 10px;
           width: 100%; padding: 10px 8px;
           background: none; border: none; cursor: pointer;
-          border-radius: 12px; text-align: left;
-          font-family: inherit;
+          border-radius: 12px; text-align: left; font-family: inherit;
         }
         .mt-loose-row:active { background: rgba(255,182,193,.12); }
         .mt-empty {
