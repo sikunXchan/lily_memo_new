@@ -119,6 +119,12 @@ export interface StudySession {
   source: 'stopwatch' | 'pomodoro';
 }
 
+// A badge the user has unlocked. badgeId matches a BadgeDef.id in lib/badges.ts.
+export interface EarnedBadge {
+  badgeId: string;
+  earnedAt: number;
+}
+
 export interface Todo {
   id?: number;
   text: string;
@@ -147,6 +153,7 @@ export class LilyDatabase extends Dexie {
   studySessions!: Table<StudySession>;
   todos!: Table<Todo>;
   albumPhotos!: Table<AlbumPhoto>;
+  earnedBadges!: Table<EarnedBadge, string>;
 
   constructor() {
     super('LilyDatabase');
@@ -215,6 +222,9 @@ export class LilyDatabase extends Dexie {
       await tx.table('todos').toCollection().modify((t: any) => {
         if (!t.updatedAt) t.updatedAt = t.deletedAt ?? t.createdAt ?? Date.now();
       });
+    });
+    this.version(15).stores({
+      earnedBadges: '&badgeId, earnedAt',
     });
   }
 }

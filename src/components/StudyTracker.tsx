@@ -9,6 +9,9 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { StudyCategory, StudySession } from '@/lib/db';
+import StudyGreeting from './StudyGreeting';
+import TrophyRoom from './TrophyRoom';
+import StudyProfileModal from './StudyProfileModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LS_KEY_START     = 'study_timer_start';
@@ -158,6 +161,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const [view, setView] = useState<'timer' | 'stats'>('timer');
   const [period, setPeriod]   = useState<'7d' | '30d' | '1y'>('7d');
   const [offset, setOffset]   = useState(0);
+
+  // Trophy room + profile modal
+  const [showTrophy, setShowTrophy] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
   // Timer
   const [isRunning, setIsRunning] = useState(false);
@@ -370,6 +377,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {/* ── Timer view ── */}
       {view === 'timer' && (
         <div className="st-scroll">
+          {/* Greeting + progress + trophy room entrance */}
+          <StudyGreeting
+            onOpenTrophy={() => setShowTrophy(true)}
+            onEditProfile={() => setShowProfile(true)}
+          />
+
           {/* Category selector */}
           <div className="cat-section">
             <div className="cat-row">
@@ -651,6 +664,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           <button className="snav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}><SettingsIcon size={22}/><span>設定</span></button>
         </nav>
       )}
+
+      {showTrophy && <TrophyRoom onClose={() => setShowTrophy(false)} />}
+      {showProfile && <StudyProfileModal onClose={() => setShowProfile(false)} />}
 
       <style jsx>{`
         .st-container { display:flex; flex-direction:column; height:100%; background:var(--background); overflow:hidden; }
