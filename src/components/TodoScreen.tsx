@@ -31,16 +31,18 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
   const addTodo = useCallback(async () => {
     const text = newText.trim();
     if (!text) return;
-    await db.todos.add({ text, done: false, pinned: false, createdAt: Date.now() });
+    const now = Date.now();
+    await db.todos.add({ text, done: false, pinned: false, createdAt: now, updatedAt: now });
     setNewText('');
   }, [newText]);
 
   const toggleDone = useCallback(async (t: Todo) =>
-    db.todos.update(t.id!, { done: !t.done }), []);
+    db.todos.update(t.id!, { done: !t.done, updatedAt: Date.now() }), []);
   const togglePin = useCallback(async (t: Todo) =>
-    db.todos.update(t.id!, { pinned: !t.pinned }), []);
+    db.todos.update(t.id!, { pinned: !t.pinned, updatedAt: Date.now() }), []);
   const deleteTodo = useCallback(async (id: number) => {
-    await db.todos.update(id, { deletedAt: Date.now() });
+    const now = Date.now();
+    await db.todos.update(id, { deletedAt: now, updatedAt: now });
     setSwipedId(null);
   }, []);
 
@@ -48,48 +50,14 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
   const done     = todos.filter(t => t.done);
   const progress = todos.length > 0 ? Math.round((done.length / todos.length) * 100) : 0;
 
-  const renderItem = (t: Todo) => {
-    const swiped = swipedId === t.id;
-    return (
-      <div key={t.id} className={`td-item${t.pinned ? ' pinned-item' : ''}`}>
-        <div className={`td-inner${swiped ? ' slid' : ''}`}>
-
-          <div
-            className={`td-card${t.done ? ' done' : ''}${t.pinned ? ' pinned' : ''}`}
-            onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
-            onTouchEnd={e => {
-              const dx = touchStartX.current - e.changedTouches[0].clientX;
-              if      (dx > 40)  setSwipedId(t.id!);
-              else if (dx < -16) setSwipedId(null);
-            }}
-            onClick={() => { if (swiped) setSwipedId(null); }}
-          >
-            <button
-              className={`td-check${t.done ? ' checked' : ''}`}
-              onClick={e => { e.stopPropagation(); void toggleDone(t); }}
-              aria-label={t.done ? '未完了に戻す' : '完了にする'}
-            >
-              {t.done && <Check size={11} strokeWidth={3.5} />}
-            </button>
-
-            <span className="td-text">{t.text}</span>
-
-            <button
-              className={`td-pin${t.pinned ? ' on' : ''}`}
-              onClick={e => { e.stopPropagation(); void togglePin(t); }}
-              aria-label={t.pinned ? 'ピン解除' : 'ピン留め'}
-            >
-              <Pin size={13} strokeWidth={2.5} fill={t.pinned ? 'currentColor' : 'none'} />
-            </button>
-          </div>
-
-          <button className="td-del" onClick={() => void deleteTodo(t.id!)} aria-label="削除">
-            <Trash2 size={18} strokeWidth={2} />
-          </button>
-        </div>
-      </div>
-    );
-  };
+  // Sections are built as plain data and mapped INLINE in the return below.
+  // styled-jsx only injects its scoping className onto JSX written lexically
+  // inside the returned JSX tree — JSX returned from a separate helper
+  // function does NOT get scoped, which silently breaks every rule here.
+  const sections = [
+    { key: 'pending', dotClass: 'active-dot', label: 'やること', list: pending },
+    { key: 'done',    dotClass: 'done-dot',   label: '完了',     list: done },
+  ].filter(s => s.list.length > 0);
 
   return (
     <div className="td-root">
@@ -112,52 +80,17 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
       {/* Progress bar */}
       {todos.length > 0 && (
-        <div className="td-progress-wrap">
-          <div className="td-progress-track">
-            <div className="td-progress-fill" style={{ width: `${progress}%` }} />
-          </div>
+        <div className="td-progress-track">
+          <div className="td-progress-fill" style={{ width: `${progress}%` }} />
         </div>
       )}
 
-      {/* List */}
-      <div className="td-scroll">
-        {todos.length === 0 && (
-          <div className="td-empty">
-            <span className="td-empty-icon">🎯</span>
-            <p className="td-empty-title">タスクをゼロに！</p>
-            <p className="td-empty-sub">下の入力欄から追加してね</p>
-          </div>
-        )}
-
-        {pending.length > 0 && (
-          <section className="td-section">
-            <div className="td-section-label">
-              <span className="td-dot active-dot" />
-              <span className="td-label-text">やること</span>
-              <span className="td-label-cnt">{pending.length}</span>
-            </div>
-            {pending.map(renderItem)}
-          </section>
-        )}
-
-        {done.length > 0 && (
-          <section className="td-section">
-            <div className="td-section-label">
-              <span className="td-dot done-dot" />
-              <span className="td-label-text">完了</span>
-              <span className="td-label-cnt">{done.length}</span>
-            </div>
-            {done.map(renderItem)}
-          </section>
-        )}
-      </div>
-
-      {/* Bottom input bar */}
-      <div className="td-input-bar">
+      {/* Add row — kept at top so it never collides with the floating Home bubble */}
+      <div className="td-add-row">
         <input
           ref={inputRef}
           className="td-input"
-          placeholder="新しいタスク..."
+          placeholder="新しいタスクを追加..."
           value={newText}
           onChange={e => setNewText(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') void addTodo(); }}
@@ -168,8 +101,70 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           disabled={!newText.trim()}
           aria-label="追加"
         >
-          <Plus size={17} strokeWidth={2.8} />
+          <Plus size={18} strokeWidth={2.8} />
         </button>
+      </div>
+
+      {/* List */}
+      <div className="td-scroll">
+        {todos.length === 0 && (
+          <div className="td-empty">
+            <span className="td-empty-icon">🎯</span>
+            <p className="td-empty-title">タスクをゼロに！</p>
+            <p className="td-empty-sub">上の入力欄から追加してね</p>
+          </div>
+        )}
+
+        {sections.map(section => (
+          <section key={section.key} className="td-section">
+            <div className="td-section-label">
+              <span className={`td-dot ${section.dotClass}`} />
+              <span className="td-label-text">{section.label}</span>
+              <span className="td-label-cnt">{section.list.length}</span>
+            </div>
+            {section.list.map(t => {
+              const swiped = swipedId === t.id;
+              return (
+                <div key={t.id} className={`td-item${t.pinned ? ' pinned-item' : ''}`}>
+                  <div className={`td-inner${swiped ? ' slid' : ''}`}>
+                    <div
+                      className={`td-card${t.done ? ' done' : ''}${t.pinned ? ' pinned' : ''}`}
+                      onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
+                      onTouchEnd={e => {
+                        const dx = touchStartX.current - e.changedTouches[0].clientX;
+                        if      (dx > 40)  setSwipedId(t.id!);
+                        else if (dx < -16) setSwipedId(null);
+                      }}
+                      onClick={() => { if (swiped) setSwipedId(null); }}
+                    >
+                      <button
+                        className={`td-check${t.done ? ' checked' : ''}`}
+                        onClick={e => { e.stopPropagation(); void toggleDone(t); }}
+                        aria-label={t.done ? '未完了に戻す' : '完了にする'}
+                      >
+                        {t.done && <Check size={11} strokeWidth={3.5} />}
+                      </button>
+
+                      <span className="td-text">{t.text}</span>
+
+                      <button
+                        className={`td-pin${t.pinned ? ' on' : ''}`}
+                        onClick={e => { e.stopPropagation(); void togglePin(t); }}
+                        aria-label={t.pinned ? 'ピン解除' : 'ピン留め'}
+                      >
+                        <Pin size={14} strokeWidth={2.4} fill={t.pinned ? 'currentColor' : 'none'} />
+                      </button>
+                    </div>
+
+                    <button className="td-del" onClick={() => void deleteTodo(t.id!)} aria-label="削除">
+                      <Trash2 size={19} strokeWidth={2} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        ))}
       </div>
 
       <style jsx>{`
@@ -194,7 +189,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           cursor: pointer; color: var(--foreground);
         }
         .td-back:active { opacity: .55; }
-        .td-header-mid { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+        .td-header-mid { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
         .td-title {
           font-size: 18px; font-weight: 800; letter-spacing: -.025em; line-height: 1.15;
           background: linear-gradient(120deg, #34d399, #22d3ee);
@@ -209,15 +204,9 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         }
 
         /* ── Progress ── */
-        .td-progress-wrap {
-          padding: 0 14px 10px;
-          background: var(--glass-tint, rgba(255,255,255,.88));
-          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-          flex-shrink: 0;
-        }
         .td-progress-track {
-          height: 3px; border-radius: 99px;
-          background: var(--border); overflow: hidden;
+          height: 3px; margin: 0 14px 12px; border-radius: 99px;
+          background: var(--border); overflow: hidden; flex-shrink: 0;
         }
         .td-progress-fill {
           height: 100%; border-radius: 99px;
@@ -225,16 +214,40 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           transition: width .6s cubic-bezier(.34,1.1,.64,1);
         }
 
+        /* ── Add row ── */
+        .td-add-row {
+          display: flex; align-items: center; gap: 10px;
+          padding: 0 14px 12px; flex-shrink: 0;
+        }
+        .td-input {
+          flex: 1; min-width: 0; background: var(--accent);
+          border: 1.5px solid var(--border); border-radius: 22px;
+          padding: 10px 16px; font-size: .9rem;
+          color: var(--foreground); outline: none; font-family: inherit;
+          transition: border-color .15s;
+        }
+        .td-input::placeholder { color: var(--fg-faint); }
+        .td-input:focus { border-color: #34d399; }
+        .td-add-btn {
+          width: 42px; height: 42px; border-radius: 50%; border: none; flex-shrink: 0;
+          background: linear-gradient(135deg, #34d399, #22d3ee); color: #fff;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; box-shadow: 0 3px 10px rgba(52,211,153,.4);
+          transition: opacity .15s, transform .12s;
+        }
+        .td-add-btn:disabled { opacity: .28; cursor: default; box-shadow: none; }
+        .td-add-btn:not(:disabled):active { transform: scale(.86); }
+
         /* ── Scroll ── */
         .td-scroll {
-          flex: 1; overflow-y: auto; padding: 14px 14px 8px;
+          flex: 1; overflow-y: auto; padding: 2px 14px 96px;
           -webkit-overflow-scrolling: touch;
         }
 
         /* ── Empty ── */
         .td-empty {
           display: flex; flex-direction: column; align-items: center;
-          padding: 56px 0 0; gap: 8px; text-align: center;
+          padding: 52px 0 0; gap: 8px; text-align: center;
         }
         .td-empty-icon { font-size: 2.6rem; }
         .td-empty-title { font-size: .92rem; font-weight: 700; color: var(--foreground); margin: 0; }
@@ -243,8 +256,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         /* ── Section ── */
         .td-section { margin-bottom: 20px; }
         .td-section-label {
-          display: flex; align-items: center; gap: 6px;
-          padding: 0 2px 8px;
+          display: flex; align-items: center; gap: 6px; padding: 0 2px 8px;
         }
         .td-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
         .active-dot { background: linear-gradient(135deg, #34d399, #22d3ee); }
@@ -265,7 +277,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 3px 10px rgba(0,0,0,.05);
         }
         .td-item.pinned-item {
-          box-shadow: 0 0 0 1.5px rgba(251,191,36,.55), 0 4px 16px rgba(251,191,36,.1);
+          box-shadow: 0 0 0 1.5px rgba(251,191,36,.55), 0 4px 16px rgba(251,191,36,.12);
         }
         .td-inner {
           display: flex;
@@ -294,8 +306,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           cursor: pointer;
           transition:
             background .2s cubic-bezier(.34,1.5,.64,1),
-            border-color .2s,
-            box-shadow .2s,
+            border-color .2s, box-shadow .2s,
             transform .2s cubic-bezier(.34,1.5,.64,1);
         }
         .td-check:active { transform: scale(.84); }
@@ -308,7 +319,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
         /* Text */
         .td-text {
-          flex: 1; font-size: .9rem; font-weight: 500;
+          flex: 1; min-width: 0; font-size: .9rem; font-weight: 500;
           color: var(--foreground); line-height: 1.3;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
@@ -316,51 +327,23 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
         /* Pin */
         .td-pin {
-          width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+          width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
           border: none; background: transparent; padding: 0;
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; color: var(--fg-faint);
-          transition: color .15s, transform .12s;
+          transition: color .15s, background .15s, transform .12s;
         }
         .td-pin:active { transform: scale(.78); }
-        .td-pin.on { color: #f59e0b; }
+        .td-pin.on { color: #f59e0b; background: rgba(245,158,11,.12); }
 
         /* Delete panel */
         .td-del {
           width: ${DEL_W}px; flex-shrink: 0;
-          background: linear-gradient(160deg, #f87171, #ef4444);
+          background: linear-gradient(160deg, #fb7185, #ef4444);
           border: none; color: #fff; cursor: pointer;
           display: flex; align-items: center; justify-content: center;
         }
         .td-del:active { background: #dc2626; }
-
-        /* ── Bottom input bar ── */
-        .td-input-bar {
-          display: flex; align-items: center; gap: 10px;
-          padding: 10px 14px 22px;
-          border-top: 1px solid var(--border);
-          background: var(--glass-tint, rgba(255,255,255,.9));
-          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-          flex-shrink: 0;
-        }
-        .td-input {
-          flex: 1; background: var(--accent);
-          border: 1.5px solid var(--border); border-radius: 22px;
-          padding: 10px 16px; font-size: .9rem;
-          color: var(--foreground); outline: none; font-family: inherit;
-          transition: border-color .15s;
-        }
-        .td-input::placeholder { color: var(--fg-faint); }
-        .td-input:focus { border-color: #34d399; }
-        .td-add-btn {
-          width: 40px; height: 40px; border-radius: 50%; border: none; flex-shrink: 0;
-          background: linear-gradient(135deg, #34d399, #22d3ee); color: #fff;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; box-shadow: 0 3px 10px rgba(52,211,153,.4);
-          transition: opacity .15s, transform .12s;
-        }
-        .td-add-btn:disabled { opacity: .28; cursor: default; box-shadow: none; }
-        .td-add-btn:not(:disabled):active { transform: scale(.86); }
       `}</style>
     </div>
   );

@@ -125,6 +125,7 @@ export interface Todo {
   done: boolean;
   pinned: boolean;
   createdAt: number;
+  updatedAt?: number;  // bumped on every mutation — drives last-write-wins sync
   deletedAt?: number;  // tombstone for sync — UI filters these out
 }
 
@@ -206,6 +207,14 @@ export class LilyDatabase extends Dexie {
     });
     this.version(13).stores({
       todos: '++id, done, pinned, createdAt, deletedAt',
+    });
+    this.version(14).stores({
+      todos: '++id, done, pinned, createdAt, updatedAt, deletedAt',
+    }).upgrade(async tx => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await tx.table('todos').toCollection().modify((t: any) => {
+        if (!t.updatedAt) t.updatedAt = t.deletedAt ?? t.createdAt ?? Date.now();
+      });
     });
   }
 }
