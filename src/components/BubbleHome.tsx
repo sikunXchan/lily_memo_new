@@ -7,7 +7,7 @@ import {
   Crosshair, Plus, Bell, ListTodo, Camera, X, Trophy,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
-import type { Note, Todo, AlbumPhoto } from '@/lib/db';
+import type { Todo, AlbumPhoto } from '@/lib/db';
 import { useTheme } from './ThemeContext';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -86,10 +86,6 @@ interface BubbleHomeProps {
 
 export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: BubbleHomeProps) {
   const { cycleTheme, nextThemeName } = useTheme();
-
-  const recentNotes = useLiveQuery<Note[]>(() =>
-    db.notes.filter(n => !n.deletedAt).sortBy('updatedAt').then(l => l.reverse().slice(0, 6))
-  ) ?? [];
 
   const pinnedTodos = useLiveQuery<Todo[]>(() =>
     db.todos.filter(t => t.pinned && !t.done).toArray()
@@ -315,23 +311,6 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         </div>
       </div>
 
-      {/* Recent notes */}
-      {recentNotes.length > 0 && (
-        <div className="bh-recents">
-          <div className="bh-recents-label">最近のメモ</div>
-          <div className="bh-recents-scroll">
-            {recentNotes.map(n => (
-              <button key={n.id} className="bh-recent-card" onClick={() => onSelectNote(n.id!)}>
-                <span className="bh-recent-title">{n.title || '無題のメモ'}</span>
-                <span className="bh-recent-preview">
-                  {(n.content ?? '').replace(/<[^>]+>/g, '').trim().slice(0, 38) || '…'}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       <style jsx>{`
         .bh-root {
           flex: 1; display: flex; flex-direction: column;
@@ -531,6 +510,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           height: 114px;
           overflow: hidden;
           margin: 0 -14px;
+          margin-top: auto;  /* pin to the bottom so bubbles get the space above */
           position: relative; z-index: 2;
         }
         .bh-album-track {
@@ -572,43 +552,6 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           display: flex; align-items: center; justify-content: center;
           cursor: pointer;
           box-shadow: 0 2px 8px rgba(0,0,0,.3);
-        }
-
-        /* ── Recent notes ── */
-        .bh-recents {
-          flex-shrink: 0;
-          padding: 6px 4px 12px;
-          position: relative; z-index: 2;
-        }
-        .bh-recents-label {
-          font-size: 9px; font-weight: 700; letter-spacing: .18em;
-          text-transform: uppercase; color: rgba(255,255,255,.7);
-          margin-bottom: 8px; padding-left: 2px;
-        }
-        .bh-recents-scroll {
-          display: flex; gap: 8px;
-          overflow-x: auto; -webkit-overflow-scrolling: touch;
-          scrollbar-width: none; padding-bottom: 2px;
-        }
-        .bh-recents-scroll::-webkit-scrollbar { display: none; }
-        .bh-recent-card {
-          flex-shrink: 0; min-width: 128px; max-width: 180px;
-          background: rgba(0,0,0,.48);
-          backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-          border: 1px solid rgba(255,255,255,.2);
-          border-radius: 16px; padding: 10px 13px;
-          text-align: left; cursor: pointer;
-          display: flex; flex-direction: column; gap: 5px;
-        }
-        .bh-recent-card:active { transform: scale(.95); opacity: .8; }
-        .bh-recent-title {
-          font-size: 12.5px; font-weight: 700;
-          color: rgba(255,255,255,.95);
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
-        }
-        .bh-recent-preview {
-          font-size: 10.5px; color: rgba(255,255,255,.6);
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
         }
       `}</style>
     </div>
