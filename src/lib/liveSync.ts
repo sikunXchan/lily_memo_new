@@ -1,6 +1,6 @@
 import { liveQuery } from 'dexie';
 import { db, newSyncId } from './db';
-import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay } from './db';
+import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo } from './db';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
 const POLL_INTERVAL_MS  = 30_000;
@@ -13,6 +13,8 @@ interface LiveSnapshot {
   studyCategories:  StudyCategory[];
   exams:            Exam[];
   scheduleDays:     ScheduleDay[];
+  savedChats:       SavedChat[];
+  todos:            Todo[];
   ts: number;
 }
 
@@ -26,15 +28,17 @@ let _dexieSub:    { unsubscribe: () => void }    | null = null;
 
 // ── Build local snapshot ─────────────────────────────────────────
 async function buildSnapshot(): Promise<LiveSnapshot> {
-  const [notes, folders, studySessions, studyCategories, exams, scheduleDays] = await Promise.all([
+  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos] = await Promise.all([
     db.notes.toArray(),
     db.folders.toArray(),
     db.studySessions.toArray(),
     db.studyCategories.toArray(),
     db.exams.toArray(),
     db.scheduleDays.toArray(),
+    db.savedChats.toArray(),
+    db.todos.toArray(),
   ]);
-  return { notes, folders, studySessions, studyCategories, exams, scheduleDays, ts: Date.now() };
+  return { notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, ts: Date.now() };
 }
 
 // ── Push to Redis ────────────────────────────────────────────────
@@ -131,6 +135,36 @@ async function mergeSnapshot(remote: LiveSnapshot) {
         await db.scheduleDays.add(rest as ScheduleDay);
       }
     }
+
+    // Saved chats: union by createdAt (each chat is immutable after creation)
+    if (remote.savedChats?.length) {
+      const localChats = await db.savedChats.toArray();
+      const chatKeys = new Set(localChats.map(c => c.createdAt));
+      for (const r of remote.savedChats) {
+        if (!chatKeys.has(r.createdAt)) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id: _id, ...rest } = r;
+          await db.savedChats.add(rest as SavedChat);
+        }
+      }
+    }
+
+    // Todos: union by createdAt; also sync done/pinned state (last-write wins via createdAt key)
+    if (remote.todos?.length) {
+      const localTodos = await db.todos.toArray();
+      const todoMap = new Map(localTodos.map(t => [t.createdAt, t]));
+      for (const r of remote.todos) {
+        const local = todoMap.get(r.createdAt);
+        if (!local) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id: _id, ...rest } = r;
+          await db.todos.add(rest as Todo);
+        } else if (r.done !== local.done || r.pinned !== local.pinned) {
+          // Remote has a different state — take remote (simplest conflict resolution)
+          await db.todos.update(local.id!, { done: r.done, pinned: r.pinned });
+        }
+      }
+    }
   } finally {
     _isMerging = false;
     _suppressUntil = Date.now() + MERGE_SUPPRESS_MS;
@@ -161,12 +195,14 @@ export function initLiveSync(key: string) {
   _key        = key;
   _lastSyncTs = Number(localStorage.getItem('lily_livesync_ts') ?? 0);
 
-  // Watch Dexie for local changes (notes updates + session additions)
+  // Watch Dexie for local changes
   const obs = liveQuery(() => Promise.all([
     db.notes.orderBy('updatedAt').last().then(n => n?.updatedAt ?? 0),
     db.studySessions.count(),
     db.studyCategories.count(),
     db.exams.count(),
+    db.savedChats.count(),
+    db.todos.count(),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());
 

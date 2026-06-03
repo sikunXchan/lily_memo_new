@@ -1,4 +1,4 @@
-import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, newSyncId } from './db';
+import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -34,13 +34,15 @@ export interface BackupPayload {
 export interface SyncPayload extends BackupPayload {
   studyCategories?: StudyCategory[];
   studySessions?: StudySession[];
+  todos?: Todo[];
 }
 
 export async function buildSyncJson(): Promise<string> {
   const base = JSON.parse(await buildBackupJson()) as BackupPayload;
   const studyCategories = await db.studyCategories.toArray();
   const studySessions = await db.studySessions.toArray();
-  const payload: SyncPayload = { ...base, studyCategories, studySessions };
+  const todos = await db.todos.toArray();
+  const payload: SyncPayload = { ...base, studyCategories, studySessions, todos };
   return JSON.stringify(payload);
 }
 
@@ -50,10 +52,11 @@ export async function restoreSyncFromJson(jsonText: string): Promise<void> {
 
   const data = JSON.parse(jsonText) as Partial<SyncPayload>;
 
-  // Restore study data (full replace)
-  await db.transaction('rw', db.studyCategories, db.studySessions, async () => {
+  // Restore study data + todos (full replace)
+  await db.transaction('rw', db.studyCategories, db.studySessions, db.todos, async () => {
     await db.studyCategories.clear();
     await db.studySessions.clear();
+    await db.todos.clear();
     if (data.studyCategories?.length) {
       for (const c of data.studyCategories) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -66,6 +69,13 @@ export async function restoreSyncFromJson(jsonText: string): Promise<void> {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id: _id, ...rest } = s;
         await db.studySessions.add(rest as StudySession);
+      }
+    }
+    if (data.todos?.length) {
+      for (const t of data.todos) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = t;
+        await db.todos.add(rest as Todo);
       }
     }
   });
