@@ -468,8 +468,21 @@ async function createNoteWithBlock(block: InsertableBlock, title: string): Promi
 
 function buildSystemPrompt(contextNotes: Note[]): string {
   if (contextNotes.length === 0) return LILY_CHAT_SYSTEM_PROMPT;
+  // Adaptive per-note cap: when the user is focused on just a few notes, send
+  // (almost) the whole thing so Lily doesn't miss content that's actually
+  // written in the memo. Only clamp hard when many notes are in scope (e.g.
+  // "all notes" mode) to keep the request bounded.
+  const perNoteCap = contextNotes.length <= 3 ? 16000
+    : contextNotes.length <= 10 ? 6000
+    : 3000;
   const context = contextNotes
-    .map(n => `## ${n.title || '無題'} (ID:${n.id})\n${noteHtmlToText(n.content || '').slice(0, 4000)}`)
+    .map(n => {
+      const full = noteHtmlToText(n.content || '');
+      const body = full.length > perNoteCap
+        ? `${full.slice(0, perNoteCap)}\n…(以下 ${full.length - perNoteCap} 文字省略)`
+        : full;
+      return `## ${n.title || '無題'} (ID:${n.id})\n${body}`;
+    })
     .join('\n\n---\n\n');
   return `${LILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
@@ -1940,15 +1953,25 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       const systemPrompt = buildSystemPrompt(contextNotes);
 
       const allMsgs = [...messages, userMsg];
-      // Keep last 10 messages to limit token usage per request.
-      const recentMsgs = allMsgs.slice(-10);
-      // Only include attachments on the last user message — older attachments
-      // have already been processed by the model, so re-sending their base64
-      // data on every turn wastes significant quota.
-      const lastUserIdx = recentMsgs.reduce(
-        (acc, m, idx) => (m.role === 'user' && m.attachments?.length ? idx : acc),
-        -1
-      );
+      // Keep a generous window of recent turns. gemini-2.5-flash has a very
+      // large context window, so the previous hard cap of 10 messages was the
+      // main reason Lily "forgot" things the user had written earlier in the
+      // same conversation. Walk backwards accumulating text until a character
+      // budget, capped by message count, so long chats stay coherent without
+      // sending an unbounded request.
+      const HISTORY_MSG_CAP = 40;
+      const HISTORY_CHAR_BUDGET = 24000;
+      const picked: ChatMessage[] = [];
+      let charCount = 0;
+      for (let i = allMsgs.length - 1; i >= 0 && picked.length < HISTORY_MSG_CAP; i--) {
+        const m = allMsgs[i];
+        picked.push(m);
+        charCount += m.text.length;
+        if (charCount > HISTORY_CHAR_BUDGET) break;
+      }
+      picked.reverse();
+      const recentMsgs = picked;
+
       const modeDirective = MODES.find(mo => mo.id === activeMode)?.directive;
       const lastIdx = recentMsgs.length - 1;
       const history: ChatTurn[] = recentMsgs.map((m, idx) => {
@@ -1959,7 +1982,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               ? `${m.text}\n\n（${modeDirective}）`
               : m.text,
         };
-        if (idx === lastUserIdx && m.attachments && m.attachments.length > 0) {
+        // Re-attach files for EVERY user message in the window that has them.
+        // Each request is stateless — the model only sees attachments present
+        // in this request, so dropping older ones made Lily unable to "see"
+        // files the user had shown earlier. File API uploads are referenced
+        // cheaply by URI; only inline images/PDF renders carry real weight.
+        if (m.role === 'user' && m.attachments && m.attachments.length > 0) {
           turn.attachments = m.attachments.map<ChatAttachment>(a => ({
             mimeType: a.mimeType,
             data: a.fileUri || a.extractedText || a.pdfPageImages ? '' : a.data,
