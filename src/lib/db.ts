@@ -125,6 +125,7 @@ export interface Todo {
   done: boolean;
   pinned: boolean;
   createdAt: number;
+  deletedAt?: number;  // tombstone for sync — UI filters these out
 }
 
 export interface AlbumPhoto {
@@ -202,6 +203,9 @@ export class LilyDatabase extends Dexie {
     });
     this.version(12).stores({
       albumPhotos: '++id, createdAt',
+    });
+    this.version(13).stores({
+      todos: '++id, done, pinned, createdAt, deletedAt',
     });
   }
 }

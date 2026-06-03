@@ -21,7 +21,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
   const todos = useLiveQuery<Todo[]>(() =>
     db.todos.orderBy('createdAt').toArray().then(list =>
-      list.sort((a, b) => {
+      list.filter(t => !t.deletedAt).sort((a, b) => {
         if (a.done   !== b.done)   return a.done   ? 1 : -1;
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
         return b.createdAt - a.createdAt;
@@ -41,7 +41,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
   const togglePin  = useCallback(async (t: Todo) =>
     db.todos.update(t.id!, { pinned: !t.pinned }), []);
   const deleteTodo = useCallback(async (id: number) => {
-    await db.todos.delete(id);
+    await db.todos.update(id, { deletedAt: Date.now() });
     setSwipedId(null);
   }, []);
 
