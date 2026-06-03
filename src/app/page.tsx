@@ -23,8 +23,9 @@ const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false }
 const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ssr: false });
 const NewsScreen = dynamic(() => import('@/components/NewsScreen'), { ssr: false });
 const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
+const DevAppsScreen = dynamic(() => import('@/components/DevAppsScreen'), { ssr: false });
 
-type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'study' | 'news' | 'todo';
+type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'study' | 'news' | 'todo' | 'devapps';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -205,6 +206,10 @@ export default function Home() {
                 {/* ToDo screen */}
                 {isMobile && activeTab === 'todo' && (
                   <TodoScreen onGoBack={goHome} />
+                )}
+                {/* Developer Apps screen */}
+                {isMobile && activeTab === 'devapps' && (
+                  <DevAppsScreen onGoBack={goHome} />
                 )}
                 {/* Mobile memo tree */}
                 {isMobile && activeTab === 'memos' && mobilePage === 'notes' && (

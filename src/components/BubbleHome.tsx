@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useRef, useState } from 'react';
 import {
   Book, Brush, FileText, Sparkles, GraduationCap, Settings,
-  Crosshair, Plus, Bell, ListTodo, Camera, X,
+  Crosshair, Plus, Bell, ListTodo, Camera, X, Layers,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Note, Todo, AlbumPhoto } from '@/lib/db';
@@ -56,6 +56,7 @@ const BUBBLES: BubbleItem[] = [
   { key: 'focus',    label: '集中',      tint: '#a5b4fc', size: 74,  pos: { left: '34%',  top: 340 }, floatDelay: 2.4, windAnim: 2, windDur: 6.8 },
   { key: 'settings', label: '設定',      tint: '#e2e8f0', size: 66,  pos: { right: '14%', top: 312 }, floatDelay: 0.3, windAnim: 0, windDur: 7.2 },
   { key: 'new',      label: '新規',      tint: '#fecdd3', size: 62,  pos: { left: '8%',   top: 352 }, floatDelay: 1.8, windAnim: 1, windDur: 5.9, isNew: true },
+  { key: 'devapps',  label: '開発者App', tint: '#ddd6fe', size: 70,  pos: { right: '3%',  top: 400 }, floatDelay: 1.2, windAnim: 0, windDur: 6.6 },
 ];
 
 function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
@@ -72,6 +73,7 @@ function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
     case 'focus':    return <Crosshair {...p} />;
     case 'settings': return <Settings {...p} />;
     case 'new':      return <Plus size={Math.round(size * 0.34)} color="#ff8da1" strokeWidth={2.6} />;
+    case 'devapps':  return <Layers {...p} />;
     default:         return null;
   }
 }
