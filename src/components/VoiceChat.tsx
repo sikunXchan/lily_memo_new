@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Mic, MicOff, Volume2 } from 'lucide-react';
+import { X, Mic, MicOff, Volume2, Send } from 'lucide-react';
 import { callGeminiChat } from '@/lib/gemini';
 import type { ChatTurn } from '@/lib/gemini';
+import { pickAudioMime, transcribeAudioBlob, isNoSpeech } from '@/lib/audioTranscribe';
 
 type Phase = 'idle' | 'listening' | 'thinking' | 'speaking' | 'waiting';
 
@@ -13,6 +14,13 @@ interface VoiceChatProps {
   modeLabel?: string;
   onClose: () => void;
 }
+
+// Voice activity detection tuning (RMS of the time-domain waveform, 0..1).
+const SPEAK_RMS = 0.018;        // above this counts as speech
+const SILENCE_RMS = 0.012;      // below this counts as silence
+const SILENCE_HANG_MS = 1300;   // stop after this much trailing silence
+const NO_SPEECH_TIMEOUT_MS = 8000; // give up if the user never speaks
+const MAX_UTTERANCE_MS = 30000; // hard cap on a single turn
 
 // Strip markdown symbols so TTS doesn't read them aloud
 function toSpeakText(text: string): string {
@@ -37,17 +45,46 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
   const [turnCount, setTurnCount] = useState(0);
 
   const messagesRef = useRef<ChatTurn[]>([]);
-  const recognitionRef = useRef<any>(null);
   const activeRef = useRef(false);
-  const finalTranscriptRef = useRef('');
-  // startListening is defined below; store in ref so speak's onEnd callback can call it
+
+  // Recording state
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const spokeRef = useRef(false);
+  const stoppingRef = useRef(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const audioCtxRef = useRef<any>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const vadRafRef = useRef<number | null>(null);
+  const lastVoiceAtRef = useRef(0);
+  const listenStartRef = useRef(0);
+  const runVadRef = useRef<() => void>(() => {});
+
+  // startListening is defined below; store in ref so callbacks can reach it
   const startListeningRef = useRef<() => void>(() => {});
+
+  const teardownAudio = useCallback(() => {
+    if (vadRafRef.current != null) { cancelAnimationFrame(vadRafRef.current); vadRafRef.current = null; }
+    try { analyserRef.current?.disconnect(); } catch { /* ignore */ }
+    analyserRef.current = null;
+    try { audioCtxRef.current?.close(); } catch { /* ignore */ }
+    audioCtxRef.current = null;
+    streamRef.current?.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+    streamRef.current = null;
+  }, []);
 
   const stopAll = useCallback(() => {
     activeRef.current = false;
-    try { recognitionRef.current?.abort(); } catch { /* ignore */ }
+    stoppingRef.current = true;
+    try {
+      const rec = recorderRef.current;
+      if (rec && rec.state !== 'inactive') rec.stop();
+    } catch { /* ignore */ }
+    recorderRef.current = null;
+    teardownAudio();
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
-  }, []);
+  }, [teardownAudio]);
 
   const handleClose = useCallback(() => {
     stopAll();
@@ -67,105 +104,169 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
         const utter = new SpeechSynthesisUtterance(text);
         utter.lang = 'ja-JP';
         utter.rate = 1.05;
-        // Safari/iOS sometimes delays voiceschanged — try to grab a Japanese voice
         const voices = synth.getVoices();
         const jaVoice = voices.find(v => v.lang.startsWith('ja')) ?? voices.find(v => v.lang.includes('JP'));
         if (jaVoice) utter.voice = jaVoice;
         utter.onend = () => resolve();
         utter.onerror = () => resolve();
-        // resume() wakes the iOS audio context that was suspended after the async API call
         synth.resume();
         synth.speak(utter);
       };
-      // Small delay after cancel() so the TTS engine finishes resetting
       setTimeout(doSpeak, 80);
     });
   }, []);
 
-  const startListening = useCallback(() => {
+  // Called once recording for a turn has stopped: transcribe + run the chat turn.
+  const finishUtterance = useCallback(async () => {
+    teardownAudio();
+    const parts = chunksRef.current;
+    chunksRef.current = [];
+
     if (!activeRef.current) return;
-    const SR =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      setError('このブラウザは音声認識に対応していません。Chrome / Safari をお試しください。');
-      setPhase('idle');
+
+    if (!spokeRef.current || parts.length === 0) {
+      setPhase('waiting');
       return;
     }
 
-    finalTranscriptRef.current = '';
-    const rec = new SR();
-    rec.lang = 'ja-JP';
-    rec.continuous = false;
-    rec.interimResults = true;
+    setPhase('thinking');
+    const blob = new Blob(parts, { type: parts[0]?.type || 'audio/webm' });
 
-    rec.onresult = (e: any) => {
-      let interim = '';
-      let final = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) final += e.results[i][0].transcript;
-        else interim += e.results[i][0].transcript;
-      }
-      const text = final || interim;
-      finalTranscriptRef.current = text;
-      setUserText(text);
-    };
+    let text = '';
+    try {
+      text = await transcribeAudioBlob(blob, apiKey);
+    } catch {
+      text = '';
+    }
 
-    rec.onerror = (e: any) => {
-      if (e.error === 'no-speech' || e.error === 'aborted') return;
-      setError(`音声認識エラー: ${e.error}`);
-    };
+    if (!activeRef.current) return;
 
-    rec.onend = async () => {
-      if (!activeRef.current) return;
-      const text = finalTranscriptRef.current.trim();
-      finalTranscriptRef.current = '';
+    if (isNoSpeech(text)) {
+      setPhase('waiting');
+      setUserText('');
+      return;
+    }
 
-      if (!text) {
-        // Silence — wait for user to tap again
-        setPhase('waiting');
-        return;
-      }
+    setUserText(text);
+    messagesRef.current = [...messagesRef.current, { role: 'user', text }];
 
-      messagesRef.current = [...messagesRef.current, { role: 'user', text }];
-      setPhase('thinking');
-      setUserText(text);
+    try {
+      const voiceSystemPrompt =
+        systemPrompt +
+        '\n\n【音声対話モード】答えは音声で読み上げるので、必ず2〜3文程度の簡潔な日本語で答えてください。長文・箇条書き・マークダウンは使わないこと。';
 
-      try {
-        const voiceSystemPrompt =
-          systemPrompt +
-          '\n\n【音声対話モード】答えは音声で読み上げるので、必ず2〜3文程度の簡潔な日本語で答えてください。長文・箇条書き・マークダウンは使わないこと。';
+      const response = await callGeminiChat(messagesRef.current, voiceSystemPrompt, apiKey);
+      messagesRef.current = [...messagesRef.current, { role: 'model', text: response }];
+      setAiText(response);
+      setTurnCount(c => c + 1);
+      setPhase('speaking');
+      await speak(toSpeakText(response));
+      if (activeRef.current) setPhase('waiting');
+    } catch {
+      setError('通信エラーが発生したよ。もう一度試してね。');
+      setPhase('waiting');
+    }
+  }, [apiKey, systemPrompt, speak, teardownAudio]);
 
-        const response = await callGeminiChat(
-          messagesRef.current,
-          voiceSystemPrompt,
-          apiKey,
-        );
-        messagesRef.current = [...messagesRef.current, { role: 'model', text: response }];
-        setAiText(response);
-        setTurnCount(c => c + 1);
-        setPhase('speaking');
-        await speak(toSpeakText(response));
+  // Stop the current recording (triggers MediaRecorder.onstop -> finishUtterance)
+  const stopRecording = useCallback(() => {
+    if (vadRafRef.current != null) { cancelAnimationFrame(vadRafRef.current); vadRafRef.current = null; }
+    const rec = recorderRef.current;
+    if (rec && rec.state !== 'inactive') {
+      try { rec.stop(); } catch { /* ignore */ }
+    }
+  }, []);
 
-        if (activeRef.current) {
-          setPhase('waiting');
-          setUserText('');
-        }
-      } catch {
-        setError('通信エラーが発生しました。もう一度試してください。');
-        setPhase('idle');
-        activeRef.current = false;
-      }
-    };
+  // Monitor the mic level and auto-stop on trailing silence.
+  const runVad = useCallback(() => {
+    const analyser = analyserRef.current;
+    if (!analyser || !activeRef.current) return;
+    const buf = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const rms = Math.sqrt(sum / buf.length);
+    const now = Date.now();
 
-    recognitionRef.current = rec;
-    setPhase('listening');
+    if (rms > SPEAK_RMS) {
+      spokeRef.current = true;
+      lastVoiceAtRef.current = now;
+    }
+
+    const elapsed = now - listenStartRef.current;
+    const silenceFor = now - lastVoiceAtRef.current;
+
+    if (spokeRef.current && rms < SILENCE_RMS && silenceFor > SILENCE_HANG_MS) {
+      stopRecording();
+      return;
+    }
+    if (!spokeRef.current && elapsed > NO_SPEECH_TIMEOUT_MS) {
+      stopRecording();
+      return;
+    }
+    if (elapsed > MAX_UTTERANCE_MS) {
+      stopRecording();
+      return;
+    }
+    vadRafRef.current = requestAnimationFrame(() => runVadRef.current());
+  }, [stopRecording]);
+
+  useEffect(() => { runVadRef.current = runVad; }, [runVad]);
+
+  const startListening = useCallback(async () => {
+    if (!activeRef.current) return;
+    setError('');
     setUserText('');
-    try { rec.start(); } catch { /* already running */ }
-  }, [apiKey, systemPrompt, speak]);
+    spokeRef.current = false;
+    stoppingRef.current = false;
 
-  // Keep ref in sync so the async onEnd closure always has the latest version
-  useEffect(() => { startListeningRef.current = startListening; }, [startListening]);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError('マイクにアクセスできなかったよ。設定でマイクを許可してね。');
+      setPhase('waiting');
+      return;
+    }
+    if (!activeRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
+    streamRef.current = stream;
+
+    // Level meter for voice activity detection
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AC();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+    } catch {
+      /* VAD optional — manual send still works */
+    }
+
+    const mime = pickAudioMime();
+    let rec: MediaRecorder;
+    try {
+      rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    } catch {
+      rec = new MediaRecorder(stream);
+    }
+    recorderRef.current = rec;
+    chunksRef.current = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+    rec.onstop = () => { void finishUtterance(); };
+
+    listenStartRef.current = Date.now();
+    lastVoiceAtRef.current = Date.now();
+    setPhase('listening');
+    try { rec.start(); } catch { /* ignore */ }
+    vadRafRef.current = requestAnimationFrame(() => runVadRef.current());
+  }, [finishUtterance]);
+
+  // Keep ref in sync so async closures always reach the latest version
+  useEffect(() => { startListeningRef.current = () => { void startListening(); }; }, [startListening]);
 
   const handleStart = useCallback(() => {
     setError('');
@@ -257,6 +358,15 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
             <button className="vc-btn start" onClick={handleStart}>
               <Mic size={18} /> 会話を始める
             </button>
+          ) : phase === 'listening' ? (
+            <div className="vc-footer-row">
+              <button className="vc-btn speak" onClick={stopRecording}>
+                <Send size={18} /> 話し終えた（送信）
+              </button>
+              <button className="vc-btn stop icon-only" onClick={handleStop} title="終了">
+                <MicOff size={18} />
+              </button>
+            </div>
           ) : phase === 'waiting' ? (
             <div className="vc-footer-row">
               <button className="vc-btn speak" onClick={() => startListeningRef.current()}>
