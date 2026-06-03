@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Mic, Square, Pause, Play, GraduationCap, ChevronDown, ChevronUp } from 'lucide-react';
 import { callGeminiChat } from '@/lib/gemini';
 import type { ChatTurn } from '@/lib/gemini';
+import { pickAudioMime, transcribeAudioBlob, isNoSpeech } from '@/lib/audioTranscribe';
 
 interface LectureRecorderProps {
   apiKey: string;
@@ -21,7 +22,8 @@ interface Chunk {
   label: string;
 }
 
-const CHUNK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+const CHUNK_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — when a chunk is sent for Gemini cleanup
+const TRANSCRIBE_INTERVAL_MS = 40 * 1000; // 40 seconds — how often we rotate + transcribe audio
 
 function formatDuration(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -43,25 +45,26 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   const [transcriptOpen, setTranscriptOpen] = useState(true);
 
   // Refs so callbacks always see latest values
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recChunksRef = useRef<Blob[]>([]);
+  const finishingRef = useRef(false);
+  const pendingTranscriptionsRef = useRef<Promise<void>[]>([]);
+  const startSegmentRecorderRef = useRef<() => void>(() => {});
+
   const chunkBufferRef = useRef('');
   const accumulatedRef = useRef('');
   const chunksRef = useRef<Chunk[]>([]);
   const phaseRef = useRef<Phase>('idle');
-  const discardResultsRef = useRef(false); // true during pause — recognition keeps running but results are dropped
   const baseElapsedRef = useRef(0);
   const sessionStartRef = useRef(0);
   const chunkBaseElapsedRef = useRef(0);
   const chunkSessionStartRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const transcribeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const elapsedRef = useRef(0);
   const liveScrollRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const audioCtxRef = useRef<any>(null);       // Web Audio context for silent loop
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const silentSourceRef = useRef<any>(null);   // BufferSource playing silent loop
 
   // Keep refs in sync with state
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -113,9 +116,62 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     void cleanChunk(id, raw);
   }, [cleanChunk]);
 
+  // Transcribe one recorded audio segment with Gemini and append it to the transcript.
+  const transcribeSegment = useCallback(async (blob: Blob) => {
+    try {
+      const text = await transcribeAudioBlob(blob, apiKey);
+      if (isNoSpeech(text)) return;
+      accumulatedRef.current += text + ' ';
+      chunkBufferRef.current += text + ' ';
+      setLiveText(accumulatedRef.current);
+    } catch {
+      /* ignore a single failed segment — keep recording */
+    }
+  }, [apiKey]);
+
+  // Start a fresh MediaRecorder segment. On stop it transcribes the audio and,
+  // unless we're pausing/finishing, immediately rolls over into the next segment.
+  const startSegmentRecorder = useCallback(() => {
+    const stream = mediaStreamRef.current;
+    if (!stream) return;
+    const mime = pickAudioMime();
+    let rec: MediaRecorder;
+    try {
+      rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    } catch {
+      rec = new MediaRecorder(stream);
+    }
+    recChunksRef.current = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size > 0) recChunksRef.current.push(e.data); };
+    rec.onstop = () => {
+      const blobs = recChunksRef.current;
+      recChunksRef.current = [];
+      if (blobs.length > 0) {
+        const blob = new Blob(blobs, { type: blobs[0].type || 'audio/webm' });
+        pendingTranscriptionsRef.current.push(transcribeSegment(blob));
+      }
+      if (!finishingRef.current && phaseRef.current === 'recording') {
+        startSegmentRecorderRef.current();
+      }
+    };
+    recorderRef.current = rec;
+    try { rec.start(); } catch { /* ignore */ }
+  }, [transcribeSegment]);
+
+  useEffect(() => { startSegmentRecorderRef.current = startSegmentRecorder; }, [startSegmentRecorder]);
+
+  // Stop the current segment so onstop transcribes it and starts the next one.
+  const rotateSegment = useCallback(() => {
+    const rec = recorderRef.current;
+    if (rec && rec.state !== 'inactive') {
+      try { rec.stop(); } catch { /* ignore */ }
+    }
+  }, []);
+
   const startIntervals = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
+    if (transcribeTimerRef.current) clearInterval(transcribeTimerRef.current);
 
     timerRef.current = setInterval(() => {
       const e = baseElapsedRef.current + (Date.now() - sessionStartRef.current);
@@ -130,110 +186,36 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
         flushChunk();
       }
     }, 500);
-  }, [flushChunk]);
+
+    transcribeTimerRef.current = setInterval(() => {
+      rotateSegment();
+    }, TRANSCRIBE_INTERVAL_MS);
+  }, [flushChunk, rotateSegment]);
 
   const stopIntervals = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (chunkTimerRef.current) { clearInterval(chunkTimerRef.current); chunkTimerRef.current = null; }
+    if (transcribeTimerRef.current) { clearInterval(transcribeTimerRef.current); transcribeTimerRef.current = null; }
   }, []);
 
-  // Play a 1-sample silent loop via Web Audio to keep the iOS audio session alive.
-  // Without this, iOS Safari kills SpeechRecognition after ~60s and plays a sound on restart.
-  const startSilentKeepAlive = useCallback(() => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (!AC) return;
-      const ctx = new AC();
-      const buf = ctx.createBuffer(1, 1, 22050);
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      src.connect(ctx.destination);
-      src.start(0);
-      audioCtxRef.current = ctx;
-      silentSourceRef.current = src;
-    } catch { /* non-critical */ }
-  }, []);
-
-  const stopSilentKeepAlive = useCallback(() => {
-    try { silentSourceRef.current?.stop(); } catch { /* ignore */ }
-    try { audioCtxRef.current?.close(); } catch { /* ignore */ }
-    silentSourceRef.current = null;
-    audioCtxRef.current = null;
-  }, []);
-
-  const startRecognition = useCallback((): boolean => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR: (new () => any) | undefined = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      setError('このブラウザは音声認識に対応していません。Chrome や Safari をご利用ください。');
-      return false;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rec: any = new SR();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = 'ja-JP';
-    rec.maxAlternatives = 1;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (event: any) => {
-      // Drop results while paused — recognition keeps running to avoid stop/start sounds
-      if (discardResultsRef.current) return;
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          const finalText = result[0].transcript;
-          chunkBufferRef.current += finalText + ' ';
-          accumulatedRef.current += finalText + ' ';
-          interim = '';
-        } else {
-          interim += result[0].transcript;
-        }
-      }
-      const display = accumulatedRef.current + (interim ? `[${interim}]` : '');
-      setLiveText(display);
-    };
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onerror = (event: any) => {
-      if (event.error === 'no-speech' || event.error === 'aborted') return;
-      setError(`音声認識エラー: ${event.error}`);
-    };
-
-    // iOS stops recognition after ~60s of silence — auto-restart
-    rec.onend = () => {
-      if (phaseRef.current === 'recording') {
-        try { rec.start(); } catch { /* already starting */ }
-      }
-    };
-
-    try {
-      rec.start();
-      recognitionRef.current = rec;
-      return true;
-    } catch {
-      setError('マイクへのアクセスに失敗しました。設定でマイクを許可してください。');
-      return false;
-    }
-  }, []);
-
-  const startRecording = useCallback(() => {
+  const startRecording = useCallback(async () => {
     accumulatedRef.current = '';
     chunkBufferRef.current = '';
     chunksRef.current = [];
     baseElapsedRef.current = 0;
     chunkBaseElapsedRef.current = 0;
     elapsedRef.current = 0;
-    discardResultsRef.current = false;
+    finishingRef.current = false;
+    pendingTranscriptionsRef.current = [];
 
-    // Start silent keep-alive BEFORE recognition so iOS audio session is already active
-    startSilentKeepAlive();
-
-    const ok = startRecognition();
-    if (!ok) { stopSilentKeepAlive(); return; }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError('マイクへのアクセスに失敗したよ。設定でマイクを許可してね。');
+      return;
+    }
+    mediaStreamRef.current = stream;
 
     const now = Date.now();
     sessionStartRef.current = now;
@@ -245,45 +227,63 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     setChunkElapsed(0);
     setError('');
     setPhase('recording');
+    phaseRef.current = 'recording';
+
+    startSegmentRecorder();
     startIntervals();
-  }, [startRecognition, startIntervals, startSilentKeepAlive, stopSilentKeepAlive]);
+  }, [startSegmentRecorder, startIntervals]);
 
   const pauseRecording = useCallback(() => {
-    // Keep recognition running — just discard results to avoid stop/start sounds
-    discardResultsRef.current = true;
-    stopIntervals();
     const now = Date.now();
     baseElapsedRef.current += now - sessionStartRef.current;
     chunkBaseElapsedRef.current += now - chunkSessionStartRef.current;
     setPhase('paused');
+    phaseRef.current = 'paused';
+    stopIntervals();
+    // Stop the recorder: onstop transcribes the partial segment and, since
+    // phase is no longer 'recording', does not roll over.
+    const rec = recorderRef.current;
+    if (rec && rec.state !== 'inactive') {
+      try { rec.stop(); } catch { /* ignore */ }
+    }
   }, [stopIntervals]);
 
   const resumeRecording = useCallback(() => {
-    discardResultsRef.current = false;
     const now = Date.now();
     sessionStartRef.current = now;
     chunkSessionStartRef.current = now;
     setPhase('recording');
+    phaseRef.current = 'recording';
+    startSegmentRecorder();
     startIntervals();
-    // iOS may have stopped recognition during the pause — restart it if needed
-    if (recognitionRef.current) {
-      try { recognitionRef.current.start(); } catch { /* already running */ }
-    } else {
-      startRecognition();
-    }
-  }, [startRecognition, startIntervals]);
+  }, [startSegmentRecorder, startIntervals]);
 
   const stopRecording = useCallback(async () => {
-    discardResultsRef.current = true;
-    stopSilentKeepAlive();
-    // abort() is quieter than stop() on some browsers (no "done" chime)
-    try { recognitionRef.current?.abort(); } catch { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }
+    finishingRef.current = true;
     stopIntervals();
-    if (phaseRef.current === 'recording' || phaseRef.current === 'paused') {
-      if (phaseRef.current === 'recording') baseElapsedRef.current += Date.now() - sessionStartRef.current;
+    if (phaseRef.current === 'recording') {
+      baseElapsedRef.current += Date.now() - sessionStartRef.current;
     }
-    flushChunk();
     setPhase('finalizing');
+    phaseRef.current = 'finalizing';
+
+    // Stop the active recorder and wait for its onstop (which queues the final transcription)
+    await new Promise<void>(resolve => {
+      const rec = recorderRef.current;
+      if (!rec || rec.state === 'inactive') { resolve(); return; }
+      rec.addEventListener('stop', () => resolve(), { once: true });
+      try { rec.stop(); } catch { resolve(); }
+    });
+
+    // Release the microphone
+    mediaStreamRef.current?.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+    mediaStreamRef.current = null;
+
+    // Wait for all in-flight transcriptions to land in the buffer
+    await Promise.allSettled(pendingTranscriptionsRef.current);
+    pendingTranscriptionsRef.current = [];
+
+    flushChunk();
 
     // Wait up to 60s for all chunk cleanups to complete
     for (let i = 0; i < 30; i++) {
@@ -297,8 +297,9 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
       .join('\n\n---\n\n');
 
     if (!allText.trim()) {
-      setError('文字起こしがありませんでした。もう一度試してください。');
+      setError('文字起こしがありませんでした。もう一度試してね。');
       setPhase('idle');
+      phaseRef.current = 'idle';
       return;
     }
 
@@ -367,11 +368,15 @@ ${allText}`;
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopSilentKeepAlive();
-      try { recognitionRef.current?.abort(); } catch { try { recognitionRef.current?.stop(); } catch { /* ignore */ } }
+      finishingRef.current = true;
+      try {
+        const rec = recorderRef.current;
+        if (rec && rec.state !== 'inactive') rec.stop();
+      } catch { /* ignore */ }
+      mediaStreamRef.current?.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
       stopIntervals();
     };
-  }, [stopIntervals, stopSilentKeepAlive]);
+  }, [stopIntervals]);
 
   // Auto-scroll live transcript
   useEffect(() => {
@@ -441,7 +446,7 @@ ${allText}`;
         )}
 
         {/* Live transcript */}
-        {(isRunning || isPaused) && accumulatedRef.current && (
+        {(isRunning || isPaused) && liveText && (
           <div className="lr-transcript-section">
             <button
               className="lr-transcript-toggle"
@@ -456,11 +461,11 @@ ${allText}`;
             )}
           </div>
         )}
-        {(isRunning || isPaused) && !accumulatedRef.current && (
+        {(isRunning || isPaused) && !liveText && (
           <div className="lr-waiting">
             <div className="lr-mic-pulse"><Mic size={28} /></div>
             <p className="lr-waiting-text">授業が始まったら話してください</p>
-            <p className="lr-waiting-sub">日本語を自動で文字起こしします（無料・ブラウザ処理）</p>
+            <p className="lr-waiting-sub">マイク音声を Gemini が高精度で文字起こしします（数十秒ごとに反映）</p>
           </div>
         )}
 
@@ -490,10 +495,10 @@ ${allText}`;
         {phase === 'idle' && !error && (
           <div className="lr-idle-info">
             <ul className="lr-info-list">
-              <li>🎤 ブラウザの音声認識（無料）でリアルタイム文字起こし</li>
+              <li>🎤 マイク音声を Gemini が高精度でリアルタイム文字起こし</li>
               <li>⏱️ 10分ごとに自動でチャンクを Gemini が整形</li>
               <li>📖 終了後に授業まとめ＋重要用語＋テスト問題を生成</li>
-              <li>💡 約50分の授業で Gemini 使用料 ≈ ¥1 程度</li>
+              <li>💡 約50分の授業で Gemini 使用料 ≈ ¥10 前後</li>
             </ul>
           </div>
         )}
@@ -504,7 +509,7 @@ ${allText}`;
         {!isDone && (
           <div className="lr-controls">
             {phase === 'idle' && (
-              <button className="lr-btn lr-btn--start" onClick={startRecording}>
+              <button className="lr-btn lr-btn--start" onClick={() => void startRecording()}>
                 <Mic size={20} />
                 録音開始
               </button>
