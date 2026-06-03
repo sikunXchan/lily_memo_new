@@ -69,6 +69,66 @@ function shortLabel(ds: string): string {
   return `${d.getMonth()+1}/${d.getDate()}`;
 }
 
+// ── Stats bucket helpers ───────────────────────────────────────────────────────
+type BucketSeg = { name: string; color: string; secs: number };
+type Bucket    = { label: string; current: boolean; segs: BucketSeg[]; total: number; start: string; end: string };
+
+function toYMD(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function segsFrom(list: StudySession[]): BucketSeg[] {
+  const map = new Map<string, BucketSeg>();
+  for (const s of list) {
+    const key = s.categoryId != null ? `c${s.categoryId}` : 'none';
+    const prev = map.get(key);
+    if (prev) prev.secs += s.duration;
+    else map.set(key, { name: s.categoryName ?? 'なし', color: s.categoryColor ?? '#94a3b8', secs: s.duration });
+  }
+  return [...map.values()].sort((a, b) => b.secs - a.secs);
+}
+
+function makeDayBuckets(sessions: StudySession[], offset: number): Bucket[] {
+  const base = new Date(todayStr() + 'T00:00:00');
+  const td = todayStr();
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(base);
+    d.setDate(d.getDate() - (6 - i) - offset * 7);
+    const start = toYMD(d);
+    const segs = segsFrom(sessions.filter(s => s.date === start));
+    return { label: `${d.getMonth()+1}/${d.getDate()}`, current: start === td, segs, total: segs.reduce((a, s) => a + s.secs, 0), start, end: start };
+  });
+}
+
+function makeWeekBuckets(sessions: StudySession[], offset: number): Bucket[] {
+  const base = new Date(todayStr() + 'T00:00:00');
+  const td = todayStr();
+  return Array.from({ length: 4 }, (_, i) => {
+    const endD = new Date(base);
+    endD.setDate(endD.getDate() - (3 - i) * 7 - offset * 28);
+    const startD = new Date(endD);
+    startD.setDate(startD.getDate() - 6);
+    const start = toYMD(startD); const end = toYMD(endD);
+    const segs = segsFrom(sessions.filter(s => s.date >= start && s.date <= end));
+    return { label: `${startD.getMonth()+1}/${startD.getDate()}〜`, current: td >= start && td <= end, segs, total: segs.reduce((a, s) => a + s.secs, 0), start, end };
+  });
+}
+
+function makeMonthBuckets(sessions: StudySession[], offset: number): Bucket[] {
+  const base = new Date(todayStr() + 'T00:00:00');
+  const tdYM = `${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,'0')}`;
+  return Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(base.getFullYear(), base.getMonth() - (11 - i) - offset * 12, 1);
+    const y = d.getFullYear(); const m = d.getMonth() + 1;
+    const start = `${y}-${String(m).padStart(2,'0')}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const end = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    const segs = segsFrom(sessions.filter(s => s.date >= start && s.date <= end));
+    const bYM = `${y}-${String(m).padStart(2,'0')}`;
+    return { label: `${m}月`, current: tdYM === bYM, segs, total: segs.reduce((a, s) => a + s.secs, 0), start, end };
+  });
+}
+
 function calcStreak(dates: Set<string>): number {
   const today = new Date(todayStr() + 'T00:00:00');
   let streak = 0;
@@ -96,8 +156,8 @@ export interface StudyTrackerProps {
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus }: StudyTrackerProps) {
   const [view, setView] = useState<'timer' | 'stats'>('timer');
-  const [statsDays, setStatsDays] = useState<7 | 30>(7);
-  const [statsOffset, setStatsOffset] = useState(0);
+  const [period, setPeriod]   = useState<'7d' | '30d' | '1y'>('7d');
+  const [offset, setOffset]   = useState(0);
 
   // Timer
   const [isRunning, setIsRunning] = useState(false);
@@ -263,11 +323,18 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const todayTotal = sessions.filter(s => s.date === today).reduce((sum, s) => sum + s.duration, 0);
   const sessionDates = new Set<string>(sessions.map(s => s.date as string));
   const streak = calcStreak(sessionDates);
-  const days = pastDays(statsDays, statsOffset);
-  const dayTotals = days.map(d => sessions.filter(s => s.date === d).reduce((sum, s) => sum + s.duration, 0));
-  const maxTotal = Math.max(...dayTotals, 60);
-  const periodSessions = sessions.filter(s => s.date >= days[0] && s.date <= days[days.length - 1]);
-  const periodTotal = periodSessions.reduce((sum, s) => sum + s.duration, 0);
+  const selectedCat = categories.find(c => c.id === selectedCatId) ?? null;
+  const recentSessions = [...sessions].reverse().slice(0, 10);
+
+  const buckets =
+    period === '7d'  ? makeDayBuckets(sessions, offset) :
+    period === '30d' ? makeWeekBuckets(sessions, offset) :
+                       makeMonthBuckets(sessions, offset);
+  const maxBucket = Math.max(...buckets.map(b => b.total), 60);
+  const firstDate = buckets.length > 0 ? buckets[0].start : today;
+  const lastDate  = buckets.length > 0 ? buckets[buckets.length - 1].end : today;
+  const periodSessions = sessions.filter(s => s.date >= firstDate && s.date <= lastDate);
+  const periodTotal    = periodSessions.reduce((sum, s) => sum + s.duration, 0);
   const catMap = new Map<string, { name: string; color: string; secs: number }>();
   for (const s of periodSessions) {
     const key = s.categoryId !== null ? `c${s.categoryId}` : 'none';
@@ -275,12 +342,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
     catMap.set(key, { name: s.categoryName ?? 'カテゴリなし', color: s.categoryColor ?? '#94a3b8', secs: (prev?.secs ?? 0) + s.duration });
   }
   const catTotals = [...catMap.values()].sort((a, b) => b.secs - a.secs);
-  const selectedCat = categories.find(c => c.id === selectedCatId) ?? null;
-  const recentSessions = [...sessions].reverse().slice(0, 10);
-
-  const periodLabel = statsOffset === 0
-    ? `直近${statsDays}日間`
-    : `${shortLabel(days[0])} 〜 ${shortLabel(days[days.length - 1])}`;
+  const periodLabel = offset === 0
+    ? (period === '7d' ? '直近7日間' : period === '30d' ? '直近4週間' : '直近1年間')
+    : `${buckets[0]?.label ?? ''} 〜 ${buckets[buckets.length-1]?.label ?? ''}`;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -486,14 +550,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {view === 'stats' && (
         <div className="st-scroll">
           <div className="period-row">
-            <button className={`period-btn ${statsDays === 7 ? 'active' : ''}`} onClick={() => { setStatsDays(7); setStatsOffset(0); }}>7日間</button>
-            <button className={`period-btn ${statsDays === 30 ? 'active' : ''}`} onClick={() => { setStatsDays(30); setStatsOffset(0); }}>30日間</button>
+            <button className={`period-btn ${period === '7d'  ? 'active' : ''}`} onClick={() => { setPeriod('7d');  setOffset(0); }}>7日間</button>
+            <button className={`period-btn ${period === '30d' ? 'active' : ''}`} onClick={() => { setPeriod('30d'); setOffset(0); }}>30日間</button>
+            <button className={`period-btn ${period === '1y'  ? 'active' : ''}`} onClick={() => { setPeriod('1y');  setOffset(0); }}>1年間</button>
             <div className="period-nav">
-              <button className="period-nav-btn" onClick={() => setStatsOffset(o => o + 1)} title="前の期間">
+              <button className="period-nav-btn" onClick={() => setOffset(o => o + 1)} title="前の期間">
                 <ChevronLeft size={16} />
               </button>
               <span className="period-nav-label">{periodLabel}</span>
-              <button className="period-nav-btn" onClick={() => setStatsOffset(o => Math.max(0, o - 1))} disabled={statsOffset === 0} title="次の期間">
+              <button className="period-nav-btn" onClick={() => setOffset(o => Math.max(0, o - 1))} disabled={offset === 0} title="次の期間">
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -514,18 +579,27 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           {sessions.length > 0 ? (
             <>
               <div className="chart-card">
-                <p className="chart-title">日別学習時間</p>
+                <p className="chart-title">
+                  {period === '7d' ? '日別' : period === '30d' ? '週別' : '月別'}学習時間
+                </p>
                 <div className="bar-chart">
-                  {days.map((d, i) => (
-                    <div key={d} className="bar-col">
-                      <div className="bar-time">{dayTotals[i] > 0 ? fmtDur(dayTotals[i]) : ''}</div>
+                  {buckets.map((b, i) => (
+                    <div key={i} className="bar-col">
+                      <div className="bar-time">{b.total > 0 ? fmtDur(b.total) : ''}</div>
                       <div className="bar-wrap">
                         <div
-                          className={`bar-fill ${d === today ? 'today' : ''}`}
-                          style={{ height: `${Math.max(Math.round((dayTotals[i] / maxTotal) * 100), dayTotals[i] > 0 ? 4 : 0)}%` }}
-                        />
+                          className={`bar-stack${b.current ? ' cur' : ''}`}
+                          style={{ height: `${b.total > 0 ? Math.max(Math.round((b.total / maxBucket) * 100), 4) : 0}%` }}
+                        >
+                          {b.segs.length > 0
+                            ? b.segs.map((seg, j) => (
+                                <div key={j} className="bar-seg" style={{ flex: seg.secs, background: seg.color }} />
+                              ))
+                            : null
+                          }
+                        </div>
                       </div>
-                      <span className="bar-label">{shortLabel(d)}</span>
+                      <span className="bar-label">{b.label}</span>
                     </div>
                   ))}
                 </div>
@@ -675,8 +749,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; height:100%; min-width:0; }
         .bar-time { font-size:0.55rem; color:var(--fg-muted); height:14px; display:flex; align-items:flex-end; white-space:nowrap; }
         .bar-wrap { flex:1; width:100%; display:flex; align-items:flex-end; }
-        .bar-fill { width:100%; min-height:0; border-radius:3px 3px 0 0; background:rgba(99,102,241,0.35); transition:height .4s ease; }
-        .bar-fill.today { background:var(--primary); }
+        .bar-stack { width:100%; display:flex; flex-direction:column-reverse; border-radius:4px 4px 0 0; overflow:hidden; transition:height .4s ease; }
+        .bar-stack.cur { outline:2px solid var(--primary); outline-offset:-1px; }
+        .bar-seg { width:100%; min-height:1px; }
         .bar-label { font-size:0.58rem; color:var(--fg-muted); text-align:center; white-space:nowrap; overflow:hidden; width:100%; text-overflow:ellipsis; }
 
         .cat-breakdown { background:var(--accent); border:1px solid var(--border); border-radius:14px; padding:14px; display:flex; flex-direction:column; gap:10px; }
