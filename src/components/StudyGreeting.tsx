@@ -37,7 +37,7 @@ interface Props {
 }
 
 export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
-  const sessions = useLiveQuery(() => db.studySessions.toArray(), [], []);
+  const sessions = useLiveQuery(() => db.studySessions.filter(s => !s.deletedAt).toArray(), [], []);
   const earnedCount = useLiveQuery(() => db.earnedBadges.count(), [], 0);
   const [profile, setProfile] = useState<StudyProfile>(getStudyProfile);
   const [celebrate, setCelebrate] = useState<BadgeDef[]>([]);

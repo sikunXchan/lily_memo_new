@@ -304,7 +304,7 @@ export function evaluateBadges(stats: StudyStats): Set<string> {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function syncEarnedBadges(): Promise<BadgeDef[]> {
   const [sessions, already] = await Promise.all([
-    db.studySessions.toArray(),
+    db.studySessions.filter(s => !s.deletedAt).toArray(),
     db.earnedBadges.toArray(),
   ]);
   const profile = getStudyProfile();
