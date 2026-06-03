@@ -39,7 +39,7 @@ function fmtDate(ts: number): string {
 }
 
 export default function TrophyRoom({ onClose }: Props) {
-  const sessions = useLiveQuery(() => db.studySessions.toArray(), [], []);
+  const sessions = useLiveQuery(() => db.studySessions.filter(s => !s.deletedAt).toArray(), [], []);
   const earned = useLiveQuery(() => db.earnedBadges.toArray(), [], []);
   const profile = getStudyProfile();
   const [selected, setSelected] = useState<BadgeDef | null>(null);

@@ -7,7 +7,7 @@ import {
   Book, FileText, Brush, Sparkles, Settings as SettingsIcon, GraduationCap,
   Flame, X, ChevronLeft, ChevronRight, Zap, Pencil, Check,
 } from 'lucide-react';
-import { db } from '@/lib/db';
+import { db, newSyncId, softDeleteSession, softDeleteCategory } from '@/lib/db';
 import type { StudyCategory, StudySession } from '@/lib/db';
 import StudyGreeting from './StudyGreeting';
 import TrophyRoom from './TrophyRoom';
@@ -188,8 +188,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const touchStartX = useRef(0);
 
   // DB
-  const categories = useLiveQuery(() => db.studyCategories.orderBy('createdAt').toArray(), []) ?? [];
-  const sessions = useLiveQuery(() => db.studySessions.orderBy('startTime').toArray(), []) ?? [];
+  const categories = useLiveQuery(() => db.studyCategories.orderBy('createdAt').filter(c => !c.deletedAt).toArray(), []) ?? [];
+  const sessions = useLiveQuery(() => db.studySessions.orderBy('startTime').filter(s => !s.deletedAt).toArray(), []) ?? [];
 
   // Restore timer + category on mount
   useEffect(() => {
@@ -257,6 +257,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         categoryName: cat?.name ?? null,
         categoryColor: cat?.color ?? null,
         source: 'stopwatch',
+        syncId: newSyncId(),
+        updatedAt: Date.now(),
       });
     }
   }, [categories, selectedCatId]);
@@ -273,7 +275,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const addCat = useCallback(async () => {
     const name = newCatName.trim();
     if (!name) return;
-    const id = await db.studyCategories.add({ name, color: newCatColor, createdAt: Date.now() });
+    const id = await db.studyCategories.add({ name, color: newCatColor, createdAt: Date.now(), syncId: newSyncId(), updatedAt: Date.now() });
     setSelectedCatId(id as number);
     localStorage.setItem(LS_KEY_CAT, String(id));
     localStorage.setItem(LS_KEY_CAT_NAME, name);
@@ -284,7 +286,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   }, [newCatName, newCatColor]);
 
   const deleteCat = useCallback(async (id: number) => {
-    await db.studyCategories.delete(id);
+    await softDeleteCategory(id);
     if (selectedCatId === id) selectCat(null);
   }, [selectedCatId, selectCat]);
 
@@ -312,6 +314,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         categoryId: editingCatId,
         categoryName: cat?.name ?? null,
         categoryColor: cat?.color ?? null,
+        updatedAt: Date.now(),
       });
     }
     setEditingSessionId(null);
@@ -321,7 +324,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   }, [editingStart, editingEnd, editingCatId, categories]);
 
   const deleteSession = useCallback(async (id: number) => {
-    await db.studySessions.delete(id);
+    await softDeleteSession(id);
     setSwipedId(null);
   }, []);
 

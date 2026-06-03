@@ -105,6 +105,9 @@ export interface StudyCategory {
   name: string;
   color: string;
   createdAt: number;
+  syncId?: string;     // stable cross-device id for sync
+  updatedAt?: number;  // version clock — bumped on every mutation incl. delete
+  deletedAt?: number;  // tombstone for sync; UI filters these out
 }
 
 export interface StudySession {
@@ -117,6 +120,9 @@ export interface StudySession {
   categoryName: string | null;
   categoryColor: string | null;
   source: 'stopwatch' | 'pomodoro';
+  syncId?: string;     // stable cross-device id for sync
+  updatedAt?: number;  // version clock — bumped on every mutation incl. delete
+  deletedAt?: number;  // tombstone for sync; UI filters these out
 }
 
 // A badge the user has unlocked. badgeId matches a BadgeDef.id in lib/badges.ts.
@@ -226,6 +232,24 @@ export class LilyDatabase extends Dexie {
     this.version(15).stores({
       earnedBadges: '&badgeId, earnedAt',
     });
+    this.version(16).stores({
+      studyCategories: '++id, syncId, name, color, createdAt, updatedAt, deletedAt',
+      studySessions: '++id, syncId, date, startTime, categoryId, updatedAt, deletedAt',
+    }).upgrade(async tx => {
+      // Derive syncId deterministically from stable content so the SAME row on
+      // two devices gets the SAME id (a random id per device would make every
+      // existing session/category look unique and never reconcile/delete).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await tx.table('studyCategories').toCollection().modify((c: any) => {
+        if (!c.syncId) c.syncId = `c_${c.name}`;
+        if (!c.updatedAt) c.updatedAt = c.createdAt ?? Date.now();
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await tx.table('studySessions').toCollection().modify((s: any) => {
+        if (!s.syncId) s.syncId = `s_${s.date}_${s.startTime}`;
+        if (!s.updatedAt) s.updatedAt = s.startTime ?? Date.now();
+      });
+    });
   }
 }
 
@@ -248,4 +272,14 @@ export async function softDeleteNotes(ids: number[]): Promise<void> {
 export async function softDeleteFolder(id: number): Promise<void> {
   const t = Date.now();
   await db.folders.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteSession(id: number): Promise<void> {
+  const t = Date.now();
+  await db.studySessions.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteCategory(id: number): Promise<void> {
+  const t = Date.now();
+  await db.studyCategories.update(id, { deletedAt: t, updatedAt: t });
 }

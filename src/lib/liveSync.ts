@@ -94,25 +94,49 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       }
     }
 
-    // Study sessions: union by date+startTime (additive — never delete)
-    const localSessions = await db.studySessions.toArray();
-    const sessionKeys = new Set(localSessions.map(s => `${s.date}|${s.startTime}`));
-    for (const r of remote.studySessions) {
-      if (!sessionKeys.has(`${r.date}|${r.startTime}`)) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id: _id, ...rest } = r;
-        await db.studySessions.add(rest as StudySession);
+    // Study sessions: per-record last-write-wins keyed by syncId. updatedAt is
+    // the version clock (bumped on edit AND on soft-delete), so a deletion wins
+    // over an older live copy — no more resurrection of deleted history.
+    {
+      const localSessions = await db.studySessions.toArray();
+      const map = new Map(localSessions.filter(s => s.syncId).map(s => [s.syncId!, s]));
+      for (const r of remote.studySessions) {
+        if (!r.syncId) continue;
+        const local = map.get(r.syncId);
+        const rUpdated = r.updatedAt ?? r.startTime;
+        if (!local) {
+          if (!r.deletedAt) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { id: _id, ...rest } = r;
+            await db.studySessions.add(rest as StudySession);
+          }
+        } else if (rUpdated > (local.updatedAt ?? local.startTime)) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id: _id, ...rest } = r;
+          await db.studySessions.update(local.id!, rest);
+        }
       }
     }
 
-    // Study categories: union by name
-    const localCats = await db.studyCategories.toArray();
-    const catNames = new Set(localCats.map(c => c.name));
-    for (const r of remote.studyCategories) {
-      if (!catNames.has(r.name)) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id: _id, ...rest } = r;
-        await db.studyCategories.add(rest as StudyCategory);
+    // Study categories: per-record last-write-wins keyed by syncId.
+    {
+      const localCats = await db.studyCategories.toArray();
+      const map = new Map(localCats.filter(c => c.syncId).map(c => [c.syncId!, c]));
+      for (const r of remote.studyCategories) {
+        if (!r.syncId) continue;
+        const local = map.get(r.syncId);
+        const rUpdated = r.updatedAt ?? r.createdAt;
+        if (!local) {
+          if (!r.deletedAt) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { id: _id, ...rest } = r;
+            await db.studyCategories.add(rest as StudyCategory);
+          }
+        } else if (rUpdated > (local.updatedAt ?? local.createdAt)) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id: _id, ...rest } = r;
+          await db.studyCategories.update(local.id!, rest);
+        }
       }
     }
 
@@ -233,8 +257,8 @@ export function initLiveSync(key: string) {
   // would miss them and the deleting device would never push its tombstone.
   const obs = liveQuery(() => Promise.all([
     db.notes.orderBy('updatedAt').last().then(n => n?.updatedAt ?? 0),
-    db.studySessions.count(),
-    db.studyCategories.count(),
+    db.studySessions.orderBy('updatedAt').last().then(s => s?.updatedAt ?? 0),
+    db.studyCategories.orderBy('updatedAt').last().then(c => c?.updatedAt ?? 0),
     db.exams.count(),
     db.savedChats.count(),
     db.earnedBadges.count(),

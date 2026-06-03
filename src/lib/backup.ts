@@ -63,6 +63,9 @@ export async function restoreSyncFromJson(jsonText: string): Promise<void> {
       for (const c of data.studyCategories) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id: _id, ...rest } = c;
+        // Backfill sync fields deterministically for older backups.
+        rest.syncId = rest.syncId ?? `c_${rest.name}`;
+        rest.updatedAt = rest.updatedAt ?? rest.createdAt ?? Date.now();
         await db.studyCategories.add(rest as StudyCategory);
       }
     }
@@ -70,6 +73,8 @@ export async function restoreSyncFromJson(jsonText: string): Promise<void> {
       for (const s of data.studySessions) {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id: _id, ...rest } = s;
+        rest.syncId = rest.syncId ?? `s_${rest.date}_${rest.startTime}`;
+        rest.updatedAt = rest.updatedAt ?? rest.startTime ?? Date.now();
         await db.studySessions.add(rest as StudySession);
       }
     }
