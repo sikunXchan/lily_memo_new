@@ -230,3 +230,22 @@ export class LilyDatabase extends Dexie {
 }
 
 export const db = new LilyDatabase();
+
+// Soft-delete helpers. We set a `deletedAt` tombstone (and bump `updatedAt`)
+// instead of removing the row, so the deletion propagates through liveSync /
+// backup — a hard delete just makes the row vanish locally and the other
+// device, which only ever adds/updates from the remote snapshot, would keep it.
+export async function softDeleteNote(id: number): Promise<void> {
+  const t = Date.now();
+  await db.notes.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteNotes(ids: number[]): Promise<void> {
+  const t = Date.now();
+  await Promise.all(ids.map(id => db.notes.update(id, { deletedAt: t, updatedAt: t })));
+}
+
+export async function softDeleteFolder(id: number): Promise<void> {
+  const t = Date.now();
+  await db.folders.update(id, { deletedAt: t, updatedAt: t });
+}
