@@ -1,7 +1,7 @@
 'use client';
 
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, newSyncId } from '@/lib/db';
+import { db, newSyncId, softDeleteNotes, softDeleteFolder } from '@/lib/db';
 import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
@@ -155,14 +155,14 @@ export default function Sidebar({
       if (activeNoteId && folderNoteIds.includes(activeNoteId)) {
         onActiveNoteDeleted?.();
       }
-      await db.notes.bulkDelete(folderNoteIds);
+      await softDeleteNotes(folderNoteIds);
     } else if (!deleteNotes && folderNoteIds.length > 0) {
       for (const noteId of folderNoteIds) {
         await db.notes.update(noteId, { folderId: undefined, updatedAt: Date.now() });
       }
     }
 
-    await db.folders.delete(id);
+    await softDeleteFolder(id);
     setDeletingFolder(null);
   };
 

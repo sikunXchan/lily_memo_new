@@ -1,7 +1,7 @@
 'use client';
 
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, newSyncId } from '@/lib/db';
+import { db, newSyncId, softDeleteNotes, softDeleteFolder } from '@/lib/db';
 import { useTheme } from './ThemeContext';
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -98,13 +98,13 @@ export default function HomeHero({
     const { id } = deletingFolder;
     const folderNoteIds = notes?.filter(n => n.folderId === id).map(n => n.id!) ?? [];
     if (deleteNotes && folderNoteIds.length > 0) {
-      await db.notes.bulkDelete(folderNoteIds);
+      await softDeleteNotes(folderNoteIds);
     } else if (!deleteNotes && folderNoteIds.length > 0) {
       for (const nId of folderNoteIds) {
         await db.notes.update(nId, { folderId: undefined, updatedAt: Date.now() });
       }
     }
-    await db.folders.delete(id);
+    await softDeleteFolder(id);
     setDeletingFolder(null);
   };
 

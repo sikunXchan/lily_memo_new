@@ -11,7 +11,7 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
 import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react';
-import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING } from '@/lib/db';
+import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING, softDeleteNote } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
   BarChart3, Binary, LayoutGrid,
@@ -508,7 +508,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
   const deleteNote = async () => {
     if (confirm('このメモを削除してもよろしいですか？')) {
-      await db.notes.delete(noteId);
+      await softDeleteNote(noteId);
       onClose?.();
     }
   };
