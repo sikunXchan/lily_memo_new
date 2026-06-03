@@ -6,8 +6,7 @@ import { ArrowLeft, Plus, Pin, Check, Trash2 } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { Todo } from '@/lib/db';
 
-// Width of the delete panel (px). Must match .td-del width in CSS.
-const DEL_W = 84;
+const DEL_W = 80;
 
 interface TodoScreenProps {
   onGoBack: () => void;
@@ -29,7 +28,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
     )
   ) ?? [];
 
-  const addTodo   = useCallback(async () => {
+  const addTodo = useCallback(async () => {
     const text = newText.trim();
     if (!text) return;
     await db.todos.add({ text, done: false, pinned: false, createdAt: Date.now() });
@@ -37,72 +36,55 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
   }, [newText]);
 
   const toggleDone = useCallback(async (t: Todo) =>
-    db.todos.update(t.id!, { done:   !t.done   }), []);
-  const togglePin  = useCallback(async (t: Todo) =>
+    db.todos.update(t.id!, { done: !t.done }), []);
+  const togglePin = useCallback(async (t: Todo) =>
     db.todos.update(t.id!, { pinned: !t.pinned }), []);
   const deleteTodo = useCallback(async (id: number) => {
     await db.todos.update(id, { deletedAt: Date.now() });
     setSwipedId(null);
   }, []);
 
-  const pending = todos.filter(t => !t.done);
-  const done    = todos.filter(t => t.done);
+  const pending  = todos.filter(t => !t.done);
+  const done     = todos.filter(t => t.done);
+  const progress = todos.length > 0 ? Math.round((done.length / todos.length) * 100) : 0;
 
   const renderItem = (t: Todo) => {
     const swiped = swipedId === t.id;
     return (
-      <div key={t.id} className="td-item">
-        {/*
-          ── Sliding approach (no position:absolute) ──
-          .td-inner is a flex row wider than .td-item by DEL_W.
-          .td-item { overflow:hidden } clips the delete panel on the right.
-          Translating .td-inner left by DEL_W reveals the delete panel.
-          This avoids the iOS Safari overflow-clipping bug with
-          position:absolute + border-radius.
-        */}
+      <div key={t.id} className={`td-item${t.pinned ? ' pinned-item' : ''}`}>
         <div className={`td-inner${swiped ? ' slid' : ''}`}>
 
-          {/* ── Card ── */}
           <div
             className={`td-card${t.done ? ' done' : ''}${t.pinned ? ' pinned' : ''}`}
             onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
             onTouchEnd={e => {
               const dx = touchStartX.current - e.changedTouches[0].clientX;
-              if      (dx > 42)  setSwipedId(t.id!);
+              if      (dx > 40)  setSwipedId(t.id!);
               else if (dx < -16) setSwipedId(null);
             }}
             onClick={() => { if (swiped) setSwipedId(null); }}
           >
-            {/* Check */}
             <button
               className={`td-check${t.done ? ' checked' : ''}`}
               onClick={e => { e.stopPropagation(); void toggleDone(t); }}
               aria-label={t.done ? '未完了に戻す' : '完了にする'}
             >
-              {t.done && <Check size={13} strokeWidth={3} />}
+              {t.done && <Check size={11} strokeWidth={3.5} />}
             </button>
 
-            {/* Text */}
             <span className="td-text">{t.text}</span>
 
-            {/* Pin */}
             <button
               className={`td-pin${t.pinned ? ' on' : ''}`}
               onClick={e => { e.stopPropagation(); void togglePin(t); }}
               aria-label={t.pinned ? 'ピン解除' : 'ピン留め'}
             >
-              <Pin size={14} strokeWidth={2.2} />
+              <Pin size={13} strokeWidth={2.5} fill={t.pinned ? 'currentColor' : 'none'} />
             </button>
           </div>
 
-          {/* ── Delete panel ── */}
-          <button
-            className="td-del"
-            onClick={() => void deleteTodo(t.id!)}
-            aria-label="削除"
-          >
-            <Trash2 size={20} strokeWidth={2} />
-            <span>削除</span>
+          <button className="td-del" onClick={() => void deleteTodo(t.id!)} aria-label="削除">
+            <Trash2 size={18} strokeWidth={2} />
           </button>
         </div>
       </div>
@@ -115,20 +97,67 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
       {/* Header */}
       <div className="td-header">
         <button className="td-back" onClick={onGoBack} aria-label="戻る">
-          <ArrowLeft size={18} strokeWidth={2.4} />
+          <ArrowLeft size={17} strokeWidth={2.5} />
         </button>
-        <span className="td-title">ToDo</span>
+        <div className="td-header-mid">
+          <span className="td-title">タスク</span>
+          {todos.length > 0 && (
+            <span className="td-subtitle">{done.length} / {todos.length} 完了</span>
+          )}
+        </div>
         {pending.length > 0 && (
-          <span className="td-badge">{pending.length}</span>
+          <div className="td-badge">{pending.length}</div>
         )}
       </div>
 
-      {/* Add row */}
-      <div className="td-add-row">
+      {/* Progress bar */}
+      {todos.length > 0 && (
+        <div className="td-progress-wrap">
+          <div className="td-progress-track">
+            <div className="td-progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      <div className="td-scroll">
+        {todos.length === 0 && (
+          <div className="td-empty">
+            <span className="td-empty-icon">🎯</span>
+            <p className="td-empty-title">タスクをゼロに！</p>
+            <p className="td-empty-sub">下の入力欄から追加してね</p>
+          </div>
+        )}
+
+        {pending.length > 0 && (
+          <section className="td-section">
+            <div className="td-section-label">
+              <span className="td-dot active-dot" />
+              <span className="td-label-text">やること</span>
+              <span className="td-label-cnt">{pending.length}</span>
+            </div>
+            {pending.map(renderItem)}
+          </section>
+        )}
+
+        {done.length > 0 && (
+          <section className="td-section">
+            <div className="td-section-label">
+              <span className="td-dot done-dot" />
+              <span className="td-label-text">完了</span>
+              <span className="td-label-cnt">{done.length}</span>
+            </div>
+            {done.map(renderItem)}
+          </section>
+        )}
+      </div>
+
+      {/* Bottom input bar */}
+      <div className="td-input-bar">
         <input
           ref={inputRef}
           className="td-input"
-          placeholder="新しいタスクを追加..."
+          placeholder="新しいタスク..."
           value={newText}
           onChange={e => setNewText(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') void addTodo(); }}
@@ -139,41 +168,8 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           disabled={!newText.trim()}
           aria-label="追加"
         >
-          <Plus size={18} strokeWidth={2.6} />
+          <Plus size={17} strokeWidth={2.8} />
         </button>
-      </div>
-
-      {/* List */}
-      <div className="td-scroll">
-        {todos.length === 0 && (
-          <div className="td-empty">
-            <span className="td-empty-icon">✅</span>
-            <p>タスクはまだありません</p>
-            <p className="td-empty-sub">上の入力欄から追加してね</p>
-          </div>
-        )}
-
-        {pending.length > 0 && (
-          <section className="td-section">
-            <div className="td-section-label">
-              <span className="td-dot pending" />
-              未完了
-              <span className="td-cnt">{pending.length}</span>
-            </div>
-            {pending.map(renderItem)}
-          </section>
-        )}
-
-        {done.length > 0 && (
-          <section className="td-section">
-            <div className="td-section-label">
-              <span className="td-dot done-dot" />
-              完了
-              <span className="td-cnt">{done.length}</span>
-            </div>
-            {done.map(renderItem)}
-          </section>
-        )}
       </div>
 
       <style jsx>{`
@@ -185,168 +181,148 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
         /* ── Header ── */
         .td-header {
-          display: flex; align-items: center; gap: 12px;
-          padding: 14px 16px 12px;
-          border-bottom: 1px solid var(--border);
-          background: var(--background); flex-shrink: 0;
+          display: flex; align-items: center; gap: 10px;
+          padding: 12px 14px 10px;
+          background: var(--glass-tint, rgba(255,255,255,.88));
+          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+          flex-shrink: 0;
         }
         .td-back {
-          width: 36px; height: 36px; border-radius: 50%;
-          border: 1.5px solid var(--border); background: var(--accent);
+          width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+          border: 1px solid var(--border); background: var(--accent);
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer; color: var(--foreground); flex-shrink: 0;
+          cursor: pointer; color: var(--foreground);
         }
-        .td-back:active { opacity: .6; }
+        .td-back:active { opacity: .55; }
+        .td-header-mid { flex: 1; display: flex; flex-direction: column; gap: 1px; }
         .td-title {
-          font-size: 22px; font-weight: 800; flex: 1; letter-spacing: -.02em;
+          font-size: 18px; font-weight: 800; letter-spacing: -.025em; line-height: 1.15;
           background: linear-gradient(120deg, #34d399, #22d3ee);
           -webkit-background-clip: text; background-clip: text; color: transparent;
         }
+        .td-subtitle { font-size: .65rem; color: var(--fg-muted); font-weight: 500; }
         .td-badge {
-          min-width: 28px; height: 28px; border-radius: 99px;
+          min-width: 24px; height: 24px; border-radius: 99px; flex-shrink: 0;
           background: linear-gradient(135deg, #34d399, #22d3ee);
-          color: #fff; font-size: 0.78rem; font-weight: 800;
-          display: flex; align-items: center; justify-content: center;
-          padding: 0 8px;
+          color: #fff; font-size: .7rem; font-weight: 800;
+          display: flex; align-items: center; justify-content: center; padding: 0 7px;
         }
 
-        /* ── Add row ── */
-        .td-add-row {
-          display: flex; align-items: center; gap: 10px;
-          padding: 12px 16px;
-          border-bottom: 1px solid var(--border); flex-shrink: 0;
+        /* ── Progress ── */
+        .td-progress-wrap {
+          padding: 0 14px 10px;
+          background: var(--glass-tint, rgba(255,255,255,.88));
+          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+          flex-shrink: 0;
         }
-        .td-input {
-          flex: 1; background: var(--accent);
-          border: 1.5px solid var(--border); border-radius: 22px;
-          padding: 10px 16px; font-size: 0.9rem;
-          color: var(--foreground); outline: none; font-family: inherit;
+        .td-progress-track {
+          height: 3px; border-radius: 99px;
+          background: var(--border); overflow: hidden;
         }
-        .td-input::placeholder { color: var(--fg-faint); }
-        .td-input:focus { border-color: #34d399; }
-        .td-add-btn {
-          width: 42px; height: 42px; border-radius: 50%; border: none; flex-shrink: 0;
-          background: linear-gradient(135deg, #34d399, #22d3ee); color: #fff;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; box-shadow: 0 3px 10px rgba(52,211,153,.4);
-          transition: opacity .15s, transform .12s;
+        .td-progress-fill {
+          height: 100%; border-radius: 99px;
+          background: linear-gradient(90deg, #34d399, #22d3ee);
+          transition: width .6s cubic-bezier(.34,1.1,.64,1);
         }
-        .td-add-btn:disabled { opacity: .3; cursor: default; box-shadow: none; }
-        .td-add-btn:not(:disabled):active { transform: scale(.9); }
 
         /* ── Scroll ── */
         .td-scroll {
-          flex: 1; overflow-y: auto; padding: 12px 14px 40px;
+          flex: 1; overflow-y: auto; padding: 14px 14px 8px;
           -webkit-overflow-scrolling: touch;
         }
 
-        /* ── Empty state ── */
+        /* ── Empty ── */
         .td-empty {
           display: flex; flex-direction: column; align-items: center;
-          padding: 56px 0 0; gap: 6px; text-align: center;
+          padding: 56px 0 0; gap: 8px; text-align: center;
         }
-        .td-empty-icon { font-size: 2.4rem; }
-        .td-empty p { font-size: 0.9rem; color: var(--fg-muted); font-weight: 600; margin: 0; }
-        .td-empty-sub { font-size: 0.78rem !important; color: var(--fg-faint) !important; font-weight: 400 !important; }
+        .td-empty-icon { font-size: 2.6rem; }
+        .td-empty-title { font-size: .92rem; font-weight: 700; color: var(--foreground); margin: 0; }
+        .td-empty-sub { font-size: .73rem; color: var(--fg-faint); margin: 0; }
 
         /* ── Section ── */
-        .td-section { margin-bottom: 18px; }
+        .td-section { margin-bottom: 20px; }
         .td-section-label {
-          display: flex; align-items: center; gap: 7px;
-          font-size: 0.7rem; font-weight: 700; letter-spacing: .1em;
-          text-transform: uppercase; color: var(--fg-muted);
-          padding: 0 4px 9px;
+          display: flex; align-items: center; gap: 6px;
+          padding: 0 2px 8px;
         }
         .td-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-        .td-dot.pending  { background: #34d399; }
-        .td-dot.done-dot { background: var(--fg-faint); }
-        .td-cnt {
-          margin-left: auto;
+        .active-dot { background: linear-gradient(135deg, #34d399, #22d3ee); }
+        .done-dot   { background: var(--fg-faint); }
+        .td-label-text {
+          font-size: .68rem; font-weight: 700; letter-spacing: .09em;
+          text-transform: uppercase; color: var(--fg-muted); flex: 1;
+        }
+        .td-label-cnt {
+          font-size: .63rem; font-weight: 700; color: var(--fg-faint);
           background: var(--accent); border: 1px solid var(--border);
-          border-radius: 99px; padding: 1px 8px;
-          font-size: 0.68rem; color: var(--fg-faint);
+          border-radius: 99px; padding: 1px 7px;
         }
 
-        /*
-         * ── Swipe-to-delete: flex sliding ──
-         *
-         * .td-item   : overflow:hidden — clips everything outside its bounds.
-         * .td-inner  : flex row, width = 100% + DEL_W (wider than .td-item).
-         *              Translating it left by DEL_W slides the card left and
-         *              reveals the delete panel on the right.
-         * .td-card   : flex:1 — fills the visible area (parent width).
-         *              NO border-radius — rect background covers everything.
-         * .td-del    : fixed DEL_W — sits outside .td-item until reveal.
-         *
-         * This avoids position:absolute entirely, fixing iOS Safari's known
-         * overflow-clipping bug with border-radius + absolutely-positioned
-         * children.
-         */
+        /* ── Item (flex-sliding swipe-to-delete) ── */
         .td-item {
-          overflow: hidden;
-          border-radius: 16px;
-          margin-bottom: 7px;
-          box-shadow: 0 2px 8px rgba(0,0,0,.07);
+          border-radius: 14px; overflow: hidden; margin-bottom: 6px;
+          box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 3px 10px rgba(0,0,0,.05);
+        }
+        .td-item.pinned-item {
+          box-shadow: 0 0 0 1.5px rgba(251,191,36,.55), 0 4px 16px rgba(251,191,36,.1);
         }
         .td-inner {
           display: flex;
-          /* Exactly DEL_W wider than .td-item */
           width: calc(100% + ${DEL_W}px);
-          transition: transform .24s cubic-bezier(.25,.46,.45,.94);
+          transition: transform .22s cubic-bezier(.25,.46,.45,.94);
         }
-        .td-inner.slid {
-          transform: translateX(-${DEL_W}px);
-        }
+        .td-inner.slid { transform: translateX(-${DEL_W}px); }
 
-        /* Card — NO border-radius (wrapper handles it); opaque background */
+        /* Card */
         .td-card {
           flex: 1; min-width: 0;
           display: flex; align-items: center; gap: 12px;
-          padding: 13px 12px 13px 14px;
+          padding: 14px 10px 14px 14px;
           background: var(--accent);
-          border: 1px solid var(--border);
-          cursor: default;
-          -webkit-user-select: none; user-select: none;
+          cursor: default; -webkit-user-select: none; user-select: none;
+          transition: opacity .25s;
         }
-        .td-card.done    { opacity: .55; }
-        .td-card.pinned  {
-          border-color: rgba(251,191,36,.45);
-          background: var(--accent);
-          box-shadow: inset 3px 0 0 #fbbf24;
-        }
+        .td-card.done   { opacity: .45; }
+        .td-card.pinned { box-shadow: inset 3px 0 0 #fbbf24; }
 
-        /* Check circle */
+        /* Check */
         .td-check {
-          width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+          width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
           border: 2px solid var(--border); background: var(--background);
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer; transition: all .18s;
+          cursor: pointer;
+          transition:
+            background .2s cubic-bezier(.34,1.5,.64,1),
+            border-color .2s,
+            box-shadow .2s,
+            transform .2s cubic-bezier(.34,1.5,.64,1);
         }
+        .td-check:active { transform: scale(.84); }
         .td-check.checked {
           background: linear-gradient(135deg, #34d399, #22d3ee);
           border-color: transparent;
-          box-shadow: 0 2px 8px rgba(52,211,153,.4);
+          box-shadow: 0 2px 10px rgba(52,211,153,.5);
         }
         .td-check.checked svg { color: #fff; }
 
         /* Text */
         .td-text {
-          flex: 1; font-size: 0.9rem; font-weight: 500;
-          color: var(--foreground); line-height: 1.35;
+          flex: 1; font-size: .9rem; font-weight: 500;
+          color: var(--foreground); line-height: 1.3;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
-        .td-card.done .td-text {
-          text-decoration: line-through; color: var(--fg-muted);
-        }
+        .td-card.done .td-text { text-decoration: line-through; color: var(--fg-muted); }
 
-        /* Pin button */
+        /* Pin */
         .td-pin {
-          width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+          width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
           border: none; background: transparent; padding: 0;
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer; color: var(--fg-faint); transition: color .15s, transform .12s;
+          cursor: pointer; color: var(--fg-faint);
+          transition: color .15s, transform .12s;
         }
-        .td-pin:active { transform: scale(.82); }
+        .td-pin:active { transform: scale(.78); }
         .td-pin.on { color: #f59e0b; }
 
         /* Delete panel */
@@ -354,11 +330,37 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           width: ${DEL_W}px; flex-shrink: 0;
           background: linear-gradient(160deg, #f87171, #ef4444);
           border: none; color: #fff; cursor: pointer;
-          display: flex; flex-direction: column; align-items: center;
-          justify-content: center; gap: 4px;
-          font-size: 0.65rem; font-weight: 800; letter-spacing: .06em;
+          display: flex; align-items: center; justify-content: center;
         }
         .td-del:active { background: #dc2626; }
+
+        /* ── Bottom input bar ── */
+        .td-input-bar {
+          display: flex; align-items: center; gap: 10px;
+          padding: 10px 14px 22px;
+          border-top: 1px solid var(--border);
+          background: var(--glass-tint, rgba(255,255,255,.9));
+          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+          flex-shrink: 0;
+        }
+        .td-input {
+          flex: 1; background: var(--accent);
+          border: 1.5px solid var(--border); border-radius: 22px;
+          padding: 10px 16px; font-size: .9rem;
+          color: var(--foreground); outline: none; font-family: inherit;
+          transition: border-color .15s;
+        }
+        .td-input::placeholder { color: var(--fg-faint); }
+        .td-input:focus { border-color: #34d399; }
+        .td-add-btn {
+          width: 40px; height: 40px; border-radius: 50%; border: none; flex-shrink: 0;
+          background: linear-gradient(135deg, #34d399, #22d3ee); color: #fff;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; box-shadow: 0 3px 10px rgba(52,211,153,.4);
+          transition: opacity .15s, transform .12s;
+        }
+        .td-add-btn:disabled { opacity: .28; cursor: default; box-shadow: none; }
+        .td-add-btn:not(:disabled):active { transform: scale(.86); }
       `}</style>
     </div>
   );
