@@ -23,6 +23,7 @@ const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false }
 const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ssr: false });
 const NewsScreen = dynamic(() => import('@/components/NewsScreen'), { ssr: false });
 const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
+const TrophyRoom = dynamic(() => import('@/components/TrophyRoom'), { ssr: false });
 type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'study' | 'news' | 'todo';
 
 export default function Home() {
@@ -37,6 +38,7 @@ export default function Home() {
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [recentNotes, setRecentNotes] = useState<number[]>([]);
   const [showFocusMode, setShowFocusMode] = useState(false);
+  const [showTrophy, setShowTrophy] = useState(false);
   // 'bubbles' = BubbleHome, 'notes' = old HomeHero note list
   const [mobilePage, setMobilePage] = useState<'bubbles' | 'notes'>('bubbles');
 
@@ -136,6 +138,7 @@ export default function Home() {
   };
 
   const handleMobileNavigate = (tab: string) => {
+    if (tab === 'trophy') { setShowTrophy(true); return; }
     if (tab === 'sketch') { openSketch(); return; }
     if (tab === 'memos') { setMobilePage('notes'); setActiveTab('memos'); setActiveNoteId(undefined); return; }
     setActiveTab(tab as TabType);
@@ -249,6 +252,10 @@ export default function Home() {
 
       {showFocusMode && (
         <FocusMode onClose={() => setShowFocusMode(false)} />
+      )}
+
+      {showTrophy && (
+        <TrophyRoom onClose={() => setShowTrophy(false)} />
       )}
 
       {sikunEnabled && activeTab !== 'sketch' && !showFocusMode && (

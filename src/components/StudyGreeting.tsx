@@ -21,6 +21,16 @@ function fmtHM(sec: number): string {
   return `${m}分`;
 }
 
+const CONFETTI_COLORS = ['#f472b6', '#fcd34d', '#60a5fa', '#34d399', '#a78bfa', '#fb923c'];
+// Deterministic spread (golden-angle style) so there's no impure Math.random in render.
+const CONFETTI = Array.from({ length: 44 }, (_, i) => ({
+  left: +((i * 137.508) % 100).toFixed(2),
+  delay: +(((i * 13.7) % 10) / 16).toFixed(2),
+  dur: +(1.8 + ((i * 29) % 14) / 10).toFixed(2),
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  size: 7 + ((i * 7) % 7),
+}));
+
 interface Props {
   onOpenTrophy: () => void;
   onEditProfile: () => void;
@@ -113,6 +123,21 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
       {/* New badge celebration */}
       {celebrate.length > 0 && (
         <div className="sg-celebrate" onClick={() => setCelebrate([])}>
+          <div className="sg-confetti">
+            {CONFETTI.map((c, i) => (
+              <span
+                key={i}
+                style={{
+                  left: `${c.left}%`,
+                  width: `${c.size}px`,
+                  height: `${c.size}px`,
+                  background: c.color,
+                  animationDelay: `${c.delay}s`,
+                  animationDuration: `${c.dur}s`,
+                }}
+              />
+            ))}
+          </div>
           <div className="sg-celebrate-card" onClick={e => e.stopPropagation()}>
             <p className="sg-celebrate-title">🎉 新しいバッジ獲得！</p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -161,9 +186,19 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
           display: flex; align-items: center; justify-content: center; padding: 20px;
         }
         .sg-celebrate-card {
+          position: relative; z-index: 1;
           background: var(--background); border: 1px solid var(--border);
           border-radius: 22px; padding: 24px 22px; text-align: center; max-width: 320px;
           box-shadow: 0 20px 60px rgba(0,0,0,0.4); animation: pop 0.3s cubic-bezier(.2,1.4,.4,1);
+        }
+        .sg-confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+        .sg-confetti span {
+          position: absolute; top: -20px; border-radius: 2px;
+          animation-name: confetti-fall; animation-timing-function: linear; animation-iteration-count: infinite;
+        }
+        @keyframes confetti-fall {
+          0%   { transform: translateY(-20px) rotate(0deg);    opacity: 1; }
+          100% { transform: translateY(105vh)  rotate(720deg); opacity: 0.85; }
         }
         @keyframes pop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .sg-celebrate-title { font-size: 0.95rem; font-weight: 800; color: var(--primary); margin: 0 0 12px; }
