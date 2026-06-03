@@ -149,31 +149,35 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       }
     }
 
-    // Todos: tombstone-aware — deletedAt propagates across devices
-    // Rule: once deleted, stays deleted (deletion always wins)
+    // Todos: per-record last-write-wins keyed by createdAt (stable across
+    // devices). updatedAt is the version clock — it is bumped on every
+    // mutation INCLUDING soft-delete, so a deletion always carries a fresh
+    // timestamp and wins over an older "alive" copy on the other device.
+    // This prevents the "deleted-but-it-came-back" resurrection bug.
     if (remote.todos !== undefined) {
-      const localTodos = await db.todos.toArray(); // includes soft-deleted
+      const localTodos = await db.todos.toArray(); // includes soft-deleted tombstones
       const todoMap = new Map(localTodos.map(t => [t.createdAt, t]));
       for (const r of remote.todos) {
+        const rUpdated = r.updatedAt ?? r.createdAt;
         const local = todoMap.get(r.createdAt);
         if (!local) {
+          // We don't have this record. Only add if it isn't a tombstone —
+          // a record we never saw that's already deleted can stay gone.
           if (!r.deletedAt) {
-            // New todo from remote, not deleted → add it
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { id: _id, ...rest } = r;
-            await db.todos.add(rest as Todo);
+            await db.todos.add({ ...rest, updatedAt: rUpdated } as Todo);
           }
-          // Remote has deletedAt but we don't have the record → already gone, skip
-        } else if (r.deletedAt && !local.deletedAt) {
-          // Remote deleted it, we still have it → apply tombstone
-          await db.todos.update(local.id!, { deletedAt: r.deletedAt });
-        } else if (!r.deletedAt && !local.deletedAt) {
-          // Both alive → sync done/pinned state
-          if (r.done !== local.done || r.pinned !== local.pinned) {
-            await db.todos.update(local.id!, { done: r.done, pinned: r.pinned });
+        } else {
+          const lUpdated = local.updatedAt ?? local.createdAt;
+          // Newest write wins. (deletion is just a state with a timestamp)
+          if (rUpdated > lUpdated) {
+            await db.todos.update(local.id!, {
+              text: r.text, done: r.done, pinned: r.pinned,
+              updatedAt: rUpdated, deletedAt: r.deletedAt,
+            });
           }
         }
-        // local.deletedAt is set (deleted locally) → keep local deletion, never restore
       }
     }
   } finally {
@@ -206,14 +210,17 @@ export function initLiveSync(key: string) {
   _key        = key;
   _lastSyncTs = Number(localStorage.getItem('lily_livesync_ts') ?? 0);
 
-  // Watch Dexie for local changes
+  // Watch Dexie for local changes.
+  // For todos we watch max(updatedAt) instead of count() — soft-deletes and
+  // done/pin toggles are UPDATEs that don't change the row count, so count()
+  // would miss them and the deleting device would never push its tombstone.
   const obs = liveQuery(() => Promise.all([
     db.notes.orderBy('updatedAt').last().then(n => n?.updatedAt ?? 0),
     db.studySessions.count(),
     db.studyCategories.count(),
     db.exams.count(),
     db.savedChats.count(),
-    db.todos.count(),
+    db.todos.orderBy('updatedAt').last().then(t => t?.updatedAt ?? 0),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());
 
