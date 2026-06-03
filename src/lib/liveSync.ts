@@ -149,20 +149,31 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       }
     }
 
-    // Todos: union by createdAt; also sync done/pinned state (last-write wins via createdAt key)
-    if (remote.todos?.length) {
-      const localTodos = await db.todos.toArray();
+    // Todos: tombstone-aware — deletedAt propagates across devices
+    // Rule: once deleted, stays deleted (deletion always wins)
+    if (remote.todos !== undefined) {
+      const localTodos = await db.todos.toArray(); // includes soft-deleted
       const todoMap = new Map(localTodos.map(t => [t.createdAt, t]));
       for (const r of remote.todos) {
         const local = todoMap.get(r.createdAt);
         if (!local) {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { id: _id, ...rest } = r;
-          await db.todos.add(rest as Todo);
-        } else if (r.done !== local.done || r.pinned !== local.pinned) {
-          // Remote has a different state — take remote (simplest conflict resolution)
-          await db.todos.update(local.id!, { done: r.done, pinned: r.pinned });
+          if (!r.deletedAt) {
+            // New todo from remote, not deleted → add it
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { id: _id, ...rest } = r;
+            await db.todos.add(rest as Todo);
+          }
+          // Remote has deletedAt but we don't have the record → already gone, skip
+        } else if (r.deletedAt && !local.deletedAt) {
+          // Remote deleted it, we still have it → apply tombstone
+          await db.todos.update(local.id!, { deletedAt: r.deletedAt });
+        } else if (!r.deletedAt && !local.deletedAt) {
+          // Both alive → sync done/pinned state
+          if (r.done !== local.done || r.pinned !== local.pinned) {
+            await db.todos.update(local.id!, { done: r.done, pinned: r.pinned });
+          }
         }
+        // local.deletedAt is set (deleted locally) → keep local deletion, never restore
       }
     }
   } finally {
