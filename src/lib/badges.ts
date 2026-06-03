@@ -9,7 +9,7 @@ import type { StudySession, EarnedBadge } from './db';
 import { getStudyProfile } from './studyProfile';
 
 export type BadgeCategory = 'total' | 'streak' | 'daily' | 'fun' | 'special';
-export type RoomId = 'kids' | 'hall' | 'glory' | 'lily';
+export type RoomId = 'kids' | 'hall' | 'glory' | 'lily' | 'legend';
 
 export type BadgeCondition =
   | { kind: 'totalHours';      hours: number }     // cumulative study hours
@@ -20,9 +20,11 @@ export type BadgeCondition =
   | { kind: 'totalDays';       days: number }      // distinct days studied
   | { kind: 'categoriesInDay'; count: number }     // subjects in a single day
   | { kind: 'categoriesTotal'; count: number }     // distinct subjects ever
-  | { kind: 'morning' }                            // studied 5:00–8:00
+  | { kind: 'morning' }                            // studied 5:00–8:00 (once)
+  | { kind: 'morningCount';    count: number }     // days with a 5:00–8:00 session
   | { kind: 'nightCount';      count: number }     // days with a 0:00–5:00 session
-  | { kind: 'weekend' }                            // studied on a Sat/Sun
+  | { kind: 'weekend' }                            // studied on a Sat/Sun (once)
+  | { kind: 'weekendCount';    count: number }     // distinct weekend days studied
   | { kind: 'comeback';        gapDays: number }   // resumed after a gap
   | { kind: 'goalMet' }                            // hit the daily goal once
   | { kind: 'daysSinceFirst';  days: number }      // veteran (calendar age)
@@ -113,13 +115,63 @@ export const BADGES: BadgeDef[] = [
   { id: 'sp_days200',   image: IMG('sheet7_04'), title: '二百日の絆',       desc: '通算200日 勉強した',            category: 'special', room: 'lily', sort: 9,  cond: { kind: 'totalDays', days: 200 } },
   { id: 'sp_year',      image: IMG('sheet7_05'), title: '一年の旅路',       desc: 'はじめてから1年が経った',       category: 'special', room: 'lily', sort: 10, cond: { kind: 'daysSinceFirst', days: 365 } },
   { id: 'sp_collector', image: IMG('sheet7_06'), title: 'バッジコレクター', desc: '全バッジの50%を集めた',         category: 'special', room: 'lily', sort: 11, cond: { kind: 'badgePercent', percent: 50 } },
+
+  // 🐕 学者柴 — Sheet8 (大広間): ポモドーロ & 連続集中
+  { id: 'pomo_25',    image: IMG('sheet8_01'), title: 'ポモドーロ職人', desc: 'ポモドーロを通算25回やった',  category: 'daily', room: 'hall', sort: 30, cond: { kind: 'pomodoroCount', count: 25 } },
+  { id: 'pomo_50',    image: IMG('sheet8_02'), title: 'ポモドーロ達人', desc: 'ポモドーロを通算50回やった',  category: 'daily', room: 'hall', sort: 31, cond: { kind: 'pomodoroCount', count: 50 } },
+  { id: 'pomo_100',   image: IMG('sheet8_03'), title: 'ポモドーロ仙人', desc: 'ポモドーロを通算100回やった', category: 'daily', room: 'hall', sort: 32, cond: { kind: 'pomodoroCount', count: 100 } },
+  { id: 'session_3h', image: IMG('sheet8_04'), title: '3時間ぶっ通し',   desc: '1回で3時間ノンストップ勉強した', category: 'daily', room: 'hall', sort: 33, cond: { kind: 'sessionMinutes', minutes: 180 } },
+  { id: 'session_4h', image: IMG('sheet8_05'), title: '4時間ぶっ通し',   desc: '1回で4時間ノンストップ勉強した', category: 'daily', room: 'hall', sort: 34, cond: { kind: 'sessionMinutes', minutes: 240 } },
+
+  // 🐻 天使ベア — Sheet9 (こども部屋): 生活リズム実績
+  { id: 'morning_5',  image: IMG('sheet9_01'), title: '朝活の達人',   desc: '朝5〜8時の勉強を5日 達成した',   category: 'fun', room: 'kids', sort: 40, cond: { kind: 'morningCount', count: 5 } },
+  { id: 'morning_20', image: IMG('sheet9_02'), title: '朝の覇者',     desc: '朝5〜8時の勉強を20日 達成した',  category: 'fun', room: 'kids', sort: 41, cond: { kind: 'morningCount', count: 20 } },
+  { id: 'weekend_10', image: IMG('sheet9_03'), title: '週末の戦士',   desc: '土日に通算10日 勉強した',        category: 'fun', room: 'kids', sort: 42, cond: { kind: 'weekendCount', count: 10 } },
+  { id: 'night_10',   image: IMG('sheet9_04'), title: '夜の住人',     desc: '深夜0〜5時の勉強を10日 達成した', category: 'fun', room: 'kids', sort: 43, cond: { kind: 'nightCount', count: 10 } },
+  { id: 'cats_8',     image: IMG('sheet9_05'), title: '博学者',       desc: '8科目以上を記録した',            category: 'fun', room: 'kids', sort: 44, cond: { kind: 'categoriesTotal', count: 8 } },
+
+  // 🐻 ガーディアンベア — Sheet10 (大広間): 通算日数 & 1日集中の埋め
+  { id: 'days_50',    image: IMG('sheet10_01'), title: '通算50日',   desc: '通算50日 勉強した',        category: 'total', room: 'hall', sort: 20, cond: { kind: 'totalDays', days: 50 } },
+  { id: 'days_150',   image: IMG('sheet10_02'), title: '通算150日',  desc: '通算150日 勉強した',       category: 'total', room: 'hall', sort: 21, cond: { kind: 'totalDays', days: 150 } },
+  { id: 'days_300',   image: IMG('sheet10_03'), title: '通算300日',  desc: '通算300日 勉強した',       category: 'total', room: 'hall', sort: 22, cond: { kind: 'totalDays', days: 300 } },
+  { id: 'daily_3h',   image: IMG('sheet10_04'), title: '3時間集中',  desc: '1日に合計3時間 勉強した',   category: 'daily', room: 'hall', sort: 16, cond: { kind: 'dailyHours', hours: 3 } },
+  { id: 'daily_5h',   image: IMG('sheet10_05'), title: '5時間集中',  desc: '1日に合計5時間 勉強した',   category: 'daily', room: 'hall', sort: 17, cond: { kind: 'dailyHours', hours: 5 } },
+
+  // 🐕 勉強柴 — Sheet11 (栄光の間): 連続日数 & 累計時間の埋め
+  { id: 'streak_40',   image: IMG('sheet11_01'), title: '40日連続',     desc: '40日連続で勉強した',     category: 'streak', room: 'glory', sort: 12, cond: { kind: 'streak', days: 40 } },
+  { id: 'streak_75',   image: IMG('sheet11_02'), title: '75日連続',     desc: '75日連続で勉強した',     category: 'streak', room: 'glory', sort: 13, cond: { kind: 'streak', days: 75 } },
+  { id: 'streak_150',  image: IMG('sheet11_03'), title: '150日連続',    desc: '150日連続で勉強した',    category: 'streak', room: 'glory', sort: 14, cond: { kind: 'streak', days: 150 } },
+  { id: 'total_1200h', image: IMG('sheet11_04'), title: '千二百時間',   desc: '累計1200時間 勉強した',  category: 'total',  room: 'glory', sort: 20, cond: { kind: 'totalHours', hours: 1200 } },
+  { id: 'total_1800h', image: IMG('sheet11_05'), title: '千八百時間',   desc: '累計1800時間 勉強した',  category: 'total',  room: 'glory', sort: 21, cond: { kind: 'totalHours', hours: 1800 } },
+
+  // 👑 闇柴 — Sheet_k1 (伝説の間): 連続日数の極み【最高難易度】
+  { id: 'lg_streak_250',  image: IMG('sheetk1_01'), title: '鉄壁の継続',   desc: '250日連続で勉強した',  category: 'special', room: 'legend', sort: 1, cond: { kind: 'streak', days: 250 } },
+  { id: 'lg_streak_300',  image: IMG('sheetk1_02'), title: '不滅の意志',   desc: '300日連続で勉強した',  category: 'special', room: 'legend', sort: 2, cond: { kind: 'streak', days: 300 } },
+  { id: 'lg_streak_500',  image: IMG('sheetk1_03'), title: '覇道の継続',   desc: '500日連続で勉強した',  category: 'special', room: 'legend', sort: 3, cond: { kind: 'streak', days: 500 } },
+  { id: 'lg_streak_730',  image: IMG('sheetk1_04'), title: '二年連続',     desc: '730日連続で勉強した',  category: 'special', room: 'legend', sort: 4, cond: { kind: 'streak', days: 730 } },
+  { id: 'lg_streak_1000', image: IMG('sheetk1_05'), title: '千日連続',     desc: '1000日連続で勉強した', category: 'special', room: 'legend', sort: 5, cond: { kind: 'streak', days: 1000 } },
+
+  // 👑 天使柴 — Sheet_k2 (伝説の間): 累計時間の極み【最高難易度】
+  { id: 'lg_total_3000',  image: IMG('sheetk2_01'), title: '三千時間',         desc: '累計3000時間 勉強した',  category: 'special', room: 'legend', sort: 6,  cond: { kind: 'totalHours', hours: 3000 } },
+  { id: 'lg_total_4000',  image: IMG('sheetk2_02'), title: '四千時間',         desc: '累計4000時間 勉強した',  category: 'special', room: 'legend', sort: 7,  cond: { kind: 'totalHours', hours: 4000 } },
+  { id: 'lg_total_5000',  image: IMG('sheetk2_03'), title: '五千時間',         desc: '累計5000時間 勉強した',  category: 'special', room: 'legend', sort: 8,  cond: { kind: 'totalHours', hours: 5000 } },
+  { id: 'lg_total_7500',  image: IMG('sheetk2_04'), title: '七千五百時間',     desc: '累計7500時間 勉強した',  category: 'special', room: 'legend', sort: 9,  cond: { kind: 'totalHours', hours: 7500 } },
+  { id: 'lg_total_10000', image: IMG('sheetk2_05'), title: '一万時間の法則',   desc: '累計10000時間 勉強した', category: 'special', room: 'legend', sort: 10, cond: { kind: 'totalHours', hours: 10000 } },
+
+  // 👑 絆ベア — Sheet_k3 (伝説の間): 通算日数の極み & 全制覇【最高難易度】
+  { id: 'lg_days_365',   image: IMG('sheetk3_01'), title: '皆勤の一年',  desc: '通算365日 勉強した',       category: 'special', room: 'legend', sort: 11, cond: { kind: 'totalDays', days: 365 } },
+  { id: 'lg_days_500',   image: IMG('sheetk3_02'), title: '五百日の絆',  desc: '通算500日 勉強した',       category: 'special', room: 'legend', sort: 12, cond: { kind: 'totalDays', days: 500 } },
+  { id: 'lg_days_730',   image: IMG('sheetk3_03'), title: '二年の歩み',  desc: '通算730日 勉強した',       category: 'special', room: 'legend', sort: 13, cond: { kind: 'totalDays', days: 730 } },
+  { id: 'lg_days_1000',  image: IMG('sheetk3_04'), title: '千日の記録',  desc: '通算1000日 勉強した',      category: 'special', room: 'legend', sort: 14, cond: { kind: 'totalDays', days: 1000 } },
+  { id: 'lg_all',        image: IMG('sheetk3_05'), title: '全制覇',      desc: '全バッジを集めた',         category: 'special', room: 'legend', sort: 15, cond: { kind: 'badgePercent', percent: 100 } },
 ];
 
 export const ROOMS: { id: RoomId; name: string; emoji: string }[] = [
-  { id: 'kids',  name: 'こども部屋',     emoji: '🧸' },
-  { id: 'hall',  name: '大広間',         emoji: '🏛️' },
-  { id: 'glory', name: '栄光の間',       emoji: '🔥' },
-  { id: 'lily',  name: 'Lilyの特別室',   emoji: '🐕' },
+  { id: 'kids',   name: 'こども部屋',     emoji: '🧸' },
+  { id: 'hall',   name: '大広間',         emoji: '🏛️' },
+  { id: 'glory',  name: '栄光の間',       emoji: '🔥' },
+  { id: 'lily',   name: 'Lilyの特別室',   emoji: '🐕' },
+  { id: 'legend', name: '伝説の間',       emoji: '👑' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +189,8 @@ export interface StudyStats {
   distinctCategories: number;
   hasMorning: boolean;
   hasWeekend: boolean;
+  morningDays: number;      // distinct days with a 5:00–8:00 session
+  weekendDays: number;      // distinct Sat/Sun days studied
   nightDays: number;        // distinct days with a 0:00–5:00 session
   maxGapDays: number;       // longest gap (days) between two studied days
   daysSinceFirst: number;
@@ -162,6 +216,8 @@ export function computeStudyStats(
   const dayCats = new Map<number, Set<number>>();     // dayNum -> categoryIds
   const allCats = new Set<number>();
   const nightDaySet = new Set<number>();
+  const morningDaySet = new Set<number>();
+  const weekendDaySet = new Set<number>();
   let totalSeconds = 0;
   let maxSessionSeconds = 0;
   let pomodoroCount = 0;
@@ -182,10 +238,10 @@ export function computeStudyStats(
     }
     const start = new Date(s.startTime);
     const hour = start.getHours();
-    if (hour >= 5 && hour < 8) hasMorning = true;
+    if (hour >= 5 && hour < 8) { hasMorning = true; morningDaySet.add(day); }
     if (hour < 5) nightDaySet.add(day);
     const wd = start.getDay();
-    if (wd === 0 || wd === 6) hasWeekend = true;
+    if (wd === 0 || wd === 6) { hasWeekend = true; weekendDaySet.add(day); }
   }
 
   const days = [...dayTotals.keys()].sort((a, b) => a - b);
@@ -240,6 +296,8 @@ export function computeStudyStats(
     distinctCategories: allCats.size,
     hasMorning,
     hasWeekend,
+    morningDays: morningDaySet.size,
+    weekendDays: weekendDaySet.size,
     nightDays: nightDaySet.size,
     maxGapDays,
     daysSinceFirst,
@@ -263,6 +321,8 @@ export function condProgress(cond: BadgeCondition, stats: StudyStats): [number, 
     case 'totalDays':       return [stats.distinctDays, cond.days];
     case 'categoriesInDay': return [stats.maxCategoriesInDay, cond.count];
     case 'categoriesTotal': return [stats.distinctCategories, cond.count];
+    case 'morningCount':    return [stats.morningDays, cond.count];
+    case 'weekendCount':    return [stats.weekendDays, cond.count];
     case 'nightCount':      return [stats.nightDays, cond.count];
     case 'comeback':        return [stats.maxGapDays, cond.gapDays];
     case 'daysSinceFirst':  return [stats.daysSinceFirst, cond.days];
