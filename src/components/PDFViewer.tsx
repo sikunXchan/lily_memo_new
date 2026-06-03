@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X, Upload, FileText, Link as LinkIcon, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
-  Play, Pause, RotateCcw, Highlighter, Pencil, Trash2,
+  Play, Pause, RotateCcw, RotateCw, Highlighter, Pencil, Trash2,
   Image as ImageIcon, Plus, Maximize2, Minimize2,
   Minus, MessageSquare, ChevronDown, ChevronUp,
 } from 'lucide-react';
@@ -89,9 +89,10 @@ function buildPDFBlob(pages: Array<{ jpegBytes: Uint8Array; w: number; h: number
   return new Blob([out], { type: 'application/pdf' });
 }
 
-async function imagesToPDFUrl(files: File[]): Promise<string> {
+async function imagesToPDFUrl(files: File[], rotations: number[] = []): Promise<string> {
   const pages: Array<{ jpegBytes: Uint8Array; w: number; h: number }> = [];
-  for (const file of files) {
+  for (let idx = 0; idx < files.length; idx++) {
+    const file = files[idx];
     const dataUrl = await new Promise<string>((res, rej) => {
       const r = new FileReader();
       r.onload = e => res(e.target!.result as string);
@@ -109,15 +110,26 @@ async function imagesToPDFUrl(files: File[]): Promise<string> {
       const r = Math.min(MAX_IMG_DIM / w, MAX_IMG_DIM / h);
       w = Math.round(w * r); h = Math.round(h * r);
     }
+    // Apply the user's chosen rotation (0/90/180/270). For 90/270 the page
+    // dimensions are swapped so the rotated image fits exactly.
+    const rot = (((rotations[idx] ?? 0) % 360) + 360) % 360;
+    const swap = rot === 90 || rot === 270;
+    const cw = swap ? h : w;
+    const ch = swap ? w : h;
     const cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
+    cv.width = cw; cv.height = ch;
     const c = cv.getContext('2d')!;
-    c.fillStyle = '#fff'; c.fillRect(0,0,w,h); c.drawImage(img,0,0,w,h);
+    c.fillStyle = '#fff'; c.fillRect(0, 0, cw, ch);
+    c.save();
+    c.translate(cw / 2, ch / 2);
+    c.rotate((rot * Math.PI) / 180);
+    c.drawImage(img, -w / 2, -h / 2, w, h);
+    c.restore();
     const b64 = cv.toDataURL('image/jpeg', 0.92).split(',')[1];
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
-    pages.push({ jpegBytes: bytes, w, h });
+    pages.push({ jpegBytes: bytes, w: cw, h: ch });
   }
   return URL.createObjectURL(buildPDFBlob(pages));
 }
@@ -201,6 +213,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   // Photo-to-PDF
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoThumbs, setPhotoThumbs] = useState<string[]>([]);
+  const [photoRotations, setPhotoRotations] = useState<number[]>([]);
   const [isConvertingPDF, setIsConvertingPDF] = useState(false);
 
   // Canvas & DOM refs
@@ -714,6 +727,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     const thumbs = files.map(f => URL.createObjectURL(f));
     setPhotoFiles(prev => [...prev, ...files]);
     setPhotoThumbs(prev => [...prev, ...thumbs]);
+    setPhotoRotations(prev => [...prev, ...files.map(() => 0)]);
     e.target.value = '';
   };
 
@@ -721,15 +735,20 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     URL.revokeObjectURL(photoThumbs[idx]);
     setPhotoFiles(prev => prev.filter((_, i) => i !== idx));
     setPhotoThumbs(prev => prev.filter((_, i) => i !== idx));
+    setPhotoRotations(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const rotatePhoto = (idx: number) => {
+    setPhotoRotations(prev => prev.map((r, i) => (i === idx ? (r + 90) % 360 : r)));
   };
 
   const handleCreatePDF = async () => {
     if (!photoFiles.length) return;
     setIsConvertingPDF(true);
     try {
-      const pdfUrl = await imagesToPDFUrl(photoFiles);
+      const pdfUrl = await imagesToPDFUrl(photoFiles, photoRotations);
       photoThumbs.forEach(t => URL.revokeObjectURL(t));
-      setPhotoFiles([]); setPhotoThumbs([]);
+      setPhotoFiles([]); setPhotoThumbs([]); setPhotoRotations([]);
       if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
       blobUrlRef.current = pdfUrl;
       await loadPDF(pdfUrl, pdfUrl);
@@ -1403,8 +1422,14 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
               <div className="photo-thumbs">
                 {photoThumbs.map((src, i) => (
                   <div key={i} className="photo-thumb-wrap">
-                    <img src={src} alt={`photo ${i+1}`} className="photo-thumb" />
+                    <img
+                      src={src}
+                      alt={`photo ${i+1}`}
+                      className="photo-thumb"
+                      style={{ transform: `rotate(${photoRotations[i] ?? 0}deg)` }}
+                    />
                     <span className="photo-num">{i+1}</span>
+                    <button className="photo-rotate" onClick={() => rotatePhoto(i)} title="90°回転"><RotateCw size={12} /></button>
                     <button className="photo-remove" onClick={() => removePhoto(i)}><X size={12} /></button>
                   </div>
                 ))}
@@ -1508,7 +1533,7 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
         .photo-thumb {
           width:72px; height:72px; object-fit:cover;
           border-radius:8px; border:1px solid var(--border);
-          display:block;
+          display:block; transition:transform 0.2s ease;
         }
         .photo-num {
           position:absolute; bottom:3px; left:3px;
@@ -1525,6 +1550,14 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           cursor:pointer; transition:opacity 0.15s;
         }
         .photo-remove:hover { opacity:0.8; }
+        .photo-rotate {
+          position:absolute; bottom:3px; right:3px;
+          width:22px; height:22px;
+          background:rgba(0,0,0,0.6); color:white; border:none; border-radius:6px;
+          display:flex; align-items:center; justify-content:center;
+          cursor:pointer; transition:opacity 0.15s;
+        }
+        .photo-rotate:hover { opacity:0.8; }
         .btn-create-pdf {
           padding:12px; background:var(--primary); color:white;
           font-weight:700; border-radius:10px; border:none;
