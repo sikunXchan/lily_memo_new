@@ -1,4 +1,4 @@
-import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, newSyncId } from './db';
+import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -35,6 +35,7 @@ export interface SyncPayload extends BackupPayload {
   studyCategories?: StudyCategory[];
   studySessions?: StudySession[];
   todos?: Todo[];
+  earnedBadges?: EarnedBadge[];
 }
 
 export async function buildSyncJson(): Promise<string> {
@@ -42,7 +43,8 @@ export async function buildSyncJson(): Promise<string> {
   const studyCategories = await db.studyCategories.toArray();
   const studySessions = await db.studySessions.toArray();
   const todos = await db.todos.toArray();
-  const payload: SyncPayload = { ...base, studyCategories, studySessions, todos };
+  const earnedBadges = await db.earnedBadges.toArray();
+  const payload: SyncPayload = { ...base, studyCategories, studySessions, todos, earnedBadges };
   return JSON.stringify(payload);
 }
 
@@ -79,6 +81,17 @@ export async function restoreSyncFromJson(jsonText: string): Promise<void> {
       }
     }
   });
+
+  // Earned badges: additive merge (never remove a badge already unlocked here;
+  // keep the earliest earnedAt when both sides have it).
+  if (data.earnedBadges?.length) {
+    const existing = new Map((await db.earnedBadges.toArray()).map(b => [b.badgeId, b.earnedAt]));
+    const merged: EarnedBadge[] = data.earnedBadges.map(b => ({
+      badgeId: b.badgeId,
+      earnedAt: Math.min(b.earnedAt, existing.get(b.badgeId) ?? b.earnedAt),
+    }));
+    await db.earnedBadges.bulkPut(merged);
+  }
 }
 
 export async function buildBackupJson(): Promise<string> {

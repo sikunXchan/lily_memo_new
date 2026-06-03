@@ -1,6 +1,6 @@
 import { liveQuery } from 'dexie';
 import { db, newSyncId } from './db';
-import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo } from './db';
+import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge } from './db';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
 const POLL_INTERVAL_MS  = 30_000;
@@ -15,6 +15,7 @@ interface LiveSnapshot {
   scheduleDays:     ScheduleDay[];
   savedChats:       SavedChat[];
   todos:            Todo[];
+  earnedBadges:     EarnedBadge[];
   ts: number;
 }
 
@@ -28,7 +29,7 @@ let _dexieSub:    { unsubscribe: () => void }    | null = null;
 
 // ── Build local snapshot ─────────────────────────────────────────
 async function buildSnapshot(): Promise<LiveSnapshot> {
-  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos] = await Promise.all([
+  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges] = await Promise.all([
     db.notes.toArray(),
     db.folders.toArray(),
     db.studySessions.toArray(),
@@ -37,8 +38,9 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     db.scheduleDays.toArray(),
     db.savedChats.toArray(),
     db.todos.toArray(),
+    db.earnedBadges.toArray(),
   ]);
-  return { notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, ts: Date.now() };
+  return { notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, ts: Date.now() };
 }
 
 // ── Push to Redis ────────────────────────────────────────────────
@@ -149,6 +151,21 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       }
     }
 
+    // Earned badges: additive union by badgeId. Badges are never revoked, so
+    // we only add missing ones; if both sides have it, keep the earliest date.
+    if (remote.earnedBadges?.length) {
+      const localBadges = await db.earnedBadges.toArray();
+      const badgeMap = new Map(localBadges.map(b => [b.badgeId, b]));
+      for (const r of remote.earnedBadges) {
+        const local = badgeMap.get(r.badgeId);
+        if (!local) {
+          await db.earnedBadges.put({ badgeId: r.badgeId, earnedAt: r.earnedAt });
+        } else if (r.earnedAt < local.earnedAt) {
+          await db.earnedBadges.put({ badgeId: r.badgeId, earnedAt: r.earnedAt });
+        }
+      }
+    }
+
     // Todos: per-record last-write-wins keyed by createdAt (stable across
     // devices). updatedAt is the version clock — it is bumped on every
     // mutation INCLUDING soft-delete, so a deletion always carries a fresh
@@ -220,6 +237,7 @@ export function initLiveSync(key: string) {
     db.studyCategories.count(),
     db.exams.count(),
     db.savedChats.count(),
+    db.earnedBadges.count(),
     db.todos.orderBy('updatedAt').last().then(t => t?.updatedAt ?? 0),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());
