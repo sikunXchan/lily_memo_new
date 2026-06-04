@@ -74,7 +74,7 @@ export default function TrophyRoom({ onClose }: Props) {
           return (
             <section key={room.id} className={`tr-room ${room.id}`}>
               <div className="tr-room-head">
-                <span className="tr-room-name">{room.emoji} {room.name}</span>
+                <span className="tr-room-name"><span className="tr-tier">TIER {room.tier}</span>{room.emoji} {room.name}</span>
                 <span className="tr-room-count">{got} / {list.length}</span>
               </div>
               <div className="tr-grid">
@@ -164,7 +164,14 @@ export default function TrophyRoom({ onClose }: Props) {
         .tr-room-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
         .tr-room.kids .tr-room-name, .tr-room.hall .tr-room-name { color: #3b2f1a; }
         .tr-room.glory .tr-room-name, .tr-room.lily .tr-room-name, .tr-room.legend .tr-room-name { color: #fde68a; }
-        .tr-room-name { font-weight: 900; font-size: 0.95rem; }
+        .tr-room-name { font-weight: 900; font-size: 0.95rem; display: flex; align-items: center; gap: 7px; }
+        .tr-tier {
+          font-size: 0.66rem; font-weight: 900; letter-spacing: 0.08em;
+          padding: 2px 8px; border-radius: 7px;
+          background: rgba(0,0,0,0.28); color: #fde68a;
+          border: 1px solid rgba(253,230,138,0.45);
+        }
+        .tr-room.kids .tr-tier, .tr-room.hall .tr-tier { background: rgba(255,255,255,0.6); color: #7c2d12; border-color: rgba(124,45,18,0.3); }
         .tr-room-count { font-weight: 800; font-size: 0.78rem; padding: 2px 10px; border-radius: 99px; background: rgba(255,255,255,0.55); color: #1e293b; }
         .tr-room.glory .tr-room-count, .tr-room.lily .tr-room-count, .tr-room.legend .tr-room-count { background: rgba(255,255,255,0.18); color: #fff; }
 
