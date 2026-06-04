@@ -8,8 +8,9 @@ import { computeStudyStats, syncEarnedBadges, BADGES } from '@/lib/badges';
 import type { BadgeDef } from '@/lib/badges';
 import { getStudyProfile, daysUntilGoal, goalHoursForDate, isHolidayDate } from '@/lib/studyProfile';
 import type { StudyProfile } from '@/lib/studyProfile';
-import { getLevelInfo, fmtHoursShort, MAX_LEVEL } from '@/lib/level';
-import type { Rank } from '@/lib/level';
+import { getLevelInfo } from '@/lib/level';
+import type { LevelTier } from '@/lib/level';
+import LevelIcon from './LevelIcon';
 
 function todayStr(): string {
   const d = new Date();
@@ -39,12 +40,15 @@ interface Props {
 }
 
 export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
-  const sessions = useLiveQuery(() => db.studySessions.filter(s => !s.deletedAt).toArray(), [], []);
+  const sessions = useLiveQuery(() => db.studySessions.filter(s => !s.deletedAt).toArray(), []);
   const earnedCount = useLiveQuery(() => db.earnedBadges.count(), [], 0);
   const [profile, setProfile] = useState<StudyProfile>(getStudyProfile);
   const [celebrate, setCelebrate] = useState<BadgeDef[]>([]);
-  const [levelUp, setLevelUp] = useState<{ level: number; rank: Rank } | null>(null);
+  const [levelUp, setLevelUp] = useState<{ level: number; tier: LevelTier } | null>(null);
   const firstSync = useRef(true);
+  // Per-session baseline for level-up detection. Stays null until sessions have
+  // actually loaded, so the initial empty→loaded jump never fires a popup.
+  const lastLevel = useRef<number | null>(null);
 
   useEffect(() => {
     const onCh = () => setProfile(getStudyProfile());
@@ -68,16 +72,16 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   const stats = computeStudyStats(sessions ?? [], { weekday: profile.weekdayGoalHours, holiday: profile.holidayGoalHours });
   const lvl = getLevelInfo(stats.totalSeconds);
 
-  // Detect level-ups. The first run after mount just records the current level
-  // silently (so existing users aren't spammed); later increases pop a popup.
+  // Detect level-ups. We wait until sessions have actually loaded, then take the
+  // current level as the silent baseline — so opening the app (empty → loaded,
+  // or a fresh page render) never fires a spurious popup. Only an increase that
+  // happens live in this session pops the celebration.
   useEffect(() => {
-    const KEY = 'lily_last_level';
-    const prevRaw = localStorage.getItem(KEY);
-    if (prevRaw === null) { localStorage.setItem(KEY, String(lvl.level)); return; }
-    const prev = Number(prevRaw);
-    if (lvl.level > prev) setLevelUp({ level: lvl.level, rank: lvl.rank });
-    if (lvl.level !== prev) localStorage.setItem(KEY, String(lvl.level));
-  }, [lvl.level, lvl.rank]);
+    if (sessions === undefined) return; // still loading
+    if (lastLevel.current === null) { lastLevel.current = lvl.level; return; }
+    if (lvl.level > lastLevel.current) setLevelUp({ level: lvl.level, tier: lvl.tier });
+    lastLevel.current = lvl.level;
+  }, [sessions, lvl.level, lvl.tier]);
 
   const today = todayStr();
   const todaySec = (sessions ?? []).filter(s => s.date === today).reduce((s, x) => s + x.duration, 0);
@@ -120,19 +124,6 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
             <div className="sg-prog-bar"><div className="sg-prog-fill" style={{ width: `${pct}%` }} /></div>
             <span className="sg-prog-label">
               今日 {fmtHM(todaySec)}{goalSec > 0 ? ` / ${isHolidayDate() ? '休日' : '平日'}目標 ${todayGoalHours}時間` : ''}
-            </span>
-          </div>
-
-          {/* level + XP bar */}
-          <div className="sg-level" onClick={onOpenTrophy} role="button" tabIndex={0}>
-            <span className="sg-level-badge" style={{ color: lvl.rank.color }}>
-              {lvl.rank.emoji} Lv {lvl.level}
-            </span>
-            <div className="sg-level-bar">
-              <div className="sg-level-fill" style={{ width: `${lvl.pct}%`, background: lvl.rank.color }} />
-            </div>
-            <span className="sg-level-next">
-              {lvl.isMax ? 'MAX!' : `次まで ${fmtHoursShort(lvl.remainingHours)}`}
             </span>
           </div>
 
@@ -202,13 +193,9 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
           </div>
           <div className="sg-celebrate-card" onClick={e => e.stopPropagation()}>
             <p className="sg-celebrate-title">⬆️ レベルアップ！</p>
-            <p className="sg-levelup-num" style={{ color: levelUp.rank.color }}>Lv {levelUp.level}</p>
-            <p className="sg-levelup-rank" style={{ color: levelUp.rank.color }}>
-              {levelUp.rank.emoji} {levelUp.rank.name}
-            </p>
-            <p className="sg-celebrate-desc">
-              {levelUp.level >= MAX_LEVEL ? '最高レベル到達！伝説だ🔥' : 'この調子で積み上げよう！'}
-            </p>
+            <div className="sg-levelup-icon"><LevelIcon tier={levelUp.tier} size={120} /></div>
+            <p className="sg-levelup-num" style={{ color: levelUp.tier.color }}>Lv {levelUp.level}</p>
+            <p className="sg-celebrate-desc">この調子で積み上げよう！</p>
             <button className="sg-celebrate-ok" onClick={() => setLevelUp(null)}>やったー！</button>
           </div>
         </div>
@@ -230,11 +217,6 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
         .sg-prog-bar { flex: 1; height: 8px; background: var(--accent); border-radius: 99px; overflow: hidden; }
         .sg-prog-fill { height: 100%; background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 50%, #fff)); border-radius: 99px; transition: width 0.5s; }
         .sg-prog-label { font-size: 0.72rem; font-weight: 700; color: var(--fg-muted); white-space: nowrap; }
-        .sg-level { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; cursor: pointer; }
-        .sg-level-badge { font-size: 0.78rem; font-weight: 900; white-space: nowrap; flex-shrink: 0; }
-        .sg-level-bar { flex: 1; height: 7px; background: var(--accent); border-radius: 99px; overflow: hidden; min-width: 40px; }
-        .sg-level-fill { height: 100%; border-radius: 99px; transition: width 0.5s; }
-        .sg-level-next { font-size: 0.68rem; font-weight: 700; color: var(--fg-muted); white-space: nowrap; flex-shrink: 0; }
         .sg-chips { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
         .sg-streak { display: inline-flex; align-items: center; gap: 3px; font-size: 0.74rem; font-weight: 800; color: #f97316; background: rgba(249,115,22,0.12); border-radius: 99px; padding: 4px 9px; }
         .sg-btn {
@@ -269,8 +251,8 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
         }
         @keyframes pop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .sg-celebrate-title { font-size: 0.95rem; font-weight: 800; color: var(--primary); margin: 0 0 12px; }
-        .sg-levelup-num { font-size: 3rem; font-weight: 900; margin: 6px 0 0; line-height: 1; }
-        .sg-levelup-rank { font-size: 1.2rem; font-weight: 900; margin: 6px 0 8px; }
+        .sg-levelup-icon { display: flex; justify-content: center; animation: bob 1.6s ease-in-out infinite; }
+        .sg-levelup-num { font-size: 3rem; font-weight: 900; margin: 8px 0 8px; line-height: 1; }
         .sg-celebrate-img { width: 150px; height: 150px; object-fit: contain; animation: bob 1.6s ease-in-out infinite; }
         @keyframes bob { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-8px) rotate(2deg)} }
         .sg-celebrate-name { font-size: 1.15rem; font-weight: 900; color: var(--foreground); margin: 8px 0 4px; }
