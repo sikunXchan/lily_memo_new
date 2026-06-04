@@ -8,14 +8,21 @@ interface Props { onClose: () => void; }
 
 export default function StudyProfileModal({ onClose }: Props) {
   const init = getStudyProfile();
-  const [goalHours, setGoalHours] = useState(init.dailyGoalHours);
+  const [weekdayHours, setWeekdayHours] = useState(init.weekdayGoalHours);
+  const [holidayHours, setHolidayHours] = useState(init.holidayGoalHours);
   const [subjects, setSubjects] = useState(init.subjects.join('、'));
   const [goalText, setGoalText] = useState(init.goalText);
   const [goalDate, setGoalDate] = useState(init.goalDate);
 
+  const clampHalf = (h: number) => Math.max(0, Math.round(h * 2) / 2);
+
   const save = () => {
+    const weekday = clampHalf(weekdayHours);
+    const holiday = clampHalf(holidayHours);
     saveStudyProfile({
-      dailyGoalHours: Math.max(0, Math.round(goalHours * 2) / 2),
+      dailyGoalHours: weekday,
+      weekdayGoalHours: weekday,
+      holidayGoalHours: holiday,
       subjects: subjects.split(/[、,]/).map(s => s.trim()).filter(Boolean),
       goalText: goalText.trim(),
       goalDate,
@@ -32,11 +39,18 @@ export default function StudyProfileModal({ onClose }: Props) {
         </div>
 
         <div className="pm-body">
-          <label className="pm-label">1日の目標時間</label>
+          <label className="pm-label">平日の目標時間</label>
           <div className="pm-stepper">
-            <button onClick={() => setGoalHours(h => Math.max(0, Math.round((h - 0.5) * 2) / 2))}><Minus size={16} /></button>
-            <span className="pm-hours">{goalHours} <small>時間</small></span>
-            <button onClick={() => setGoalHours(h => Math.round((h + 0.5) * 2) / 2)}><Plus size={16} /></button>
+            <button onClick={() => setWeekdayHours(h => Math.max(0, Math.round((h - 0.5) * 2) / 2))}><Minus size={16} /></button>
+            <span className="pm-hours">{weekdayHours} <small>時間</small></span>
+            <button onClick={() => setWeekdayHours(h => Math.round((h + 0.5) * 2) / 2)}><Plus size={16} /></button>
+          </div>
+
+          <label className="pm-label">休日の目標時間</label>
+          <div className="pm-stepper">
+            <button onClick={() => setHolidayHours(h => Math.max(0, Math.round((h - 0.5) * 2) / 2))}><Minus size={16} /></button>
+            <span className="pm-hours">{holidayHours} <small>時間</small></span>
+            <button onClick={() => setHolidayHours(h => Math.round((h + 0.5) * 2) / 2)}><Plus size={16} /></button>
           </div>
 
           <label className="pm-label">勉強している科目（読点・カンマ区切り）</label>

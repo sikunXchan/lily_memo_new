@@ -167,7 +167,7 @@ function ResultScreen({ totalSecs, rounds, onClose }: { totalSecs: number; round
               <span className="rs-stat-lbl">ポモドーロ</span>
             </div>
             <div className="rs-stat">
-              <span className="rs-stat-val">{h > 0 ? `${h}h` : `${m}m`}</span>
+              <span className="rs-stat-val">{h > 0 ? `${h}時間` : `${m}分`}</span>
               <span className="rs-stat-lbl">集中時間</span>
             </div>
           </div>
@@ -442,9 +442,9 @@ export default function FocusMode({ onClose }: FocusModeProps) {
   const liveFocusSecs = totalFocusSecs + (running && phase === 'focus' ? FOCUS_SECS - remaining : 0);
   const liveFmtH = Math.floor(liveFocusSecs / 3600);
   const liveFmtM = Math.floor((liveFocusSecs % 3600) / 60);
-  const liveLabel = liveFocusSecs === 0 ? '0m'
-    : liveFmtH > 0 ? `${liveFmtH}h${liveFmtM > 0 ? liveFmtM + 'm' : ''}`
-    : `${liveFmtM}m`;
+  const liveLabel = liveFocusSecs === 0 ? '0分'
+    : liveFmtH > 0 ? `${liveFmtH}時間${liveFmtM > 0 ? liveFmtM + '分' : ''}`
+    : `${liveFmtM}分`;
 
   const isFirstStart = !running && remaining === (phase === 'focus' ? FOCUS_SECS : BREAK_SECS);
 

@@ -48,9 +48,9 @@ function fmtClock(secs: number): string {
 function fmtDur(secs: number): string {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
-  if (h > 0) return `${h}h${m > 0 ? m + 'm' : ''}`;
-  if (m > 0) return `${m}m`;
-  return secs > 0 ? `${secs}s` : '0m';
+  if (h > 0) return `${h}時間${m > 0 ? m + '分' : ''}`;
+  if (m > 0) return `${m}分`;
+  return secs > 0 ? `${secs}秒` : '0分';
 }
 
 function fmtDateTime(ts: number): string {
@@ -158,7 +158,7 @@ export interface StudyTrackerProps {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus }: StudyTrackerProps) {
-  const [view, setView] = useState<'timer' | 'stats'>('timer');
+  const [view, setView] = useState<'timer' | 'stats' | 'total'>('timer');
   const [period, setPeriod]   = useState<'7d' | '30d' | '1y'>('7d');
   const [offset, setOffset]   = useState(0);
   const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
@@ -353,6 +353,18 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
     catMap.set(key, { name: s.categoryName ?? 'カテゴリなし', color: s.categoryColor ?? '#94a3b8', secs: (prev?.secs ?? 0) + s.duration });
   }
   const catTotals = [...catMap.values()].sort((a, b) => b.secs - a.secs);
+
+  // ── All-time totals (合計タブ & 初期画面) ──────────────────────────────────
+  const grandTotal = sessions.reduce((sum, s) => sum + s.duration, 0);
+  const allCatMap = new Map<string, { name: string; color: string; secs: number }>();
+  for (const s of sessions) {
+    const key = s.categoryId !== null ? `c${s.categoryId}` : 'none';
+    const prev = allCatMap.get(key);
+    allCatMap.set(key, { name: s.categoryName ?? 'カテゴリなし', color: s.categoryColor ?? '#94a3b8', secs: (prev?.secs ?? 0) + s.duration });
+  }
+  const allCatTotals = [...allCatMap.values()].sort((a, b) => b.secs - a.secs);
+  const totalDays = sessionDates.size;
+
   const periodLabel = offset === 0
     ? (period === '7d' ? '直近7日間' : period === '30d' ? '直近4週間' : '直近1年間')
     : `${buckets[0]?.label ?? ''} 〜 ${buckets[buckets.length-1]?.label ?? ''}`;
@@ -374,6 +386,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           </button>
           <button className={`st-tab ${view === 'stats' ? 'active' : ''}`} onClick={() => setView('stats')}>
             <BarChart2 size={13} /> 記録
+          </button>
+          <button className={`st-tab ${view === 'total' ? 'active' : ''}`} onClick={() => setView('total')}>
+            <GraduationCap size={13} /> 合計
           </button>
         </div>
       </div>
@@ -472,10 +487,16 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             </button>
           </div>
 
-          {/* Today total */}
-          <div className="today-card">
-            <span className="today-label">今日の学習</span>
-            <span className="today-total">{fmtDur(todayTotal + (isRunning ? elapsed : 0))}</span>
+          {/* Today + all-time total */}
+          <div className="total-row">
+            <div className="today-card">
+              <span className="today-label">今日の学習</span>
+              <span className="today-total">{fmtDur(todayTotal + (isRunning ? elapsed : 0))}</span>
+            </div>
+            <button className="today-card today-card-btn" onClick={() => setView('total')}>
+              <span className="today-label">合計学習時間</span>
+              <span className="today-total">{fmtDur(grandTotal + (isRunning ? elapsed : 0))}</span>
+            </button>
           </div>
 
           {/* Recent sessions */}
@@ -673,6 +694,46 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         </div>
       )}
 
+      {/* ── Total view ── */}
+      {view === 'total' && (
+        <div className="st-scroll">
+          <div className="grand-card">
+            <span className="grand-label">合計学習時間</span>
+            <span className="grand-total">{fmtDur(grandTotal)}</span>
+            <span className="grand-sub">{totalDays}日間 ・ {sessions.length}セッション</span>
+          </div>
+
+          {allCatTotals.length > 0 ? (
+            <div className="cat-breakdown">
+              <p className="breakdown-title">カテゴリ別 合計</p>
+              {allCatTotals.map((c, i) => (
+                <div key={i} className="breakdown-row">
+                  <div className="breakdown-head">
+                    <span className="breakdown-dot" style={{ background: c.color }} />
+                    <span className="breakdown-name">{c.name}</span>
+                    <span className="breakdown-time">{fmtDur(c.secs)}</span>
+                  </div>
+                  <div className="breakdown-bar-bg">
+                    <div
+                      className="breakdown-bar-fill"
+                      style={{ width: `${grandTotal > 0 ? Math.round((c.secs / grandTotal) * 100) : 0}%`, background: c.color }}
+                    />
+                  </div>
+                  <span className="breakdown-pct">{grandTotal > 0 ? Math.round((c.secs / grandTotal) * 100) : 0}%</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="no-sessions">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/allstar.PNG" alt="" className="no-sessions-img" />
+              <p>まだ学習記録がないよ！</p>
+              <p className="no-sessions-sub">タイマータブで記録してみてね 📚</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Bottom nav — desktop only, hidden on mobile (BackBubble handles mobile nav) */}
       {onSwitchTab && (
         <nav className="st-bottom-nav">
@@ -739,6 +800,19 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .today-card { background:color-mix(in srgb,var(--primary) 10%,transparent); border:1px solid color-mix(in srgb,var(--primary) 25%,transparent); border-radius:14px; padding:14px 18px; display:flex; align-items:center; justify-content:space-between; }
         .today-label { font-size:.8rem; font-weight:600; color:var(--fg-muted); }
         .today-total { font-size:1.6rem; font-weight:800; color:var(--primary); }
+        .total-row { display:flex; gap:10px; }
+        .total-row .today-card { flex:1; flex-direction:column; align-items:flex-start; gap:4px; padding:12px 14px; min-width:0; }
+        .total-row .today-total { font-size:1.25rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+        .total-row .today-label { font-size:.72rem; }
+        .today-card-btn { cursor:pointer; text-align:left; font-family:inherit; transition:transform .12s, box-shadow .12s; }
+        .today-card-btn:hover { transform:translateY(-2px); box-shadow:0 4px 14px rgba(99,102,241,.18); }
+
+        /* ── Total view ── */
+        .grand-card { background:linear-gradient(135deg,color-mix(in srgb,var(--primary) 18%,var(--background)),var(--background)); border:1px solid color-mix(in srgb,var(--primary) 30%,transparent); border-radius:18px; padding:22px 18px; display:flex; flex-direction:column; align-items:center; gap:6px; }
+        .grand-label { font-size:.82rem; font-weight:700; color:var(--fg-muted); }
+        .grand-total { font-size:2.4rem; font-weight:900; color:var(--primary); line-height:1.1; text-align:center; }
+        .grand-sub { font-size:.74rem; font-weight:600; color:var(--fg-muted); }
+        .breakdown-pct { font-size:.68rem; font-weight:700; color:var(--fg-muted); text-align:right; }
 
         /* ── Recent sessions ── */
         .recent-section { display:flex; flex-direction:column; gap:6px; }
