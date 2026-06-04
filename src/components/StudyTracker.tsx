@@ -161,6 +161,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const [view, setView] = useState<'timer' | 'stats'>('timer');
   const [period, setPeriod]   = useState<'7d' | '30d' | '1y'>('7d');
   const [offset, setOffset]   = useState(0);
+  const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
 
   // Trophy room + profile modal
   const [showTrophy, setShowTrophy] = useState(false);
@@ -566,15 +567,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {view === 'stats' && (
         <div className="st-scroll">
           <div className="period-row">
-            <button className={`period-btn ${period === '7d'  ? 'active' : ''}`} onClick={() => { setPeriod('7d');  setOffset(0); }}>7日間</button>
-            <button className={`period-btn ${period === '30d' ? 'active' : ''}`} onClick={() => { setPeriod('30d'); setOffset(0); }}>30日間</button>
-            <button className={`period-btn ${period === '1y'  ? 'active' : ''}`} onClick={() => { setPeriod('1y');  setOffset(0); }}>1年間</button>
+            <button className={`period-btn ${period === '7d'  ? 'active' : ''}`} onClick={() => { setPeriod('7d');  setOffset(0); setSelectedBucket(null); }}>7日間</button>
+            <button className={`period-btn ${period === '30d' ? 'active' : ''}`} onClick={() => { setPeriod('30d'); setOffset(0); setSelectedBucket(null); }}>30日間</button>
+            <button className={`period-btn ${period === '1y'  ? 'active' : ''}`} onClick={() => { setPeriod('1y');  setOffset(0); setSelectedBucket(null); }}>1年間</button>
             <div className="period-nav">
-              <button className="period-nav-btn" onClick={() => setOffset(o => o + 1)} title="前の期間">
+              <button className="period-nav-btn" onClick={() => { setOffset(o => o + 1); setSelectedBucket(null); }} title="前の期間">
                 <ChevronLeft size={16} />
               </button>
               <span className="period-nav-label">{periodLabel}</span>
-              <button className="period-nav-btn" onClick={() => setOffset(o => Math.max(0, o - 1))} disabled={offset === 0} title="次の期間">
+              <button className="period-nav-btn" onClick={() => { setOffset(o => Math.max(0, o - 1)); setSelectedBucket(null); }} disabled={offset === 0} title="次の期間">
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -600,11 +601,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                 </p>
                 <div className="bar-chart">
                   {buckets.map((b, i) => (
-                    <div key={i} className="bar-col">
-                      <div className="bar-time">{b.total > 0 ? fmtDur(b.total) : ''}</div>
+                    <div key={i} className="bar-col" onClick={() => setSelectedBucket(selectedBucket === i ? null : i)}>
                       <div className="bar-wrap">
                         <div
-                          className={`bar-stack${b.current ? ' cur' : ''}`}
+                          className={`bar-stack${b.current ? ' cur' : ''}${selectedBucket === i ? ' sel' : ''}`}
                           style={{ height: `${b.total > 0 ? Math.max(Math.round((b.total / maxBucket) * 100), 4) : 0}%` }}
                         >
                           {b.segs.length > 0
@@ -615,10 +615,30 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                           }
                         </div>
                       </div>
-                      <span className="bar-label">{b.label}</span>
+                      <span className={`bar-label${selectedBucket === i ? ' sel' : ''}`}>{b.label}</span>
                     </div>
                   ))}
                 </div>
+                {selectedBucket !== null && (() => {
+                  const b = buckets[selectedBucket];
+                  return (
+                    <div className="bar-detail">
+                      <span className="bar-detail-label">{b.label}</span>
+                      <span className="bar-detail-total">{b.total > 0 ? fmtDur(b.total) : '記録なし'}</span>
+                      {b.segs.length > 0 && (
+                        <div className="bar-detail-segs">
+                          {b.segs.map((seg, j) => (
+                            <div key={j} className="bar-detail-seg">
+                              <span className="bar-detail-dot" style={{ background: seg.color }} />
+                              <span className="bar-detail-name">{seg.name}</span>
+                              <span className="bar-detail-time">{fmtDur(seg.secs)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {catTotals.length > 0 && (
@@ -765,13 +785,23 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .chart-card { background:var(--accent); border:1px solid var(--border); border-radius:14px; padding:14px; }
         .chart-title { font-size:.75rem; font-weight:700; color:var(--fg-muted); margin-bottom:10px; }
         .bar-chart { display:flex; gap:3px; align-items:flex-end; height:130px; }
-        .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; height:100%; min-width:0; }
-        .bar-time { font-size:0.55rem; color:var(--fg-muted); height:14px; display:flex; align-items:flex-end; white-space:nowrap; }
+        .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; height:100%; min-width:0; cursor:pointer; }
         .bar-wrap { flex:1; width:100%; display:flex; align-items:flex-end; }
         .bar-stack { width:100%; display:flex; flex-direction:column-reverse; border-radius:4px 4px 0 0; overflow:hidden; transition:height .4s ease; }
         .bar-stack.cur { outline:2px solid var(--primary); outline-offset:-1px; }
+        .bar-stack.sel { outline:2px solid var(--primary); outline-offset:-1px; opacity:1; filter:brightness(1.15); }
         .bar-seg { width:100%; min-height:1px; }
         .bar-label { font-size:0.58rem; color:var(--fg-muted); text-align:center; white-space:nowrap; overflow:hidden; width:100%; text-overflow:ellipsis; }
+        .bar-label.sel { color:var(--primary); font-weight:800; }
+        .bar-detail { margin-top:12px; background:var(--background); border:1px solid var(--border); border-radius:12px; padding:11px 14px; display:flex; flex-direction:column; gap:6px; animation:fadeUp .18s ease; }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+        .bar-detail-label { font-size:.7rem; font-weight:700; color:var(--fg-muted); }
+        .bar-detail-total { font-size:1.1rem; font-weight:800; color:var(--foreground); }
+        .bar-detail-segs { display:flex; flex-direction:column; gap:4px; margin-top:2px; }
+        .bar-detail-seg { display:flex; align-items:center; gap:7px; }
+        .bar-detail-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+        .bar-detail-name { flex:1; font-size:.8rem; color:var(--foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .bar-detail-time { font-size:.78rem; font-weight:700; color:var(--fg-muted); font-variant-numeric:tabular-nums; flex-shrink:0; }
 
         .cat-breakdown { background:var(--accent); border:1px solid var(--border); border-radius:14px; padding:14px; display:flex; flex-direction:column; gap:10px; }
         .breakdown-title { font-size:.75rem; font-weight:700; color:var(--fg-muted); }
