@@ -52,7 +52,7 @@ export default function TrophyRoom({ onClose }: Props) {
     return () => window.removeEventListener('keydown', onEsc);
   }, [selected, onClose]);
 
-  const stats = computeStudyStats(sessions ?? [], profile.dailyGoalHours);
+  const stats = computeStudyStats(sessions ?? [], { weekday: profile.weekdayGoalHours, holiday: profile.holidayGoalHours });
   const earnedMap = new Map(earned.map(e => [e.badgeId, e.earnedAt]));
   const totalEarned = BADGES.filter(b => earnedMap.has(b.id)).length;
 

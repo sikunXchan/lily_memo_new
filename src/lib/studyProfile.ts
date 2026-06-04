@@ -2,7 +2,9 @@
 // and the "daily goal" badge. Stored in localStorage (offline, no sync needed).
 
 export interface StudyProfile {
-  dailyGoalHours: number;   // target hours per day
+  dailyGoalHours: number;   // legacy field, kept in sync with the weekday goal
+  weekdayGoalHours: number; // target hours on weekdays (Mon–Fri)
+  holidayGoalHours: number; // target hours on weekends (Sat/Sun)
   subjects: string[];       // what they're studying
   goalText: string;         // free-text goal, e.g. "宅建合格"
   goalDate: string;         // YYYY-MM-DD target date, '' if none
@@ -12,6 +14,8 @@ const LS_KEY = 'lily_study_profile';
 
 export const DEFAULT_PROFILE: StudyProfile = {
   dailyGoalHours: 2,
+  weekdayGoalHours: 2,
+  holidayGoalHours: 3,
   subjects: [],
   goalText: '',
   goalDate: '',
@@ -23,7 +27,16 @@ export function getStudyProfile(): StudyProfile {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return { ...DEFAULT_PROFILE };
     const parsed = JSON.parse(raw) as Partial<StudyProfile>;
-    return { ...DEFAULT_PROFILE, ...parsed };
+    const merged = { ...DEFAULT_PROFILE, ...parsed };
+    // Backfill the weekday/holiday goals from the legacy single goal for
+    // profiles saved before they existed.
+    if (parsed.weekdayGoalHours == null) {
+      merged.weekdayGoalHours = parsed.dailyGoalHours ?? DEFAULT_PROFILE.weekdayGoalHours;
+    }
+    if (parsed.holidayGoalHours == null) {
+      merged.holidayGoalHours = parsed.dailyGoalHours ?? DEFAULT_PROFILE.holidayGoalHours;
+    }
+    return merged;
   } catch {
     return { ...DEFAULT_PROFILE };
   }
@@ -31,8 +44,21 @@ export function getStudyProfile(): StudyProfile {
 
 export function saveStudyProfile(profile: StudyProfile): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(LS_KEY, JSON.stringify(profile));
+  // Keep the legacy field aligned with the weekday goal so older readers still work.
+  const normalized: StudyProfile = { ...profile, dailyGoalHours: profile.weekdayGoalHours };
+  localStorage.setItem(LS_KEY, JSON.stringify(normalized));
   window.dispatchEvent(new Event('lily-settings-changed'));
+}
+
+/** True if the given date falls on a weekend (Sat/Sun). */
+export function isHolidayDate(date: Date = new Date()): boolean {
+  const wd = date.getDay();
+  return wd === 0 || wd === 6;
+}
+
+/** The goal hours that apply to a given date (weekend → holiday goal). */
+export function goalHoursForDate(profile: StudyProfile, date: Date = new Date()): number {
+  return isHolidayDate(date) ? profile.holidayGoalHours : profile.weekdayGoalHours;
 }
 
 /** Days remaining until the goal date (null if no date / already passed today). */

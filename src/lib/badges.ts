@@ -210,8 +210,11 @@ function todayDayNum(): number {
 
 export function computeStudyStats(
   sessions: StudySession[],
-  dailyGoalHours: number,
+  goal: number | { weekday: number; holiday: number },
 ): StudyStats {
+  // Accept either a single legacy goal or separate weekday/holiday goals.
+  const weekdayGoal = typeof goal === 'number' ? goal : goal.weekday;
+  const holidayGoal = typeof goal === 'number' ? goal : goal.holiday;
   const dayTotals = new Map<number, number>();        // dayNum -> seconds
   const dayCats = new Map<number, Set<number>>();     // dayNum -> categoryIds
   const allCats = new Set<number>();
@@ -282,7 +285,14 @@ export function computeStudyStats(
   for (const set of dayCats.values()) if (set.size > maxCategoriesInDay) maxCategoriesInDay = set.size;
 
   const daysSinceFirst = days.length > 0 ? todayDayNum() - days[0] : 0;
-  const goalMet = dailyGoalHours > 0 && maxDailySeconds >= dailyGoalHours * 3600;
+  // goalMet: any single day where the total cleared that day's goal (weekday
+  // vs holiday). dayNum 0 (1970-01-01) was a Thursday, so getDay = (day+4)%7.
+  let goalMet = false;
+  for (const [day, sec] of dayTotals) {
+    const dow = (((day + 4) % 7) + 7) % 7;
+    const goalH = (dow === 0 || dow === 6) ? holidayGoal : weekdayGoal;
+    if (goalH > 0 && sec >= goalH * 3600) { goalMet = true; break; }
+  }
 
   return {
     totalSeconds,
@@ -368,7 +378,7 @@ export async function syncEarnedBadges(): Promise<BadgeDef[]> {
     db.earnedBadges.toArray(),
   ]);
   const profile = getStudyProfile();
-  const stats = computeStudyStats(sessions, profile.dailyGoalHours);
+  const stats = computeStudyStats(sessions, { weekday: profile.weekdayGoalHours, holiday: profile.holidayGoalHours });
   const earned = evaluateBadges(stats);
 
   const alreadyIds = new Set(already.map(e => e.badgeId));

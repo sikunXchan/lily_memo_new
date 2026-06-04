@@ -6,7 +6,7 @@ import { Trophy, Pencil, Flame } from 'lucide-react';
 import { db } from '@/lib/db';
 import { computeStudyStats, syncEarnedBadges, BADGES } from '@/lib/badges';
 import type { BadgeDef } from '@/lib/badges';
-import { getStudyProfile, daysUntilGoal } from '@/lib/studyProfile';
+import { getStudyProfile, daysUntilGoal, goalHoursForDate, isHolidayDate } from '@/lib/studyProfile';
 import type { StudyProfile } from '@/lib/studyProfile';
 
 function todayStr(): string {
@@ -60,12 +60,13 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
       firstSync.current = false;
     });
     return () => { cancelled = true; };
-  }, [sig, profile.dailyGoalHours]);
+  }, [sig, profile.weekdayGoalHours, profile.holidayGoalHours]);
 
-  const stats = computeStudyStats(sessions ?? [], profile.dailyGoalHours);
+  const stats = computeStudyStats(sessions ?? [], { weekday: profile.weekdayGoalHours, holiday: profile.holidayGoalHours });
   const today = todayStr();
   const todaySec = (sessions ?? []).filter(s => s.date === today).reduce((s, x) => s + x.duration, 0);
-  const goalSec = profile.dailyGoalHours * 3600;
+  const todayGoalHours = goalHoursForDate(profile);
+  const goalSec = todayGoalHours * 3600;
   const pct = goalSec > 0 ? Math.min(100, (todaySec / goalSec) * 100) : 0;
   const remainingSec = Math.max(0, goalSec - todaySec);
   const goalDone = goalSec > 0 && todaySec >= goalSec;
@@ -102,7 +103,7 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
           <div className="sg-prog">
             <div className="sg-prog-bar"><div className="sg-prog-fill" style={{ width: `${pct}%` }} /></div>
             <span className="sg-prog-label">
-              今日 {fmtHM(todaySec)}{goalSec > 0 ? ` / 目標 ${profile.dailyGoalHours}h` : ''}
+              今日 {fmtHM(todaySec)}{goalSec > 0 ? ` / ${isHolidayDate() ? '休日' : '平日'}目標 ${todayGoalHours}時間` : ''}
             </span>
           </div>
 
