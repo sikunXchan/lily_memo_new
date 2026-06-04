@@ -12,7 +12,8 @@ import type { StudyCategory, StudySession } from '@/lib/db';
 import StudyGreeting from './StudyGreeting';
 import TrophyRoom from './TrophyRoom';
 import StudyProfileModal from './StudyProfileModal';
-import { getLevelInfo, fmtHoursShort, hoursForLevel, MAX_LEVEL } from '@/lib/level';
+import { getLevelInfo, fmtHoursShort } from '@/lib/level';
+import LevelIcon from './LevelIcon';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LS_KEY_START     = 'study_timer_start';
@@ -404,6 +405,20 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             onEditProfile={() => setShowProfile(true)}
           />
 
+          {/* Prominent level banner */}
+          <button className="lv-hero" onClick={() => setView('total')} style={{ borderColor: levelInfo.tier.color + '55' }}>
+            <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
+              <LevelIcon tier={levelInfo.tier} size={56} />
+            </div>
+            <div className="lv-hero-body">
+              <div className="lv-hero-top">
+                <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                <span className="lv-hero-next">次まで {fmtHoursShort(levelInfo.remainingHours)}</span>
+              </div>
+              <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
+            </div>
+          </button>
+
           {/* Category selector */}
           <div className="cat-section">
             <div className="cat-row">
@@ -700,30 +715,21 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {view === 'total' && (
         <div className="st-scroll">
           {/* Level card */}
-          <div className="lv-card" style={{ borderColor: levelInfo.rank.color + '66' }}>
-            <div className="lv-top">
-              <span className="lv-rank" style={{ color: levelInfo.rank.color }}>
-                {levelInfo.rank.emoji} {levelInfo.rank.name}
-              </span>
-              <span className="lv-num" style={{ color: levelInfo.rank.color }}>Lv {levelInfo.level}</span>
+          <div className="lv-card" style={{ borderColor: levelInfo.tier.color + '66' }}>
+            <div className="lv-card-icon" style={{ background: levelInfo.tier.color + '1f', borderColor: levelInfo.tier.color + '66' }}>
+              <LevelIcon tier={levelInfo.tier} size={72} />
             </div>
-            <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.rank.color }} /></div>
-            <div className="lv-foot">
-              {levelInfo.isMax ? (
-                <span className="lv-next">🏆 最高レベル到達！</span>
-              ) : (
-                <>
-                  <span className="lv-next">次のLvまであと {fmtHoursShort(levelInfo.remainingHours)}</span>
-                  <span className="lv-target">Lv{levelInfo.level + 1} まで {Math.round(hoursForLevel(levelInfo.level + 1))}時間</span>
-                </>
-              )}
+            <div className="lv-card-body">
+              <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+              <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
+              <span className="lv-next">次のレベルまであと {fmtHoursShort(levelInfo.remainingHours)}</span>
             </div>
           </div>
 
           <div className="grand-card">
             <span className="grand-label">合計学習時間</span>
             <span className="grand-total">{fmtDur(grandTotal)}</span>
-            <span className="grand-sub">{totalDays}日間 ・ {sessions.length}セッション ・ 上限Lv{MAX_LEVEL}</span>
+            <span className="grand-sub">{totalDays}日間 ・ {sessions.length}セッション</span>
           </div>
 
           {allCatTotals.length > 0 ? (
@@ -830,16 +836,26 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .today-card-btn { cursor:pointer; text-align:left; font-family:inherit; transition:transform .12s, box-shadow .12s; }
         .today-card-btn:hover { transform:translateY(-2px); box-shadow:0 4px 14px rgba(99,102,241,.18); }
 
+        /* ── Level hero (home/timer view) ── */
+        .lv-hero { display:flex; align-items:center; gap:13px; width:100%; text-align:left; cursor:pointer; font-family:inherit;
+          background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:13px 15px; transition:transform .12s, box-shadow .12s; }
+        .lv-hero:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,.12); }
+        .lv-hero-icon { width:62px; height:62px; flex-shrink:0; border-radius:16px; border:1.5px solid; display:flex; align-items:center; justify-content:center; }
+        .lv-hero-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
+        .lv-hero-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+        .lv-hero-num { font-size:1.7rem; font-weight:900; line-height:1; }
+        .lv-hero-next { font-size:.72rem; font-weight:700; color:var(--fg-muted); white-space:nowrap; }
+        .lv-hero-bar { height:9px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
+        .lv-hero-fill { height:100%; border-radius:99px; transition:width .6s ease; }
+
         /* ── Total view ── */
-        .lv-card { background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; flex-direction:column; gap:10px; }
-        .lv-top { display:flex; align-items:center; justify-content:space-between; }
-        .lv-rank { font-size:1rem; font-weight:900; }
-        .lv-num { font-size:1.5rem; font-weight:900; line-height:1; }
+        .lv-card { background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; align-items:center; gap:15px; }
+        .lv-card-icon { width:80px; height:80px; flex-shrink:0; border-radius:18px; border:1.5px solid; display:flex; align-items:center; justify-content:center; }
+        .lv-card-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+        .lv-num { font-size:1.7rem; font-weight:900; line-height:1; }
         .lv-bar { height:10px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
         .lv-fill { height:100%; border-radius:99px; transition:width .6s ease; }
-        .lv-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-        .lv-next { font-size:.76rem; font-weight:800; color:var(--foreground); }
-        .lv-target { font-size:.68rem; font-weight:600; color:var(--fg-muted); white-space:nowrap; }
+        .lv-next { font-size:.76rem; font-weight:700; color:var(--fg-muted); }
         .grand-card { background:linear-gradient(135deg,color-mix(in srgb,var(--primary) 18%,var(--background)),var(--background)); border:1px solid color-mix(in srgb,var(--primary) 30%,transparent); border-radius:18px; padding:22px 18px; display:flex; flex-direction:column; align-items:center; gap:6px; }
         .grand-label { font-size:.82rem; font-weight:700; color:var(--fg-muted); }
         .grand-total { font-size:2.4rem; font-weight:900; color:var(--primary); line-height:1.1; text-align:center; }
