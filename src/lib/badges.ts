@@ -166,12 +166,12 @@ export const BADGES: BadgeDef[] = [
   { id: 'lg_all',        image: IMG('sheetk3_05'), title: '全制覇',      desc: '全バッジを集めた',         category: 'special', room: 'legend', sort: 15, cond: { kind: 'badgePercent', percent: 100 } },
 ];
 
-export const ROOMS: { id: RoomId; name: string; emoji: string }[] = [
-  { id: 'kids',   name: 'こども部屋',     emoji: '🧸' },
-  { id: 'hall',   name: '大広間',         emoji: '🏛️' },
-  { id: 'glory',  name: '栄光の間',       emoji: '🔥' },
-  { id: 'lily',   name: 'Lilyの特別室',   emoji: '🐕' },
-  { id: 'legend', name: '伝説の間',       emoji: '👑' },
+export const ROOMS: { id: RoomId; tier: number; name: string; emoji: string }[] = [
+  { id: 'kids',   tier: 5, name: 'こども部屋',     emoji: '🧸' },
+  { id: 'hall',   tier: 4, name: '大広間',         emoji: '🏛️' },
+  { id: 'glory',  tier: 3, name: '栄光の間',       emoji: '🔥' },
+  { id: 'lily',   tier: 2, name: 'Lilyの特別室',   emoji: '🐕' },
+  { id: 'legend', tier: 1, name: '伝説の間',       emoji: '👑' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
