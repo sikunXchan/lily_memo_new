@@ -88,7 +88,7 @@ export const BADGES: BadgeDef[] = [
   { id: 'streak_30',   image: IMG('sheet5_08'), title: '継続は力なり',   desc: '30日連続で勉強した',    category: 'streak', room: 'glory', sort: 8,  cond: { kind: 'streak', days: 30 } },
   { id: 'streak_50',   image: IMG('sheet5_09'), title: '50日連続',       desc: '50日連続で勉強した',    category: 'streak', room: 'glory', sort: 9,  cond: { kind: 'streak', days: 50 } },
   { id: 'streak_100',  image: IMG('sheet5_10'), title: '鉄の意志',       desc: '100日連続で勉強した',   category: 'streak', room: 'glory', sort: 10, cond: { kind: 'streak', days: 100 } },
-  { id: 'streak_365',  image: IMG('sheet5_11'), title: '不屈の一年',     desc: '365日連続で勉強した',   category: 'streak', room: 'glory', sort: 11, cond: { kind: 'streak', days: 365 } },
+  { id: 'streak_365',  image: IMG('sheet5_11'), title: '180日連続',     desc: '180日連続で勉強した',   category: 'streak', room: 'glory', sort: 11, cond: { kind: 'streak', days: 180 } },
 
   // 🌸 デイリー＆おもしろ実績 — Sheet2 (こども部屋)
   { id: 'fun_first',    image: IMG('sheet2_01'), title: 'はじめまして',     desc: 'はじめて勉強を記録した',        category: 'fun', room: 'kids', sort: 20, cond: { kind: 'totalDays', days: 1 } },
@@ -145,24 +145,24 @@ export const BADGES: BadgeDef[] = [
   { id: 'total_1800h', image: IMG('sheet11_05'), title: '千八百時間',   desc: '累計1800時間 勉強した',  category: 'total',  room: 'glory', sort: 21, cond: { kind: 'totalHours', hours: 1800 } },
 
   // 👑 闇柴 — Sheet_k1 (伝説の間): 連続日数の極み【最高難易度】
-  { id: 'lg_streak_250',  image: IMG('sheetk1_01'), title: '鉄壁の継続',   desc: '250日連続で勉強した',  category: 'special', room: 'legend', sort: 1, cond: { kind: 'streak', days: 250 } },
-  { id: 'lg_streak_300',  image: IMG('sheetk1_02'), title: '不滅の意志',   desc: '300日連続で勉強した',  category: 'special', room: 'legend', sort: 2, cond: { kind: 'streak', days: 300 } },
-  { id: 'lg_streak_500',  image: IMG('sheetk1_03'), title: '覇道の継続',   desc: '500日連続で勉強した',  category: 'special', room: 'legend', sort: 3, cond: { kind: 'streak', days: 500 } },
-  { id: 'lg_streak_730',  image: IMG('sheetk1_04'), title: '二年連続',     desc: '730日連続で勉強した',  category: 'special', room: 'legend', sort: 4, cond: { kind: 'streak', days: 730 } },
-  { id: 'lg_streak_1000', image: IMG('sheetk1_05'), title: '千日連続',     desc: '1000日連続で勉強した', category: 'special', room: 'legend', sort: 5, cond: { kind: 'streak', days: 1000 } },
+  { id: 'lg_streak_250',  image: IMG('sheetk1_01'), title: '210日連続',   desc: '210日連続で勉強した',  category: 'special', room: 'legend', sort: 1, cond: { kind: 'streak', days: 210 } },
+  { id: 'lg_streak_300',  image: IMG('sheetk1_02'), title: '240日連続',   desc: '240日連続で勉強した',  category: 'special', room: 'legend', sort: 2, cond: { kind: 'streak', days: 240 } },
+  { id: 'lg_streak_500',  image: IMG('sheetk1_03'), title: '280日連続',   desc: '280日連続で勉強した',  category: 'special', room: 'legend', sort: 3, cond: { kind: 'streak', days: 280 } },
+  { id: 'lg_streak_730',  image: IMG('sheetk1_04'), title: '320日連続',   desc: '320日連続で勉強した',  category: 'special', room: 'legend', sort: 4, cond: { kind: 'streak', days: 320 } },
+  { id: 'lg_streak_1000', image: IMG('sheetk1_05'), title: '不屈の一年',  desc: '365日連続で勉強した（1年）', category: 'special', room: 'legend', sort: 5, cond: { kind: 'streak', days: 365 } },
 
   // 👑 天使柴 — Sheet_k2 (伝説の間): 累計時間の極み【最高難易度】
-  { id: 'lg_total_3000',  image: IMG('sheetk2_01'), title: '三千時間',         desc: '累計3000時間 勉強した',  category: 'special', room: 'legend', sort: 6,  cond: { kind: 'totalHours', hours: 3000 } },
-  { id: 'lg_total_4000',  image: IMG('sheetk2_02'), title: '四千時間',         desc: '累計4000時間 勉強した',  category: 'special', room: 'legend', sort: 7,  cond: { kind: 'totalHours', hours: 4000 } },
-  { id: 'lg_total_5000',  image: IMG('sheetk2_03'), title: '五千時間',         desc: '累計5000時間 勉強した',  category: 'special', room: 'legend', sort: 8,  cond: { kind: 'totalHours', hours: 5000 } },
-  { id: 'lg_total_7500',  image: IMG('sheetk2_04'), title: '七千五百時間',     desc: '累計7500時間 勉強した',  category: 'special', room: 'legend', sort: 9,  cond: { kind: 'totalHours', hours: 7500 } },
-  { id: 'lg_total_10000', image: IMG('sheetk2_05'), title: '一万時間の法則',   desc: '累計10000時間 勉強した', category: 'special', room: 'legend', sort: 10, cond: { kind: 'totalHours', hours: 10000 } },
+  { id: 'lg_total_3000',  image: IMG('sheetk2_01'), title: '2500時間',         desc: '累計2500時間 勉強した',  category: 'special', room: 'legend', sort: 6,  cond: { kind: 'totalHours', hours: 2500 } },
+  { id: 'lg_total_4000',  image: IMG('sheetk2_02'), title: '3000時間',         desc: '累計3000時間 勉強した',  category: 'special', room: 'legend', sort: 7,  cond: { kind: 'totalHours', hours: 3000 } },
+  { id: 'lg_total_5000',  image: IMG('sheetk2_03'), title: '3600時間',         desc: '累計3600時間 勉強した',  category: 'special', room: 'legend', sort: 8,  cond: { kind: 'totalHours', hours: 3600 } },
+  { id: 'lg_total_7500',  image: IMG('sheetk2_04'), title: '4200時間',         desc: '累計4200時間 勉強した',  category: 'special', room: 'legend', sort: 9,  cond: { kind: 'totalHours', hours: 4200 } },
+  { id: 'lg_total_10000', image: IMG('sheetk2_05'), title: '5000時間の頂',     desc: '累計5000時間 勉強した',  category: 'special', room: 'legend', sort: 10, cond: { kind: 'totalHours', hours: 5000 } },
 
   // 👑 絆ベア — Sheet_k3 (伝説の間): 通算日数の極み & 全制覇【最高難易度】
   { id: 'lg_days_365',   image: IMG('sheetk3_01'), title: '皆勤の一年',  desc: '通算365日 勉強した',       category: 'special', room: 'legend', sort: 11, cond: { kind: 'totalDays', days: 365 } },
-  { id: 'lg_days_500',   image: IMG('sheetk3_02'), title: '五百日の絆',  desc: '通算500日 勉強した',       category: 'special', room: 'legend', sort: 12, cond: { kind: 'totalDays', days: 500 } },
-  { id: 'lg_days_730',   image: IMG('sheetk3_03'), title: '二年の歩み',  desc: '通算730日 勉強した',       category: 'special', room: 'legend', sort: 13, cond: { kind: 'totalDays', days: 730 } },
-  { id: 'lg_days_1000',  image: IMG('sheetk3_04'), title: '千日の記録',  desc: '通算1000日 勉強した',      category: 'special', room: 'legend', sort: 14, cond: { kind: 'totalDays', days: 1000 } },
+  { id: 'lg_days_500',   image: IMG('sheetk3_02'), title: '通算450日',  desc: '通算450日 勉強した',       category: 'special', room: 'legend', sort: 12, cond: { kind: 'totalDays', days: 450 } },
+  { id: 'lg_days_730',   image: IMG('sheetk3_03'), title: '通算580日',  desc: '通算580日 勉強した',       category: 'special', room: 'legend', sort: 13, cond: { kind: 'totalDays', days: 580 } },
+  { id: 'lg_days_1000',  image: IMG('sheetk3_04'), title: '二年の歩み', desc: '通算730日 勉強した（2年）', category: 'special', room: 'legend', sort: 14, cond: { kind: 'totalDays', days: 730 } },
   { id: 'lg_all',        image: IMG('sheetk3_05'), title: '全制覇',      desc: '全バッジを集めた',         category: 'special', room: 'legend', sort: 15, cond: { kind: 'badgePercent', percent: 100 } },
 ];
 
