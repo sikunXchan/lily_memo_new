@@ -24,6 +24,8 @@ function formatRemaining(cond: BadgeCondition, cur: number, target: number): str
     case 'pomodoroCount':   return `あと ${left} 回`;
     case 'categoriesInDay': return `あと ${left} 科目（1日で）`;
     case 'categoriesTotal': return `あと ${left} 科目`;
+    case 'morningCount':    return `あと ${left} 日（朝活）`;
+    case 'weekendCount':    return `あと ${left} 日（週末）`;
     case 'nightCount':      return `あと ${left} 日（深夜）`;
     case 'comeback':        return '一度お休みしてから再開しよう';
     case 'morning':         return '朝5〜8時に勉強しよう';
@@ -152,12 +154,19 @@ export default function TrophyRoom({ onClose }: Props) {
         .tr-room.hall  { background: linear-gradient(160deg, #fef3c7, #fde9c8 60%, #e7d3a8); }
         .tr-room.glory { background: linear-gradient(160deg, #1e1b4b, #3b0764 55%, #7c2d12); }
         .tr-room.lily  { background: linear-gradient(160deg, #2e1065, #6d28d9 50%, #be185d); }
+        .tr-room.legend {
+          background:
+            radial-gradient(circle at 30% 20%, rgba(212,175,55,0.25), transparent 60%),
+            linear-gradient(160deg, #0b0b12, #1a1228 45%, #3b0a0a);
+          border-color: rgba(212,175,55,0.4);
+          box-shadow: inset 0 0 40px rgba(212,175,55,0.15);
+        }
         .tr-room-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
         .tr-room.kids .tr-room-name, .tr-room.hall .tr-room-name { color: #3b2f1a; }
-        .tr-room.glory .tr-room-name, .tr-room.lily .tr-room-name { color: #fff; }
+        .tr-room.glory .tr-room-name, .tr-room.lily .tr-room-name, .tr-room.legend .tr-room-name { color: #fde68a; }
         .tr-room-name { font-weight: 900; font-size: 0.95rem; }
         .tr-room-count { font-weight: 800; font-size: 0.78rem; padding: 2px 10px; border-radius: 99px; background: rgba(255,255,255,0.55); color: #1e293b; }
-        .tr-room.glory .tr-room-count, .tr-room.lily .tr-room-count { background: rgba(255,255,255,0.18); color: #fff; }
+        .tr-room.glory .tr-room-count, .tr-room.lily .tr-room-count, .tr-room.legend .tr-room-count { background: rgba(255,255,255,0.18); color: #fff; }
 
         .tr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; }
         .tr-badge {
@@ -165,7 +174,7 @@ export default function TrophyRoom({ onClose }: Props) {
           background: rgba(255,255,255,0.45); border: none; border-radius: 14px;
           padding: 9px 5px; cursor: pointer; transition: transform 0.12s;
         }
-        .tr-room.glory .tr-badge, .tr-room.lily .tr-badge { background: rgba(255,255,255,0.08); }
+        .tr-room.glory .tr-badge, .tr-room.lily .tr-badge, .tr-room.legend .tr-badge { background: rgba(255,255,255,0.08); }
         .tr-badge:hover { transform: translateY(-3px); }
         .tr-badge-img-wrap { position: relative; width: 64px; height: 64px; }
         .tr-badge-img-wrap img { width: 100%; height: 100%; object-fit: contain; }
@@ -173,7 +182,7 @@ export default function TrophyRoom({ onClose }: Props) {
         .tr-badge.earned img { filter: drop-shadow(0 2px 5px rgba(0,0,0,0.28)); }
         .tr-lock { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(80,80,80,0.85); }
         .tr-badge-title { font-size: 0.66rem; font-weight: 800; text-align: center; line-height: 1.25; color: #334155; word-break: break-word; }
-        .tr-room.glory .tr-badge-title, .tr-room.lily .tr-badge-title { color: #e9d5ff; }
+        .tr-room.glory .tr-badge-title, .tr-room.lily .tr-badge-title, .tr-room.legend .tr-badge-title { color: #e9d5ff; }
         .tr-badge.locked .tr-badge-title { color: #94a3b8; }
 
         .tr-foot { text-align: center; font-size: 0.74rem; color: var(--fg-muted); padding: 8px 0 0; }
