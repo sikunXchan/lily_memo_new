@@ -167,11 +167,11 @@ export const BADGES: BadgeDef[] = [
 ];
 
 export const ROOMS: { id: RoomId; tier: number; name: string; emoji: string }[] = [
-  { id: 'kids',   tier: 1, name: 'こども部屋',     emoji: '🧸' },
-  { id: 'hall',   tier: 2, name: '大広間',         emoji: '🏛️' },
+  { id: 'kids',   tier: 5, name: 'こども部屋',     emoji: '🧸' },
+  { id: 'hall',   tier: 4, name: '大広間',         emoji: '🏛️' },
   { id: 'glory',  tier: 3, name: '栄光の間',       emoji: '🔥' },
-  { id: 'lily',   tier: 4, name: 'Lilyの特別室',   emoji: '🐕' },
-  { id: 'legend', tier: 5, name: '伝説の間',       emoji: '👑' },
+  { id: 'lily',   tier: 2, name: 'Lilyの特別室',   emoji: '🐕' },
+  { id: 'legend', tier: 1, name: '伝説の間',       emoji: '👑' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
