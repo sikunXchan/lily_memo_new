@@ -74,7 +74,7 @@ export default function TrophyRoom({ onClose }: Props) {
           return (
             <section key={room.id} className={`tr-room ${room.id}`}>
               <div className="tr-room-head">
-                <span className="tr-room-name"><span className="tr-tier">TIER {room.tier}</span>{room.emoji} {room.name}</span>
+                <span className="tr-room-name">{room.emoji} TIER {room.tier}</span>
                 <span className="tr-room-count">{got} / {list.length}</span>
               </div>
               <div className="tr-grid">
@@ -184,7 +184,11 @@ export default function TrophyRoom({ onClose }: Props) {
         .tr-room.glory .tr-badge, .tr-room.lily .tr-badge, .tr-room.legend .tr-badge { background: rgba(255,255,255,0.08); }
         .tr-badge:hover { transform: translateY(-3px); }
         .tr-badge-img-wrap { position: relative; width: 64px; height: 64px; }
-        .tr-badge-img-wrap img { width: 100%; height: 100%; object-fit: contain; }
+        .tr-badge-img-wrap img {
+          width: 100%; height: 100%; object-fit: contain;
+          -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+          pointer-events: none;
+        }
         .tr-badge.locked img { filter: brightness(0) saturate(0); opacity: 0.32; }
         .tr-badge.earned img { filter: drop-shadow(0 2px 5px rgba(0,0,0,0.28)); }
         .tr-lock { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(80,80,80,0.85); }
@@ -205,7 +209,10 @@ export default function TrophyRoom({ onClose }: Props) {
           box-shadow: 0 20px 60px rgba(0,0,0,0.4); animation: pop 0.25s cubic-bezier(.2,1.4,.4,1);
         }
         @keyframes pop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        .tr-detail-img { width: 150px; height: 150px; object-fit: contain; }
+        .tr-detail-img {
+          width: 150px; height: 150px; object-fit: contain;
+          -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; pointer-events: none;
+        }
         .tr-detail-img.locked { filter: brightness(0) saturate(0); opacity: 0.3; }
         .tr-detail-name { font-size: 1.2rem; font-weight: 900; color: var(--foreground); margin: 10px 0 4px; }
         .tr-detail-desc { font-size: 0.86rem; color: var(--fg-muted); margin: 0 0 10px; line-height: 1.5; }
