@@ -12,6 +12,7 @@ import type { StudyCategory, StudySession } from '@/lib/db';
 import StudyGreeting from './StudyGreeting';
 import TrophyRoom from './TrophyRoom';
 import StudyProfileModal from './StudyProfileModal';
+import { getLevelInfo, fmtHoursShort, hoursForLevel, MAX_LEVEL } from '@/lib/level';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LS_KEY_START     = 'study_timer_start';
@@ -364,6 +365,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   }
   const allCatTotals = [...allCatMap.values()].sort((a, b) => b.secs - a.secs);
   const totalDays = sessionDates.size;
+  const levelInfo = getLevelInfo(grandTotal);
 
   const periodLabel = offset === 0
     ? (period === '7d' ? '直近7日間' : period === '30d' ? '直近4週間' : '直近1年間')
@@ -697,10 +699,31 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {/* ── Total view ── */}
       {view === 'total' && (
         <div className="st-scroll">
+          {/* Level card */}
+          <div className="lv-card" style={{ borderColor: levelInfo.rank.color + '66' }}>
+            <div className="lv-top">
+              <span className="lv-rank" style={{ color: levelInfo.rank.color }}>
+                {levelInfo.rank.emoji} {levelInfo.rank.name}
+              </span>
+              <span className="lv-num" style={{ color: levelInfo.rank.color }}>Lv {levelInfo.level}</span>
+            </div>
+            <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.rank.color }} /></div>
+            <div className="lv-foot">
+              {levelInfo.isMax ? (
+                <span className="lv-next">🏆 最高レベル到達！</span>
+              ) : (
+                <>
+                  <span className="lv-next">次のLvまであと {fmtHoursShort(levelInfo.remainingHours)}</span>
+                  <span className="lv-target">Lv{levelInfo.level + 1} まで {Math.round(hoursForLevel(levelInfo.level + 1))}時間</span>
+                </>
+              )}
+            </div>
+          </div>
+
           <div className="grand-card">
             <span className="grand-label">合計学習時間</span>
             <span className="grand-total">{fmtDur(grandTotal)}</span>
-            <span className="grand-sub">{totalDays}日間 ・ {sessions.length}セッション</span>
+            <span className="grand-sub">{totalDays}日間 ・ {sessions.length}セッション ・ 上限Lv{MAX_LEVEL}</span>
           </div>
 
           {allCatTotals.length > 0 ? (
@@ -808,6 +831,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .today-card-btn:hover { transform:translateY(-2px); box-shadow:0 4px 14px rgba(99,102,241,.18); }
 
         /* ── Total view ── */
+        .lv-card { background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; flex-direction:column; gap:10px; }
+        .lv-top { display:flex; align-items:center; justify-content:space-between; }
+        .lv-rank { font-size:1rem; font-weight:900; }
+        .lv-num { font-size:1.5rem; font-weight:900; line-height:1; }
+        .lv-bar { height:10px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
+        .lv-fill { height:100%; border-radius:99px; transition:width .6s ease; }
+        .lv-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .lv-next { font-size:.76rem; font-weight:800; color:var(--foreground); }
+        .lv-target { font-size:.68rem; font-weight:600; color:var(--fg-muted); white-space:nowrap; }
         .grand-card { background:linear-gradient(135deg,color-mix(in srgb,var(--primary) 18%,var(--background)),var(--background)); border:1px solid color-mix(in srgb,var(--primary) 30%,transparent); border-radius:18px; padding:22px 18px; display:flex; flex-direction:column; align-items:center; gap:6px; }
         .grand-label { font-size:.82rem; font-weight:700; color:var(--fg-muted); }
         .grand-total { font-size:2.4rem; font-weight:900; color:var(--primary); line-height:1.1; text-align:center; }
