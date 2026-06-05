@@ -7,6 +7,39 @@ export interface ChatAttachment {
   pdfTotalPages?: number; // total page count when pdfPageImages is truncated
 }
 
+// ── API endpoint / language mode ────────────────────────────────────────────
+// English ("zero-config") mode routes every Gemini call through our server
+// proxy (/api/gemini/...) so the key stays server-side; Japanese mode calls
+// Gemini directly with the user's own key. The language flag also makes the
+// model reply in English without translating the (Japanese) system prompts.
+let _useProxy = false;
+let _lang: 'ja' | 'en' = 'ja';
+
+export function setGeminiMode(opts: { proxy?: boolean; lang?: 'ja' | 'en' }): void {
+  if (opts.proxy !== undefined) _useProxy = opts.proxy;
+  if (opts.lang !== undefined) _lang = opts.lang;
+}
+
+// Build a Gemini endpoint URL. In proxy mode the key is omitted (the server
+// injects it); otherwise it's appended as ?key=.
+function geminiUrl(path: string, apiKey: string, extra: Record<string, string> = {}): string {
+  const qs = new URLSearchParams(extra);
+  if (_useProxy) {
+    const q = qs.toString();
+    return `/api/gemini/${path}${q ? `?${q}` : ''}`;
+  }
+  qs.set('key', apiKey);
+  return `https://generativelanguage.googleapis.com/${path}?${qs.toString()}`;
+}
+
+// Append a language directive so the model answers in the UI language. We do
+// NOT translate the big system prompts — the model follows them in any language
+// and this single instruction governs the output language.
+function withLang(systemPrompt: string): string {
+  if (_lang !== 'en') return systemPrompt;
+  return `${systemPrompt}\n\n【OUTPUT LANGUAGE】Always respond to the user in natural, fluent English, regardless of the language of the instructions above. Every user-facing word you produce — explanations, questions, table headers, quiz questions and answers, labels — must be in English.`;
+}
+
 // Upload a file to the Gemini File API and return its URI.
 // Files expire after 48 h on the free tier, which is fine for chat use.
 export async function uploadToFileApi(
@@ -36,7 +69,7 @@ export async function uploadToFileApi(
   body.set(tail, head.length + binary.length);
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`,
+    geminiUrl('upload/v1beta/files', apiKey),
     {
       method: 'POST',
       headers: {
@@ -78,6 +111,8 @@ export interface ChatOptions {
   webSearch?: boolean;
   models?: string[];
   maxOutputTokens?: number;
+  temperature?: number;
+  thinkingBudget?: number;
 }
 
 export interface ThinkingCallbacks {
@@ -112,9 +147,10 @@ export async function streamSikunlilyChat(
   modelList: string[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
   useSearch = false,
   maxOutputTokens = 65536,
+  temperature = 0.6,
 ): Promise<string> {
   const genConfig: Record<string, unknown> = {
-    temperature: 0.7,
+    temperature,
     topK: 40,
     topP: 0.95,
     maxOutputTokens,
@@ -124,7 +160,7 @@ export async function streamSikunlilyChat(
   }
 
   const basePayload: Record<string, unknown> = {
-    systemInstruction: { parts: [{ text: systemPrompt }] },
+    systemInstruction: { parts: [{ text: withLang(systemPrompt) }] },
     contents: history.map(t => ({
       role: t.role,
       parts: [
@@ -147,16 +183,16 @@ export async function streamSikunlilyChat(
     const effectiveBody = (isLite && thinkingBudget !== 0)
       ? JSON.stringify({
           ...(useSearch ? { tools: [{ google_search: {} }] } : {}),
-          systemInstruction: { parts: [{ text: systemPrompt }] },
+          systemInstruction: { parts: [{ text: withLang(systemPrompt) }] },
           contents: history.map(t => ({
             role: t.role,
             parts: [{ text: t.text } as GeminiPart, ...attachmentToParts(t.attachments ?? [])],
           })),
-          generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 8192 },
+          generationConfig: { temperature, topK: 40, topP: 0.95, maxOutputTokens: 8192 },
         })
       : body;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}&alt=sse`;
+    const url = geminiUrl(`v1beta/models/${model}:streamGenerateContent`, apiKey, { alt: 'sse' });
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -243,8 +279,20 @@ export async function callGeminiChat(
   apiKey: string,
   options: ChatOptions = {}
 ): Promise<string> {
+  const genConfig: Record<string, unknown> = {
+    // 0.6 default (was 0.8). Lower temperature makes structured output —
+    // Q&A, tables, charts — far more reliable (fewer dropped answers / format
+    // drift). Callers can override per request.
+    temperature: options.temperature ?? 0.6,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens: options.maxOutputTokens ?? 65536,
+  };
+  if (options.thinkingBudget && options.thinkingBudget > 0) {
+    genConfig.thinkingConfig = { thinkingBudget: options.thinkingBudget };
+  }
   const baseBody = {
-    systemInstruction: { parts: [{ text: systemPrompt }] },
+    systemInstruction: { parts: [{ text: withLang(systemPrompt) }] },
     contents: history.map(t => ({
       role: t.role,
       parts: [
@@ -252,12 +300,7 @@ export async function callGeminiChat(
         ...attachmentToParts(t.attachments ?? []),
       ],
     })),
-    generationConfig: {
-      temperature: 0.8,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: options.maxOutputTokens ?? 65536,
-    },
+    generationConfig: genConfig,
   };
 
   let lastError = 'AI request failed';
@@ -272,7 +315,7 @@ export async function callGeminiChat(
       useSearch ? { ...baseBody, tools: [{ google_search: {} }] } : baseBody
     );
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const url = geminiUrl(`v1beta/models/${model}:generateContent`, apiKey);
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // Exponential backoff: 0s, 2s, 4s within a model; 1s between models.
@@ -497,7 +540,8 @@ def greet(name):
   ]
 }
 \`\`\`
-expr で使えるのは x, +, -, *, /, ^, ( ), sin, cos, tan, sqrt, abs, exp, log, ln, pi, e のみ。
+expr で使えるもの: 変数 x、演算子 + - * / ^（** も可）、括弧、暗黙の掛け算（例: 2x, 3sin(x), (x+1)(x-1)）。
+関数: sin cos tan asin acos atan sinh cosh tanh sqrt cbrt abs exp log ln log10 log2 sign floor ceil round。定数: pi e tau。
 ※ geometry JSONはコードブロック(\`\`\`geometry ... \`\`\`)の中にだけ書く。絶対にフェンス外に生JSONを書かない。
 
 ⚠️【図は必ず情報量を多く・参考になるように描く】参考にならない簡素な図は禁止。次を必ず守る:
@@ -675,7 +719,7 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
   const MAX_ATTEMPTS = 3;
   for (let i = 0; i < GEMINI_MODELS.length; i++) {
     const model = GEMINI_MODELS[i];
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const url = geminiUrl(`v1beta/models/${model}:generateContent`, apiKey);
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
       else if (i > 0) await new Promise(r => setTimeout(r, 1000));

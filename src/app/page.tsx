@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
 import { initLiveSync, stopLiveSync } from '@/lib/liveSync';
+import { applyAppLang } from '@/lib/appLang';
 
 // Heavy components are loaded only when their tab is opened so the
 // initial bundle stays small enough for mobile Safari to parse without
@@ -52,6 +53,10 @@ export default function Home() {
     const initialize = () => { checkLayout(); setMounted(true); };
     initialize();
     window.addEventListener('resize', checkLayout);
+
+    // Apply the saved language/AI mode (English → server-proxied key).
+    applyAppLang();
+    window.addEventListener('lily-lang-changed', () => applyAppLang());
 
     const savedViewMode = localStorage.getItem('sidebarViewMode');
     // eslint-disable-next-line react-hooks/set-state-in-effect

@@ -1,10 +1,11 @@
 'use client';
 
-import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff, Share2, Copy, Check, Wifi } from 'lucide-react';
+import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff, Share2, Copy, Check, Wifi, Globe } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
 import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
+import { getAppLang, setAppLang, type AppLang } from '@/lib/appLang';
 
 function randCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -20,6 +21,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   const { fontId, setFontId, themeId, setThemeId } = useTheme();
   const [geminiKey, setGeminiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [lang, setLang] = useState<AppLang>('ja');
   const [keySaved, setKeySaved] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [sikunTone, setSikunTone] = useState('tame');
@@ -42,6 +44,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
       navigator.storage.persisted().then(setIsPersisted);
     }
     setGeminiKey(localStorage.getItem('lily_gemini_api_key') || '');
+    setLang(getAppLang());
     setLiveKey(localStorage.getItem('lily_livesync_key') || '');
     setLiveEnabled(localStorage.getItem('lily_livesync_enabled') === '1');
     setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
@@ -175,6 +178,30 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
       </header>
 
       <div className="settings-sections">
+        <section className="settings-section">
+          <div className="section-title">
+            <Globe size={20} />
+            <h3>言語 / Language</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">
+              {lang === 'en'
+                ? 'English mode runs the AI with a built-in key — no setup needed. 日本語モードはご自身のGemini APIキーが必要です。'
+                : '日本語モードはご自身のGemini APIキーで動作します。English mode uses a built-in key (no key required).'}
+            </p>
+            <div className="lang-row">
+              <button
+                className={`lang-btn ${lang === 'ja' ? 'selected' : ''}`}
+                onClick={() => { setLang('ja'); setAppLang('ja'); }}
+              >🇯🇵 日本語</button>
+              <button
+                className={`lang-btn ${lang === 'en' ? 'selected' : ''}`}
+                onClick={() => { setLang('en'); setAppLang('en'); }}
+              >🇬🇧 English</button>
+            </div>
+          </div>
+        </section>
+
         <section className="settings-section">
           <div className="section-title">
             <Palette size={20} />
@@ -560,6 +587,13 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
           margin-bottom: 20px;
           line-height: 1.6;
         }
+        .lang-row { display: flex; gap: 10px; }
+        .lang-btn {
+          flex: 1; padding: 12px; border-radius: 12px; cursor: pointer;
+          border: 1.5px solid var(--border); background: var(--accent);
+          color: var(--foreground); font-size: 0.95rem; font-weight: 700;
+        }
+        .lang-btn.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, var(--background)); color: var(--primary); }
         .action-group {
           display: flex;
           flex-direction: column;

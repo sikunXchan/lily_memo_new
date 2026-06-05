@@ -31,6 +31,7 @@ import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
 import { runQuickAction, QUICK_ACTIONS, type QuickActionId } from '@/lib/quickAI';
 import { noteHtmlToText } from '@/lib/noteText';
+import { getEffectiveApiKey } from '@/lib/appLang';
 
 const lowlight = createLowlight(common);
 
@@ -646,7 +647,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
   const handleQuickAI = async (action: QuickActionId) => {
     if (!editor || aiRunning) return;
-    const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
+    const apiKey = getEffectiveApiKey();
     if (!apiKey) {
       setAIError('設定画面で Gemini API キーを登録してね');
       return;
