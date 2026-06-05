@@ -78,6 +78,8 @@ export interface ChatOptions {
   webSearch?: boolean;
   models?: string[];
   maxOutputTokens?: number;
+  temperature?: number;
+  thinkingBudget?: number;
 }
 
 export interface ThinkingCallbacks {
@@ -112,9 +114,10 @@ export async function streamSikunlilyChat(
   modelList: string[] = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
   useSearch = false,
   maxOutputTokens = 65536,
+  temperature = 0.6,
 ): Promise<string> {
   const genConfig: Record<string, unknown> = {
-    temperature: 0.7,
+    temperature,
     topK: 40,
     topP: 0.95,
     maxOutputTokens,
@@ -152,7 +155,7 @@ export async function streamSikunlilyChat(
             role: t.role,
             parts: [{ text: t.text } as GeminiPart, ...attachmentToParts(t.attachments ?? [])],
           })),
-          generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 8192 },
+          generationConfig: { temperature, topK: 40, topP: 0.95, maxOutputTokens: 8192 },
         })
       : body;
 
@@ -243,6 +246,18 @@ export async function callGeminiChat(
   apiKey: string,
   options: ChatOptions = {}
 ): Promise<string> {
+  const genConfig: Record<string, unknown> = {
+    // 0.6 default (was 0.8). Lower temperature makes structured output —
+    // Q&A, tables, charts — far more reliable (fewer dropped answers / format
+    // drift). Callers can override per request.
+    temperature: options.temperature ?? 0.6,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens: options.maxOutputTokens ?? 65536,
+  };
+  if (options.thinkingBudget && options.thinkingBudget > 0) {
+    genConfig.thinkingConfig = { thinkingBudget: options.thinkingBudget };
+  }
   const baseBody = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: history.map(t => ({
@@ -252,12 +267,7 @@ export async function callGeminiChat(
         ...attachmentToParts(t.attachments ?? []),
       ],
     })),
-    generationConfig: {
-      temperature: 0.8,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: options.maxOutputTokens ?? 65536,
-    },
+    generationConfig: genConfig,
   };
 
   let lastError = 'AI request failed';

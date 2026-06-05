@@ -122,6 +122,16 @@ function detectChartLabel(code: string): string {
   } catch { return 'グラフ'; }
 }
 
+// Requests where correctness/completeness matter more than speed — problem &
+// quiz generation, grading, summarizing, translating, proofreading, explaining.
+// For these we automatically engage extended thinking + a low temperature so
+// the model doesn't rush and drop answers, regardless of the thinking toggle.
+const ACCURACY_RE = /問題|もんだい|クイズ|テスト|試験|演習|過去問|穴埋め|空欄|単語(カード|帳)|フラッシュ|暗記|一問一答|○×|まるばつ|正誤|並べ替え|並べかえ|選択問題|多肢選択|[0-9０-９]\s*択|採点|添削|校正|要約|翻訳|和訳|英訳|解説|証明|計算|解いて|解答|証明して/;
+
+function isAccuracyTask(text: string): boolean {
+  return ACCURACY_RE.test(text || '');
+}
+
 type QAKind = 'qa' | 'fill' | 'order' | 'choice' | 'truefalse' | 'flash';
 
 function parseQAKind(code: string): QAKind {
@@ -157,7 +167,9 @@ function parseQAPairs(code: string): QAPairParsed[] {
     const am = line.match(/^[Aa]\s*\d*\s*[:.：]\s*(.*)/);
     const om = line.match(/^(?:[-*・>‣–—]|[0-9０-９]+[.)）]|[A-Da-dア-エ①-④][.)）])\s+(.*)/);
     if (qm) {
-      if (cur && cur.a !== undefined && cur.q) pairs.push(cur);
+      // Only keep the previous pair if it actually got an answer — otherwise a
+      // question the model left unanswered would render as a blank-answer card.
+      if (cur && cur.q && cur.a) pairs.push(cur);
       cur = { q: qm[1].trim(), a: '' };
     } else if (am && cur) {
       cur.a = am[1].trim();
@@ -2000,11 +2012,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         return turn;
       });
 
+      // Problem/quiz generation, grading, summarizing etc. auto-engage thinking
+      // + a low temperature so the model doesn't rush and drop answers.
+      const accuracy = isAccuracyTask(userMsg.text);
       let aiText: string;
-      if (lilyThinking && !economy) {
+      if ((lilyThinking || accuracy) && !economy) {
         setSikunLiveThinking('');
         let thinkingAccum = '';
-        setSikunProgress('🧠 思考中...');
+        setSikunProgress(accuracy && !lilyThinking ? '🧠 じっくり考えてるよ…' : '🧠 思考中...');
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
@@ -2022,6 +2037,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
           webSearch,
           65536,
+          accuracy ? 0.35 : 0.6,
         );
         setSikunProgress('');
         setSikunLiveThinking('');
@@ -2031,6 +2047,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           webSearch,
           models: economy ? ['gemini-2.5-flash-lite'] : undefined,
           maxOutputTokens: economy ? 8192 : undefined,
+          temperature: accuracy ? 0.35 : undefined,
         });
       }
       const { textContent, blocks, questions } = parseAIResponse(aiText, true);
@@ -2111,12 +2128,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         }
       }
 
+      const lastUserText = [...history].reverse().find(t => t.role === 'user')?.text ?? '';
+      const accuracy = isAccuracyTask(lastUserText);
       let aiText: string;
-      if (lilyThinking && !economy) {
+      if ((lilyThinking || accuracy) && !economy) {
         const systemPrompt = buildSystemPrompt(contextNotes);
         setSikunLiveThinking('');
         let thinkingAccum = '';
-        setSikunProgress('🧠 思考中...');
+        setSikunProgress(accuracy && !lilyThinking ? '🧠 じっくり考えてるよ…' : '🧠 思考中...');
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
@@ -2134,6 +2153,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
           webSearch,
           65536,
+          accuracy ? 0.35 : 0.6,
         );
         setSikunProgress('');
         setSikunLiveThinking('');
@@ -2144,6 +2164,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           webSearch,
           models: economy ? ['gemini-2.5-flash-lite'] : undefined,
           maxOutputTokens: economy ? 8192 : undefined,
+          temperature: accuracy ? 0.35 : undefined,
         });
       }
 
