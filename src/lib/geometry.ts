@@ -43,12 +43,17 @@ function tokenize(s: string): Tok[] {
       continue;
     }
     if (/[a-zA-Z]/.test(c)) {
-      let id = '';
-      while (i < s.length && /[a-zA-Z]/.test(s[i])) id += s[i++];
+      // Identifiers start with a letter but may contain digits (log10, log2).
+      let id = c; i++;
+      while (i < s.length && /[a-zA-Z0-9]/.test(s[i])) id += s[i++];
       out.push({ t: 'id', v: id });
       continue;
     }
-    if ('+-*/^'.includes(c)) { out.push({ t: 'op', v: c }); i++; continue; }
+    if ('+-*/^'.includes(c)) {
+      // Treat `**` as exponentiation (LLMs often write x**2).
+      if (c === '*' && s[i + 1] === '*') { out.push({ t: 'op', v: '^' }); i += 2; continue; }
+      out.push({ t: 'op', v: c }); i++; continue;
+    }
     if (c === '(') { out.push({ t: 'lp', v: c }); i++; continue; }
     if (c === ')') { out.push({ t: 'rp', v: c }); i++; continue; }
     throw new Error(`bad char ${c}`);
@@ -57,9 +62,16 @@ function tokenize(s: string): Tok[] {
 }
 
 const FUNCS: Record<string, (n: number) => number> = {
-  sin: Math.sin, cos: Math.cos, tan: Math.tan, sqrt: Math.sqrt,
+  sin: Math.sin, cos: Math.cos, tan: Math.tan, sqrt: Math.sqrt, cbrt: Math.cbrt,
   abs: Math.abs, exp: Math.exp, log: Math.log, ln: Math.log,
+  log10: Math.log10, log2: Math.log2,
   asin: Math.asin, acos: Math.acos, atan: Math.atan,
+  sinh: Math.sinh, cosh: Math.cosh, tanh: Math.tanh,
+  sign: Math.sign, floor: Math.floor, ceil: Math.ceil, round: Math.round, trunc: Math.trunc,
+};
+
+const CONSTS: Record<string, number> = {
+  pi: Math.PI, e: Math.E, tau: Math.PI * 2,
 };
 
 // Recursive-descent parser → function of x. No eval / Function.
@@ -81,11 +93,22 @@ function compile(expr: string): (x: number) => number {
   }
   function parseTerm(): (x: number) => number {
     let left = parsePow();
-    while (peek() && peek().t === 'op' && (peek().v === '*' || peek().v === '/')) {
-      const op = eat().v;
-      const right = parsePow();
-      const l = left;
-      left = op === '*' ? (x) => l(x) * right(x) : (x) => l(x) / right(x);
+    for (;;) {
+      const tk = peek();
+      if (!tk) break;
+      if (tk.t === 'op' && (tk.v === '*' || tk.v === '/')) {
+        const op = eat().v;
+        const right = parsePow();
+        const l = left;
+        left = op === '*' ? (x) => l(x) * right(x) : (x) => l(x) / right(x);
+      } else if (tk.t === 'num' || tk.t === 'id' || tk.t === 'lp') {
+        // Implicit multiplication: 2x, 3(x+1), (x+1)(x-1), 2pi, x sin(x).
+        const right = parsePow();
+        const l = left;
+        left = (x) => l(x) * right(x);
+      } else {
+        break;
+      }
     }
     return left;
   }
@@ -104,6 +127,10 @@ function compile(expr: string): (x: number) => number {
       const u = parseUnary();
       return (x) => -u(x);
     }
+    if (peek() && peek().t === 'op' && peek().v === '+') {
+      eat();
+      return parseUnary();
+    }
     return parseAtom();
   }
   function parseAtom(): (x: number) => number {
@@ -120,8 +147,7 @@ function compile(expr: string): (x: number) => number {
     if (tk.t === 'id') {
       eat();
       if (tk.v === 'x') return (x) => x;
-      if (tk.v === 'pi') return () => Math.PI;
-      if (tk.v === 'e') return () => Math.E;
+      if (tk.v in CONSTS) { const c = CONSTS[tk.v]; return () => c; }
       const fn = FUNCS[tk.v];
       if (fn) {
         if (!peek() || peek().t !== 'lp') throw new Error(`( expected after ${tk.v}`);
@@ -299,7 +325,21 @@ export function renderGeometrySvg(spec: GeometrySpec): string {
 }
 
 export function parseGeometry(code: string): GeometrySpec {
-  const spec = JSON.parse(code) as GeometrySpec;
+  let spec: GeometrySpec;
+  try {
+    spec = JSON.parse(code) as GeometrySpec;
+  } catch {
+    // Be tolerant of common LLM JSON quirks: surrounding prose / fences,
+    // // line comments, and trailing commas before } or ].
+    const start = code.indexOf('{');
+    const end = code.lastIndexOf('}');
+    if (start < 0 || end <= start) throw new Error('JSON が見つからないよ');
+    const cleaned = code
+      .slice(start, end + 1)
+      .replace(/\/\/[^\n\r]*/g, '')      // // comments
+      .replace(/,(\s*[}\]])/g, '$1');    // trailing commas
+    spec = JSON.parse(cleaned) as GeometrySpec;
+  }
   if (!Array.isArray(spec.elements)) throw new Error('elements 配列がないよ');
   return spec;
 }

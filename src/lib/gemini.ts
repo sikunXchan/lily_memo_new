@@ -507,7 +507,8 @@ def greet(name):
   ]
 }
 \`\`\`
-expr で使えるのは x, +, -, *, /, ^, ( ), sin, cos, tan, sqrt, abs, exp, log, ln, pi, e のみ。
+expr で使えるもの: 変数 x、演算子 + - * / ^（** も可）、括弧、暗黙の掛け算（例: 2x, 3sin(x), (x+1)(x-1)）。
+関数: sin cos tan asin acos atan sinh cosh tanh sqrt cbrt abs exp log ln log10 log2 sign floor ceil round。定数: pi e tau。
 ※ geometry JSONはコードブロック(\`\`\`geometry ... \`\`\`)の中にだけ書く。絶対にフェンス外に生JSONを書かない。
 
 ⚠️【図は必ず情報量を多く・参考になるように描く】参考にならない簡素な図は禁止。次を必ず守る:

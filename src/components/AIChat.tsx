@@ -126,7 +126,7 @@ function detectChartLabel(code: string): string {
 // quiz generation, grading, summarizing, translating, proofreading, explaining.
 // For these we automatically engage extended thinking + a low temperature so
 // the model doesn't rush and drop answers, regardless of the thinking toggle.
-const ACCURACY_RE = /問題|もんだい|クイズ|テスト|試験|演習|過去問|穴埋め|空欄|単語(カード|帳)|フラッシュ|暗記|一問一答|○×|まるばつ|正誤|並べ替え|並べかえ|選択問題|多肢選択|[0-9０-９]\s*択|採点|添削|校正|要約|翻訳|和訳|英訳|解説|証明|計算|解いて|解答|証明して/;
+const ACCURACY_RE = /問題|もんだい|クイズ|テスト|試験|演習|過去問|穴埋め|空欄|単語(カード|帳)|フラッシュ|暗記|一問一答|○×|まるばつ|正誤|並べ替え|並べかえ|選択問題|多肢選択|[0-9０-９]\s*択|採点|添削|校正|要約|翻訳|和訳|英訳|解説|説明して|証明|計算|解いて|解答|グラフ|図解|図にして|図示|可視化|ベクトル|関数|方程式|微分|積分|フローチャート/;
 
 function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
