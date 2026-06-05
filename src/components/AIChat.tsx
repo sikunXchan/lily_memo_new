@@ -35,6 +35,7 @@ import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
+import { getEffectiveApiKey } from '@/lib/appLang';
 
 const LectureRecorder = dynamic(() => import('@/components/LectureRecorder'), { ssr: false });
 const VoiceChat = dynamic(() => import('@/components/VoiceChat'), { ssr: false });
@@ -1765,8 +1766,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     []
   );
   useEffect(() => {
-    setApiKey(localStorage.getItem('lily_gemini_api_key') || '');
+    const refreshKey = () => setApiKey(getEffectiveApiKey());
+    refreshKey();
     setEconomy(localStorage.getItem('lily_economy_mode') === '1');
+    window.addEventListener('lily-lang-changed', refreshKey);
+    return () => window.removeEventListener('lily-lang-changed', refreshKey);
   }, []);
 
   const toggleEconomy = useCallback(() => {

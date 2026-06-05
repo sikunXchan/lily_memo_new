@@ -10,6 +10,7 @@ import {
   loadSikunHistory, saveSikunHistory, toChatTurns,
   type SikunMessage,
 } from '@/lib/sikunHistory';
+import { getEffectiveApiKey } from '@/lib/appLang';
 
 interface InstanceSikunProps {
   activeNoteId?: number;
@@ -498,7 +499,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       setBubbleVisible(true);
       return;
     }
-    const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
+    const apiKey = getEffectiveApiKey();
     if (!apiKey) {
       setLastReply('設定で Gemini API キーを保存してくれ');
       setBubbleVisible(true);
@@ -615,7 +616,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
 
   const doSend = async (text: string, opts?: DoSendOpts) => {
     if (!text || loading) return;
-    const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
+    const apiKey = getEffectiveApiKey();
     if (!apiKey) {
       setLastReply('設定で Gemini API キーを保存してくれ');
       setBubbleVisible(true);
