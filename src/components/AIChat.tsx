@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw,
@@ -2345,7 +2346,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             <button className={`clear-btn${webSearch || lilyThinking || economy ? ' has-active' : ''}`} onClick={() => setShowHeaderMenu(v => !v)} title={t('メニュー')}>
               <MoreVertical size={17} />
             </button>
-            {showHeaderMenu && (
+            {showHeaderMenu && typeof document !== 'undefined' && createPortal(
               <>
                 <div className="header-menu-backdrop" onClick={() => setShowHeaderMenu(false)} />
                 <div className="header-menu">
@@ -2377,7 +2378,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                     <HelpCircle size={15} />{t('使い方ガイド')}
                   </button>
                 </div>
-              </>
+              </>,
+              document.body,
             )}
           </div>
         </div>
@@ -2724,7 +2726,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .clear-btn.has-active::after { content: ''; position: absolute; top: 2px; right: 2px; width: 7px; height: 7px; border-radius: 50%; background: var(--primary); border: 1.5px solid var(--background); }
         .header-menu-wrap { position: relative; flex-shrink: 0; }
         .header-menu-backdrop { position: fixed; inset: 0; z-index: 40; }
-        .header-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; background: var(--background); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.16); padding: 6px; min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
+        .header-menu { position: fixed; top: 52px; right: 10px; z-index: 9997; background: var(--background); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.16); padding: 6px; min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
         .header-menu-section { font-size: 0.68rem; font-weight: 700; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 12px 2px; }
         .header-menu-divider { height: 1px; background: var(--border); margin: 5px 4px; }
         .header-menu-item { display: flex; align-items: center; gap: 10px; background: none; border: none; border-radius: 8px; padding: 9px 12px; font-size: 0.84rem; color: var(--foreground); cursor: pointer; text-align: left; white-space: nowrap; }

@@ -10,6 +10,7 @@ import { db } from '@/lib/db';
 import { ensureSkillsSeeded, deleteSkill, type Skill } from '@/lib/skills';
 import { useShortcuts, saveShortcut, deleteShortcut, type Shortcut } from '@/lib/shortcuts';
 import SkillBuilder from '@/components/SkillBuilder';
+import { OVERLAY_STYLE } from '@/lib/overlayStyle';
 
 interface ToolboxModalProps {
   onClose: () => void;
@@ -37,7 +38,7 @@ export default function ToolboxModal({ onClose }: ToolboxModalProps) {
 
   return (
     <>
-    <div className="tb-overlay" onClick={onClose}>
+    <div className="tb-overlay" onClick={onClose} style={{ ...OVERLAY_STYLE, zIndex: 9998 }}>
       <div className="tb-modal" onClick={e => e.stopPropagation()}>
         <div className="tb-header">
           <span className="tb-title">{t('🧰 ツールボックス')}</span>
@@ -185,7 +186,7 @@ function ShortcutEditor({ shortcut, onClose }: { shortcut: Shortcut; onClose: ()
   };
 
   return (
-    <div className="se-overlay" onClick={onClose}>
+    <div className="se-overlay" onClick={onClose} style={{ ...OVERLAY_STYLE, zIndex: 10001 }}>
       <div className="se-modal" onClick={e => e.stopPropagation()}>
         <div className="se-header">
           <span className="se-title">{t('ショートカット')}</span>

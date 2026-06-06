@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { X, FileText, Link2, Type, Trash2, Loader2 } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 import { saveSkill, extractPdfText, fetchUrlText, type Skill, type SkillReference } from '@/lib/skills';
+import { OVERLAY_STYLE } from '@/lib/overlayStyle';
 
 interface SkillBuilderProps {
   skill?: Skill;        // editing an existing skill (undefined = new)
@@ -99,7 +100,7 @@ export default function SkillBuilder({ skill, onClose, onSaved }: SkillBuilderPr
     type === 'pdf' ? <FileText size={13} /> : type === 'url' ? <Link2 size={13} /> : <Type size={13} />;
 
   return (
-    <div className="sb-overlay" onClick={onClose}>
+    <div className="sb-overlay" onClick={onClose} style={OVERLAY_STYLE}>
       <div className="sb-modal" onClick={e => e.stopPropagation()}>
         <div className="sb-header">
           <span className="sb-title">{skill ? t('スキルを編集') : t('スキルを作成')}</span>
@@ -196,8 +197,9 @@ export default function SkillBuilder({ skill, onClose, onSaved }: SkillBuilderPr
           <button className="sb-cancel" onClick={onClose}>{t('キャンセル')}</button>
           <button className="sb-save" onClick={handleSave} disabled={!!busy}>{t('保存')}</button>
         </div>
+      </div>
 
-        <style jsx>{`
+      <style jsx>{`
           .sb-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:10000; display:flex; align-items:center; justify-content:center; }
           .sb-modal { background:var(--background); width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden; }
           @media (min-width: 640px) {
@@ -243,7 +245,6 @@ export default function SkillBuilder({ skill, onClose, onSaved }: SkillBuilderPr
           .sb-save { background:var(--primary); border:none; color:#fff; border-radius:10px; padding:8px 22px; font-size:0.85rem; font-weight:700; cursor:pointer; }
           .sb-save:disabled { opacity:0.5; cursor:default; }
         `}</style>
-      </div>
     </div>
   );
 }
