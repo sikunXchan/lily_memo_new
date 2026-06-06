@@ -1716,21 +1716,6 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
   );
 }
 
-// 英単語帳画像から穴埋め例文を作るプロンプト。画像添付が必要なので
-// 送信ではなく入力欄に挿入する（ユーザーが画像を添付してから送る）。
-const ENGLISH_VOCAB_PROMPT = `この英単語帳の画像を解析して、qaか穴埋めの問題を作成してください。qaか穴埋め問題かはユーザーに必ず質問をすること。
-以下のルールを厳守して出力してください。
-フォーマット: 問題の出力番号.[英文の例文] [その日本語翻訳文] を1セットとする。また、隠された単語を答えとして1,2,3,のように該当の問題の番号をふる。
-穴埋め問題化: 画像内で「赤色」で書かれている英単語は、テストに出る重要部分です。その部分は必ず [____] という空欄に置き換えて出力してください。空欄の先頭に答えの1文字目を事前に記述する。
-不要な情報の除外: 単語の番号（1011など）、発音記号、品詞ラベル、見出し語単体などは含めず、純粋に「例文」と「訳」のペアだけを抽出してください。
-出力例:
-問題
-1.Be careful! That glass is close to the [e____] of the table. 気をつけて！グラスがテーブルの端に近いよ。
-2. . . . . 続く
-答え
-1.edge
-2. 続く
-そして生成した内容を問題セッションを問題に、答えのセッションを答えに挿入し、qaか穴埋め問題のどちらかの問題形式の問題を作成してください。`;
 
 export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: AIChatProps) {
   const t = useT();
@@ -2546,14 +2531,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             {sc.label}
           </button>
         ))}
-        <button
-          className="quick-chip"
-          onClick={() => fillInput(ENGLISH_VOCAB_PROMPT)}
-          disabled={isLoading}
-          title={t('英単語帳の画像を添付してから送ると、穴埋め例文を作るよ')}
-        >
-          {t('🔤 英単語帳→問題')}
-        </button>
       </div>
 
       {(attachments.length > 0 || fileError) && (
