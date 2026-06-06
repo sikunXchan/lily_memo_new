@@ -2,6 +2,7 @@
 
 import { NodeViewContent, NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import React, { useState, useEffect, CSSProperties } from 'react';
+import { useT } from '@/lib/i18n';
 
 // TipTap v3 uses NoInfer<T> in NodeViewContentProps which prevents TypeScript from
 // inferring the element type from the `as` prop. Cast to allow the `code` element.
@@ -14,6 +15,7 @@ const LANGUAGES = [
 ];
 
 export default function CodeBlockComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
+  const t = useT();
   // インラインスタイルで管理: styled-jsxはTiptap NodeViewRenderer内で正しく動作しないため
   const [theme, setTheme] = useState<'dark' | 'light'>(attrs.theme || 'dark');
 
@@ -106,7 +108,7 @@ export default function CodeBlockComponent({ node: { attrs }, updateAttributes }
               <option key={lang} value={lang}>{lang}</option>
             ))}
           </select>
-          <button style={toggleBtnStyle} onClick={toggleTheme} title={isDark ? 'ライトテーマに切替' : 'ダークテーマに切替'}>
+          <button style={toggleBtnStyle} onClick={toggleTheme} title={isDark ? t('ライトテーマに切替') : t('ダークテーマに切替')}>
             {isDark ? '☀️' : '🌙'}
           </button>
         </div>

@@ -10,6 +10,7 @@ import {
   Brush, Sparkles, FileText, Pencil, Trash2, List, Maximize2, X,
 } from 'lucide-react';
 import type { Note, Folder } from '@/lib/db';
+import { useT } from '@/lib/i18n';
 
 const DirectoryGraph = dynamic(() => import('./DirectoryGraph'), { ssr: false });
 
@@ -42,6 +43,7 @@ export default function HomeHero({
   onSelectNote, onOpenConnection, onSelectFolder, onOpenSketch, isDesktop,
 }: HomeHeroProps) {
   const { theme, cycleTheme, nextThemeName } = useTheme();
+  const t = useT();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
@@ -59,7 +61,7 @@ export default function HomeHero({
   }, [searchQuery]);
 
   const now = new Date();
-  const dateLabel = `${WEEKDAYS[now.getDay()]} · ${now.getMonth() + 1}月${now.getDate()}日`;
+  const dateLabel = `${WEEKDAYS[now.getDay()]} · ${t('{m}月{d}日', { m: now.getMonth() + 1, d: now.getDate() })}`;
   const recent = (notes ?? []).slice(0, 5);
   const looseNotes = notes?.filter(n => !n.folderId || (searchQuery && n.folderId)) ?? [];
 
@@ -74,7 +76,7 @@ export default function HomeHero({
   };
 
   const addFolder = async () => {
-    const name = prompt('フォルダ名を入力してください');
+    const name = prompt(t('フォルダ名を入力してください'));
     if (name) {
       const t = Date.now();
       await db.folders.add({ syncId: newSyncId(), name, createdAt: t, updatedAt: t, color: '--folder-pink' });
@@ -123,14 +125,14 @@ export default function HomeHero({
               <div className="hero-title">Lily Memo</div>
             </div>
             <button className="hero-theme-btn" onClick={cycleTheme}
-              title={`テーマ切替（次: ${nextThemeName}）`} aria-label="テーマを切り替える">
+              title={t('テーマ切替（次: {name}）', { name: nextThemeName })} aria-label={t('テーマを切り替える')}>
               <Palette size={14} color="#fff" />
               {theme.dark ? <Moon size={12} color="#fff" /> : <Sun size={12} color="#fff" />}
             </button>
           </div>
           <button className="hero-action" onClick={() => createNote()}>
             <Plus size={16} strokeWidth={2.4} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-            <span className="hero-action-label">今日のメモを書く...</span>
+            <span className="hero-action-label">{t('今日のメモを書く...')}</span>
           </button>
         </div>
       </div>
@@ -141,7 +143,7 @@ export default function HomeHero({
           <div className="tile">
             <div className="tile-header"><span className="tile-label">RECENT</span></div>
             {recent.length === 0
-              ? <p className="tile-empty">まだメモがありません</p>
+              ? <p className="tile-empty">{t('まだメモがありません')}</p>
               : <ul className="note-list">{recent.map(n => (
                   <li key={n.id} className="note-row" onClick={() => onSelectNote(n.id!)}
                     role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onSelectNote(n.id!)}>
@@ -156,7 +158,7 @@ export default function HomeHero({
               <FolderPlus size={13} className="tile-icon-muted" />
             </div>
             {(folders ?? []).length === 0
-              ? <p className="tile-empty">フォルダなし</p>
+              ? <p className="tile-empty">{t('フォルダなし')}</p>
               : <ul className="folder-chip-list">{(folders ?? []).map((f, i) => (
                   <li key={f.id}>
                     <button className="folder-chip" onClick={() => onSelectFolder?.(f.id!)}>
@@ -168,12 +170,12 @@ export default function HomeHero({
           <div className="tile tile-action" onClick={() => onOpenSketch?.()}
             role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpenSketch?.()}>
             <div className="tile-header"><span className="tile-label">SKETCH</span><ChevronRight size={13} className="tile-icon-faint" /></div>
-            <div className="tile-cta"><Brush size={22} className="tile-cta-icon" /><span>落書きを開く</span></div>
+            <div className="tile-cta"><Brush size={22} className="tile-cta-icon" /><span>{t('落書きを開く')}</span></div>
           </div>
           <div className="tile tile-action" onClick={() => onOpenConnection?.()}
             role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpenConnection?.()}>
             <div className="tile-header"><span className="tile-label">CONNECTION</span><ChevronRight size={13} className="tile-icon-faint" /></div>
-            <div className="tile-cta"><Sparkles size={22} className="tile-cta-icon" /><span>つながりを見る</span></div>
+            <div className="tile-cta"><Sparkles size={22} className="tile-cta-icon" /><span>{t('つながりを見る')}</span></div>
           </div>
         </div>
       ) : (
@@ -181,22 +183,22 @@ export default function HomeHero({
         <>
           <div className="search-container">
             <Search size={15} className="search-icon" />
-            <input type="text" placeholder="メモを検索..." value={searchQuery}
+            <input type="text" placeholder={t('メモを検索...')} value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)} className="search-input" />
           </div>
 
           <div className="actions-row">
             <button className="btn-new-folder" onClick={addFolder}>
-              <FolderPlus size={15} /><span>新しいフォルダ</span>
+              <FolderPlus size={15} /><span>{t('新しいフォルダ')}</span>
             </button>
             <div className="view-toggle" role="tablist">
               <button role="tab" aria-selected={viewMode === 'tree'}
                 className={`vt-btn ${viewMode === 'tree' ? 'active' : ''}`} onClick={() => setViewMode('tree')}>
-                <List size={13} /><span>ツリー</span>
+                <List size={13} /><span>{t('ツリー')}</span>
               </button>
               <button role="tab" aria-selected={viewMode === 'graph'}
                 className={`vt-btn ${viewMode === 'graph' ? 'active' : ''}`} onClick={() => setViewMode('graph')}>
-                <Sparkles size={13} /><span>つながり</span>
+                <Sparkles size={13} /><span>{t('つながり')}</span>
               </button>
             </div>
           </div>
@@ -207,7 +209,7 @@ export default function HomeHero({
                 <button
                   className="graph-fullscreen-btn"
                   onClick={() => setGraphFullscreen(true)}
-                  title="全画面表示"
+                  title={t('全画面表示')}
                 >
                   <Maximize2 size={14} />
                 </button>
@@ -225,15 +227,15 @@ export default function HomeHero({
                       <span className="folder-dot lg" style={{ background: folderColorVar(folder, i) }} />
                       <span className="folder-name">{folder.name}</span>
                       <div className="folder-actions">
-                        <button className="btn-inline" title="色を変更"
+                        <button className="btn-inline" title={t('色を変更')}
                           onClick={(e) => { e.stopPropagation(); setEditingFolderColor(editingFolderColor === folder.id ? null : folder.id!); }}>
                           <Palette size={13} />
                         </button>
-                        <button className="btn-inline" title="メモを追加"
+                        <button className="btn-inline" title={t('メモを追加')}
                           onClick={(e) => { e.stopPropagation(); createNote(folder.id); }}>
                           <Plus size={13} />
                         </button>
-                        <button className="btn-inline btn-del" title="フォルダを削除"
+                        <button className="btn-inline btn-del" title={t('フォルダを削除')}
                           onClick={(e) => handleDeleteFolder(e, { id: folder.id!, name: folder.name })}>
                           <Trash2 size={13} />
                         </button>
@@ -256,7 +258,7 @@ export default function HomeHero({
                           </div>
                         ))}
                         {notes?.filter(n => n.folderId === folder.id).length === 0 && (
-                          <div className="empty-hint">メモはありません</div>
+                          <div className="empty-hint">{t('メモはありません')}</div>
                         )}
                       </div>
                     )}
@@ -264,7 +266,7 @@ export default function HomeHero({
                 ))}
 
                 <div className="loose-notes">
-                  <div className="section-label">{searchQuery ? '検索結果' : 'すべてのメモ'}</div>
+                  <div className="section-label">{searchQuery ? t('検索結果') : t('すべてのメモ')}</div>
                   {looseNotes.map(note => (
                     <div key={note.id} className="note-item" onClick={() => onSelectNote(note.id!)}>
                       {note.type === 'handwriting' ? <Pencil size={14} /> : <FileText size={14} />}
@@ -272,7 +274,7 @@ export default function HomeHero({
                     </div>
                   ))}
                   {looseNotes.length === 0 && (
-                    <div className="empty-hint">{searchQuery ? '見つかりませんでした' : 'メモはありません'}</div>
+                    <div className="empty-hint">{searchQuery ? t('見つかりませんでした') : t('メモはありません')}</div>
                   )}
                 </div>
               </div>
@@ -283,7 +285,7 @@ export default function HomeHero({
 
       {graphFullscreen && (
         <div className="graph-fs-overlay">
-          <button className="graph-fs-close" onClick={() => setGraphFullscreen(false)} title="閉じる">
+          <button className="graph-fs-close" onClick={() => setGraphFullscreen(false)} title={t('閉じる')}>
             <X size={20} />
           </button>
           <DirectoryGraph
@@ -297,18 +299,18 @@ export default function HomeHero({
         <div className="delete-overlay" onClick={() => setDeletingFolder(null)}>
           <div className="delete-dialog" onClick={e => e.stopPropagation()}>
             <div className="delete-dialog-icon"><Trash2 size={22} /></div>
-            <h3 className="ddt">フォルダを削除</h3>
+            <h3 className="ddt">{t('フォルダを削除')}</h3>
             <p className="ddf">「{deletingFolder.name}」</p>
             {deletingFolder.noteCount > 0
-              ? <p className="ddd">{deletingFolder.noteCount}件のメモが含まれています。<br />メモはどうしますか？</p>
-              : <p className="ddd">このフォルダを削除します。</p>}
+              ? <p className="ddd">{t('{n}件のメモが含まれています。', { n: deletingFolder.noteCount })}<br />{t('メモはどうしますか？')}</p>
+              : <p className="ddd">{t('このフォルダを削除します。')}</p>}
             <div className="dda">
-              <button className="dda-cancel" onClick={() => setDeletingFolder(null)}>キャンセル</button>
+              <button className="dda-cancel" onClick={() => setDeletingFolder(null)}>{t('キャンセル')}</button>
               {deletingFolder.noteCount > 0 && (
-                <button className="dda-keep" onClick={() => confirmDeleteFolder(false)}>メモを残す</button>
+                <button className="dda-keep" onClick={() => confirmDeleteFolder(false)}>{t('メモを残す')}</button>
               )}
               <button className="dda-delete" onClick={() => confirmDeleteFolder(deletingFolder.noteCount > 0)}>
-                {deletingFolder.noteCount > 0 ? 'すべて削除' : '削除する'}
+                {deletingFolder.noteCount > 0 ? t('すべて削除') : t('削除する')}
               </button>
             </div>
           </div>

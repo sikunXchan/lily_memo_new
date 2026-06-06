@@ -14,6 +14,8 @@ import TrophyRoom from './TrophyRoom';
 import StudyProfileModal from './StudyProfileModal';
 import { getLevelInfo, fmtHoursShort } from '@/lib/level';
 import LevelIcon from './LevelIcon';
+import { useT } from '@/lib/i18n';
+import { getAppLang } from '@/lib/appLang';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LS_KEY_START     = 'study_timer_start';
@@ -50,6 +52,11 @@ function fmtClock(secs: number): string {
 function fmtDur(secs: number): string {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
+  if (getAppLang() === 'en') {
+    if (h > 0) return `${h}h${m > 0 ? ' ' + m + 'm' : ''}`;
+    if (m > 0) return `${m}m`;
+    return secs > 0 ? `${secs}s` : '0m';
+  }
   if (h > 0) return `${h}時間${m > 0 ? m + '分' : ''}`;
   if (m > 0) return `${m}分`;
   return secs > 0 ? `${secs}秒` : '0分';
@@ -130,7 +137,9 @@ function makeMonthBuckets(sessions: StudySession[], offset: number): Bucket[] {
     const end = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
     const segs = segsFrom(sessions.filter(s => s.date >= start && s.date <= end));
     const bYM = `${y}-${String(m).padStart(2,'0')}`;
-    return { label: `${m}月`, current: tdYM === bYM, segs, total: segs.reduce((a, s) => a + s.secs, 0), start, end };
+    const EN_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const label = getAppLang() === 'en' ? EN_MONTHS[m - 1] : `${m}月`;
+    return { label, current: tdYM === bYM, segs, total: segs.reduce((a, s) => a + s.secs, 0), start, end };
   });
 }
 
@@ -160,6 +169,7 @@ export interface StudyTrackerProps {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus }: StudyTrackerProps) {
+  const t = useT();
   const [view, setView] = useState<'timer' | 'stats' | 'total'>('timer');
   const [period, setPeriod]   = useState<'7d' | '30d' | '1y'>('7d');
   const [offset, setOffset]   = useState(0);
@@ -369,7 +379,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const levelInfo = getLevelInfo(grandTotal);
 
   const periodLabel = offset === 0
-    ? (period === '7d' ? '直近7日間' : period === '30d' ? '直近4週間' : '直近1年間')
+    ? (period === '7d' ? t('直近7日間') : period === '30d' ? t('直近4週間') : t('直近1年間'))
     : `${buckets[0]?.label ?? ''} 〜 ${buckets[buckets.length-1]?.label ?? ''}`;
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -378,20 +388,20 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {/* Header */}
       <div className="st-header">
         {onSwitchTab && (
-          <button className="st-back" onClick={() => onSwitchTab('memos')} title="メモに戻る">
+          <button className="st-back" onClick={() => onSwitchTab('memos')} title={t('メモに戻る')}>
             <ArrowLeft size={18} />
           </button>
         )}
-        <span className="st-title">📚 学習トラッカー</span>
+        <span className="st-title">📚 {t('学習トラッカー')}</span>
         <div className="st-tabs">
           <button className={`st-tab ${view === 'timer' ? 'active' : ''}`} onClick={() => setView('timer')}>
-            <Timer size={13} /> タイマー
+            <Timer size={13} /> {t('タイマー')}
           </button>
           <button className={`st-tab ${view === 'stats' ? 'active' : ''}`} onClick={() => setView('stats')}>
-            <BarChart2 size={13} /> 記録
+            <BarChart2 size={13} /> {t('記録')}
           </button>
           <button className={`st-tab ${view === 'total' ? 'active' : ''}`} onClick={() => setView('total')}>
-            <GraduationCap size={13} /> 合計
+            <GraduationCap size={13} /> {t('合計')}
           </button>
         </div>
       </div>
@@ -413,7 +423,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             <div className="lv-hero-body">
               <div className="lv-hero-top">
                 <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
-                <span className="lv-hero-next">次まで {fmtHoursShort(levelInfo.remainingHours)}</span>
+                <span className="lv-hero-next">{t('次まで {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
               </div>
               <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
             </div>
@@ -429,7 +439,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                 disabled={isRunning}
               >
                 <span className="cat-dot" style={{ background: '#94a3b8' }} />
-                なし
+                {t('なし')}
               </button>
               {categories.map(cat => (
                 <div key={cat.id} className="cat-chip-wrap">
@@ -465,7 +475,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                   className="cat-name-input"
                   value={newCatName}
                   onChange={e => setNewCatName(e.target.value)}
-                  placeholder="教科名 (例: 数学)"
+                  placeholder={t('教科名 (例: 数学)')}
                   maxLength={20}
                   onKeyDown={e => { if (e.key === 'Enter') void addCat(); }}
                   autoFocus
@@ -481,7 +491,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                   ))}
                 </div>
                 <button className="cat-save-btn" onClick={() => void addCat()} disabled={!newCatName.trim()}>
-                  追加
+                  {t('追加')}
                 </button>
               </div>
             )}
@@ -500,18 +510,18 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
               className={`timer-btn ${isRunning ? 'stop' : 'start'}`}
               onClick={isRunning ? () => void stopTimer() : startTimer}
             >
-              {isRunning ? <><Square size={16} fill="currentColor" /> 停止して保存</> : <><Play size={16} fill="currentColor" /> スタート</>}
+              {isRunning ? <><Square size={16} fill="currentColor" /> {t('停止して保存')}</> : <><Play size={16} fill="currentColor" /> {t('スタート')}</>}
             </button>
           </div>
 
           {/* Today + all-time total */}
           <div className="total-row">
             <div className="today-card">
-              <span className="today-label">今日の学習</span>
+              <span className="today-label">{t('今日の学習')}</span>
               <span className="today-total">{fmtDur(todayTotal + (isRunning ? elapsed : 0))}</span>
             </div>
             <button className="today-card today-card-btn" onClick={() => setView('total')}>
-              <span className="today-label">合計学習時間</span>
+              <span className="today-label">{t('合計学習時間')}</span>
               <span className="today-total">{fmtDur(grandTotal + (isRunning ? elapsed : 0))}</span>
             </button>
           </div>
@@ -519,7 +529,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           {/* Recent sessions */}
           {recentSessions.length > 0 && (
             <div className="recent-section">
-              <p className="recent-title">直近の記録（左スワイプで削除）</p>
+              <p className="recent-title">{t('直近の記録（左スワイプで削除）')}</p>
               {recentSessions.map(s => (
                 <div key={s.id} className="recent-row-wrap">
                   <div
@@ -536,7 +546,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                     <div className="recent-row-top">
                       <span className="recent-dot" style={{ background: s.categoryColor ?? '#94a3b8' }} />
                       <div className="recent-info">
-                        <span className="recent-cat">{s.categoryName ?? 'なし'}</span>
+                        <span className="recent-cat">{s.categoryName ?? t('なし')}</span>
                         <span className="recent-time">{fmtDateTime(s.startTime)}</span>
                       </div>
                     </div>
@@ -564,7 +574,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                           <button
                             className={`rce-chip ${editingCatId === null ? 'rce-chip-active' : ''}`}
                             onClick={() => setEditingCatId(null)}
-                          >なし</button>
+                          >{t('なし')}</button>
                           {categories.map(c => (
                             <button
                               key={c.id}
@@ -583,7 +593,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                         <button
                           className="recent-dur-btn"
                           onClick={e => { e.stopPropagation(); if (swipedId !== s.id) startEditSession(s); }}
-                          title="開始・終了時刻・カテゴリを修正"
+                          title={t('開始・終了時刻・カテゴリを修正')}
                         >
                           {fmtDur(s.duration)}
                           <Pencil size={10} className="recent-edit-icon" />
@@ -605,15 +615,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {view === 'stats' && (
         <div className="st-scroll">
           <div className="period-row">
-            <button className={`period-btn ${period === '7d'  ? 'active' : ''}`} onClick={() => { setPeriod('7d');  setOffset(0); setSelectedBucket(null); }}>7日間</button>
-            <button className={`period-btn ${period === '30d' ? 'active' : ''}`} onClick={() => { setPeriod('30d'); setOffset(0); setSelectedBucket(null); }}>30日間</button>
-            <button className={`period-btn ${period === '1y'  ? 'active' : ''}`} onClick={() => { setPeriod('1y');  setOffset(0); setSelectedBucket(null); }}>1年間</button>
+            <button className={`period-btn ${period === '7d'  ? 'active' : ''}`} onClick={() => { setPeriod('7d');  setOffset(0); setSelectedBucket(null); }}>{t('7日間')}</button>
+            <button className={`period-btn ${period === '30d' ? 'active' : ''}`} onClick={() => { setPeriod('30d'); setOffset(0); setSelectedBucket(null); }}>{t('30日間')}</button>
+            <button className={`period-btn ${period === '1y'  ? 'active' : ''}`} onClick={() => { setPeriod('1y');  setOffset(0); setSelectedBucket(null); }}>{t('1年間')}</button>
             <div className="period-nav">
-              <button className="period-nav-btn" onClick={() => { setOffset(o => o + 1); setSelectedBucket(null); }} title="前の期間">
+              <button className="period-nav-btn" onClick={() => { setOffset(o => o + 1); setSelectedBucket(null); }} title={t('前の期間')}>
                 <ChevronLeft size={16} />
               </button>
               <span className="period-nav-label">{periodLabel}</span>
-              <button className="period-nav-btn" onClick={() => { setOffset(o => Math.max(0, o - 1)); setSelectedBucket(null); }} disabled={offset === 0} title="次の期間">
+              <button className="period-nav-btn" onClick={() => { setOffset(o => Math.max(0, o - 1)); setSelectedBucket(null); }} disabled={offset === 0} title={t('次の期間')}>
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -623,11 +633,11 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             <div className="summary-card">
               <Flame size={18} style={{ color: '#f97316' }} />
               <span className="summary-val">{streak}</span>
-              <span className="summary-lbl">連続日数</span>
+              <span className="summary-lbl">{t('連続日数')}</span>
             </div>
             <div className="summary-card">
               <span className="summary-val">{fmtDur(periodTotal)}</span>
-              <span className="summary-lbl">{periodLabel}合計</span>
+              <span className="summary-lbl">{t('{label}合計', { label: periodLabel })}</span>
             </div>
           </div>
 
@@ -635,7 +645,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             <>
               <div className="chart-card">
                 <p className="chart-title">
-                  {period === '7d' ? '日別' : period === '30d' ? '週別' : '月別'}学習時間
+                  {period === '7d' ? t('日別学習時間') : period === '30d' ? t('週別学習時間') : t('月別学習時間')}
                 </p>
                 <div className="bar-chart">
                   {buckets.map((b, i) => (
@@ -662,13 +672,13 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                   return (
                     <div className="bar-detail">
                       <span className="bar-detail-label">{b.label}</span>
-                      <span className="bar-detail-total">{b.total > 0 ? fmtDur(b.total) : '記録なし'}</span>
+                      <span className="bar-detail-total">{b.total > 0 ? fmtDur(b.total) : t('記録なし')}</span>
                       {b.segs.length > 0 && (
                         <div className="bar-detail-segs">
                           {b.segs.map((seg, j) => (
                             <div key={j} className="bar-detail-seg">
                               <span className="bar-detail-dot" style={{ background: seg.color }} />
-                              <span className="bar-detail-name">{seg.name}</span>
+                              <span className="bar-detail-name">{t(seg.name)}</span>
                               <span className="bar-detail-time">{fmtDur(seg.secs)}</span>
                             </div>
                           ))}
@@ -681,12 +691,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
               {catTotals.length > 0 && (
                 <div className="cat-breakdown">
-                  <p className="breakdown-title">カテゴリ別</p>
+                  <p className="breakdown-title">{t('カテゴリ別')}</p>
                   {catTotals.map((c, i) => (
                     <div key={i} className="breakdown-row">
                       <div className="breakdown-head">
                         <span className="breakdown-dot" style={{ background: c.color }} />
-                        <span className="breakdown-name">{c.name}</span>
+                        <span className="breakdown-name">{t(c.name)}</span>
                         <span className="breakdown-time">{fmtDur(c.secs)}</span>
                       </div>
                       <div className="breakdown-bar-bg">
@@ -704,8 +714,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             <div className="no-sessions">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/allstar.PNG" alt="" className="no-sessions-img" />
-              <p>まだ学習記録がないよ！</p>
-              <p className="no-sessions-sub">タイマータブで記録してみてね 📚</p>
+              <p>{t('まだ学習記録がないよ！')}</p>
+              <p className="no-sessions-sub">{t('タイマータブで記録してみてね 📚')}</p>
             </div>
           )}
         </div>
@@ -722,24 +732,24 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             <div className="lv-card-body">
               <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
               <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
-              <span className="lv-next">次のレベルまであと {fmtHoursShort(levelInfo.remainingHours)}</span>
+              <span className="lv-next">{t('次のレベルまであと {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
             </div>
           </div>
 
           <div className="grand-card">
-            <span className="grand-label">合計学習時間</span>
+            <span className="grand-label">{t('合計学習時間')}</span>
             <span className="grand-total">{fmtDur(grandTotal)}</span>
-            <span className="grand-sub">{totalDays}日間 ・ {sessions.length}セッション</span>
+            <span className="grand-sub">{t('{days}日間 ・ {n}セッション', { days: totalDays, n: sessions.length })}</span>
           </div>
 
           {allCatTotals.length > 0 ? (
             <div className="cat-breakdown">
-              <p className="breakdown-title">カテゴリ別 合計</p>
+              <p className="breakdown-title">{t('カテゴリ別 合計')}</p>
               {allCatTotals.map((c, i) => (
                 <div key={i} className="breakdown-row">
                   <div className="breakdown-head">
                     <span className="breakdown-dot" style={{ background: c.color }} />
-                    <span className="breakdown-name">{c.name}</span>
+                    <span className="breakdown-name">{t(c.name)}</span>
                     <span className="breakdown-time">{fmtDur(c.secs)}</span>
                   </div>
                   <div className="breakdown-bar-bg">
@@ -756,8 +766,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             <div className="no-sessions">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/allstar.PNG" alt="" className="no-sessions-img" />
-              <p>まだ学習記録がないよ！</p>
-              <p className="no-sessions-sub">タイマータブで記録してみてね 📚</p>
+              <p>{t('まだ学習記録がないよ！')}</p>
+              <p className="no-sessions-sub">{t('タイマータブで記録してみてね 📚')}</p>
             </div>
           )}
         </div>
@@ -766,15 +776,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {/* Bottom nav — desktop only, hidden on mobile (BackBubble handles mobile nav) */}
       {onSwitchTab && (
         <nav className="st-bottom-nav">
-          <button className="snav-item" onClick={() => onSwitchTab('memos')}><Book size={22}/><span>メモ</span></button>
-          <button className="snav-item" onClick={() => onSwitchTab('sketch')}><Brush size={22}/><span>落書き</span></button>
+          <button className="snav-item" onClick={() => onSwitchTab('memos')}><Book size={22}/><span>{t('メモ')}</span></button>
+          <button className="snav-item" onClick={() => onSwitchTab('sketch')}><Brush size={22}/><span>{t('落書き')}</span></button>
           <button className="snav-item" onClick={() => onSwitchTab('pdf')}><FileText size={22}/><span>PDF</span></button>
           <button className="snav-item" onClick={() => onSwitchTab('ai')}><Sparkles size={22}/><span>AI</span></button>
-          <button className="snav-item active"><GraduationCap size={22}/><span>学習</span></button>
+          <button className="snav-item active"><GraduationCap size={22}/><span>{t('学習')}</span></button>
           {onOpenFocus && (
-            <button className="snav-item snav-focus" onClick={onOpenFocus}><Zap size={22}/><span>集中</span></button>
+            <button className="snav-item snav-focus" onClick={onOpenFocus}><Zap size={22}/><span>{t('集中')}</span></button>
           )}
-          <button className="snav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}><SettingsIcon size={22}/><span>設定</span></button>
+          <button className="snav-item" onClick={() => { onSwitchTab('settings'); onOpenSettings(); }}><SettingsIcon size={22}/><span>{t('設定')}</span></button>
         </nav>
       )}
 

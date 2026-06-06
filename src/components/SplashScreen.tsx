@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '@/lib/i18n';
 
 const SCENES = [
   '/splash-01.png', '/splash-02.png', '/splash-03.png',
@@ -63,6 +64,7 @@ function buildComets(): Comet[] {
 }
 
 export default function SplashScreen() {
+  const t = useT();
   const [scene, setScene] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -136,7 +138,7 @@ export default function SplashScreen() {
   if (!scene) return null;
 
   return (
-    <div className={`splash ${closing ? 'closing' : ''}`} onClick={dismiss} role="button" aria-label="はじめる">
+    <div className={`splash ${closing ? 'closing' : ''}`} onClick={dismiss} role="button" aria-label={t('はじめる')}>
 
       {/* Aurora gradient background */}
       <div className="aurora" />
@@ -214,7 +216,7 @@ export default function SplashScreen() {
       </div>
 
       {/* Tap hint */}
-      <div className="tap-hint">✨ タップしてはじめる ✨</div>
+      <div className="tap-hint">✨ {t('タップしてはじめる')} ✨</div>
 
       <style jsx>{`
         .splash {

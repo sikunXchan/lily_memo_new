@@ -6,6 +6,7 @@ import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJ
 import { useTheme } from './ThemeContext';
 import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
 import { getAppLang, setAppLang, type AppLang } from '@/lib/appLang';
+import { useT } from '@/lib/i18n';
 
 function randCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -17,6 +18,7 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ onClose: _onClose }: SettingsModalProps) {
   void _onClose;
+  const t = useT();
   const [isPersisted, setIsPersisted] = useState(false);
   const { fontId, setFontId, themeId, setThemeId } = useTheme();
   const [geminiKey, setGeminiKey] = useState('');
@@ -106,12 +108,12 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSyncCode(code);
       setSyncStatus('ok');
-      setSyncMsg('コードを相手のデバイスに入力してください。5分間有効です。');
+      setSyncMsg(t('コードを相手のデバイスに入力してください。5分間有効です。'));
     } catch (e) {
       setSyncStatus('error');
-      setSyncMsg(e instanceof Error ? e.message : 'エラーが発生しました');
+      setSyncMsg(e instanceof Error ? e.message : t('エラーが発生しました'));
     }
-  }, []);
+  }, [t]);
 
   const doImport = useCallback(async () => {
     const code = syncInput.trim().toUpperCase();
@@ -120,18 +122,18 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
     setSyncMsg('');
     try {
       const res = await fetch(`/api/sync/${code}`);
-      if (res.status === 404) throw new Error('コードが見つかりません。期限切れか間違いがあります。');
+      if (res.status === 404) throw new Error(t('コードが見つかりません。期限切れか間違いがあります。'));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const jsonText = await res.text();
       await restoreSyncFromJson(jsonText);
       setSyncStatus('ok');
-      setSyncMsg('同期完了！すべてのデータを取り込みました。');
+      setSyncMsg(t('同期完了！すべてのデータを取り込みました。'));
       setSyncInput('');
     } catch (e) {
       setSyncStatus('error');
-      setSyncMsg(e instanceof Error ? e.message : 'エラーが発生しました');
+      setSyncMsg(e instanceof Error ? e.message : t('エラーが発生しました'));
     }
-  }, [syncInput]);
+  }, [syncInput, t]);
 
   const copyCode = useCallback(() => {
     navigator.clipboard.writeText(syncCode).catch(() => {});
@@ -158,23 +160,23 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
       try {
         const text = event.target?.result;
         if (typeof text !== 'string') throw new Error('Failed to read file content');
-        if (!confirm('現在のデータを上書きしてバックアップを復元しますか？')) return;
+        if (!confirm(t('現在のデータを上書きしてバックアップを復元しますか？'))) return;
         await restoreBackupFromJson(text);
-        alert('復元が完了しました。ページを再読み込みします。');
+        alert(t('復元が完了しました。ページを再読み込みします。'));
         window.location.reload();
       } catch (err) {
         console.error('Backup restore error:', err);
-        alert('バックアップファイルの読み込みに失敗しました。');
+        alert(t('バックアップファイルの読み込みに失敗しました。'));
       }
     };
-    reader.onerror = () => alert('ファイルの読み込みに失敗しました。');
+    reader.onerror = () => alert(t('ファイルの読み込みに失敗しました。'));
     reader.readAsText(file, 'UTF-8');
   };
 
   return (
     <div className="settings-view">
       <header className="settings-header">
-        <h2>設定</h2>
+        <h2>{t('設定')}</h2>
       </header>
 
       <div className="settings-sections">
@@ -205,24 +207,24 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         <section className="settings-section">
           <div className="section-title">
             <Palette size={20} />
-            <h3>テーマ</h3>
+            <h3>{t('テーマ')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">アプリ全体の配色を切り替えます。「夜空」は星空の背景になります。</p>
+            <p className="desc">{t('アプリ全体の配色を切り替えます。「夜空」は星空の背景になります。')}</p>
             <div className="option-grid">
               {THEME_LIST.map(id => {
-                const t = THEMES[id];
+                const theme = THEMES[id];
                 return (
                   <button
                     key={id}
                     className={`option-card ${themeId === id ? 'selected' : ''}`}
                     onClick={() => setThemeId(id)}
                   >
-                    <span className="swatch" style={{ background: t.bg, borderColor: t.border }}>
-                      <span className="swatch-dot" style={{ background: t.primary }} />
+                    <span className="swatch" style={{ background: theme.bg, borderColor: theme.border }}>
+                      <span className="swatch-dot" style={{ background: theme.primary }} />
                     </span>
-                    <span className="option-name">{t.name}</span>
-                    <span className="option-tag">{t.tag}</span>
+                    <span className="option-name">{t(theme.name)}</span>
+                    <span className="option-tag">{t(theme.tag)}</span>
                   </button>
                 );
               })}
@@ -233,10 +235,10 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         <section className="settings-section">
           <div className="section-title">
             <Type size={20} />
-            <h3>フォント</h3>
+            <h3>{t('フォント')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">アプリ全体の文字の書体を選べます。</p>
+            <p className="desc">{t('アプリ全体の文字の書体を選べます。')}</p>
             <div className="option-grid">
               {FONT_OPTIONS.map(f => (
                 <button
@@ -250,7 +252,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
                   >
                     あA
                   </span>
-                  <span className="option-name">{f.name}</span>
+                  <span className="option-name">{t(f.name)}</span>
                 </button>
               ))}
             </div>
@@ -260,10 +262,10 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         <section className="settings-section">
           <div className="section-title">
             <Sparkles size={20} />
-            <h3>AIアシスタント (Lily)</h3>
+            <h3>{t('AIアシスタント (Lily)')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">Gemini APIキーを設定すると、Lilyがメモの分析・図の作成・問題作りをお手伝いします。</p>
+            <p className="desc">{t('Gemini APIキーを設定すると、Lilyがメモの分析・図の作成・問題作りをお手伝いします。')}</p>
             <div className="api-key-wrap">
               <input
                 type={showKey ? 'text' : 'password'}
@@ -273,12 +275,12 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
                 onChange={e => setGeminiKey(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') saveGeminiKey(); }}
               />
-              <button className="show-key-btn" onClick={() => setShowKey(p => !p)} title={showKey ? '隠す' : '表示'}>
+              <button className="show-key-btn" onClick={() => setShowKey(p => !p)} title={showKey ? t('隠す') : t('表示')}>
                 {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
             <button className={`btn-action ${keySaved ? 'saved' : ''}`} onClick={saveGeminiKey}>
-              {keySaved ? '✓ 保存しました' : '保存する'}
+              {keySaved ? t('✓ 保存しました') : t('保存する')}
             </button>
           </div>
         </section>
@@ -286,15 +288,15 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         <section className="settings-section">
           <div className="section-title">
             <Sparkles size={20} />
-            <h3>sikun（常駐アシスタント）</h3>
+            <h3>{t('sikun（常駐アシスタント）')}</h3>
           </div>
           <div className="section-content">
             <p className="desc">
-              ONにすると、どの画面でも上部にsikunのアイコンが現れて、タップで話しかけられるよ。<br />
-              長押しでアイコンの位置を動かせる。会話パネルを開いてもメモ編集やタブ切り替えはそのままできるから、作業を止めなくていい。
+              {t('ONにすると、どの画面でも上部にsikunのアイコンが現れて、タップで話しかけられるよ。')}<br />
+              {t('長押しでアイコンの位置を動かせる。会話パネルを開いてもメモ編集やタブ切り替えはそのままできるから、作業を止めなくていい。')}
             </p>
             <div className="toggle-row">
-              <span className="toggle-state">{sikunEnabled ? '有効' : '無効'}</span>
+              <span className="toggle-state">{sikunEnabled ? t('有効') : t('無効')}</span>
               <button
                 className={`toggle-switch ${sikunEnabled ? 'on' : ''}`}
                 onClick={toggleSikun}
@@ -308,20 +310,20 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
 
             {sikunEnabled && (
               <>
-                <p className="desc" style={{ marginTop: 20, marginBottom: 10 }}>口調を選べるよ。</p>
+                <p className="desc" style={{ marginTop: 20, marginBottom: 10 }}>{t('口調を選べるよ。')}</p>
                 <div className="option-grid">
                   {[
                     { id: 'tame', name: 'タメ口', tag: 'デフォルト' },
                     { id: 'keigo', name: '敬語', tag: 'ていねい' },
                     { id: 'casual', name: 'カジュアル', tag: '絵文字あり' },
-                  ].map(t => (
+                  ].map(opt => (
                     <button
-                      key={t.id}
-                      className={`option-card ${sikunTone === t.id ? 'selected' : ''}`}
-                      onClick={() => changeTone(t.id)}
+                      key={opt.id}
+                      className={`option-card ${sikunTone === opt.id ? 'selected' : ''}`}
+                      onClick={() => changeTone(opt.id)}
                     >
-                      <span className="option-name">{t.name}</span>
-                      <span className="option-tag">{t.tag}</span>
+                      <span className="option-name">{t(opt.name)}</span>
+                      <span className="option-tag">{t(opt.tag)}</span>
                     </button>
                   ))}
                 </div>
@@ -333,21 +335,20 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         <section className="settings-section">
           <div className="section-title">
             <Wifi size={20} />
-            <h3>自動同期</h3>
+            <h3>{t('自動同期')}</h3>
           </div>
           <div className="section-content">
             <p className="desc">
-              同じ共有キーを設定した端末間で、メモ・フォルダ・勉強記録を自動で同期します。
-              何も操作しなくても、変更から約30秒以内にもう一方の端末に反映されます。
+              {t('同じ共有キーを設定した端末間で、メモ・フォルダ・勉強記録を自動で同期します。何も操作しなくても、変更から約30秒以内にもう一方の端末に反映されます。')}
             </p>
             <div className="toggle-row" style={{ marginBottom: 16 }}>
-              <span className="toggle-state">{liveEnabled ? '同期中' : '停止中'}</span>
+              <span className="toggle-state">{liveEnabled ? t('同期中') : t('停止中')}</span>
               <button
                 className={`toggle-switch ${liveEnabled ? 'on' : ''}`}
                 onClick={toggleLiveSync}
                 role="switch"
                 aria-checked={liveEnabled}
-                aria-label="自動同期"
+                aria-label={t('自動同期')}
               >
                 <span className="toggle-knob" />
               </button>
@@ -359,17 +360,17 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
               <input
                 type="text"
                 className="api-key-input"
-                placeholder="共有キー（例: mystudy2024）"
+                placeholder={t('共有キー（例: mystudy2024）')}
                 value={liveKey}
                 onChange={e => setLiveKey(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') saveLiveSync(); }}
               />
             </div>
             <p className="desc" style={{ marginBottom: 12, marginTop: -8 }}>
-              両方の端末で同じキーを入力して保存してください。英数字なら何でもOK。
+              {t('両方の端末で同じキーを入力して保存してください。英数字なら何でもOK。')}
             </p>
             <button className={`btn-action ${liveSaved ? 'saved' : ''}`} onClick={saveLiveSync}>
-              {liveSaved ? '✓ 保存しました' : '保存する'}
+              {liveSaved ? t('✓ 保存しました') : t('保存する')}
             </button>
           </div>
         </section>
@@ -377,22 +378,22 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         <section className="settings-section">
           <div className="section-title">
             <Share2 size={20} />
-            <h3>デバイス同期（手動）</h3>
+            <h3>{t('デバイス同期（手動）')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">メモ・フォルダ・学習記録など、すべてのデータをデバイス間でコピーします。同じWi-Fiに繋がっている必要はありません。受信側のデータは送信側で上書きされます。</p>
+            <p className="desc">{t('メモ・フォルダ・学習記録など、すべてのデータをデバイス間でコピーします。同じWi-Fiに繋がっている必要はありません。受信側のデータは送信側で上書きされます。')}</p>
             <div className="sync-mode-row">
               <button
                 className={`sync-mode-btn ${syncMode === 'export' ? 'active' : ''}`}
                 onClick={() => { setSyncMode('export'); setSyncStatus('idle'); setSyncMsg(''); setSyncCode(''); }}
               >
-                このデバイスから送る
+                {t('このデバイスから送る')}
               </button>
               <button
                 className={`sync-mode-btn ${syncMode === 'import' ? 'active' : ''}`}
                 onClick={() => { setSyncMode('import'); setSyncStatus('idle'); setSyncMsg(''); }}
               >
-                コードを受け取る
+                {t('コードを受け取る')}
               </button>
             </div>
 
@@ -400,16 +401,16 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
               <div className="sync-body">
                 {syncStatus !== 'ok' ? (
                   <button className="btn-action" onClick={() => void doExport()} disabled={syncStatus === 'loading'}>
-                    {syncStatus === 'loading' ? '処理中...' : 'コードを生成して送信'}
+                    {syncStatus === 'loading' ? t('処理中...') : t('コードを生成して送信')}
                   </button>
                 ) : (
                   <div className="sync-code-display">
-                    <span className="sync-code-label">同期コード</span>
+                    <span className="sync-code-label">{t('同期コード')}</span>
                     <div className="sync-code-row">
                       <span className="sync-code-val">{syncCode}</span>
                       <button className="sync-copy-btn" onClick={copyCode}>
                         {copied ? <Check size={14} /> : <Copy size={14} />}
-                        {copied ? 'コピー済み' : 'コピー'}
+                        {copied ? t('コピー済み') : t('コピー')}
                       </button>
                     </div>
                   </div>
@@ -420,16 +421,16 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
 
             {syncMode === 'import' && (
               <div className="sync-body">
-                <p className="sync-warn">⚠️ このデバイスの全データが送信元で上書きされます</p>
+                <p className="sync-warn">{t('⚠️ このデバイスの全データが送信元で上書きされます')}</p>
                 <input
                   className="sync-input"
                   value={syncInput}
                   onChange={e => setSyncInput(e.target.value.toUpperCase())}
-                  placeholder="コードを入力 (例: AB12CD)"
+                  placeholder={t('コードを入力 (例: AB12CD)')}
                   maxLength={8}
                 />
                 <button className="btn-action" onClick={() => void doImport()} disabled={syncStatus === 'loading' || !syncInput.trim()}>
-                  {syncStatus === 'loading' ? '取得中...' : '全データを同期'}
+                  {syncStatus === 'loading' ? t('取得中...') : t('全データを同期')}
                 </button>
                 {syncMsg && <p className={`sync-msg sync-${syncStatus}`}>{syncMsg}</p>}
               </div>
@@ -440,22 +441,22 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         <section className="settings-section">
           <div className="section-title">
             <Download size={20} />
-            <h3>バックアップと復元</h3>
+            <h3>{t('バックアップと復元')}</h3>
           </div>
           <div className="section-content">
             <div className="status-badge">
               <div className={`dot ${isPersisted ? 'persisted' : ''}`} />
-              <span>ストレージ永続化: {isPersisted ? '有効（安全）' : '標準'}</span>
+              <span>{t('ストレージ永続化:')} {isPersisted ? t('有効（安全）') : t('標準')}</span>
             </div>
-            <p className="desc">手元にローカルコピーを残したい時にどうぞ。別の端末でもこのファイルを取り込めば同じ内容を見られます。</p>
+            <p className="desc">{t('手元にローカルコピーを残したい時にどうぞ。別の端末でもこのファイルを取り込めば同じ内容を見られます。')}</p>
             <div className="action-group">
               <button className="btn-action" onClick={downloadBackup}>
                 <Download size={18} />
-                バックアップをダウンロード
+                {t('バックアップをダウンロード')}
               </button>
               <label className="btn-action outline">
                 <Upload size={18} />
-                復元ファイルをアップロード
+                {t('復元ファイルをアップロード')}
                 <input type="file" hidden onChange={uploadBackup} accept=".json,application/json" />
               </label>
             </div>

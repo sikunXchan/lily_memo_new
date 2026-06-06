@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import { X, Minus, Plus } from 'lucide-react';
 import { getStudyProfile, saveStudyProfile } from '@/lib/studyProfile';
+import { useT } from '@/lib/i18n';
 
 interface Props { onClose: () => void; }
 
 export default function StudyProfileModal({ onClose }: Props) {
+  const t = useT();
   const init = getStudyProfile();
   const [weekdayHours, setWeekdayHours] = useState(init.weekdayGoalHours);
   const [holidayHours, setHolidayHours] = useState(init.holidayGoalHours);
@@ -34,37 +36,37 @@ export default function StudyProfileModal({ onClose }: Props) {
     <div className="pm-overlay" onClick={onClose}>
       <div className="pm-card" onClick={e => e.stopPropagation()}>
         <div className="pm-header">
-          <span className="pm-title">🎯 勉強の目標</span>
+          <span className="pm-title">🎯 {t('勉強の目標')}</span>
           <button className="pm-close" onClick={onClose}><X size={20} /></button>
         </div>
 
         <div className="pm-body">
-          <label className="pm-label">平日の目標時間</label>
+          <label className="pm-label">{t('平日の目標時間')}</label>
           <div className="pm-stepper">
             <button onClick={() => setWeekdayHours(h => Math.max(0, Math.round((h - 0.5) * 2) / 2))}><Minus size={16} /></button>
-            <span className="pm-hours">{weekdayHours} <small>時間</small></span>
+            <span className="pm-hours">{weekdayHours} <small>{t('時間')}</small></span>
             <button onClick={() => setWeekdayHours(h => Math.round((h + 0.5) * 2) / 2)}><Plus size={16} /></button>
           </div>
 
-          <label className="pm-label">休日の目標時間</label>
+          <label className="pm-label">{t('休日の目標時間')}</label>
           <div className="pm-stepper">
             <button onClick={() => setHolidayHours(h => Math.max(0, Math.round((h - 0.5) * 2) / 2))}><Minus size={16} /></button>
-            <span className="pm-hours">{holidayHours} <small>時間</small></span>
+            <span className="pm-hours">{holidayHours} <small>{t('時間')}</small></span>
             <button onClick={() => setHolidayHours(h => Math.round((h + 0.5) * 2) / 2)}><Plus size={16} /></button>
           </div>
 
-          <label className="pm-label">勉強している科目（読点・カンマ区切り）</label>
-          <input className="pm-input" value={subjects} onChange={e => setSubjects(e.target.value)} placeholder="例: 数学、英語、世界史" maxLength={120} />
+          <label className="pm-label">{t('勉強している科目（読点・カンマ区切り）')}</label>
+          <input className="pm-input" value={subjects} onChange={e => setSubjects(e.target.value)} placeholder={t('例: 数学、英語、世界史')} maxLength={120} />
 
-          <label className="pm-label">目標（なにを目指してる？）</label>
-          <input className="pm-input" value={goalText} onChange={e => setGoalText(e.target.value)} placeholder="例: 共通テスト、宅建合格" maxLength={40} />
+          <label className="pm-label">{t('目標（なにを目指してる？）')}</label>
+          <input className="pm-input" value={goalText} onChange={e => setGoalText(e.target.value)} placeholder={t('例: 共通テスト、宅建合格')} maxLength={40} />
 
-          <label className="pm-label">目標の日付</label>
+          <label className="pm-label">{t('目標の日付')}</label>
           <input className="pm-input" type="date" value={goalDate} onChange={e => setGoalDate(e.target.value)} />
         </div>
 
         <div className="pm-footer">
-          <button className="pm-save" onClick={save}>保存する</button>
+          <button className="pm-save" onClick={save}>{t('保存する')}</button>
         </div>
       </div>
 

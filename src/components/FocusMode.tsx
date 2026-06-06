@@ -3,6 +3,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, X, Camera, CameraOff, BookOpen, Coffee, Volume2, VolumeX } from 'lucide-react';
 import { db } from '@/lib/db';
+import { useT } from '@/lib/i18n';
+import { getAppLang } from '@/lib/appLang';
+
+// Format a duration as a localized "Xh Ym" / "X時間Y分" label.
+function fmtDurLabel(totalSecs: number): string {
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  if (getAppLang() === 'en') {
+    if (totalSecs === 0) return '0m';
+    return h > 0 ? `${h}h${m > 0 ? ' ' + m + 'm' : ''}` : `${m}m`;
+  }
+  if (totalSecs === 0) return '0分';
+  return h > 0 ? `${h}時間${m > 0 ? m + '分' : ''}` : `${m}分`;
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const FOCUS_SECS = 25 * 60;
@@ -145,10 +159,11 @@ function drawNature(ctx: CanvasRenderingContext2D, w: number, h: number, drops: 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function ResultScreen({ totalSecs, rounds, onClose }: { totalSecs: number; rounds: number; onClose: () => void }) {
+  const t = useT();
   const h = Math.floor(totalSecs / 3600);
   const m = Math.floor((totalSecs % 3600) / 60);
-  const label = totalSecs === 0 ? '0分' : h > 0 ? `${h}時間${m > 0 ? m + '分' : ''}` : `${m}分`;
-  const msg = totalSecs >= 3600 ? 'すごい！長時間集中できたね🔥' : totalSecs >= 1500 ? 'よく頑張りました！✨' : 'お疲れ様！少し休もう☕';
+  const label = fmtDurLabel(totalSecs);
+  const msg = totalSecs >= 3600 ? t('すごい！長時間集中できたね🔥') : totalSecs >= 1500 ? t('よく頑張りました！✨') : t('お疲れ様！少し休もう☕');
 
   return (
     <div className="fm-outer">
@@ -158,20 +173,20 @@ function ResultScreen({ totalSecs, rounds, onClose }: { totalSecs: number; round
           <img src="/sikun-character.png" alt="" className="rs-char-img" />
         </div>
         <div className="rs-content">
-          <div className="rs-badge">📊 学習記録</div>
+          <div className="rs-badge">📊 {t('学習記録')}</div>
           <div className="rs-time">{label}</div>
           <p className="rs-msg">{msg}</p>
           <div className="rs-stats">
             <div className="rs-stat">
               <span className="rs-stat-val">{rounds}</span>
-              <span className="rs-stat-lbl">ポモドーロ</span>
+              <span className="rs-stat-lbl">{t('ポモドーロ')}</span>
             </div>
             <div className="rs-stat">
-              <span className="rs-stat-val">{h > 0 ? `${h}時間` : `${m}分`}</span>
-              <span className="rs-stat-lbl">集中時間</span>
+              <span className="rs-stat-val">{h > 0 ? (getAppLang() === 'en' ? `${h}h` : `${h}時間`) : (getAppLang() === 'en' ? `${m}m` : `${m}分`)}</span>
+              <span className="rs-stat-lbl">{t('集中時間')}</span>
             </div>
           </div>
-          <button className="rs-close-btn" onClick={onClose}>閉じる</button>
+          <button className="rs-close-btn" onClick={onClose}>{t('閉じる')}</button>
         </div>
       </div>
       <style jsx>{`
@@ -235,6 +250,7 @@ function ResultScreen({ totalSecs, rounds, onClose }: { totalSecs: number; round
 interface FocusModeProps { onClose: () => void }
 
 export default function FocusMode({ onClose }: FocusModeProps) {
+  const t = useT();
   const [phase, setPhase] = useState<'focus' | 'break'>('focus');
   const [remaining, setRemaining] = useState(FOCUS_SECS);
   const [running, setRunning] = useState(false);
@@ -440,11 +456,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
     `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
   const liveFocusSecs = totalFocusSecs + (running && phase === 'focus' ? FOCUS_SECS - remaining : 0);
-  const liveFmtH = Math.floor(liveFocusSecs / 3600);
-  const liveFmtM = Math.floor((liveFocusSecs % 3600) / 60);
-  const liveLabel = liveFocusSecs === 0 ? '0分'
-    : liveFmtH > 0 ? `${liveFmtH}時間${liveFmtM > 0 ? liveFmtM + '分' : ''}`
-    : `${liveFmtM}分`;
+  const liveLabel = fmtDurLabel(liveFocusSecs);
 
   const isFirstStart = !running && remaining === (phase === 'focus' ? FOCUS_SECS : BREAK_SECS);
 
@@ -464,8 +476,8 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           {/* Phase badge */}
           <div className={`fm-phase-badge ${phase}`}>
             {phase === 'focus'
-              ? <><BookOpen size={13} />集中タイム — ラウンド {round}</>
-              : <><Coffee size={13} />休憩タイム</>}
+              ? <><BookOpen size={13} />{t('集中タイム — ラウンド {n}', { n: round })}</>
+              : <><Coffee size={13} />{t('休憩タイム')}</>}
           </div>
 
           {/* Big timer */}
@@ -499,24 +511,24 @@ export default function FocusMode({ onClose }: FocusModeProps) {
               onClick={() => setRunning(v => !v)}
             >
               {running ? <Pause size={18} /> : <Play size={18} />}
-              {running ? '一時停止' : isFirstStart ? 'スタート！' : '再開'}
+              {running ? t('一時停止') : isFirstStart ? t('スタート！') : t('再開')}
             </button>
             <button className="fm-btn-end" onClick={() => void handleEnd()}>
-              <X size={15} />終了
+              <X size={15} />{t('終了')}
             </button>
           </div>
 
           {/* Stats */}
           <div className="fm-stats-row">
-            <span className="fm-stat">累計: {liveLabel}</span>
-            <span className="fm-stat">{doneRounds} ポモドーロ完了</span>
+            <span className="fm-stat">{t('累計: {time}', { time: liveLabel })}</span>
+            <span className="fm-stat">{t('{n} ポモドーロ完了', { n: doneRounds })}</span>
           </div>
 
           {/* Sound & Camera controls row */}
           <div className="fm-extra-controls">
             <button className="fm-cam-toggle" onClick={() => { setSoundOn(v => !v); }}>
               {soundOn ? <Volume2 size={12} /> : <VolumeX size={12} />}
-              {soundOn ? 'ノイズON' : 'ノイズOFF'}
+              {soundOn ? t('ノイズON') : t('ノイズOFF')}
             </button>
             {soundOn && (
               <input
@@ -524,12 +536,12 @@ export default function FocusMode({ onClose }: FocusModeProps) {
                 value={soundVol}
                 onChange={e => setSoundVol(Number(e.target.value))}
                 className="fm-vol-slider"
-                aria-label="音量"
+                aria-label={t('音量')}
               />
             )}
             <button className="fm-cam-toggle" onClick={() => camActive ? stopCam() : startCam()}>
               {camActive ? <CameraOff size={12} /> : <Camera size={12} />}
-              {camActive ? 'カメラOFF' : '集中確認カメラ'}
+              {camActive ? t('カメラOFF') : t('集中確認カメラ')}
             </button>
           </div>
         </div>
@@ -538,7 +550,7 @@ export default function FocusMode({ onClose }: FocusModeProps) {
         {camActive && (
           <div className="fm-cam-box">
             <video ref={videoRef} autoPlay muted playsInline className="fm-cam-video" />
-            <div className="fm-cam-lbl">集中確認中 👀</div>
+            <div className="fm-cam-lbl">{t('集中確認中 👀')}</div>
           </div>
         )}
 

@@ -36,6 +36,7 @@ import {
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
 import { getEffectiveApiKey } from '@/lib/appLang';
+import { useT } from '@/lib/i18n';
 
 const LectureRecorder = dynamic(() => import('@/components/LectureRecorder'), { ssr: false });
 const VoiceChat = dynamic(() => import('@/components/VoiceChat'), { ssr: false });
@@ -530,18 +531,19 @@ const PRICE_ROWS = [
 ];
 
 function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: 'lily' | 'cost' }) {
+  const t = useT();
   const [tab, setTab] = useState<'lily' | 'cost'>(initialTab);
   return (
     <div className="help-overlay" onClick={onClose}>
       <div className="help-modal" onClick={e => e.stopPropagation()}>
         <div className="help-header">
-          <span className="help-title">使い方ガイド</span>
+          <span className="help-title">{t('使い方ガイド')}</span>
           <button className="help-close" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="help-tabs">
-          {(['lily', 'cost'] as const).map(t => (
-            <button key={t} className={`help-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-              {t === 'lily' ? '🌸 Lily' : '💰 料金'}
+          {(['lily', 'cost'] as const).map(tk => (
+            <button key={tk} className={`help-tab${tab === tk ? ' active' : ''}`} onClick={() => setTab(tk)}>
+              {tk === 'lily' ? t('🌸 Lily') : t('💰 料金')}
             </button>
           ))}
         </div>
@@ -551,7 +553,7 @@ function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: '
               {LILY_FEATURES.map(f => (
                 <div key={f.title} className="help-card">
                   <span className="help-card-icon">{f.icon}</span>
-                  <div><strong>{f.title}</strong></div>
+                  <div><strong>{t(f.title)}</strong></div>
                 </div>
               ))}
             </div>
@@ -560,8 +562,8 @@ function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: '
             <div className="price-table">
               {PRICE_ROWS.map(r => (
                 <div key={r.label} className="price-row">
-                  <span className="price-label">{r.label}</span>
-                  <span className="price-cost">{r.cost}</span>
+                  <span className="price-label">{t(r.label)}</span>
+                  <span className="price-cost">{t(r.cost)}</span>
                 </div>
               ))}
             </div>
@@ -618,6 +620,7 @@ async function tryRenderMermaid(source: string): Promise<string> {
 }
 
 function MermaidPreview({ code, baseName }: { code: string; baseName: string }) {
+  const t = useT();
   const [svg, setSvg] = useState('');
   const [err, setErr] = useState(false);
   useEffect(() => {
@@ -646,8 +649,8 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
   }, [code]);
   if (err) return (
     <div className="prev-err">
-      Mermaid 構文エラー💦<br />
-      <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>メモに追加すると編集画面から修正できるよ</span>
+      {t('Mermaid 構文エラー💦')}<br />
+      <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{t('メモに追加すると編集画面から修正できるよ')}</span>
     </div>
   );
   return (
@@ -655,10 +658,10 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
       <div className="mmd-prev" dangerouslySetInnerHTML={{ __html: svg }} />
       <ImageSaveBar>
         <button onClick={() => downloadSvgAsPng(svg, `${baseName}.png`)} disabled={!svg}>
-          <Download size={13} /> PNG保存
+          <Download size={13} /> {t('PNG保存')}
         </button>
         <button onClick={() => downloadSvg(svg, `${baseName}.svg`)} disabled={!svg}>
-          <Download size={13} /> SVG保存
+          <Download size={13} /> {t('SVG保存')}
         </button>
       </ImageSaveBar>
       <style jsx>{`
@@ -670,13 +673,14 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
 }
 
 function ChartPreview({ code, baseName }: { code: string; baseName: string }) {
+  const t = useT();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartRef = useRef<any>(null);
   const cfg = useMemo(() => {
     try { return JSON.parse(code); } catch { return null; }
   }, [code]);
   if (!cfg || !cfg.data || !Array.isArray(cfg.data.datasets)) {
-    return <div className="prev-err">グラフのプレビューを表示できなかったよ💦</div>;
+    return <div className="prev-err">{t('グラフのプレビューを表示できなかったよ💦')}</div>;
   }
   const props = {
     ref: chartRef,
@@ -698,7 +702,7 @@ function ChartPreview({ code, baseName }: { code: string; baseName: string }) {
       </div>
       <ImageSaveBar>
         <button onClick={savePng}>
-          <Download size={13} /> PNG画像で保存
+          <Download size={13} /> {t('PNG画像で保存')}
         </button>
       </ImageSaveBar>
     </div>
@@ -706,19 +710,20 @@ function ChartPreview({ code, baseName }: { code: string; baseName: string }) {
 }
 
 function GeometryPreview({ code, baseName }: { code: string; baseName: string }) {
+  const t = useT();
   const svg = useMemo(() => {
     try { return renderGeometrySvg(parseGeometry(code)); } catch { return ''; }
   }, [code]);
-  if (!svg) return <div className="prev-err">図のプレビューを表示できなかったよ💦</div>;
+  if (!svg) return <div className="prev-err">{t('図のプレビューを表示できなかったよ💦')}</div>;
   return (
     <div>
       <div className="geo-prev" dangerouslySetInnerHTML={{ __html: svg }} />
       <ImageSaveBar>
         <button onClick={() => downloadSvgAsPng(svg, `${baseName}.png`)}>
-          <Download size={13} /> PNG保存
+          <Download size={13} /> {t('PNG保存')}
         </button>
         <button onClick={() => downloadSvg(svg, `${baseName}.svg`)}>
-          <Download size={13} /> SVG保存
+          <Download size={13} /> {t('SVG保存')}
         </button>
       </ImageSaveBar>
       <style jsx>{`
@@ -730,13 +735,14 @@ function GeometryPreview({ code, baseName }: { code: string; baseName: string })
 }
 
 function FilePreview({ block }: { block: InsertableBlock }) {
+  const t = useT();
   const snippet = block.rawCode.slice(0, 400);
   return (
     <div className="file-prev">
       <pre className="file-snippet">{snippet}{block.rawCode.length > 400 ? '\n…' : ''}</pre>
       <ImageSaveBar>
         <button onClick={() => downloadTextFile(block.rawCode, block.fileName || 'lily-file.txt')}>
-          <FileDown size={13} /> {block.fileName} をダウンロード
+          <FileDown size={13} /> {t('{name} をダウンロード', { name: block.fileName ?? '' })}
         </button>
       </ImageSaveBar>
       <style jsx>{`
@@ -753,6 +759,7 @@ function FilePreview({ block }: { block: InsertableBlock }) {
 }
 
 function QAPreview({ code }: { code: string }) {
+  const t = useT();
   const pairs = useMemo(() => parseQAPairs(code), [code]);
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [checked, setChecked] = useState<Set<number>>(new Set());
@@ -761,7 +768,7 @@ function QAPreview({ code }: { code: string }) {
   return (
     <div className="qa-prev">
       <div className={`qa-prev-progress${allDone ? ' all-done' : ''}`}>
-        {checked.size}/{pairs.length} 完了
+        {t('{done}/{total} 完了', { done: checked.size, total: pairs.length })}
       </div>
       {pairs.map((p, i) => (
         <div key={i} className={`qa-item${checked.has(i) ? ' checked' : ''}`}>
@@ -772,7 +779,7 @@ function QAPreview({ code }: { code: string }) {
           {open.has(i) ? (
             <div className="qa-a">A. {p.a}</div>
           ) : (
-            <button className="qa-show" onClick={() => setOpen(s => new Set(s).add(i))}>答えを見る</button>
+            <button className="qa-show" onClick={() => setOpen(s => new Set(s).add(i))}>{t('答えを見る')}</button>
           )}
         </div>
       ))}
@@ -804,17 +811,18 @@ function MemoPermissionModal({
   onClose: () => void;
   onNoteCreated?: (id: number) => void;
 }) {
+  const t = useT();
   const [status, setStatus] = useState<'idle' | 'loading' | 'done'>('idle');
   const existingNote = block.memoId != null ? allNotes.find(n => n.id === block.memoId) : undefined;
   const confirmMsg = block.type === 'memo_create'
-    ? `「${block.memoTitle || '新しいメモ'}」という新しいメモを作っていい？`
-    : `「${existingNote?.title || `メモ ID:${block.memoId}`}」を書き換えていい？`;
+    ? t('「{title}」という新しいメモを作っていい？', { title: block.memoTitle || t('新しいメモ') })
+    : t('「{title}」を書き換えていい？', { title: existingNote?.title || t('メモ ID:{id}', { id: String(block.memoId) }) });
 
   const handleOk = async () => {
     setStatus('loading');
     try {
       if (block.type === 'memo_create') {
-        const id = await createNoteWithBlock(block, block.memoTitle || '新しいメモ');
+        const id = await createNoteWithBlock(block, block.memoTitle || t('新しいメモ'));
         onNoteCreated?.(id as number);
       } else if (block.type === 'memo_overwrite' && block.memoId != null) {
         const html = `<p>${block.rawCode.split('\n').map(escHtmlAttr).join('</p><p>')}</p>`;
@@ -832,9 +840,9 @@ function MemoPermissionModal({
       <div className="memo-modal" onClick={e => e.stopPropagation()}>
         <p className="memo-modal-q">{confirmMsg}</p>
         <div className="memo-modal-actions">
-          <button className="memo-btn cancel" onClick={onClose} disabled={status === 'loading'}>キャンセル</button>
+          <button className="memo-btn cancel" onClick={onClose} disabled={status === 'loading'}>{t('キャンセル')}</button>
           <button className="memo-btn ok" onClick={handleOk} disabled={status !== 'idle'}>
-            {status === 'loading' ? '保存中...' : status === 'done' ? '✓ 完了' : 'OK'}
+            {status === 'loading' ? t('保存中...') : status === 'done' ? t('✓ 完了') : t('OK')}
           </button>
         </div>
       </div>
@@ -853,6 +861,7 @@ function MemoPermissionModal({
 }
 
 function ZipDownloadButton({ blocks }: { blocks: InsertableBlock[] }) {
+  const t = useT();
   const [status, setStatus] = useState<'idle' | 'loading'>('idle');
   const handleZip = async () => {
     if (status === 'loading') return;
@@ -881,7 +890,7 @@ function ZipDownloadButton({ blocks }: { blocks: InsertableBlock[] }) {
   return (
     <button className="zip-download-btn" onClick={handleZip} disabled={status === 'loading'}>
       <span>📦</span>
-      {status === 'loading' ? 'ZIPを作成中...' : `${blocks.length}ファイルをまとめてZIPダウンロード`}
+      {status === 'loading' ? t('ZIPを作成中...') : t('{n}ファイルをまとめてZIPダウンロード', { n: blocks.length })}
       <style jsx>{`
         .zip-download-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 15%, transparent), color-mix(in srgb, var(--primary) 8%, transparent)); border: 1.5px dashed var(--primary); border-radius: 10px; color: var(--primary); font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all 0.15s; margin-top: 4px; }
         .zip-download-btn:hover:not(:disabled) { background: var(--primary); color: white; }
@@ -892,12 +901,13 @@ function ZipDownloadButton({ blocks }: { blocks: InsertableBlock[] }) {
 }
 
 function FolderActionCard({ block, allNotes }: { block: InsertableBlock; allNotes: Note[] }) {
+  const t = useT();
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const allFolders = useLiveQuery(() => db.folders.filter(f => !f.deletedAt).toArray(), []);
 
   const noteTitle = block.memoId != null
     ? (allNotes.find(n => n.id === block.memoId)?.title || `ID:${block.memoId}`)
-    : '不明';
+    : t('不明');
 
   const handleExecute = async () => {
     if (status !== 'idle') return;
@@ -937,9 +947,9 @@ function FolderActionCard({ block, allNotes }: { block: InsertableBlock; allNote
 
   const icon = block.type === 'folder_create' ? '📁' : '📄';
   const label = block.type === 'folder_create'
-    ? `フォルダ「${block.folderName}」を作成`
-    : `「${noteTitle}」→ 📁 ${block.targetFolderName}`;
-  const btnLabel = block.type === 'folder_create' ? 'フォルダを作成する' : 'メモを移動する';
+    ? t('フォルダ「{name}」を作成', { name: String(block.folderName) })
+    : t('「{title}」→ 📁 {folder}', { title: noteTitle, folder: String(block.targetFolderName) });
+  const btnLabel = block.type === 'folder_create' ? t('フォルダを作成する') : t('メモを移動する');
 
   return (
     <div className="folder-action-card">
@@ -949,7 +959,7 @@ function FolderActionCard({ block, allNotes }: { block: InsertableBlock; allNote
         onClick={handleExecute}
         disabled={status !== 'idle'}
       >
-        {status === 'loading' ? '実行中...' : status === 'done' ? '✓ 完了' : status === 'error' ? '✕ 失敗' : btnLabel}
+        {status === 'loading' ? t('実行中...') : status === 'done' ? t('✓ 完了') : status === 'error' ? t('✕ 失敗') : btnLabel}
       </button>
       <style jsx>{`
         .folder-action-card { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; display: flex; align-items: center; gap: 10px; }
@@ -980,6 +990,7 @@ function InsertableBlockCard({
   defaultNoteId?: number;
   onNoteCreated?: (id: number) => void;
 }) {
+  const t = useT();
   const NEW_NOTE = '__new__';
   const [target, setTarget] = useState<string>(
     defaultNoteId != null ? String(defaultNoteId) : (allNotes[0]?.id != null ? String(allNotes[0].id) : NEW_NOTE)
@@ -1009,7 +1020,7 @@ function InsertableBlockCard({
       setStatus('success');
       setTimeout(() => setStatus('idle'), 2500);
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : '挿入に失敗しちゃった');
+      setErrorMsg(e instanceof Error ? e.message : t('挿入に失敗しちゃった'));
       setStatus('error');
       setTimeout(() => setStatus('idle'), 3000);
     }
@@ -1036,7 +1047,7 @@ function InsertableBlockCard({
       {(block.type === 'memo_create' || block.type === 'memo_overwrite') ? (
         <>
           <button className="memo-confirm-btn" onClick={() => setShowMemoModal(true)}>
-            {block.type === 'memo_create' ? '✏️ このメモを作成する' : '📝 上書きを確認する'}
+            {block.type === 'memo_create' ? t('✏️ このメモを作成する') : t('📝 上書きを確認する')}
           </button>
           {showMemoModal && (
             <MemoPermissionModal
@@ -1051,9 +1062,9 @@ function InsertableBlockCard({
         <>
         <div className="block-insert-row">
           <select className="note-select" value={target} onChange={e => setTarget(e.target.value)}>
-            <option value={NEW_NOTE}>✏️ 新規メモを作成</option>
+            <option value={NEW_NOTE}>{t('✏️ 新規メモを作成')}</option>
             {allNotes.map(n => (
-              <option key={n.id} value={String(n.id)}>{n.title || '無題のメモ'}</option>
+              <option key={n.id} value={String(n.id)}>{n.title || t('無題のメモ')}</option>
             ))}
           </select>
           <button
@@ -1061,7 +1072,7 @@ function InsertableBlockCard({
             onClick={handleInsert}
             disabled={status === 'loading' || status === 'success'}
           >
-            {status === 'loading' ? '...追加中' : status === 'success' ? '✓ 追加完了！' : status === 'error' ? '✕ 失敗' : 'メモに追加'}
+            {status === 'loading' ? t('...追加中') : status === 'success' ? t('✓ 追加完了！') : status === 'error' ? t('✕ 失敗') : t('メモに追加')}
           </button>
         </div>
         {errorMsg && <p className="block-error">{errorMsg}</p>}
@@ -1103,6 +1114,7 @@ function ClarifyBottomSheet({
   onDismiss: () => void;
   disabled: boolean;
 }) {
+  const t = useT();
   const [freeText, setFreeText] = useState('');
 
   const handleOption = (opt: string) => {
@@ -1111,9 +1123,9 @@ function ClarifyBottomSheet({
   };
 
   const handleFreeSubmit = () => {
-    const t = freeText.trim();
-    if (!t || disabled) return;
-    onAnswer(t);
+    const val = freeText.trim();
+    if (!val || disabled) return;
+    onAnswer(val);
     setFreeText('');
   };
 
@@ -1123,11 +1135,11 @@ function ClarifyBottomSheet({
         <div className="clarify-header">
           <div className="clarify-q-wrap">
             {progress.total > 1 && (
-              <span className="clarify-progress">質問 {progress.current} / {progress.total}</span>
+              <span className="clarify-progress">{t('質問 {current} / {total}', { current: progress.current, total: progress.total })}</span>
             )}
             <span className="clarify-question">{question.question}</span>
           </div>
-          <button className="clarify-close" onClick={onDismiss} title="閉じる">
+          <button className="clarify-close" onClick={onDismiss} title={t('閉じる')}>
             <X size={16} />
           </button>
         </div>
@@ -1150,7 +1162,7 @@ function ClarifyBottomSheet({
           <Pencil size={15} className="clarify-pencil" />
           <input
             className="clarify-input"
-            placeholder="回答を入力..."
+            placeholder={t('回答を入力...')}
             value={freeText}
             onChange={e => setFreeText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleFreeSubmit(); }}
@@ -1245,6 +1257,7 @@ function ClarifyBottomSheet({
 }
 
 function CopyButton({ text, light }: { text: string; light?: boolean }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     await navigator.clipboard.writeText(text);
@@ -1253,7 +1266,7 @@ function CopyButton({ text, light }: { text: string; light?: boolean }) {
   };
   return (
     <>
-      <button className={`copy-btn${light ? ' copy-btn-light' : ''}`} onClick={copy} title="コピー">
+      <button className={`copy-btn${light ? ' copy-btn-light' : ''}`} onClick={copy} title={t('コピー')}>
         {copied ? '✓' : '⎘'}
       </button>
       <style jsx>{`
@@ -1287,6 +1300,7 @@ function LilyBubble({
   onNoteCreated?: (id: number) => void;
   onRegenerate?: () => void;
 }) {
+  const t = useT();
   const avatarSrc = '/9D507C9A-09F0-4B05-9F41-612FBD120675.png';
   const avatarAlt = 'Lily';
   const [thinkingOpen, setThinkingOpen] = useState(false);
@@ -1341,7 +1355,7 @@ function LilyBubble({
       const code = codeBtn.closest('.rt-codeblock')?.querySelector('pre code');
       if (!code) return;
       void navigator.clipboard.writeText(code.textContent ?? '');
-      flashCopied(codeBtn, '✓ コピー済み', '⎘ コピー');
+      flashCopied(codeBtn, t('✓ コピー済み'), t('⎘ コピー'));
       return;
     }
 
@@ -1402,7 +1416,7 @@ function LilyBubble({
           )}
         </div>
         {message.questions && message.questions.length > 0 && (
-          <div className="ask-asked-hint">❓ {message.questions.length}件の質問をしたよ</div>
+          <div className="ask-asked-hint">{t('❓ {n}件の質問をしたよ', { n: message.questions.length })}</div>
         )}
         {message.thinking && (
           <div className="thinking-toggle-wrap">
@@ -1410,7 +1424,7 @@ function LilyBubble({
               className="thinking-toggle-btn"
               onClick={() => setThinkingOpen(o => !o)}
             >
-              🧠 思考の過程 {thinkingOpen ? '▲' : '▼'}
+              {t('🧠 思考の過程')} {thinkingOpen ? '▲' : '▼'}
             </button>
             {thinkingOpen && (
               <div className="thinking-content">{message.thinking}</div>
@@ -1428,9 +1442,9 @@ function LilyBubble({
         <div className="msg-actions">
           <CopyButton text={copyText} />
           {onRegenerate && (
-            <button className="msg-regen-btn" onClick={onRegenerate} title="再生成">
+            <button className="msg-regen-btn" onClick={onRegenerate} title={t('再生成')}>
               <RotateCcw size={13} />
-              <span>再生成</span>
+              <span>{t('再生成')}</span>
             </button>
           )}
         </div>
@@ -1640,17 +1654,18 @@ function BoxingOverlay() {
 }
 
 function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c: SavedChat) => void }) {
+  const t = useT();
   const chats = useLiveQuery(() => db.savedChats.orderBy('createdAt').reverse().toArray(), []);
   return (
     <div className="history-overlay" onClick={onClose}>
       <div className="history-modal" onClick={e => e.stopPropagation()}>
         <div className="history-head">
-          <span className="history-head-title"><History size={16} /> 保存した会話</span>
-          <button className="history-close" onClick={onClose} title="閉じる"><X size={18} /></button>
+          <span className="history-head-title"><History size={16} /> {t('保存した会話')}</span>
+          <button className="history-close" onClick={onClose} title={t('閉じる')}><X size={18} /></button>
         </div>
         <div className="history-list">
           {(!chats || chats.length === 0) && (
-            <div className="history-empty">保存した会話はまだないよ。<br />会話上部の保存ボタン（💾）で残せるよ。</div>
+            <div className="history-empty">{t('保存した会話はまだないよ。')}<br />{t('会話上部の保存ボタン（💾）で残せるよ。')}</div>
           )}
           {chats?.map(c => (
             <div key={c.id} className="history-item">
@@ -1659,11 +1674,11 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
                 <span className="history-texts">
                   <span className="history-title">{c.title}</span>
                   <span className="history-meta">
-                    {new Date(c.createdAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}・{c.count}件
+                    {new Date(c.createdAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}・{t('{n}件', { n: c.count })}
                   </span>
                 </span>
               </button>
-              <button className="history-del" onClick={() => { if (c.id != null) deleteSavedChat(c.id); }} title="削除">
+              <button className="history-del" onClick={() => { if (c.id != null) deleteSavedChat(c.id); }} title={t('削除')}>
                 <Trash2 size={15} />
               </button>
             </div>
@@ -1733,6 +1748,7 @@ const ENGLISH_VOCAB_PROMPT = `この英単語帳の画像を解析して、qaか
 そして生成した内容を問題セッションを問題に、答えのセッションを答えに挿入し、qaか穴埋め問題のどちらかの問題形式の問題を作成してください。`;
 
 export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: AIChatProps) {
+  const t = useT();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1816,7 +1832,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     const lilyMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'lily',
-      text: textContent || '授業まとめを作成しました！',
+      text: textContent || t('授業まとめを作成しました！'),
       timestamp: Date.now(),
       extractedBlocks: blocks.length > 0 ? blocks : undefined,
       questions: questions.length > 0 ? questions : undefined,
@@ -1876,16 +1892,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
     const room = MAX_FILES - attachments.length;
     if (room <= 0) {
-      setFileError(`ファイルは合計${MAX_FILES}個までだよ`);
+      setFileError(t('ファイルは合計{max}個までだよ', { max: MAX_FILES }));
       return;
     }
     if (files.length > room) {
-      setFileError(`ファイルは合計${MAX_FILES}個までだよ（先頭${room}件だけ追加するね）`);
+      setFileError(t('ファイルは合計{max}個までだよ（先頭{room}件だけ追加するね）', { max: MAX_FILES, room }));
     }
 
     files.slice(0, room).forEach(file => {
       if (file.size > MAX_FILE_BYTES) {
-        setFileError(`「${file.name}」が大きすぎるよ（1ファイル12MBまで）`);
+        setFileError(t('「{name}」が大きすぎるよ（1ファイル12MBまで）', { name: file.name }));
         return;
       }
       const reader = new FileReader();
@@ -1913,7 +1929,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             );
           } catch (err) {
             setAttachments(prev => prev.filter(a => a.id !== id));
-            setFileError(`「${file.name}」のPDF読み込みに失敗したよ: ${err instanceof Error ? err.message : 'unknown error'}`);
+            setFileError(t('「{name}」のPDF読み込みに失敗したよ: {err}', { name: file.name, err: err instanceof Error ? err.message : 'unknown error' }));
           }
         } else if (useLargeImageUpload && apiKey) {
           try {
@@ -1923,11 +1939,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             );
           } catch (err) {
             setAttachments(prev => prev.filter(a => a.id !== id));
-            setFileError(`「${file.name}」のアップロードに失敗したよ: ${err instanceof Error ? err.message : 'unknown error'}`);
+            setFileError(t('「{name}」のアップロードに失敗したよ: {err}', { name: file.name, err: err instanceof Error ? err.message : 'unknown error' }));
           }
         }
       };
-      reader.onerror = () => setFileError(`「${file.name}」の読み込みに失敗したよ`);
+      reader.onerror = () => setFileError(t('「{name}」の読み込みに失敗したよ', { name: file.name }));
       reader.readAsDataURL(file);
     });
   };
@@ -2023,7 +2039,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       if ((lilyThinking || accuracy) && !economy) {
         setSikunLiveThinking('');
         let thinkingAccum = '';
-        setSikunProgress(accuracy && !lilyThinking ? '🧠 じっくり考えてるよ…' : '🧠 思考中...');
+        setSikunProgress(accuracy && !lilyThinking ? t('🧠 じっくり考えてるよ…') : t('🧠 思考中...'));
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
@@ -2035,7 +2051,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               setSikunLiveThinking(thinkingAccum);
             },
             onResponseDelta: () => {
-              setSikunProgress('✍️ 回答を生成中...');
+              setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
           ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
@@ -2063,7 +2079,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         role: 'lily',
         text: textContent || (
           questions.length > 0
-            ? `${questions.map(q => q.question).join('\n')}\n\n下のフォームから教えてね！🐶`
+            ? `${questions.map(q => q.question).join('\n')}\n\n${t('下のフォームから教えてね！🐶')}`
             : '...'
         ),
         timestamp: Date.now(),
@@ -2078,7 +2094,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: `ごめんね、エラーが起きちゃった 🐶\n${e instanceof Error ? e.message : '不明なエラー'}`,
+        text: `${t('ごめんね、エラーが起きちゃった 🐶')}\n${e instanceof Error ? e.message : t('不明なエラー')}`,
         timestamp: Date.now(),
       }]);
     } finally {
@@ -2139,7 +2155,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         const systemPrompt = buildSystemPrompt(contextNotes);
         setSikunLiveThinking('');
         let thinkingAccum = '';
-        setSikunProgress(accuracy && !lilyThinking ? '🧠 じっくり考えてるよ…' : '🧠 思考中...');
+        setSikunProgress(accuracy && !lilyThinking ? t('🧠 じっくり考えてるよ…') : t('🧠 思考中...'));
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
@@ -2151,7 +2167,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               setSikunLiveThinking(thinkingAccum);
             },
             onResponseDelta: () => {
-              setSikunProgress('✍️ 回答を生成中...');
+              setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
           ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
@@ -2178,7 +2194,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: textContent || (questions.length > 0 ? `${questions.map(q => q.question).join('\n')}\n\n下のフォームから教えてね！🐶` : '...'),
+        text: textContent || (questions.length > 0 ? `${questions.map(q => q.question).join('\n')}\n\n${t('下のフォームから教えてね！🐶')}` : '...'),
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
@@ -2191,7 +2207,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: `ごめんね、エラーが起きちゃった 🐶\n${e instanceof Error ? e.message : '不明なエラー'}`,
+        text: `${t('ごめんね、エラーが起きちゃった 🐶')}\n${e instanceof Error ? e.message : t('不明なエラー')}`,
         timestamp: Date.now(),
       }]);
     } finally {
@@ -2209,13 +2225,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/lily-character.png" alt="Lily" className="setup-lily" />
           </div>
-          <h2 className="setup-title">やあ！Lily だよ 🐶</h2>
+          <h2 className="setup-title">{t('やあ！Lily だよ 🐶')}</h2>
           <p className="setup-desc">
-            Gemini API キーを設定すると、メモの分析・図やグラフの作成・問題作りをお手伝いできるよ！
+            {t('Gemini API キーを設定すると、メモの分析・図やグラフの作成・問題作りをお手伝いできるよ！')}
           </p>
           <button className="setup-btn" onClick={onOpenSettings}>
             <Sparkles size={18} />
-            設定してみる
+            {t('設定してみる')}
           </button>
         </div>
         <style jsx>{`
@@ -2236,7 +2252,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     <div className="ai-chat-container">
       <div className="chat-header">
         {onSwitchTab && (
-          <button className="chat-back-btn" onClick={() => onSwitchTab('memos')} title="メモに戻る">
+          <button className="chat-back-btn" onClick={() => onSwitchTab('memos')} title={t('メモに戻る')}>
             <ArrowLeft size={20} />
           </button>
         )}
@@ -2249,62 +2265,62 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           />
           <div>
             <div className="header-title">Lily</div>
-            <div className="header-sub">AIアシスタント ✨</div>
+            <div className="header-sub">{t('AIアシスタント ✨')}</div>
           </div>
         </div>
         <div className="header-right">
           <button
             className={`web-toggle eco-toggle ${economy ? 'on' : ''}`}
             onClick={toggleEconomy}
-            title="節約モード: 思考を抑えて軽量モデル(flash-lite)で答え、APIコストを大幅に削減する"
+            title={t('節約モード: 思考を抑えて軽量モデル(flash-lite)で答え、APIコストを大幅に削減する')}
           >
             <span style={{ fontSize: '11px' }}>🌱</span>
-            <span className="web-label">節約モード</span>
+            <span className="web-label">{t('節約モード')}</span>
             <span className="web-state">{economy ? 'ON' : 'OFF'}</span>
           </button>
           {!economy && (
             <button
               className={`web-toggle thinking-toggle ${lilyThinking ? 'on' : ''}`}
               onClick={() => setLilyThinking(p => !p)}
-              title="思考モード: Geminiの拡張思考機能でじっくり考えてから答えるよ（APIコスト増）"
+              title={t('思考モード: Geminiの拡張思考機能でじっくり考えてから答えるよ（APIコスト増）')}
             >
               <span style={{ fontSize: '11px' }}>🧠</span>
-              <span className="web-label">思考モード</span>
+              <span className="web-label">{t('思考モード')}</span>
               <span className="web-state">{lilyThinking ? 'ON' : 'OFF'}</span>
             </button>
           )}
           <button
             className={`web-toggle ${webSearch ? 'on' : ''}`}
             onClick={() => setWebSearch(p => !p)}
-            title="ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ"
+            title={t('ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ')}
           >
             <Search size={13} />
-            <span className="web-label">ネット検索</span>
+            <span className="web-label">{t('ネット検索')}</span>
             <span className="web-state">{webSearch ? 'ON' : 'OFF'}</span>
           </button>
-          <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title="メモを選択">
+          <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title={t('メモを選択')}>
             <span className={`context-chip${lilyAllNotes || lilyNoteIds.length > 0 ? ' selected' : ''}`}>
-              {lilyAllNotes ? '📚 全メモ参照中' : lilyNoteIds.length > 0 ? `📄 ${lilyNoteIds.length}件選択中` : 'メモを選ぶ'}
+              {lilyAllNotes ? t('📚 全メモ参照中') : lilyNoteIds.length > 0 ? t('📄 {n}件選択中', { n: lilyNoteIds.length }) : t('メモを選ぶ')}
               {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </span>
           </button>
           {messages.length > 0 && (
-            <button className="clear-btn" onClick={handleSaveChat} title="この会話を保存">
+            <button className="clear-btn" onClick={handleSaveChat} title={t('この会話を保存')}>
               <Save size={15} />
             </button>
           )}
-          <button className="clear-btn" onClick={() => setShowHistory(true)} title="保存した会話の履歴">
+          <button className="clear-btn" onClick={() => setShowHistory(true)} title={t('保存した会話の履歴')}>
             <History size={15} />
           </button>
           {messages.length > 0 && (
-            <button className="clear-btn" onClick={() => setMessages([])} title="会話をリセット">
+            <button className="clear-btn" onClick={() => setMessages([])} title={t('会話をリセット')}>
               <RotateCcw size={15} />
             </button>
           )}
           <button
             className="help-btn"
             onClick={() => { setHelpInitialTab('lily'); setShowHelp(true); }}
-            title="使い方ガイド"
+            title={t('使い方ガイド')}
           >
             <HelpCircle size={16} />
           </button>
@@ -2312,7 +2328,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       </div>
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} initialTab={helpInitialTab} />}
       {showHistory && <ChatHistoryModal onClose={() => setShowHistory(false)} onLoad={handleLoadChat} />}
-      {savedToast && <div className="chat-saved-toast">会話を保存しました ✓</div>}
+      {savedToast && <div className="chat-saved-toast">{t('会話を保存しました ✓')}</div>}
       {showLectureRecorder && (
         <LectureRecorder
           apiKey={apiKey}
@@ -2341,13 +2357,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             className={`note-chip${lilyAllNotes ? ' active' : ''}`}
             onClick={() => { setLilyAllNotes(true); setLilyNoteIds([]); setShowContextPanel(false); }}
           >
-            📚 全メモを参照
+            {t('📚 全メモを参照')}
           </button>
           <button
             className={`note-chip${!lilyAllNotes && lilyNoteIds.length === 0 ? ' active' : ''}`}
             onClick={() => { setLilyAllNotes(false); setLilyNoteIds([]); setShowContextPanel(false); }}
           >
-            なし
+            {t('なし')}
           </button>
           {allNotes?.map(n => (
             <button
@@ -2360,7 +2376,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                 );
               }}
             >
-              {lilyNoteIds.includes(n.id!) ? '✓ ' : ''}{n.title || '無題のメモ'}
+              {lilyNoteIds.includes(n.id!) ? '✓ ' : ''}{n.title || t('無題のメモ')}
             </button>
           ))}
         </div>
@@ -2378,14 +2394,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               />
             </div>
             <p className="welcome-text">
-              こんにちは、Lily だよ！🐶<br />メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。
+              {t('こんにちは、Lily だよ！🐶')}<br />{t('メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。')}
             </p>
 
             <button
               className="welcome-guide-btn"
               onClick={() => { setHelpInitialTab('lily'); setShowHelp(true); }}
             >
-              <span className="welcome-guide-main"><HelpCircle size={18} /> 使い方ガイドを見る</span>
+              <span className="welcome-guide-main"><HelpCircle size={18} /> {t('使い方ガイドを見る')}</span>
             </button>
           </div>
         )}
@@ -2415,7 +2431,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               <div className="siku-thinking-live">
                 <div className="siku-thinking-live-header">
                   <span className="siku-thinking-pulse" />
-                  思考ログ（リアルタイム）
+                  {t('思考ログ（リアルタイム）')}
                 </div>
                 <div className="siku-thinking-live-body">{sikunLiveThinking}</div>
               </div>
@@ -2427,15 +2443,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
 
       <div className="quick-actions mode-row">
-        <span className="qa-label">トーン</span>
+        <span className="qa-label">{t('トーン')}</span>
         {MODES.map(mo => (
           <button
             key={mo.id}
             className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
             onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
-            title="タップでON。次に送るメッセージからこのトーンで答えてくれるよ"
+            title={t('タップでON。次に送るメッセージからこのトーンで答えてくれるよ')}
           >
-            {mo.label}{activeMode === mo.id ? ' ✓' : ''}
+            {t(mo.label)}{activeMode === mo.id ? ' ✓' : ''}
           </button>
         ))}
       </div>
@@ -2445,16 +2461,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         <Wand2 size={14} className="qa-wand" />
         {QUICK_ACTIONS.map(a => (
           <button key={a.label} className="quick-chip" onClick={() => fillInput(a.prompt)} disabled={isLoading}>
-            {a.label}
+            {t(a.label)}
           </button>
         ))}
         <button
           className="quick-chip"
           onClick={() => fillInput(ENGLISH_VOCAB_PROMPT)}
           disabled={isLoading}
-          title="英単語帳の画像を添付してから送ると、穴埋め例文を作るよ"
+          title={t('英単語帳の画像を添付してから送ると、穴埋め例文を作るよ')}
         >
-          🔤 英単語帳→問題
+          {t('🔤 英単語帳→問題')}
         </button>
       </div>
 
@@ -2470,8 +2486,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               ) : (
                 <span className="att-chip-icon">📎</span>
               )}
-              <span className="att-chip-name">{att.uploading ? `${att.name} (アップロード中...)` : att.name}</span>
-              <button className="att-remove" onClick={() => removeAttachment(i)} title="削除"><X size={14} /></button>
+              <span className="att-chip-name">{att.uploading ? t('{name} (アップロード中...)', { name: att.name }) : att.name}</span>
+              <button className="att-remove" onClick={() => removeAttachment(i)} title={t('削除')}><X size={14} /></button>
             </div>
           ))}
           {fileError && <span className="att-error">{fileError}</span>}
@@ -2491,7 +2507,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           className="attach-btn"
           onClick={() => fileInputRef.current?.click()}
           disabled={isLoading || attachments.length >= MAX_FILES}
-          title="ファイルを添付（複数可）"
+          title={t('ファイルを添付（複数可）')}
         >
           <Paperclip size={20} />
         </button>
@@ -2499,7 +2515,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           className="attach-btn lecture-btn"
           onClick={() => setShowLectureRecorder(true)}
           disabled={isLoading}
-          title="授業リアルタイム要約 — 音声を文字起こし→Geminiでまとめ"
+          title={t('授業リアルタイム要約 — 音声を文字起こし→Geminiでまとめ')}
         >
           <Mic size={20} />
         </button>
@@ -2507,14 +2523,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           className="attach-btn voice-chat-btn"
           onClick={() => setShowVoiceChat(true)}
           disabled={isLoading}
-          title="音声対話 — Lily と声で会話する"
+          title={t('音声対話 — Lily と声で会話する')}
         >
           <Phone size={20} />
         </button>
         <textarea
           ref={textareaRef}
           className="chat-input"
-          placeholder="Lily に話しかける...（Enter で改行 / 送信はボタン）"
+          placeholder={t('Lily に話しかける...（Enter で改行 / 送信はボタン）')}
           value={input}
           onChange={e => { setInput(e.target.value); autoResizeTextarea(); }}
           rows={1}
@@ -2524,7 +2540,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           className="send-btn"
           onClick={() => sendMessage()}
           disabled={(!input.trim() && attachments.length === 0) || isLoading || attachments.some(a => a.uploading)}
-          title="送信 (Enter)"
+          title={t('送信 (Enter)')}
         >
           <Send size={20} />
         </button>

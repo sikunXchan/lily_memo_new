@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, Plus, Pin, Check, Trash2 } from 'lucide-react';
 import { db } from '@/lib/db';
 import type { Todo } from '@/lib/db';
+import { useT } from '@/lib/i18n';
 
 const DEL_W = 80;
 
@@ -13,6 +14,7 @@ interface TodoScreenProps {
 }
 
 export default function TodoScreen({ onGoBack }: TodoScreenProps) {
+  const t = useT();
   const [newText, setNewText]   = useState('');
   const [swipedId, setSwipedId] = useState<number | null>(null);
   const touchStartX = useRef(0);
@@ -64,13 +66,13 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
       {/* Header */}
       <div className="td-header">
-        <button className="td-back" onClick={onGoBack} aria-label="戻る">
+        <button className="td-back" onClick={onGoBack} aria-label={t('戻る')}>
           <ArrowLeft size={17} strokeWidth={2.5} />
         </button>
         <div className="td-header-mid">
-          <span className="td-title">タスク</span>
+          <span className="td-title">{t('タスク')}</span>
           {todos.length > 0 && (
-            <span className="td-subtitle">{done.length} / {todos.length} 完了</span>
+            <span className="td-subtitle">{t('{done} / {total} 完了', { done: done.length, total: todos.length })}</span>
           )}
         </div>
         {pending.length > 0 && (
@@ -90,7 +92,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         <input
           ref={inputRef}
           className="td-input"
-          placeholder="新しいタスクを追加..."
+          placeholder={t('新しいタスクを追加...')}
           value={newText}
           onChange={e => setNewText(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') void addTodo(); }}
@@ -99,7 +101,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           className="td-add-btn"
           onClick={() => void addTodo()}
           disabled={!newText.trim()}
-          aria-label="追加"
+          aria-label={t('追加')}
         >
           <Plus size={18} strokeWidth={2.8} />
         </button>
@@ -110,8 +112,8 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         {todos.length === 0 && (
           <div className="td-empty">
             <span className="td-empty-icon">🎯</span>
-            <p className="td-empty-title">タスクをゼロに！</p>
-            <p className="td-empty-sub">上の入力欄から追加してね</p>
+            <p className="td-empty-title">{t('タスクをゼロに！')}</p>
+            <p className="td-empty-sub">{t('上の入力欄から追加してね')}</p>
           </div>
         )}
 
@@ -119,44 +121,44 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           <section key={section.key} className="td-section">
             <div className="td-section-label">
               <span className={`td-dot ${section.dotClass}`} />
-              <span className="td-label-text">{section.label}</span>
+              <span className="td-label-text">{t(section.label)}</span>
               <span className="td-label-cnt">{section.list.length}</span>
             </div>
-            {section.list.map(t => {
-              const swiped = swipedId === t.id;
+            {section.list.map(todo => {
+              const swiped = swipedId === todo.id;
               return (
-                <div key={t.id} className={`td-item${t.pinned ? ' pinned-item' : ''}`}>
+                <div key={todo.id} className={`td-item${todo.pinned ? ' pinned-item' : ''}`}>
                   <div className={`td-inner${swiped ? ' slid' : ''}`}>
                     <div
-                      className={`td-card${t.done ? ' done' : ''}${t.pinned ? ' pinned' : ''}`}
+                      className={`td-card${todo.done ? ' done' : ''}${todo.pinned ? ' pinned' : ''}`}
                       onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
                       onTouchEnd={e => {
                         const dx = touchStartX.current - e.changedTouches[0].clientX;
-                        if      (dx > 40)  setSwipedId(t.id!);
+                        if      (dx > 40)  setSwipedId(todo.id!);
                         else if (dx < -16) setSwipedId(null);
                       }}
                       onClick={() => { if (swiped) setSwipedId(null); }}
                     >
                       <button
-                        className={`td-check${t.done ? ' checked' : ''}`}
-                        onClick={e => { e.stopPropagation(); void toggleDone(t); }}
-                        aria-label={t.done ? '未完了に戻す' : '完了にする'}
+                        className={`td-check${todo.done ? ' checked' : ''}`}
+                        onClick={e => { e.stopPropagation(); void toggleDone(todo); }}
+                        aria-label={t(todo.done ? '未完了に戻す' : '完了にする')}
                       >
-                        {t.done && <Check size={11} strokeWidth={3.5} />}
+                        {todo.done && <Check size={11} strokeWidth={3.5} />}
                       </button>
 
-                      <span className="td-text">{t.text}</span>
+                      <span className="td-text">{todo.text}</span>
 
                       <button
-                        className={`td-pin${t.pinned ? ' on' : ''}`}
-                        onClick={e => { e.stopPropagation(); void togglePin(t); }}
-                        aria-label={t.pinned ? 'ピン解除' : 'ピン留め'}
+                        className={`td-pin${todo.pinned ? ' on' : ''}`}
+                        onClick={e => { e.stopPropagation(); void togglePin(todo); }}
+                        aria-label={t(todo.pinned ? 'ピン解除' : 'ピン留め')}
                       >
-                        <Pin size={14} strokeWidth={2.4} fill={t.pinned ? 'currentColor' : 'none'} />
+                        <Pin size={14} strokeWidth={2.4} fill={todo.pinned ? 'currentColor' : 'none'} />
                       </button>
                     </div>
 
-                    <button className="td-del" onClick={() => void deleteTodo(t.id!)} aria-label="削除">
+                    <button className="td-del" onClick={() => void deleteTodo(todo.id!)} aria-label={t('削除')}>
                       <Trash2 size={19} strokeWidth={2} />
                     </button>
                   </div>

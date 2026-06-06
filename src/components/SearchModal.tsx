@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db';
 import type { Note } from '@/lib/db';
 import { noteHtmlToText } from '@/lib/noteText';
+import { useT } from '@/lib/i18n';
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -50,6 +51,7 @@ function highlightText(text: string, query: string): React.ReactNode {
 }
 
 export default function SearchModal({ isOpen, onClose, onSelectNote }: SearchModalProps) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -125,7 +127,7 @@ export default function SearchModal({ isOpen, onClose, onSelectNote }: SearchMod
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="検索..."
+            placeholder={t('検索...')}
             autoComplete="off"
             spellCheck={false}
           />
@@ -141,11 +143,11 @@ export default function SearchModal({ isOpen, onClose, onSelectNote }: SearchMod
 
         <div className="results-area">
           {!trimmedQuery && (
-            <div className="hint">キーワードを入力してメモを検索 / Escで閉じる</div>
+            <div className="hint">{t('キーワードを入力してメモを検索 / Escで閉じる')}</div>
           )}
 
           {trimmedQuery && searchResults.length === 0 && (
-            <div className="no-results">「{trimmedQuery}」は見つからなかった</div>
+            <div className="no-results">{t('「{q}」は見つからなかった', { q: trimmedQuery })}</div>
           )}
 
           {trimmedQuery && searchResults.length > 0 && (
@@ -162,7 +164,7 @@ export default function SearchModal({ isOpen, onClose, onSelectNote }: SearchMod
                       }}
                     >
                       <span className="result-title">
-                        {highlightText(note.title || '無題', trimmedQuery)}
+                        {highlightText(note.title || t('無題'), trimmedQuery)}
                       </span>
                       {snippet && (
                         <span className="result-snippet">
