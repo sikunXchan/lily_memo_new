@@ -19,7 +19,7 @@ const BUILTIN_SKILLS: Omit<Skill, 'id' | 'createdAt' | 'updatedAt'>[] = [
     emoji: '📝',
     name: '過去問の鬼',
     instructions:
-      'あなたは資格試験の過去問解説に特化したモードです。ユーザーが問題を送ってきたら、必ず次の型で解説してください：\n1. 問題文の要点（何を問われているか）\n2. 正解とその根拠（なぜ正しいのか、根拠となる知識・原理・条文を明示する）\n3. 他の選択肢が誤りである理由（一つずつ、なぜ違うのか具体的に）\n4. 関連用語・周辺知識の補足\n曖昧な解説は禁止。根拠が曖昧なときは「ここは確証がない」と正直に言う。正解を断定する前に、本当にその根拠で合っているか一度自分で検証してから答えること。',
+      'あなたは資格試験の過去問解説に特化したモードです。\n\n【口調・形式】\n解説文体（〜である・〜だ）を使う。「だよ・だね」語尾は絶対に使わない。絵文字・褒め言葉・激励（「えらいえらい」「がんばれ」等）は禁止。問題文・設問文の再掲は禁止（ユーザーは手元で問題を見ている）。\n\n【解説の構造】\n複数設問がある場合、冒頭に1回だけ「■ この問題のテーマ」を置く。問われているテーマ・前提となる仕組みを1〜3文で整理し、処理フローや概念の図解が有効ならMermaid図を使う。\n\n各設問ごとに以下の型で解説する：\n1. 何を問われているか（1文で端的に）\n2. 正解とその根拠 — 本文の記述引用だけでなく「なぜその仕組みがそうなるのか」を説明する\n3. 誤答の否定 — 「関係ない」ではなく「なぜこの文脈で関係しないのか」を具体的に説明する\n4. 記述問題の場合 — 採点で点が取れる表現の条件（含めるべき情報・キーワード・文字数の使い方）を示す\n\n最後に「■ 試験ポイント」を置く。この問題から覚えるべき知識・用語を箇条書き3〜5個で整理する。\n\n【禁止事項】\n根拠のない断定（確証がない場合は「ここは確実ではない」と明示）、曖昧表現（「〜と思います」等）、本文引用のみで仕組みの説明がない解説。',
     references: [],
   },
   {
@@ -49,11 +49,17 @@ export function ensureSkillsSeeded(): Promise<void> {
   seedPromise = (async () => {
     try {
       const all = await db.skills.toArray();
-      const haveKeys = new Set(all.map(s => s.builtinKey).filter(Boolean));
+      const byKey = new Map(all.filter(s => s.builtinKey).map(s => [s.builtinKey, s]));
       const now = Date.now();
-      const toAdd = BUILTIN_SKILLS.filter(s => !haveKeys.has(s.builtinKey));
+      const toAdd = BUILTIN_SKILLS.filter(s => !byKey.has(s.builtinKey));
       if (toAdd.length > 0) {
         await db.skills.bulkAdd(toAdd.map((s, i) => ({ ...s, createdAt: now + i, updatedAt: now + i })));
+      }
+      for (const builtin of BUILTIN_SKILLS) {
+        const existing = byKey.get(builtin.builtinKey);
+        if (existing?.id != null && existing.instructions !== builtin.instructions) {
+          await db.skills.update(existing.id, { instructions: builtin.instructions, updatedAt: now });
+        }
       }
     } catch (e) {
       console.error('skill seeding failed', e);
