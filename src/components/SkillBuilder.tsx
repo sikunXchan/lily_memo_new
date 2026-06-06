@@ -198,9 +198,13 @@ export default function SkillBuilder({ skill, onClose, onSaved }: SkillBuilderPr
         </div>
 
         <style jsx>{`
-          .sb-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:10000; display:flex; align-items:center; justify-content:center; padding:16px; }
-          .sb-modal { background:var(--background); border-radius:16px; width:100%; max-width:520px; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
-          .sb-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+          .sb-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:10000; display:flex; align-items:center; justify-content:center; }
+          .sb-modal { background:var(--background); width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden; }
+          @media (min-width: 640px) {
+            .sb-overlay { padding:16px; }
+            .sb-modal { border-radius:16px; max-width:560px; height:auto; max-height:90vh; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+          }
+          .sb-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; padding-top:calc(16px + env(safe-area-inset-top)); border-bottom:1px solid var(--border); flex-shrink:0; }
           .sb-title { font-size:1.02rem; font-weight:700; color:var(--primary); }
           .sb-close { background:none; border:none; cursor:pointer; color:var(--foreground); opacity:0.6; padding:4px; display:flex; }
           .sb-body { overflow-y:auto; padding:16px 18px; flex:1; }
@@ -234,7 +238,7 @@ export default function SkillBuilder({ skill, onClose, onSaved }: SkillBuilderPr
           .sb-spin { animation:sbspin 1s linear infinite; }
           @keyframes sbspin { to { transform:rotate(360deg); } }
           .sb-error { font-size:0.8rem; color:#e11d48; margin-top:10px; line-height:1.4; }
-          .sb-footer { display:flex; gap:10px; justify-content:flex-end; padding:14px 18px; border-top:1px solid var(--border); }
+          .sb-footer { display:flex; gap:10px; justify-content:flex-end; padding:14px 18px; padding-bottom:calc(14px + env(safe-area-inset-bottom)); border-top:1px solid var(--border); flex-shrink:0; }
           .sb-cancel { background:none; border:1.5px solid var(--border); border-radius:10px; padding:8px 18px; font-size:0.85rem; font-weight:600; cursor:pointer; color:var(--foreground); }
           .sb-save { background:var(--primary); border:none; color:#fff; border-radius:10px; padding:8px 22px; font-size:0.85rem; font-weight:700; cursor:pointer; }
           .sb-save:disabled { opacity:0.5; cursor:default; }

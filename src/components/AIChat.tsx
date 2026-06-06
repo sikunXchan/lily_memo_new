@@ -2335,35 +2335,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           </div>
         </div>
         <div className="header-right">
-          <button
-            className={`web-toggle eco-toggle ${economy ? 'on' : ''}`}
-            onClick={toggleEconomy}
-            title={t('節約モード: 思考を抑えて軽量モデル(flash-lite)で答え、APIコストを大幅に削減する')}
-          >
-            <span style={{ fontSize: '11px' }}>🌱</span>
-            <span className="web-label">{t('節約モード')}</span>
-            <span className="web-state">{economy ? 'ON' : 'OFF'}</span>
-          </button>
-          {!economy && (
-            <button
-              className={`web-toggle thinking-toggle ${lilyThinking ? 'on' : ''}`}
-              onClick={() => setLilyThinking(p => !p)}
-              title={t('思考モード: Geminiの拡張思考機能でじっくり考えてから答えるよ（APIコスト増）')}
-            >
-              <span style={{ fontSize: '11px' }}>🧠</span>
-              <span className="web-label">{t('思考モード')}</span>
-              <span className="web-state">{lilyThinking ? 'ON' : 'OFF'}</span>
-            </button>
-          )}
-          <button
-            className={`web-toggle ${webSearch ? 'on' : ''}`}
-            onClick={() => setWebSearch(p => !p)}
-            title={t('ネット検索をON/OFF。ONにすると最新情報も調べて答えるよ')}
-          >
-            <Search size={13} />
-            <span className="web-label">{t('ネット検索')}</span>
-            <span className="web-state">{webSearch ? 'ON' : 'OFF'}</span>
-          </button>
           <button className="context-toggle" onClick={() => setShowContextPanel(p => !p)} title={t('メモを選択')}>
             <span className={`context-chip${lilyAllNotes || lilyNoteIds.length > 0 ? ' selected' : ''}`}>
               {lilyAllNotes ? t('📚 全メモ参照中') : lilyNoteIds.length > 0 ? t('📄 {n}件選択中', { n: lilyNoteIds.length }) : t('メモを選ぶ')}
@@ -2371,13 +2342,24 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             </span>
           </button>
           <div className="header-menu-wrap">
-            <button className="clear-btn" onClick={() => setShowHeaderMenu(v => !v)} title={t('メニュー')}>
+            <button className={`clear-btn${webSearch || lilyThinking || economy ? ' has-active' : ''}`} onClick={() => setShowHeaderMenu(v => !v)} title={t('メニュー')}>
               <MoreVertical size={17} />
             </button>
             {showHeaderMenu && (
               <>
                 <div className="header-menu-backdrop" onClick={() => setShowHeaderMenu(false)} />
                 <div className="header-menu">
+                  <div className="header-menu-section">{t('応答モード')}</div>
+                  <button className={`header-menu-item toggle${webSearch ? ' on' : ''}`} onClick={() => setWebSearch(p => !p)}>
+                    <Search size={15} /><span className="hmi-label">{t('ネット検索')}</span><span className="hmi-state">{webSearch ? 'ON' : 'OFF'}</span>
+                  </button>
+                  <button className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`} onClick={() => setLilyThinking(p => !p)} disabled={economy}>
+                    <span className="hmi-emoji">🧠</span><span className="hmi-label">{t('思考モード')}</span><span className="hmi-state">{lilyThinking ? 'ON' : 'OFF'}</span>
+                  </button>
+                  <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy}>
+                    <span className="hmi-emoji">🌱</span><span className="hmi-label">{t('節約モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
+                  </button>
+                  <div className="header-menu-divider" />
                   {messages.length > 0 && (
                     <button className="header-menu-item" onClick={() => { handleSaveChat(); setShowHeaderMenu(false); }}>
                       <Save size={15} />{t('この会話を保存')}
@@ -2738,12 +2720,22 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .context-toggle { background: transparent; border: none; cursor: pointer; padding: 2px; }
         .context-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent); border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px; font-size: 0.78rem; color: var(--fg-muted); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
         .context-chip.selected { color: var(--primary); border-color: var(--primary); }
-        .clear-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 5px 7px; cursor: pointer; color: var(--fg-muted); display: flex; align-items: center; }
+        .clear-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 5px 7px; cursor: pointer; color: var(--fg-muted); display: flex; align-items: center; position: relative; }
+        .clear-btn.has-active::after { content: ''; position: absolute; top: 2px; right: 2px; width: 7px; height: 7px; border-radius: 50%; background: var(--primary); border: 1.5px solid var(--background); }
         .header-menu-wrap { position: relative; flex-shrink: 0; }
         .header-menu-backdrop { position: fixed; inset: 0; z-index: 40; }
-        .header-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; background: var(--background); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.16); padding: 6px; min-width: 190px; display: flex; flex-direction: column; gap: 2px; }
+        .header-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; background: var(--background); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.16); padding: 6px; min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
+        .header-menu-section { font-size: 0.68rem; font-weight: 700; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 12px 2px; }
+        .header-menu-divider { height: 1px; background: var(--border); margin: 5px 4px; }
         .header-menu-item { display: flex; align-items: center; gap: 10px; background: none; border: none; border-radius: 8px; padding: 9px 12px; font-size: 0.84rem; color: var(--foreground); cursor: pointer; text-align: left; white-space: nowrap; }
         .header-menu-item:hover { background: var(--accent); color: var(--primary); }
+        .header-menu-item.toggle .hmi-label { flex: 1; }
+        .header-menu-item.toggle .hmi-emoji { font-size: 14px; width: 15px; text-align: center; }
+        .header-menu-item.toggle .hmi-state { font-size: 0.7rem; font-weight: 800; color: var(--fg-muted); }
+        .header-menu-item.toggle.on { color: var(--primary); }
+        .header-menu-item.toggle.on .hmi-state { color: var(--primary); }
+        .header-menu-item.toggle:disabled { opacity: 0.4; cursor: default; }
+        .header-menu-item.toggle:disabled:hover { background: none; color: var(--foreground); }
         .context-panel { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--accent); overflow-x: auto; flex-shrink: 0; }
         .note-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.78rem; color: var(--fg-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
@@ -2761,7 +2753,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }
         .suggestion-chip { background: color-mix(in srgb, var(--primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); color: var(--primary); border-radius: 20px; padding: 6px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .suggestion-chip:hover { background: var(--primary); color: white; }
-        .quick-actions { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--accent); overflow-x: auto; flex-shrink: 0; }
+        .quick-actions { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--accent); overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-shrink: 0; }
+        .quick-actions::-webkit-scrollbar { display: none; }
         .quick-actions :global(.qa-wand) { color: var(--primary); flex-shrink: 0; }
         .quick-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.76rem; font-weight: 600; color: var(--foreground); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .quick-chip:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
