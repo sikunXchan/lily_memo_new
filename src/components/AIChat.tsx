@@ -6,7 +6,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw,
   Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
-  Save, History, Trash2, Mic, Phone,
+  Save, History, Trash2, Mic, Phone, Wrench,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -37,6 +37,9 @@ import {
 import dynamic from 'next/dynamic';
 import { getEffectiveApiKey } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
+import { TONES, SKILLS, SHORTCUTS } from '@/lib/toolboxData';
+import { useToolbox } from '@/lib/toolbox';
+import ToolboxModal from '@/components/ToolboxModal';
 
 const LectureRecorder = dynamic(() => import('@/components/LectureRecorder'), { ssr: false });
 const VoiceChat = dynamic(() => import('@/components/VoiceChat'), { ssr: false });
@@ -1709,19 +1712,6 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
   );
 }
 
-// Tone/style modes: tapping toggles the mode ON; while ON, every message
-// you send is answered in that style (until you tap it off).
-const MODES: { id: string; label: string; directive: string }[] = [
-  { id: 'formal', label: '🎚️ フォーマル', directive: 'フォーマルで丁寧なトーンで答えて。' },
-  { id: 'casual', label: '😊 カジュアル', directive: '親しみやすいカジュアルなトーンで答えて。' },
-  { id: 'concise', label: '⚡ 簡潔に', directive: '要点だけを簡潔に短く答えて。' },
-  { id: 'detailed', label: '📚 くわしく', directive: '背景や具体例も交えて、くわしく丁寧に説明して。' },
-  { id: 'easy', label: '🍼 やさしく', directive: '専門用語を避けて、初心者にもわかるやさしい言葉で説明して。' },
-  { id: 'socratic', label: '🧠 ソクラテス式', directive: '答えを直接教えず、ヒントや誘導質問でユーザー自身が気づけるよう導いてください（ソクラテス式対話）。間違いがあっても正解を言わず、「なぜそう思う？」「別の見方は？」など考えるきっかけの質問を返してください。' },
-  { id: 'interviewer', label: '😈 面接官', directive: 'あなたは意地悪で容赦ない面接官です。ユーザーが説明や回答をするたびに「それって本当に理解してますか？」「もっと具体的に言ってください」「その根拠は？」「曖昧すぎます」など厳しく突っ込んでください。知識の穴や矛盾を積極的に突き、ごまかしや浅い理解は即座に見抜いて指摘してください。褒めるのは本当に正確・深い説明のときだけにして、それ以外は容赦なく圧をかけてください。ただし最終的には学習者のためになることを意識してください。' },
-  { id: 'student', label: '🙋 生徒役', directive: 'あなたは何も知らない生徒です。ユーザーが先生役となって説明してくれます。あなたは授業を受ける無知な生徒として振る舞い、「それってどういう意味ですか？」「なんでそうなるんですか？」「もっとわかりやすく教えてください」「〇〇って何ですか？」のように素朴な疑問をどんどん投げかけてください。専門用語が出たら必ず「それ何ですか？」と聞き返してください。ユーザーが説明に詰まったり、説明が曖昧なときは「よくわかりませんでした…」と正直に伝えてください。ユーザーが本当に理解しているかを説明させることで確認するのが目的です。' },
-];
-
 // One-tap actions: sending a prompt immediately.
 const QUICK_ACTIONS: { label: string; prompt: string }[] = [
   { label: '📚 日これ', prompt: 'これらの資料から問題(qa)を作成して。単語を問う問題形式で全ての単語を網羅してください。また、時系列順に並べてください。\n答えには読み方をふってください。\n\n【絶対厳守】資料に含まれる全ての単語を1つも漏らさず必ず全て問題にすること。「など」「以下省略」「…」で途中で止めることは禁止。最後の単語まで出力すること。' },
@@ -1773,6 +1763,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [savedToast, setSavedToast] = useState(false);
   const [showLectureRecorder, setShowLectureRecorder] = useState(false);
   const [showVoiceChat, setShowVoiceChat] = useState(false);
+  const [showToolbox, setShowToolbox] = useState(false);
+  const toolbox = useToolbox();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1857,6 +1849,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     setInput(text);
     requestAnimationFrame(() => { textareaRef.current?.focus(); autoResizeTextarea(); });
   };
+
+  // Slash-command suggestions: shown while the user is typing "/" + a prefix,
+  // limited to the shortcuts they've enabled in the toolbox so they only ever
+  // see commands they chose to use.
+  const slashSuggestions = useMemo(() => {
+    if (!input.startsWith('/') || input.includes(' ')) return [];
+    const q = input.slice(1).toLowerCase();
+    return SHORTCUTS.filter(s => toolbox.shortcuts.includes(s.id) && s.id.startsWith(q));
+  }, [input, toolbox.shortcuts]);
 
   const renderPdfAsImages = async (
     base64Data: string,
@@ -1952,9 +1953,76 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     setAttachments(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const sendMessage = useCallback(async (text?: string) => {
-    const userText = (text ?? input).trim();
+  // /compact: ask Lily to summarize the conversation so far, then replace the
+  // visible history with that summary (keeps long study sessions cheap and
+  // easy to scroll back through).
+  const compactHistory = useCallback(async () => {
+    if (messages.length === 0 || isLoading || !apiKey) return;
+    setIsLoading(true);
+    try {
+      const transcript = messages.map(m => `${m.role === 'user' ? 'User' : 'Lily'}: ${m.text}`).join('\n');
+      const summary = await callGeminiChat(
+        [{
+          role: 'user',
+          text: `以下の会話を、後で読み返しても流れがわかるように要約して。論点・結論・まだ解決していない疑問を中心に、簡潔な日本語の箇条書きでまとめて。前置きや感想は書かず、要約だけを出力して：\n\n${transcript}`,
+        }],
+        'あなたは会話ログの要約者です。指示された通りに要約だけを出力してください。',
+        apiKey,
+        { models: ['gemini-2.5-flash-lite'] },
+      );
+      setMessages([{
+        id: crypto.randomUUID(),
+        role: 'lily',
+        text: `📦 ${t('ここまでの会話を要約して圧縮したよ')}\n\n${summary}`,
+        timestamp: Date.now(),
+      }]);
+    } catch (e) {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'lily',
+        text: `${t('ごめんね、要約に失敗しちゃった 🐶')}\n${e instanceof Error ? e.message : t('不明なエラー')}`,
+        timestamp: Date.now(),
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [messages, isLoading, apiKey, t]);
+
+  const sendMessage = useCallback(async (text?: string, opts?: { forceSearch?: boolean }) => {
+    const rawText = (text ?? input).trim();
     const sentAtts = attachments;
+
+    // Slash commands (typed in English by design). Only commands the user has
+    // enabled in the toolbox actually trigger — anything else is sent as
+    // plain text to Lily.
+    if (!text && rawText.startsWith('/') && sentAtts.length === 0) {
+      const spaceIdx = rawText.indexOf(' ');
+      const cmdWord = (spaceIdx === -1 ? rawText.slice(1) : rawText.slice(1, spaceIdx)).toLowerCase();
+      const arg = spaceIdx === -1 ? '' : rawText.slice(spaceIdx + 1).trim();
+      const sc = SHORTCUTS.find(s => s.id === cmdWord && toolbox.shortcuts.includes(s.id));
+      if (sc) {
+        setInput('');
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+        if (sc.id === 'clear') { setMessages([]); return; }
+        if (sc.id === 'compact') { await compactHistory(); return; }
+        if (sc.id === 'search') {
+          await sendMessage(arg || t('わからないことを正確に調べて教えて'), { forceSearch: true });
+          return;
+        }
+        if (sc.id === 'quiz') {
+          await sendMessage(arg ? t('{topic}について、練習問題(QA)を作成して。', { topic: arg }) : t('ここまでの会話の内容から、練習問題(QA)を作成して。'));
+          return;
+        }
+        if (sc.id === 'review') {
+          await sendMessage(arg
+            ? t('{topic}についての私の理解を批判的にチェックして、誤りや理解が浅い点があれば遠慮なく指摘して。', { topic: arg })
+            : t('これまでの会話に対する私の理解を批判的にチェックして、誤りや理解が浅い点があれば遠慮なく指摘して。'));
+          return;
+        }
+      }
+    }
+
+    const userText = rawText;
     if ((!userText && sentAtts.length === 0) || isLoading || !apiKey) return;
 
     setInput('');
@@ -2004,7 +2072,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       picked.reverse();
       const recentMsgs = picked;
 
-      const modeDirective = MODES.find(mo => mo.id === activeMode)?.directive;
+      const modeDirective = TONES.find(mo => mo.id === activeMode)?.directive;
       const lastIdx = recentMsgs.length - 1;
       const history: ChatTurn[] = recentMsgs.map((m, idx) => {
         const turn: ChatTurn = {
@@ -2055,7 +2123,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             },
           },
           ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-          webSearch,
+          webSearch || opts?.forceSearch,
           65536,
           accuracy ? 0.35 : 0.6,
         );
@@ -2064,7 +2132,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         pendingThinkingRef.current = thinkingAccum;
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
-          webSearch,
+          webSearch: webSearch || opts?.forceSearch,
           models: economy ? ['gemini-2.5-flash-lite'] : undefined,
           maxOutputTokens: economy ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
@@ -2100,7 +2168,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, allNotes, webSearch, activeMode, economy]);
+  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, allNotes, webSearch, activeMode, economy, toolbox.shortcuts, compactHistory, t]);
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
@@ -2327,6 +2395,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </div>
       </div>
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} initialTab={helpInitialTab} />}
+      {showToolbox && <ToolboxModal onClose={() => setShowToolbox(false)} />}
       {showHistory && <ChatHistoryModal onClose={() => setShowHistory(false)} onLoad={handleLoadChat} />}
       {savedToast && <div className="chat-saved-toast">{t('会話を保存しました ✓')}</div>}
       {showLectureRecorder && (
@@ -2344,9 +2413,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               lilyAllNotes
                 ? (allNotes ?? [])
                 : (allNotes ?? []).filter(n => lilyNoteIds.includes(n.id!))
-            ) + (activeMode ? `\n\n（${MODES.find(m => m.id === activeMode)?.directive ?? ''}）` : '')
+            ) + (activeMode ? `\n\n（${TONES.find(m => m.id === activeMode)?.directive ?? ''}）` : '')
           }
-          modeLabel={MODES.find(m => m.id === activeMode)?.label}
+          modeLabel={TONES.find(m => m.id === activeMode)?.label}
           onClose={() => setShowVoiceChat(false)}
         />
       )}
@@ -2443,8 +2512,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
 
 
       <div className="quick-actions mode-row">
-        <span className="qa-label">{t('トーン')}</span>
-        {MODES.map(mo => (
+        <button className="qa-toolbox-btn" onClick={() => setShowToolbox(true)} title={t('ツールボックスを開く（トーン・スキル・ショートカットを追加/削除できるよ）')}>
+          <Wrench size={12} />
+          <span>{t('ツール')}</span>
+        </button>
+        {TONES.filter(mo => toolbox.tones.includes(mo.id)).map(mo => (
           <button
             key={mo.id}
             className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
@@ -2455,6 +2527,23 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           </button>
         ))}
       </div>
+
+      {SKILLS.filter(sk => toolbox.skills.includes(sk.id)).length > 0 && (
+        <div className="quick-actions mode-row skill-row">
+          <span className="qa-label">{t('スキル')}</span>
+          {SKILLS.filter(sk => toolbox.skills.includes(sk.id)).map(sk => (
+            <button
+              key={sk.id}
+              className="quick-chip"
+              onClick={() => fillInput(sk.prompt)}
+              disabled={isLoading}
+              title={t(sk.description)}
+            >
+              {t(sk.label)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Quick actions */}
       <div className="quick-actions">
@@ -2491,6 +2580,21 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             </div>
           ))}
           {fileError && <span className="att-error">{fileError}</span>}
+        </div>
+      )}
+
+      {slashSuggestions.length > 0 && (
+        <div className="slash-suggestions">
+          {slashSuggestions.map(s => (
+            <button
+              key={s.id}
+              className="slash-suggestion"
+              onClick={() => fillInput(`${s.cmd} `)}
+            >
+              <span className="slash-cmd">{s.cmd}</span>
+              <span className="slash-desc">{t(s.description)}</span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -2649,8 +2753,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .quick-chip:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
         .quick-chip:disabled { opacity: 0.5; cursor: default; }
         .mode-row { border-top: none; padding-bottom: 0; }
+        .skill-row { padding-top: 0; }
         .qa-label { flex-shrink: 0; font-size: 0.7rem; font-weight: 700; color: var(--fg-muted); }
         .mode-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .qa-toolbox-btn { flex-shrink: 0; display: flex; align-items: center; gap: 4px; background: var(--background); border: 1px solid var(--primary); border-radius: 16px; padding: 5px 10px; font-size: 0.72rem; font-weight: 700; color: var(--primary); cursor: pointer; white-space: nowrap; }
+        .qa-toolbox-btn:hover { background: var(--primary); color: #fff; }
+        .slash-suggestions { display: flex; flex-direction: column; gap: 2px; padding: 6px 14px; border-top: 1px solid var(--border); background: var(--accent); flex-shrink: 0; max-height: 160px; overflow-y: auto; }
+        .slash-suggestion { display: flex; align-items: baseline; gap: 8px; background: var(--background); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 0.78rem; cursor: pointer; text-align: left; color: var(--foreground); transition: border-color 0.15s; }
+        .slash-suggestion:hover { border-color: var(--primary); }
+        .slash-cmd { font-family: monospace; font-weight: 700; color: var(--primary); flex-shrink: 0; }
+        .slash-desc { opacity: 0.65; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .input-area { display: flex; align-items: flex-end; gap: 8px; padding: 10px 14px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--glass-tint, rgba(255,255,255,0.9)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); flex-shrink: 0; }
         .chat-input { flex: 1; min-height: 38px; max-height: 120px; background: var(--accent); border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; font-size: 0.9rem; color: var(--foreground); outline: none; resize: none; line-height: 1.5; font-family: inherit; overflow-y: auto; }
         .chat-input:focus { border-color: var(--primary); }
