@@ -5,10 +5,12 @@ import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
 import { initMermaid } from '@/lib/mermaidConfig';
+import { useT } from '@/lib/i18n';
 
 initMermaid();
 
 export default function MermaidComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
+  const t = useT();
   const [svg, setSvg] = useState('');
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
@@ -75,13 +77,13 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
        }}
     >
       <div className="mermaid-header" contentEditable={false}>
-          <span className="mermaid-label">Mermaid 図</span>
+          <span className="mermaid-label">{t('Mermaid 図')}</span>
           <div className="mermaid-header-actions">
             <select
               value={attrs.width || '100%'}
               onChange={(e) => updateAttributes({ width: e.target.value })}
               className="size-select"
-              title="図のサイズを変更"
+              title={t('図のサイズを変更')}
             >
               <option value="25%">25%</option>
               <option value="50%">50%</option>
@@ -93,7 +95,7 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
               <option value="300%">300%</option>
             </select>
             <button className="btn-edit" onClick={() => { setError(''); setEditing(!editing); }}>
-              {editing ? 'プレビュー表示' : 'コードを編集'}
+              {editing ? t('プレビュー表示') : t('コードを編集')}
             </button>
           </div>
       </div>
@@ -111,8 +113,8 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
         />
       ) : error ? (
         <div className="mermaid-error" contentEditable={false}>
-          <span className="mermaid-error-msg">Mermaid 構文エラー — コードを確認してね</span>
-          <button className="btn-edit" onClick={() => { setError(''); setEditing(true); }}>編集</button>
+          <span className="mermaid-error-msg">{t('Mermaid 構文エラー — コードを確認してね')}</span>
+          <button className="btn-edit" onClick={() => { setError(''); setEditing(true); }}>{t('編集')}</button>
         </div>
       ) : (
         <div

@@ -11,6 +11,8 @@ import type { StudyProfile } from '@/lib/studyProfile';
 import { getLevelInfo } from '@/lib/level';
 import type { LevelTier } from '@/lib/level';
 import LevelIcon from './LevelIcon';
+import { useT } from '@/lib/i18n';
+import { getAppLang } from '@/lib/appLang';
 
 function todayStr(): string {
   const d = new Date();
@@ -20,6 +22,10 @@ function todayStr(): string {
 function fmtHM(sec: number): string {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
+  if (getAppLang() === 'en') {
+    if (h > 0) return `${h}h${m > 0 ? ' ' + m + 'm' : ''}`;
+    return `${m}m`;
+  }
   if (h > 0) return `${h}時間${m > 0 ? m + '分' : ''}`;
   return `${m}分`;
 }
@@ -40,6 +46,7 @@ interface Props {
 }
 
 export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
+  const t = useT();
   const sessions = useLiveQuery(() => db.studySessions.filter(s => !s.deletedAt).toArray(), []);
   const earnedCount = useLiveQuery(() => db.earnedBadges.count(), [], 0);
   const [profile, setProfile] = useState<StudyProfile>(getStudyProfile);
@@ -92,19 +99,19 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   const goalDone = goalSec > 0 && todaySec >= goalSec;
 
   const hour = new Date().getHours();
-  const timeGreet = hour < 5 ? 'こんばんは🌙' : hour < 11 ? 'おはよう☀️' : hour < 17 ? 'こんにちは' : 'こんばんは🌙';
+  const timeGreet = hour < 5 ? t('こんばんは🌙') : hour < 11 ? t('おはよう☀️') : hour < 17 ? t('こんにちは') : t('こんばんは🌙');
 
   const goalLine = goalDone
-    ? '今日の目標、達成だ！えらすぎ🎉'
+    ? t('今日の目標、達成だ！えらすぎ🎉')
     : goalSec > 0
-    ? `今日はあと ${fmtHM(remainingSec)} がんばろう！`
-    : '今日も少しずつ積み上げよう！';
+    ? t('今日はあと {time} がんばろう！', { time: fmtHM(remainingSec) })
+    : t('今日も少しずつ積み上げよう！');
 
   const gd = daysUntilGoal(profile);
   const aimLine = profile.goalText
     ? gd != null && gd >= 0
-      ? `「${profile.goalText}」まであと ${gd}日。いっしょに頑張ろう！`
-      : `「${profile.goalText}」に向けて、今日も一歩！`
+      ? t('「{goal}」まであと {d}日。いっしょに頑張ろう！', { goal: profile.goalText, d: gd })
+      : t('「{goal}」に向けて、今日も一歩！', { goal: profile.goalText })
     : '';
 
   const mascot = goalDone ? '/sikun-dribble.gif' : '/sikun-book-read.png';
@@ -123,19 +130,19 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
           <div className="sg-prog">
             <div className="sg-prog-bar"><div className="sg-prog-fill" style={{ width: `${pct}%` }} /></div>
             <span className="sg-prog-label">
-              今日 {fmtHM(todaySec)}{goalSec > 0 ? ` / ${isHolidayDate() ? '休日' : '平日'}目標 ${todayGoalHours}時間` : ''}
+              {t('今日 {time}', { time: fmtHM(todaySec) })}{goalSec > 0 ? (isHolidayDate() ? t(' / 休日目標 {h}時間', { h: todayGoalHours }) : t(' / 平日目標 {h}時間', { h: todayGoalHours })) : ''}
             </span>
           </div>
 
           <div className="sg-chips">
             {stats.currentStreak >= 2 && (
-              <span className="sg-streak"><Flame size={13} /> {stats.currentStreak}日連続中</span>
+              <span className="sg-streak"><Flame size={13} /> {t('{n}日連続中', { n: stats.currentStreak })}</span>
             )}
             <button className="sg-btn" onClick={onOpenTrophy}>
-              <Trophy size={14} /> トロフィー <b>{earnedCount}/{BADGES.length}</b>
+              <Trophy size={14} /> {t('トロフィー')} <b>{earnedCount}/{BADGES.length}</b>
             </button>
             <button className="sg-btn ghost" onClick={onEditProfile}>
-              <Pencil size={13} /> 目標を編集
+              <Pencil size={13} /> {t('目標を編集')}
             </button>
           </div>
         </div>
@@ -160,14 +167,14 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
             ))}
           </div>
           <div className="sg-celebrate-card" onClick={e => e.stopPropagation()}>
-            <p className="sg-celebrate-title">🎉 新しいバッジ獲得！</p>
+            <p className="sg-celebrate-title">🎉 {t('新しいバッジ獲得！')}</p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="sg-celebrate-img" src={celebrate[0].image} alt={celebrate[0].title} />
-            <p className="sg-celebrate-name">{celebrate[0].title}</p>
-            <p className="sg-celebrate-desc">{celebrate[0].desc}</p>
-            {celebrate.length > 1 && <p className="sg-celebrate-more">ほか {celebrate.length - 1} 個も獲得！</p>}
+            <img className="sg-celebrate-img" src={celebrate[0].image} alt={t(celebrate[0].title)} />
+            <p className="sg-celebrate-name">{t(celebrate[0].title)}</p>
+            <p className="sg-celebrate-desc">{t(celebrate[0].desc)}</p>
+            {celebrate.length > 1 && <p className="sg-celebrate-more">{t('ほか {n} 個も獲得！', { n: celebrate.length - 1 })}</p>}
             <button className="sg-celebrate-ok" onClick={() => setCelebrate(c => c.slice(1))}>
-              {celebrate.length > 1 ? '次へ' : 'やったー！'}
+              {celebrate.length > 1 ? t('次へ') : t('やったー！')}
             </button>
           </div>
         </div>
@@ -192,11 +199,11 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
             ))}
           </div>
           <div className="sg-celebrate-card" onClick={e => e.stopPropagation()}>
-            <p className="sg-celebrate-title">⬆️ レベルアップ！</p>
+            <p className="sg-celebrate-title">⬆️ {t('レベルアップ！')}</p>
             <div className="sg-levelup-icon"><LevelIcon tier={levelUp.tier} size={120} /></div>
             <p className="sg-levelup-num" style={{ color: levelUp.tier.color }}>Lv {levelUp.level}</p>
-            <p className="sg-celebrate-desc">この調子で積み上げよう！</p>
-            <button className="sg-celebrate-ok" onClick={() => setLevelUp(null)}>やったー！</button>
+            <p className="sg-celebrate-desc">{t('この調子で積み上げよう！')}</p>
+            <button className="sg-celebrate-ok" onClick={() => setLevelUp(null)}>{t('やったー！')}</button>
           </div>
         </div>
       )}

@@ -9,38 +9,42 @@ import {
 } from '@/lib/badges';
 import type { BadgeDef, BadgeCondition } from '@/lib/badges';
 import { getStudyProfile } from '@/lib/studyProfile';
+import { useT } from '@/lib/i18n';
 
 interface Props { onClose: () => void; }
 
-function formatRemaining(cond: BadgeCondition, cur: number, target: number): string {
+type TFn = (key: string, params?: Record<string, string | number>) => string;
+
+function formatRemaining(cond: BadgeCondition, cur: number, target: number, t: TFn): string {
   const left = Math.max(0, Math.ceil(target - cur));
   switch (cond.kind) {
-    case 'totalHours':      return `あと ${left} 時間`;
-    case 'dailyHours':      return `あと ${left} 時間（1日で）`;
-    case 'streak':          return `あと ${left} 日連続`;
-    case 'totalDays':       return `あと ${left} 日`;
-    case 'daysSinceFirst':  return `あと ${left} 日`;
-    case 'sessionMinutes':  return `あと ${left} 分（1回で）`;
-    case 'pomodoroCount':   return `あと ${left} 回`;
-    case 'categoriesInDay': return `あと ${left} 科目（1日で）`;
-    case 'categoriesTotal': return `あと ${left} 科目`;
-    case 'morningCount':    return `あと ${left} 日（朝活）`;
-    case 'weekendCount':    return `あと ${left} 日（週末）`;
-    case 'nightCount':      return `あと ${left} 日（深夜）`;
-    case 'comeback':        return '一度お休みしてから再開しよう';
-    case 'morning':         return '朝5〜8時に勉強しよう';
-    case 'weekend':         return '土日に勉強しよう';
-    case 'goalMet':         return '1日の目標を達成しよう';
-    case 'badgePercent':    return 'いろんなバッジを集めよう';
+    case 'totalHours':      return t('あと {n} 時間', { n: left });
+    case 'dailyHours':      return t('あと {n} 時間（1日で）', { n: left });
+    case 'streak':          return t('あと {n} 日連続', { n: left });
+    case 'totalDays':       return t('あと {n} 日', { n: left });
+    case 'daysSinceFirst':  return t('あと {n} 日', { n: left });
+    case 'sessionMinutes':  return t('あと {n} 分（1回で）', { n: left });
+    case 'pomodoroCount':   return t('あと {n} 回', { n: left });
+    case 'categoriesInDay': return t('あと {n} 科目（1日で）', { n: left });
+    case 'categoriesTotal': return t('あと {n} 科目', { n: left });
+    case 'morningCount':    return t('あと {n} 日（朝活）', { n: left });
+    case 'weekendCount':    return t('あと {n} 日（週末）', { n: left });
+    case 'nightCount':      return t('あと {n} 日（深夜）', { n: left });
+    case 'comeback':        return t('一度お休みしてから再開しよう');
+    case 'morning':         return t('朝5〜8時に勉強しよう');
+    case 'weekend':         return t('土日に勉強しよう');
+    case 'goalMet':         return t('1日の目標を達成しよう');
+    case 'badgePercent':    return t('いろんなバッジを集めよう');
   }
 }
 
-function fmtDate(ts: number): string {
+function fmtDate(ts: number, t: TFn): string {
   const d = new Date(ts);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} 獲得`;
+  return t('{date} 獲得', { date: `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}` });
 }
 
 export default function TrophyRoom({ onClose }: Props) {
+  const t = useT();
   const sessions = useLiveQuery(() => db.studySessions.filter(s => !s.deletedAt).toArray(), [], []);
   const earned = useLiveQuery(() => db.earnedBadges.toArray(), [], []);
   const profile = getStudyProfile();
@@ -62,7 +66,7 @@ export default function TrophyRoom({ onClose }: Props) {
     <div className="tr-overlay">
       {/* Header */}
       <div className="tr-header">
-        <span className="tr-title">🏆 トロフィールーム</span>
+        <span className="tr-title">🏆 {t('トロフィールーム')}</span>
         <span className="tr-count">{totalEarned} / {BADGES.length}</span>
         <button className="tr-close" onClick={onClose}><X size={20} /></button>
       </div>
@@ -88,10 +92,10 @@ export default function TrophyRoom({ onClose }: Props) {
                     >
                       <div className="tr-badge-img-wrap">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={b.image} alt={b.title} draggable={false} />
+                        <img src={b.image} alt={t(b.title)} draggable={false} />
                         {!isEarned && <span className="tr-lock"><Lock size={14} /></span>}
                       </div>
-                      <span className="tr-badge-title">{isEarned ? b.title : '？？？'}</span>
+                      <span className="tr-badge-title">{isEarned ? t(b.title) : '？？？'}</span>
                     </button>
                   );
                 })}
@@ -99,7 +103,7 @@ export default function TrophyRoom({ onClose }: Props) {
             </section>
           );
         })}
-        <div className="tr-foot">バッジをタップすると獲得条件が見られるよ</div>
+        <div className="tr-foot">{t('バッジをタップすると獲得条件が見られるよ')}</div>
       </div>
 
       {/* Detail popup */}
@@ -113,18 +117,18 @@ export default function TrophyRoom({ onClose }: Props) {
               return (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img className={`tr-detail-img ${isEarned ? '' : 'locked'}`} src={selected.image} alt={selected.title} />
-                  <p className="tr-detail-name">{isEarned ? selected.title : '？？？'}</p>
-                  <p className="tr-detail-desc">{selected.desc}</p>
+                  <img className={`tr-detail-img ${isEarned ? '' : 'locked'}`} src={selected.image} alt={t(selected.title)} />
+                  <p className="tr-detail-name">{isEarned ? t(selected.title) : '？？？'}</p>
+                  <p className="tr-detail-desc">{t(selected.desc)}</p>
                   {isEarned ? (
-                    <p className="tr-detail-earned">✅ {fmtDate(earnedMap.get(selected.id)!)}</p>
+                    <p className="tr-detail-earned">✅ {fmtDate(earnedMap.get(selected.id)!, t)}</p>
                   ) : (
                     <>
                       <div className="tr-detail-bar"><div className="tr-detail-fill" style={{ width: `${pct}%` }} /></div>
-                      <p className="tr-detail-remain">{formatRemaining(selected.cond, cur, target)}</p>
+                      <p className="tr-detail-remain">{formatRemaining(selected.cond, cur, target, t)}</p>
                     </>
                   )}
-                  <button className="tr-detail-close" onClick={() => setSelected(null)}>閉じる</button>
+                  <button className="tr-detail-close" onClick={() => setSelected(null)}>{t('閉じる')}</button>
                 </>
               );
             })()}

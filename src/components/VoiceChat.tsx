@@ -5,6 +5,7 @@ import { X, Mic, MicOff, Volume2, Send } from 'lucide-react';
 import { callGeminiChat } from '@/lib/gemini';
 import type { ChatTurn } from '@/lib/gemini';
 import { pickAudioMime, transcribeAudioBlob, isNoSpeech } from '@/lib/audioTranscribe';
+import { useT } from '@/lib/i18n';
 
 type Phase = 'idle' | 'listening' | 'thinking' | 'speaking' | 'waiting';
 
@@ -38,6 +39,7 @@ function toSpeakText(text: string): string {
 }
 
 export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: VoiceChatProps) {
+  const t = useT();
   const [phase, setPhase] = useState<Phase>('idle');
   const [userText, setUserText] = useState('');
   const [aiText, setAiText] = useState('');
@@ -163,7 +165,7 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
       await speak(toSpeakText(response));
       if (activeRef.current) setPhase('waiting');
     } catch {
-      setError('通信エラーが発生したよ。もう一度試してね。');
+      setError(t('通信エラーが発生したよ。もう一度試してね。'));
       setPhase('waiting');
     }
   }, [apiKey, systemPrompt, speak, teardownAudio]);
@@ -224,7 +226,7 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      setError('マイクにアクセスできなかったよ。設定でマイクを許可してね。');
+      setError(t('マイクにアクセスできなかったよ。設定でマイクを許可してね。'));
       setPhase('waiting');
       return;
     }
@@ -296,10 +298,10 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
 
   const phaseConfig: Record<Phase, { label: string; color: string }> = {
     idle:      { label: '',               color: 'var(--primary)' },
-    listening: { label: '聞いてるよ...',   color: 'var(--primary)' },
-    thinking:  { label: '考え中...',       color: '#f59e0b' },
-    speaking:  { label: '話し中...',       color: '#10b981' },
-    waiting:   { label: 'あなたの番だよ', color: 'var(--primary)' },
+    listening: { label: t('聞いてるよ...'),   color: 'var(--primary)' },
+    thinking:  { label: t('考え中...'),       color: '#f59e0b' },
+    speaking:  { label: t('話し中...'),       color: '#10b981' },
+    waiting:   { label: t('あなたの番だよ'), color: 'var(--primary)' },
   };
   const { label: phaseLabel, color: phaseColor } = phaseConfig[phase];
   const isActive = phase !== 'idle';
@@ -310,9 +312,9 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
         {/* Header */}
         <div className="vc-header">
           <span className="vc-title">
-            🎙️ 音声対話{modeLabel ? <span className="vc-mode-badge">{modeLabel}</span> : null}
+            🎙️ {t('音声対話')}{modeLabel ? <span className="vc-mode-badge">{modeLabel}</span> : null}
           </span>
-          <button className="vc-close" onClick={handleClose} title="閉じる">
+          <button className="vc-close" onClick={handleClose} title={t('閉じる')}>
             <X size={20} />
           </button>
         </div>
@@ -334,7 +336,7 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
           {/* Exchange bubbles */}
           {userText && (
             <div className="vc-bubble user">
-              <span className="vc-bubble-who">あなた</span>
+              <span className="vc-bubble-who">{t('あなた')}</span>
               <p>{userText}</p>
             </div>
           )}
@@ -346,7 +348,7 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
           )}
 
           {turnCount > 0 && !userText && !isActive && (
-            <p className="vc-turn-count">{turnCount} ターン</p>
+            <p className="vc-turn-count">{t('{n} ターン', { n: turnCount })}</p>
           )}
 
           {error && <p className="vc-error">{error}</p>}
@@ -356,29 +358,29 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
         <div className="vc-footer">
           {!isActive ? (
             <button className="vc-btn start" onClick={handleStart}>
-              <Mic size={18} /> 会話を始める
+              <Mic size={18} /> {t('会話を始める')}
             </button>
           ) : phase === 'listening' ? (
             <div className="vc-footer-row">
               <button className="vc-btn speak" onClick={stopRecording}>
-                <Send size={18} /> 話し終えた（送信）
+                <Send size={18} /> {t('話し終えた（送信）')}
               </button>
-              <button className="vc-btn stop icon-only" onClick={handleStop} title="終了">
+              <button className="vc-btn stop icon-only" onClick={handleStop} title={t('終了')}>
                 <MicOff size={18} />
               </button>
             </div>
           ) : phase === 'waiting' ? (
             <div className="vc-footer-row">
               <button className="vc-btn speak" onClick={() => startListeningRef.current()}>
-                <Mic size={18} /> タップして話す
+                <Mic size={18} /> {t('タップして話す')}
               </button>
-              <button className="vc-btn stop icon-only" onClick={handleStop} title="終了">
+              <button className="vc-btn stop icon-only" onClick={handleStop} title={t('終了')}>
                 <MicOff size={18} />
               </button>
             </div>
           ) : (
             <button className="vc-btn stop" onClick={handleStop}>
-              <MicOff size={18} /> 終了
+              <MicOff size={18} /> {t('終了')}
             </button>
           )}
         </div>

@@ -32,6 +32,7 @@ import { NoteLinkExtension } from '@/lib/noteLinkExtension';
 import { runQuickAction, QUICK_ACTIONS, type QuickActionId } from '@/lib/quickAI';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getEffectiveApiKey } from '@/lib/appLang';
+import { useT, translate } from '@/lib/i18n';
 
 const lowlight = createLowlight(common);
 
@@ -56,12 +57,12 @@ class EditorErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <div style={{ padding: '24px', color: '#ef4444', fontSize: '0.9rem' }}>
-          このメモの表示中にエラーが発生しました。
+          {translate('このメモの表示中にエラーが発生しました。')}
           <button
             style={{ marginLeft: '12px', textDecoration: 'underline', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
             onClick={() => this.setState({ hasError: false })}
           >
-            再試行
+            {translate('再試行')}
           </button>
         </div>
       );
@@ -126,6 +127,7 @@ interface NoteEditorProps {
 }
 
 export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = false }: NoteEditorProps) {
+  const t = useT();
   const [note, setNote] = useState<Note | null>(null);
   const [hwDoc, setHwDoc] = useState<HandwritingDoc>(EMPTY_HANDWRITING);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -192,7 +194,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
       CustomTaskItem.configure({ nested: true }),
       ResizableImageExtension,
       Link,
-      Placeholder.configure({ placeholder: 'アイデアを書き留めましょう...' }),
+      Placeholder.configure({ placeholder: t('アイデアを書き留めましょう...') }),
       InMemoSearchExtension,
       NoteLinkExtension,
     ],
@@ -508,7 +510,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   };
 
   const deleteNote = async () => {
-    if (confirm('このメモを削除してもよろしいですか？')) {
+    if (confirm(t('このメモを削除してもよろしいですか？'))) {
       await softDeleteNote(noteId);
       onClose?.();
     }
@@ -649,13 +651,13 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     if (!editor || aiRunning) return;
     const apiKey = getEffectiveApiKey();
     if (!apiKey) {
-      setAIError('設定画面で Gemini API キーを登録してね');
+      setAIError(t('設定画面で Gemini API キーを登録してね'));
       return;
     }
     const html = editor.getHTML();
     const text = noteHtmlToText(html);
     if (!text || text.length < 8) {
-      setAIError('メモが短すぎるよ。もう少し書いてから試してみて');
+      setAIError(t('メモが短すぎるよ。もう少し書いてから試してみて'));
       return;
     }
     setAIError(null);
@@ -689,7 +691,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
       const content = editor.getHTML();
       await db.notes.update(noteId, { content, updatedAt: Date.now() });
     } catch (e) {
-      setAIError(e instanceof Error ? e.message : 'AI 処理に失敗したよ');
+      setAIError(e instanceof Error ? e.message : t('AI 処理に失敗したよ'));
     } finally {
       setAIRunning(null);
     }
@@ -736,7 +738,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
         <div className="header-bar">
           {/* 左固定: 戻る + 保存状態 */}
           <div className="header-left">
-            <button className="btn-tool btn-back" onClick={onClose} title="戻る">
+            <button className="btn-tool btn-back" onClick={onClose} title={t('戻る')}>
               <ArrowLeft size={20} />
             </button>
             <div className="status-badge">
@@ -749,32 +751,32 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           <div className="header-main-scroll main-toolbar">
             {isEditMode && !isHandwriting && (
               <>
-                <button className="btn-tool" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="戻る"><Undo size={18} /></button>
-                <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="進む"><Redo size={18} /></button>
+                <button className="btn-tool" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title={t('戻る')}><Undo size={18} /></button>
+                <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title={t('進む')}><Redo size={18} /></button>
                 <div className="header-divider" />
-                <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title="大見出し"><Type size={18} /></button>
-                <button className={`btn-tool ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title="箇条書き"><LayoutGrid size={18} /></button>
-                <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title="チェックリスト"><SquareCheck size={18} /></button>
-                <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title="コード"><Binary size={18} /></button>
+                <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title={t('大見出し')}><Type size={18} /></button>
+                <button className={`btn-tool ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title={t('箇条書き')}><LayoutGrid size={18} /></button>
+                <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')}><SquareCheck size={18} /></button>
+                <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title={t('コード')}><Binary size={18} /></button>
                 <div className="header-divider" />
-                <button className="btn-tool" onClick={addNoteAsset} title="画像"><ImageIcon size={18} /></button>
-                <button className="btn-tool" onClick={insertMermaid} title="図解"><GitBranch size={18} /></button>
-                <button className="btn-tool" onClick={insertChart} title="グラフ"><BarChart3 size={18} /></button>
+                <button className="btn-tool" onClick={addNoteAsset} title={t('画像')}><ImageIcon size={18} /></button>
+                <button className="btn-tool" onClick={insertMermaid} title={t('図解')}><GitBranch size={18} /></button>
+                <button className="btn-tool" onClick={insertChart} title={t('グラフ')}><BarChart3 size={18} /></button>
                 <button className="btn-tool" onClick={insertQA} title="Q&A"><BookOpen size={18} /></button>
-                <button className="btn-tool" onClick={insertGeometry} title="幾何の図"><Compass size={18} /></button>
-                <button className="btn-tool" onClick={insertTable} title="表を挿入"><Table2 size={18} /></button>
+                <button className="btn-tool" onClick={insertGeometry} title={t('幾何の図')}><Compass size={18} /></button>
+                <button className="btn-tool" onClick={insertTable} title={t('表を挿入')}><Table2 size={18} /></button>
                 <div className="ai-menu-wrap">
                   <button
                     className={`btn-tool${showAIMenu ? ' active' : ''}`}
                     onClick={() => { setShowAIMenu(p => !p); setAIError(null); }}
                     disabled={!!aiRunning}
-                    title="AI クイック操作"
+                    title={t('AI クイック操作')}
                   >
                     {aiRunning ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
                   </button>
                   {showAIMenu && (
                     <div className="ai-menu-dropdown">
-                      <div className="ai-menu-header">AI でこのメモを…</div>
+                      <div className="ai-menu-header">{t('AI でこのメモを…')}</div>
                       {QUICK_ACTIONS.map(act => (
                         <button
                           key={act.id}
@@ -796,7 +798,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                   <button
                     className={`btn-tool${showNotePicker ? ' active' : ''}`}
                     onClick={() => { setShowNotePicker(p => !p); setNotePickerQuery(''); }}
-                    title="メモリンクを挿入 [[メモ名]]"
+                    title={t('メモリンクを挿入 [[メモ名]]')}
                   >
                     <Link2 size={18} />
                   </button>
@@ -804,7 +806,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                     <div className="note-picker-dropdown">
                       <input
                         className="note-picker-input"
-                        placeholder="メモ名で絞り込み..."
+                        placeholder={t('メモ名で絞り込み...')}
                         value={notePickerQuery}
                         onChange={e => setNotePickerQuery(e.target.value)}
                         autoFocus
@@ -826,12 +828,12 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                                 setNotePickerQuery('');
                               }}
                             >
-                              {n.title || '無題のメモ'}
+                              {n.title || t('無題のメモ')}
                             </button>
                           ))
                         }
                         {(allNotes ?? []).filter(n => !notePickerQuery || (n.title || '').toLowerCase().includes(notePickerQuery.toLowerCase())).length === 0 && (
-                          <div className="note-picker-empty">メモが見つかりません</div>
+                          <div className="note-picker-empty">{t('メモが見つかりません')}</div>
                         )}
                       </div>
                     </div>
@@ -843,16 +845,16 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
             {/* 常時表示アクション */}
 
-            <button className="btn-tool" onClick={openSearch} title="メモ内検索"><Search size={18} /></button>
-            <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title="フォルダ移動"><FolderInput size={18} /></button>
-            <button className="btn-tool btn-tool-delete" onClick={deleteNote} title="削除"><Trash2 size={18} /></button>
+            <button className="btn-tool" onClick={openSearch} title={t('メモ内検索')}><Search size={18} /></button>
+            <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title={t('フォルダ移動')}><FolderInput size={18} /></button>
+            <button className="btn-tool btn-tool-delete" onClick={deleteNote} title={t('削除')}><Trash2 size={18} /></button>
 
             <div className="header-divider" />
 
             <button
               className={`btn-tool btn-tool-mode ${isEditMode ? 'active' : ''}`}
               onClick={() => setIsEditMode(!isEditMode)}
-              title={isEditMode ? '閲覧モードへ' : '編集モードへ'}
+              title={isEditMode ? t('閲覧モードへ') : t('編集モードへ')}
             >
               {isEditMode ? (
                 <div className="mode-active-indicator">
@@ -874,31 +876,31 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
               className="search-bar-input"
               value={searchQuery}
               onChange={e => handleSearchChange(e.target.value)}
-              placeholder="メモ内を検索..."
+              placeholder={t('メモ内を検索...')}
             />
             <span className="search-bar-count">
-              {searchMatchCount > 0 ? `${searchCurrentIndex + 1} / ${searchMatchCount}` : '0件'}
+              {searchMatchCount > 0 ? `${searchCurrentIndex + 1} / ${searchMatchCount}` : t('0件')}
             </span>
-            <button className="btn-tool" onClick={prevMatch} disabled={searchMatchCount === 0} title="前へ">
+            <button className="btn-tool" onClick={prevMatch} disabled={searchMatchCount === 0} title={t('前へ')}>
               <ChevronUp size={16} />
             </button>
-            <button className="btn-tool" onClick={nextMatch} disabled={searchMatchCount === 0} title="次へ">
+            <button className="btn-tool" onClick={nextMatch} disabled={searchMatchCount === 0} title={t('次へ')}>
               <ChevronDown size={16} />
             </button>
-            <button className="btn-tool" onClick={closeSearch} title="閉じる">
+            <button className="btn-tool" onClick={closeSearch} title={t('閉じる')}>
               <X size={16} />
             </button>
           </div>
         )}
         {isEditMode && editor && editor.isActive('table') && (
           <div className="table-context-menu">
-            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnBefore().run()} title="列を左に追加">列+左</button>
-            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnAfter().run()} title="列を右に追加">列+右</button>
-            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowBefore().run()} title="行を上に追加">行+上</button>
-            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowAfter().run()} title="行を下に追加">行+下</button>
-            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteRow().run()} title="行を削除">行削除</button>
-            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteColumn().run()} title="列を削除">列削除</button>
-            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteTable().run()} title="表を削除">表削除</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnBefore().run()} title={t('列を左に追加')}>{t('列+左')}</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnAfter().run()} title={t('列を右に追加')}>{t('列+右')}</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowBefore().run()} title={t('行を上に追加')}>{t('行+上')}</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowAfter().run()} title={t('行を下に追加')}>{t('行+下')}</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteRow().run()} title={t('行を削除')}>{t('行削除')}</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteColumn().run()} title={t('列を削除')}>{t('列削除')}</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteTable().run()} title={t('表を削除')}>{t('表削除')}</button>
           </div>
         )}
       </header>
@@ -910,7 +912,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
               className="content-title-input"
               value={note?.title || ''}
               onChange={(e) => updateTitle(e.target.value)}
-              placeholder="タイトル..."
+              placeholder={t('タイトル...')}
               readOnly={!isEditMode}
             />
             {isHandwriting ? (
@@ -935,7 +937,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
         <div className="folder-picker-overlay" onClick={() => setShowFolderPicker(false)}>
           <div className="folder-picker-sheet" onClick={e => e.stopPropagation()}>
             <div className="folder-picker-header">
-              <span>フォルダに移動</span>
+              <span>{t('フォルダに移動')}</span>
               <button onClick={() => setShowFolderPicker(false)}><X size={18} /></button>
             </div>
             <div className="folder-picker-list">
@@ -944,7 +946,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                 onClick={() => moveToFolder(undefined)}
               >
                 <div className="fp-dot" style={{ background: '#ccc' }} />
-                <span>フォルダなし</span>
+                <span>{t('フォルダなし')}</span>
                 {!note?.folderId && <Check size={15} className="fp-check" />}
               </button>
               {folders?.map(folder => (

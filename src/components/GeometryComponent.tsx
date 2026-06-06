@@ -4,8 +4,10 @@ import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useMemo, useState } from 'react';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { downloadSvg, downloadSvgAsPng } from '@/lib/fileGen';
+import { useT } from '@/lib/i18n';
 
 export default function GeometryComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [localCode, setLocalCode] = useState('');
 
@@ -18,7 +20,7 @@ export default function GeometryComponent({ node: { attrs }, updateAttributes }:
     try {
       return { svg: renderGeometrySvg(parseGeometry(code)), error: '' };
     } catch (e) {
-      return { svg: '', error: e instanceof Error ? e.message : '不明なエラー' };
+      return { svg: '', error: e instanceof Error ? e.message : t('不明なエラー') };
     }
   }, [code]);
 
@@ -35,13 +37,13 @@ export default function GeometryComponent({ node: { attrs }, updateAttributes }:
       }}
     >
       <div className="geo-header" contentEditable={false}>
-        <span className="geo-label">📐 幾何の図</span>
+        <span className="geo-label">📐 {t('幾何の図')}</span>
         <div className="geo-actions">
           <select
             value={(attrs.width as string) || '100%'}
             onChange={(e) => updateAttributes({ width: e.target.value })}
             className="size-select"
-            title="サイズ"
+            title={t('サイズ')}
           >
             {['25%', '50%', '75%', '100%', '125%', '150%', '200%'].map(v => (
               <option key={v} value={v}>{v}</option>
@@ -54,7 +56,7 @@ export default function GeometryComponent({ node: { attrs }, updateAttributes }:
             </>
           )}
           <button className="btn-edit" onClick={editing ? saveEdit : startEdit}>
-            {editing ? '✓ 保存' : 'コードを編集'}
+            {editing ? `✓ ${t('保存')}` : t('コードを編集')}
           </button>
         </div>
       </div>
@@ -68,7 +70,7 @@ export default function GeometryComponent({ node: { attrs }, updateAttributes }:
           onTouchMove={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           className="geo-editor"
-          placeholder={'{\n  "title": "タイトル",\n  "xRange": [-3, 3],\n  "yRange": [-3, 3],\n  "elements": [\n    {"type":"point","x":1,"y":2,"label":"A"}\n  ]\n}'}
+          placeholder={t('{\n  "title": "タイトル",\n  "xRange": [-3, 3],\n  "yRange": [-3, 3],\n  "elements": [\n    {"type":"point","x":1,"y":2,"label":"A"}\n  ]\n}')}
           spellCheck={false}
         />
       ) : (
@@ -79,7 +81,7 @@ export default function GeometryComponent({ node: { attrs }, updateAttributes }:
         >
           {svg && <div dangerouslySetInnerHTML={{ __html: svg }} />}
           {error && <div className="geo-error">⚠️ {error}</div>}
-          {!svg && !error && <div className="geo-empty">「コードを編集」でJSONを入力してね</div>}
+          {!svg && !error && <div className="geo-empty">{t('「コードを編集」でJSONを入力してね')}</div>}
         </div>
       )}
 

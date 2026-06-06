@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Layers } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 interface DevAppsScreenProps {
   onGoBack: () => void;
 }
 
 export default function DevAppsScreen({ onGoBack }: DevAppsScreenProps) {
+  const t = useT();
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -32,12 +34,12 @@ export default function DevAppsScreen({ onGoBack }: DevAppsScreenProps) {
           <ArrowLeft size={18} />
         </button>
         <Layers size={16} color="#a78bfa" />
-        <span className="da-title">開発者のアプリ</span>
+        <span className="da-title">{t('開発者のアプリ')}</span>
       </div>
 
       <div className="da-body">
-        {loading && <p className="da-loading">読み込み中...</p>}
-        {error && <p className="da-error">読み込みに失敗しました。</p>}
+        {loading && <p className="da-loading">{t('読み込み中...')}</p>}
+        {error && <p className="da-error">{t('読み込みに失敗しました。')}</p>}
         {!loading && !error && (
           <div className="da-content" dangerouslySetInnerHTML={{ __html: html }} />
         )}

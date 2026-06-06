@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useTheme } from './ThemeContext';
+import { useT } from '@/lib/i18n';
 
 // Heavy: pulls in react-force-graph-2d + d3 + canvas-confetti shaders.
 // Only needed when the user switches to the graph view.
@@ -51,6 +52,7 @@ export default function Sidebar({
   viewModeProp, onViewModeChangeProp, highlightFolderReq,
 }: SidebarProps) {
   const { theme, cycleTheme, nextThemeName } = useTheme();
+  const t = useT();
   const [searchQuery, setSearchQuery] = useState('');
 
   const folders = useLiveQuery(() =>
@@ -102,7 +104,7 @@ export default function Sidebar({
   };
 
   const addFolder = async () => {
-    const name = prompt('フォルダ名を入力してください');
+    const name = prompt(t('フォルダ名を入力してください'));
     if (name) {
       const now = Date.now();
       await db.folders.add({
@@ -172,14 +174,14 @@ export default function Sidebar({
         <div className="sidebar-header">
           <div className="logo-area">
             {onBackToHome && (
-              <button className="back-btn" onClick={onBackToHome} title="ホームに戻る" aria-label="ホームに戻る">
+              <button className="back-btn" onClick={onBackToHome} title={t('ホームに戻る')} aria-label={t('ホームに戻る')}>
                 <ArrowLeft size={18} />
               </button>
             )}
             <Image src="/logo.png" alt="Lily Memo Logo" width={36} height={36} className="logo-img" />
             <h1 className="title">Lily Memo</h1>
           </div>
-          <button className="theme-toggle" onClick={cycleTheme} title={`テーマ切替（次: ${nextThemeName}）`}>
+          <button className="theme-toggle" onClick={cycleTheme} title={t('テーマ切替（次: {name}）', { name: nextThemeName })}>
             <Palette size={16} />
             {theme.dark ? <Moon size={14} /> : <Sun size={14} />}
           </button>
@@ -189,14 +191,14 @@ export default function Sidebar({
           <Search size={15} className="search-icon" />
           <input
             type="text"
-            placeholder="タイトルで絞り込み..."
+            placeholder={t('タイトルで絞り込み...')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="search-input"
           />
           {onOpenSearch && (
-            <button className="btn-fulltext-search" onClick={onOpenSearch} title="全文検索 (⌘K)">
-              全文
+            <button className="btn-fulltext-search" onClick={onOpenSearch} title={t('全文検索 (⌘K)')}>
+              {t('全文')}
             </button>
           )}
         </div>
@@ -204,14 +206,14 @@ export default function Sidebar({
         <div className="sidebar-actions">
           <button className="btn-add" onClick={() => addNote()}>
             <Plus size={17} />
-            <span>新しいメモ</span>
+            <span>{t('新しいメモ')}</span>
           </button>
-          <button className="btn-icon" onClick={addFolder} title="フォルダ作成">
+          <button className="btn-icon" onClick={addFolder} title={t('フォルダ作成')}>
             <FolderPlus size={17} />
           </button>
         </div>
 
-        <div className="view-toggle" role="tablist" aria-label="表示切替">
+        <div className="view-toggle" role="tablist" aria-label={t('表示切替')}>
           <button
             role="tab"
             aria-selected={viewMode === 'tree'}
@@ -219,7 +221,7 @@ export default function Sidebar({
             onClick={() => changeViewMode('tree')}
           >
             <List size={13} />
-            <span>ツリー</span>
+            <span>{t('ツリー')}</span>
           </button>
           <button
             role="tab"
@@ -228,7 +230,7 @@ export default function Sidebar({
             onClick={() => changeViewMode('graph')}
           >
             <Sparkles size={13} />
-            <span>つながり</span>
+            <span>{t('つながり')}</span>
           </button>
         </div>
 
@@ -244,13 +246,13 @@ export default function Sidebar({
                   <FolderIcon size={16} style={{ color: `var(${folder.color || '--folder-pink'})`, flexShrink: 0 }} />
                   <span className="folder-name">{folder.name}</span>
                   <div className="folder-item-actions">
-                    <button className="btn-inline" title="色を変更" onClick={(e) => { e.stopPropagation(); setEditingFolderColor(editingFolderColor === folder.id ? null : folder.id!); }}>
+                    <button className="btn-inline" title={t('色を変更')} onClick={(e) => { e.stopPropagation(); setEditingFolderColor(editingFolderColor === folder.id ? null : folder.id!); }}>
                       <Palette size={13} />
                     </button>
-                    <button className="btn-inline" title="メモを追加" onClick={(e) => { e.stopPropagation(); addNote(folder.id); }}>
+                    <button className="btn-inline" title={t('メモを追加')} onClick={(e) => { e.stopPropagation(); addNote(folder.id); }}>
                       <Plus size={13} />
                     </button>
-                    <button className="btn-inline btn-inline-delete" title="フォルダを削除" onClick={(e) => handleDeleteFolder(e, { id: folder.id!, name: folder.name })}>
+                    <button className="btn-inline btn-inline-delete" title={t('フォルダを削除')} onClick={(e) => handleDeleteFolder(e, { id: folder.id!, name: folder.name })}>
                       <Trash2 size={13} />
                     </button>
                   </div>
@@ -283,7 +285,7 @@ export default function Sidebar({
                       </div>
                     ))}
                     {notes?.filter(n => n.folderId === folder.id).length === 0 && (
-                      <div className="empty-hint">メモはありません</div>
+                      <div className="empty-hint">{t('メモはありません')}</div>
                     )}
                   </div>
                 )}
@@ -291,7 +293,7 @@ export default function Sidebar({
             ))}
 
             <div className="unorganized-notes">
-              <div className="section-label">{searchQuery ? '検索結果' : 'すべてのメモ'}</div>
+              <div className="section-label">{searchQuery ? t('検索結果') : t('すべてのメモ')}</div>
               {notes?.filter(n => !n.folderId || (searchQuery && n.folderId)).map(note => (
                   <div
                     key={note.id}
@@ -317,7 +319,7 @@ export default function Sidebar({
           {onOpenSketch && (
             <button className="btn-settings" onClick={onOpenSketch}>
               <Brush size={18} />
-              <span>落書き</span>
+              <span>{t('落書き')}</span>
             </button>
           )}
           {onOpenPDF && (
@@ -328,7 +330,7 @@ export default function Sidebar({
           )}
           <button className="btn-settings" onClick={onOpenSettings}>
             <Settings size={18} />
-            <span>設定</span>
+            <span>{t('設定')}</span>
           </button>
         </div>
 
@@ -339,22 +341,22 @@ export default function Sidebar({
               <div className="delete-dialog-icon">
                 <Trash2 size={22} />
               </div>
-              <h3 className="delete-dialog-title">フォルダを削除</h3>
+              <h3 className="delete-dialog-title">{t('フォルダを削除')}</h3>
               <p className="delete-dialog-folder-name">「{deletingFolder.name}」</p>
               {deletingFolder.noteCount > 0 ? (
                 <p className="delete-dialog-desc">
-                  {deletingFolder.noteCount}件のメモが含まれています。<br />メモはどうしますか？
+                  {t('{n}件のメモが含まれています。', { n: deletingFolder.noteCount })}<br />{t('メモはどうしますか？')}
                 </p>
               ) : (
-                <p className="delete-dialog-desc">このフォルダを削除します。</p>
+                <p className="delete-dialog-desc">{t('このフォルダを削除します。')}</p>
               )}
               <div className="delete-dialog-actions">
-                <button className="dda-cancel" onClick={() => setDeletingFolder(null)}>キャンセル</button>
+                <button className="dda-cancel" onClick={() => setDeletingFolder(null)}>{t('キャンセル')}</button>
                 {deletingFolder.noteCount > 0 && (
-                  <button className="dda-keep" onClick={() => confirmDeleteFolder(false)}>メモを残す</button>
+                  <button className="dda-keep" onClick={() => confirmDeleteFolder(false)}>{t('メモを残す')}</button>
                 )}
                 <button className="dda-delete" onClick={() => confirmDeleteFolder(deletingFolder.noteCount === 0 ? false : true)}>
-                  {deletingFolder.noteCount > 0 ? 'すべて削除' : '削除する'}
+                  {deletingFolder.noteCount > 0 ? t('すべて削除') : t('削除する')}
                 </button>
               </div>
             </div>
@@ -832,8 +834,8 @@ export default function Sidebar({
           <button
             className="graph-close-btn"
             onClick={() => changeViewMode('tree')}
-            title="閉じる"
-            aria-label="グラフを閉じる"
+            title={t('閉じる')}
+            aria-label={t('グラフを閉じる')}
           >
             <X size={20} />
           </button>

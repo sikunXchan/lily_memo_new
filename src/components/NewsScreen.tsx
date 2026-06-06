@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Bell } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 interface NewsScreenProps {
   onGoBack: () => void;
 }
 
 export default function NewsScreen({ onGoBack }: NewsScreenProps) {
+  const t = useT();
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -20,7 +22,7 @@ export default function NewsScreen({ onGoBack }: NewsScreenProps) {
         setHtml(result as string);
         localStorage.setItem('lily_news_read_ts', String(Date.now()));
       })
-      .catch(() => setHtml('<p>読み込みに失敗しました。</p>'))
+      .catch(() => setHtml(`<p>${t('読み込みに失敗しました。')}</p>`))
       .finally(() => setLoading(false));
   }, []);
 
@@ -31,12 +33,12 @@ export default function NewsScreen({ onGoBack }: NewsScreenProps) {
           <ArrowLeft size={18} />
         </button>
         <Bell size={16} color="#f59e0b" />
-        <span className="ns-title">お知らせ</span>
+        <span className="ns-title">{t('お知らせ')}</span>
       </div>
 
       <div className="ns-body">
         {loading ? (
-          <p className="ns-loading">読み込み中...</p>
+          <p className="ns-loading">{t('読み込み中...')}</p>
         ) : (
           <div className="ns-content" dangerouslySetInnerHTML={{ __html: html }} />
         )}

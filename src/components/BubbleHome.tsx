@@ -9,8 +9,11 @@ import {
 import { db, newSyncId } from '@/lib/db';
 import type { Todo, AlbumPhoto } from '@/lib/db';
 import { useTheme } from './ThemeContext';
+import { useT } from '@/lib/i18n';
+import { getAppLang } from '@/lib/appLang';
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const SPLASH_IMAGES = Array.from({ length: 9 }, (_, i) => `/splash-0${i + 1}.png`);
 
@@ -86,6 +89,7 @@ interface BubbleHomeProps {
 
 export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: BubbleHomeProps) {
   const { cycleTheme, nextThemeName } = useTheme();
+  const t = useT();
 
   const pinnedTodos = useLiveQuery<Todo[]>(() =>
     db.todos.filter(t => t.pinned && !t.done).toArray()
@@ -153,13 +157,15 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
   const isNight = tod === 'night';
   const labelColor = isLight ? '#3a2d32' : 'rgba(255,255,255,.9)';
   const dateColor  = isLight ? '#c79aa8' : 'rgba(255,255,255,.55)';
-  const dateLabel  = `${WEEKDAYS[now.getDay()]} · ${now.getMonth() + 1}月${now.getDate()}日`;
+  const dateLabel  = getAppLang() === 'en'
+    ? `${WEEKDAYS[now.getDay()]} · ${MONTHS_EN[now.getMonth()]} ${now.getDate()}`
+    : `${WEEKDAYS[now.getDay()]} · ${now.getMonth() + 1}月${now.getDate()}日`;
 
   const createNote = async () => {
-    const t = Date.now();
+    const ts = Date.now();
     const id = await db.notes.add({
-      syncId: newSyncId(), title: '無題のメモ', content: '',
-      folderId: undefined, type: 'text', createdAt: t, updatedAt: t,
+      syncId: newSyncId(), title: t('無題のメモ'), content: '',
+      folderId: undefined, type: 'text', createdAt: ts, updatedAt: ts,
     });
     onSelectNote(id as number);
   };
@@ -199,7 +205,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
           <div className="bh-title">Lily Memo</div>
         </div>
         <button className="bh-theme-btn" onClick={cycleTheme}
-          title={`テーマ切替（次: ${nextThemeName}）`}
+          title={t('テーマ切替（次: {name}）', { name: nextThemeName })}
           style={{
             background: isLight ? 'rgba(255,255,255,.75)' : 'rgba(255,255,255,.1)',
             borderColor: isLight ? '#ffe0e8' : 'rgba(255,255,255,.2)',
@@ -243,7 +249,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
                 <span className="bh-rim" />
               </span>
               <span className="bh-label" style={{ color: b.isNew ? '#ff8da1' : labelColor }}>
-                {b.label}
+                {t(b.label)}
               </span>
             </button>
           </div>
@@ -265,7 +271,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
         {/* Camera add button */}
         <button
           className="bh-album-add-btn"
-          aria-label="写真を追加"
+          aria-label={t('写真を追加')}
           onClick={() => fileInputRef.current?.click()}
         >
           <Camera size={16} color="rgba(255,255,255,0.9)" />
@@ -286,7 +292,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
                     onMouseUp={handleLongPressEnd}
                     onMouseLeave={handleLongPressEnd}
                     onClick={() => handlePhotoTap(photoId)}
-                    aria-label="写真"
+                    aria-label={t('写真')}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img className="bh-album-img" src={src} alt="" draggable={false} />
@@ -294,7 +300,7 @@ export default function BubbleHome({ onSelectNote, onNavigate, onOpenFocus }: Bu
                       <span
                         className="bh-album-del"
                         role="button"
-                        aria-label="削除"
+                        aria-label={t('削除')}
                         onClick={(e) => void handleDeletePhoto(photoId, e)}
                       >
                         <X size={12} color="#fff" strokeWidth={3} />

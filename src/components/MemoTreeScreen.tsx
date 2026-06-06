@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Folder as FolderType, Note } from '@/lib/db';
+import { useT } from '@/lib/i18n';
 
 interface MemoTreeScreenProps {
   onSelectNote: (id: number) => void;
@@ -15,6 +16,7 @@ interface MemoTreeScreenProps {
 }
 
 export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }: MemoTreeScreenProps) {
+  const t = useT();
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -79,18 +81,18 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
             className="mt-search-input"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="メモを検索..."
+            placeholder={t('メモを検索...')}
             autoFocus
             onBlur={() => { if (!searchQuery) setShowSearch(false); }}
           />
         ) : (
-          <span className="mt-title">メモ</span>
+          <span className="mt-title">{t('メモ')}</span>
         )}
         <div className="mt-actions">
           <button className="mt-icon-btn" onClick={() => { setShowSearch(v => !v); if (showSearch) setSearchQuery(''); }}>
             <Search size={18} />
           </button>
-          <button className="mt-icon-btn" onClick={openNewFolder} title="フォルダを追加">
+          <button className="mt-icon-btn" onClick={openNewFolder} title={t('フォルダを追加')}>
             <FolderPlus size={18} />
           </button>
           <button className="mt-icon-btn mt-add-btn" onClick={() => void createNote()}>
@@ -107,7 +109,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
             className="mt-new-folder-input"
             value={newFolderName}
             onChange={e => setNewFolderName(e.target.value)}
-            placeholder="フォルダ名..."
+            placeholder={t('フォルダ名...')}
             onKeyDown={e => { if (e.key === 'Enter') void createFolder(); if (e.key === 'Escape') cancelNewFolder(); }}
           />
           <button className="mt-confirm-btn" onClick={() => void createFolder()} disabled={!newFolderName.trim()}>
@@ -137,12 +139,12 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
                   {folderNotes.map(n => (
                     <button key={n.id} className="mt-note-row" onClick={() => onSelectNote(n.id!)}>
                       <FileText size={14} color="#cab9bf" />
-                      <span className="mt-note-title">{n.title || '無題のメモ'}</span>
+                      <span className="mt-note-title">{n.title || t('無題のメモ')}</span>
                     </button>
                   ))}
                   <button className="mt-note-row mt-add-note" onClick={() => void createNote(f.id)}>
                     <Plus size={14} color="#ff8da1" />
-                    <span>メモを追加</span>
+                    <span>{t('メモを追加')}</span>
                   </button>
                 </div>
               )}
@@ -151,23 +153,23 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
         })}
 
         {looseNotes.length > 0 && !searchQuery && (
-          <div className="mt-section-label">フォルダなし</div>
+          <div className="mt-section-label">{t('フォルダなし')}</div>
         )}
         {looseNotes.map(n => (
           <button key={n.id} className="mt-loose-row" onClick={() => onSelectNote(n.id!)}>
             <FileText size={15} color="#cab9bf" />
-            <span className="mt-note-title">{n.title || '無題のメモ'}</span>
+            <span className="mt-note-title">{n.title || t('無題のメモ')}</span>
           </button>
         ))}
 
         {searchQuery && notes.length === 0 && (
-          <div className="mt-empty">「{searchQuery}」は見つかりません</div>
+          <div className="mt-empty">{t('「{q}」は見つかりません', { q: searchQuery })}</div>
         )}
         {!searchQuery && folders.length === 0 && looseNotes.length === 0 && (
           <div className="mt-empty">
-            <p>メモはまだありません</p>
+            <p>{t('メモはまだありません')}</p>
             <button className="mt-create-first" onClick={() => void createNote()}>
-              <Plus size={16} /> 最初のメモを作る
+              <Plus size={16} /> {t('最初のメモを作る')}
             </button>
           </div>
         )}

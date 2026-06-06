@@ -20,6 +20,7 @@ import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { Upload, Edit3, Save, Download, Play, FileSpreadsheet } from 'lucide-react';
 import { triggerDownload } from '@/lib/fileGen';
+import { useT } from '@/lib/i18n';
 
 ChartJS.register(
   CategoryScale,
@@ -60,6 +61,7 @@ return {
 };`;
 
 export default function ChartComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const chartRef = useRef<ChartJS>(null);
 
@@ -142,7 +144,7 @@ return {
             fileName: file.name 
           });
         } catch {
-             alert('ファイルの読み込みに失敗しました。');
+             alert(t('ファイルの読み込みに失敗しました。'));
         }
       };
       reader.readAsBinaryString(file);
@@ -189,7 +191,7 @@ return {
               value={attrs.width || '100%'}
               onChange={(e) => updateAttributes({ width: e.target.value })}
               className="size-select"
-              title="グラフサイズの変更"
+              title={t('グラフサイズの変更')}
             >
               <option value="25%">25%</option>
               <option value="50%">50%</option>
@@ -201,7 +203,7 @@ return {
               <option value="300%">300%</option>
             </select>
             {!editing && (
-              <button className="btn-export" onClick={exportAsPng} title="PNG画像として保存">
+              <button className="btn-export" onClick={exportAsPng} title={t('PNG画像として保存')}>
                 <Download size={14} /> PNG
               </button>
             )}
@@ -214,7 +216,7 @@ return {
                 }
             }}>
               {editing ? <Save size={16} /> : <Edit3 size={16} />}
-              {editing ? '完了' : 'コード編集'}
+              {editing ? t('完了') : t('コード編集')}
             </button>
           </div>
       </div>
@@ -224,7 +226,7 @@ return {
             <div className="upload-section">
                 <label className="btn-upload">
                     <Upload size={16} />
-                    CSV / Excelを読み込む
+                    {t('CSV / Excelを読み込む')}
                     <input type="file" hidden accept=".csv,.xlsx,.xls" onChange={handleFileUpload} />
                 </label>
             </div>
@@ -239,7 +241,7 @@ return {
                  className="code-textarea"
                  spellCheck={false}
                />
-               <button className="btn-run" onClick={handleSaveCode}><Play size={14}/> 適用</button>
+               <button className="btn-run" onClick={handleSaveCode}><Play size={14}/> {t('適用')}</button>
             </div>
             
             {errorMsg && <div className="error-message">Error: {errorMsg}</div>}
@@ -256,13 +258,13 @@ return {
         >
             {computedConfig.error ? (
                 <div className="error-message">
-                  コードの実行エラー: {computedConfig.error}
+                  {t('コードの実行エラー:')} {computedConfig.error}
                 </div>
             ) : computedConfig.config ? (
                 (() => {
                     const chartConfig = computedConfig.config;
                     if (!chartConfig.data || !Array.isArray(chartConfig.data.datasets)) {
-                        return <div className="error-message">グラフデータの形式が不正です（datasets配列が見つかりません）。</div>;
+                        return <div className="error-message">{t('グラフデータの形式が不正です（datasets配列が見つかりません）。')}</div>;
                     }
                     const chartType = chartConfig.type || 'bar';
                     const props = {
@@ -277,7 +279,7 @@ return {
                            <Bar {...props} />;
                 })()
             ) : (
-                <div className="placeholder">設定がありません。</div>
+                <div className="placeholder">{t('設定がありません。')}</div>
             )}
         </div>
       )}
