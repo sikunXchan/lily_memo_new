@@ -47,12 +47,16 @@ let seedPromise: Promise<void> | null = null;
 export function ensureSkillsSeeded(): Promise<void> {
   if (seedPromise) return seedPromise;
   seedPromise = (async () => {
-    const existing = await db.skills.where('builtinKey').notEqual('').toArray().catch(() => []);
-    const haveKeys = new Set(existing.map(s => s.builtinKey));
-    const now = Date.now();
-    const toAdd = BUILTIN_SKILLS.filter(s => !haveKeys.has(s.builtinKey));
-    if (toAdd.length > 0) {
-      await db.skills.bulkAdd(toAdd.map(s => ({ ...s, createdAt: now, updatedAt: now })));
+    try {
+      const all = await db.skills.toArray();
+      const haveKeys = new Set(all.map(s => s.builtinKey).filter(Boolean));
+      const now = Date.now();
+      const toAdd = BUILTIN_SKILLS.filter(s => !haveKeys.has(s.builtinKey));
+      if (toAdd.length > 0) {
+        await db.skills.bulkAdd(toAdd.map((s, i) => ({ ...s, createdAt: now + i, updatedAt: now + i })));
+      }
+    } catch (e) {
+      console.error('skill seeding failed', e);
     }
   })();
   return seedPromise;

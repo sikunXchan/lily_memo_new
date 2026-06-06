@@ -36,6 +36,7 @@ export default function ToolboxModal({ onClose }: ToolboxModalProps) {
   const [editingShortcut, setEditingShortcut] = useState<Shortcut | null>(null);
 
   return (
+    <>
     <div className="tb-overlay" onClick={onClose}>
       <div className="tb-modal" onClick={e => e.stopPropagation()}>
         <div className="tb-header">
@@ -121,9 +122,13 @@ export default function ToolboxModal({ onClose }: ToolboxModalProps) {
         </div>
 
         <style jsx>{`
-          .tb-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px; }
-          .tb-modal { background:var(--background); border-radius:16px; width:100%; max-width:540px; max-height:84vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.18); }
-          .tb-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px 0; }
+          .tb-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; display:flex; align-items:center; justify-content:center; }
+          .tb-modal { background:var(--background); width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden; }
+          @media (min-width: 640px) {
+            .tb-overlay { padding:16px; }
+            .tb-modal { border-radius:16px; max-width:560px; height:auto; max-height:86vh; box-shadow:0 8px 32px rgba(0,0,0,0.18); }
+          }
+          .tb-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px 0; padding-top:calc(16px + env(safe-area-inset-top)); flex-shrink:0; }
           .tb-title { font-size:1.05rem; font-weight:700; color:var(--primary); }
           .tb-close { background:none; border:none; cursor:pointer; color:var(--foreground); opacity:0.6; padding:4px; display:flex; }
           .tb-close:hover { opacity:1; }
@@ -149,21 +154,22 @@ export default function ToolboxModal({ onClose }: ToolboxModalProps) {
           .tb-icon-btn.danger:hover { border-color:#e11d48; color:#e11d48; }
         `}</style>
       </div>
-
-      {showSkillBuilder && (
-        <SkillBuilder
-          skill={editingSkill ?? undefined}
-          onClose={() => setShowSkillBuilder(false)}
-          onSaved={() => setShowSkillBuilder(false)}
-        />
-      )}
-      {editingShortcut && (
-        <ShortcutEditor
-          shortcut={editingShortcut}
-          onClose={() => setEditingShortcut(null)}
-        />
-      )}
     </div>
+
+    {showSkillBuilder && (
+      <SkillBuilder
+        skill={editingSkill ?? undefined}
+        onClose={() => setShowSkillBuilder(false)}
+        onSaved={() => setShowSkillBuilder(false)}
+      />
+    )}
+    {editingShortcut && (
+      <ShortcutEditor
+        shortcut={editingShortcut}
+        onClose={() => setEditingShortcut(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -196,9 +202,14 @@ function ShortcutEditor({ shortcut, onClose }: { shortcut: Shortcut; onClose: ()
           <button className="se-save" onClick={handleSave} disabled={!label.trim() || !prompt.trim()}>{t('保存')}</button>
         </div>
         <style jsx>{`
-          .se-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:10000; display:flex; align-items:center; justify-content:center; padding:16px; }
-          .se-modal { background:var(--background); border-radius:16px; width:100%; max-width:460px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
-          .se-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+          .se-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:10001; display:flex; align-items:center; justify-content:center; }
+          .se-modal { background:var(--background); width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden; }
+          @media (min-width: 640px) {
+            .se-overlay { padding:16px; }
+            .se-modal { border-radius:16px; max-width:480px; height:auto; max-height:90vh; box-shadow:0 8px 32px rgba(0,0,0,0.2); }
+          }
+          .se-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; padding-top:calc(16px + env(safe-area-inset-top)); border-bottom:1px solid var(--border); flex-shrink:0; }
+          .se-body { flex:1; overflow-y:auto; }
           .se-title { font-size:1.02rem; font-weight:700; color:var(--primary); }
           .se-close { background:none; border:none; cursor:pointer; color:var(--foreground); opacity:0.6; padding:4px; display:flex; }
           .se-body { padding:16px 18px; }
@@ -208,7 +219,7 @@ function ShortcutEditor({ shortcut, onClose }: { shortcut: Shortcut; onClose: ()
           .se-input:focus { border-color:var(--primary); }
           .se-textarea { width:100%; background:var(--accent); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:0.86rem; color:var(--foreground); outline:none; resize:vertical; line-height:1.5; font-family:inherit; }
           .se-textarea:focus { border-color:var(--primary); }
-          .se-footer { display:flex; gap:10px; justify-content:flex-end; padding:14px 18px; border-top:1px solid var(--border); }
+          .se-footer { display:flex; gap:10px; justify-content:flex-end; padding:14px 18px; padding-bottom:calc(14px + env(safe-area-inset-bottom)); border-top:1px solid var(--border); flex-shrink:0; }
           .se-cancel { background:none; border:1.5px solid var(--border); border-radius:10px; padding:8px 18px; font-size:0.85rem; font-weight:600; cursor:pointer; color:var(--foreground); }
           .se-save { background:var(--primary); border:none; color:#fff; border-radius:10px; padding:8px 22px; font-size:0.85rem; font-weight:700; cursor:pointer; }
           .se-save:disabled { opacity:0.5; cursor:default; }

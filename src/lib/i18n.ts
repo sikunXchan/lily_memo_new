@@ -846,6 +846,7 @@ const EN: Record<string, string> = {
   "資料の名前（任意）": "Reference name (optional)",
   "📎 資料{n}件": "📎 {n} refs",
   "PDF": "PDF",
+  "応答モード": "Response mode",
 };
 
 export function translate(
