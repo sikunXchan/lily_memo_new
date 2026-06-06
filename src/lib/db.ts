@@ -148,6 +148,29 @@ export interface AlbumPhoto {
   createdAt: number;
 }
 
+// A reference document attached to a skill: extracted plain text from a PDF,
+// a fetched URL, or pasted text. We store the extracted text (not the binary)
+// so it can be injected straight into the system prompt.
+export interface SkillReference {
+  type: 'pdf' | 'url' | 'text';
+  name: string;   // file name, URL, or a short label
+  content: string; // extracted plain text
+}
+
+// A user-authored (or sample) "skill" — like a Claude skill: a system-prompt
+// instruction plus optional reference materials that change how Lily behaves
+// for the whole conversation while the skill is active.
+export interface Skill {
+  id?: number;
+  emoji: string;
+  name: string;
+  instructions: string;
+  references: SkillReference[];
+  builtinKey?: string; // set for seeded samples so we don't re-seed them
+  createdAt: number;
+  updatedAt: number;
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
@@ -160,6 +183,7 @@ export class LilyDatabase extends Dexie {
   todos!: Table<Todo>;
   albumPhotos!: Table<AlbumPhoto>;
   earnedBadges!: Table<EarnedBadge, string>;
+  skills!: Table<Skill>;
 
   constructor() {
     super('LilyDatabase');
@@ -249,6 +273,9 @@ export class LilyDatabase extends Dexie {
         if (!s.syncId) s.syncId = `s_${s.date}_${s.startTime}`;
         if (!s.updatedAt) s.updatedAt = s.startTime ?? Date.now();
       });
+    });
+    this.version(17).stores({
+      skills: '++id, name, builtinKey, createdAt',
     });
   }
 }

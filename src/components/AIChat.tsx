@@ -6,7 +6,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw,
   Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
-  Save, History, Trash2, Mic, Phone, Wrench,
+  Save, History, Trash2, Mic, Phone, Wrench, MoreVertical,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -37,8 +37,10 @@ import {
 import dynamic from 'next/dynamic';
 import { getEffectiveApiKey } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
-import { TONES, SKILLS, SHORTCUTS } from '@/lib/toolboxData';
-import { useToolbox } from '@/lib/toolbox';
+import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
+import { useEnabledTones } from '@/lib/toolbox';
+import { ensureSkillsSeeded, skillPromptAddon, type Skill } from '@/lib/skills';
+import { useShortcuts } from '@/lib/shortcuts';
 import ToolboxModal from '@/components/ToolboxModal';
 
 const LectureRecorder = dynamic(() => import('@/components/LectureRecorder'), { ssr: false });
@@ -483,8 +485,9 @@ async function createNoteWithBlock(block: InsertableBlock, title: string): Promi
   return id as number;
 }
 
-function buildSystemPrompt(contextNotes: Note[]): string {
-  if (contextNotes.length === 0) return LILY_CHAT_SYSTEM_PROMPT;
+function buildSystemPrompt(contextNotes: Note[], activeSkill?: Skill | null): string {
+  const skillAddon = activeSkill ? skillPromptAddon(activeSkill) : '';
+  if (contextNotes.length === 0) return LILY_CHAT_SYSTEM_PROMPT + skillAddon;
   // Adaptive per-note cap: when the user is focused on just a few notes, send
   // (almost) the whole thing so Lily doesn't miss content that's actually
   // written in the memo. Only clamp hard when many notes are in scope (e.g.
@@ -501,7 +504,7 @@ function buildSystemPrompt(contextNotes: Note[]): string {
       return `## ${n.title || '無題'} (ID:${n.id})\n${body}`;
     })
     .join('\n\n---\n\n');
-  return `${LILY_CHAT_SYSTEM_PROMPT}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
+  return `${LILY_CHAT_SYSTEM_PROMPT}${skillAddon}\n\n【参照中のメモ (${contextNotes.length}件)】\n${context}`;
 }
 
 /* ───────────── Block previews ───────────── */
@@ -1712,15 +1715,6 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
   );
 }
 
-// One-tap actions: sending a prompt immediately.
-const QUICK_ACTIONS: { label: string; prompt: string }[] = [
-  { label: '📚 日これ', prompt: 'これらの資料から問題(qa)を作成して。単語を問う問題形式で全ての単語を網羅してください。また、時系列順に並べてください。\n答えには読み方をふってください。\n\n【絶対厳守】資料に含まれる全ての単語を1つも漏らさず必ず全て問題にすること。「など」「以下省略」「…」で途中で止めることは禁止。最後の単語まで出力すること。' },
-  { label: '▶ 続きを書いて', prompt: '問題が途中で止まっています。続きの未出題の単語を全て、同じ形式・同じqaブロック内で続けて出力してください。重複は入れず、まだ出題されていない単語だけを残らず書いてください。' },
-  { label: '📧 メール文面', prompt: 'このメモの内容を元に、そのまま送れる丁寧なメールの下書きを作って。件名も付けてね。' },
-  { label: '📝 ブログ案', prompt: 'このメモを元に、ブログ記事のタイトル案を3つと、それぞれの構成案を提案して。' },
-  { label: '🔎 詳しく調べて', prompt: 'このメモに出てくる専門用語や関連トピックを、ネットの情報も使ってもう少し詳しく補足して。' },
-];
-
 // 英単語帳画像から穴埋め例文を作るプロンプト。画像添付が必要なので
 // 送信ではなく入力欄に挿入する（ユーザーが画像を添付してから送る）。
 const ENGLISH_VOCAB_PROMPT = `この英単語帳の画像を解析して、qaか穴埋めの問題を作成してください。qaか穴埋め問題かはユーザーに必ず質問をすること。
@@ -1764,7 +1758,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [showLectureRecorder, setShowLectureRecorder] = useState(false);
   const [showVoiceChat, setShowVoiceChat] = useState(false);
   const [showToolbox, setShowToolbox] = useState(false);
-  const toolbox = useToolbox();
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [activeSkillId, setActiveSkillId] = useState<number | null>(null);
+  const enabledTones = useEnabledTones();
+  const shortcuts = useShortcuts();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1773,6 +1770,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     () => db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray(),
     []
   );
+  useEffect(() => { ensureSkillsSeeded(); }, []);
+  const skills = useLiveQuery(() => db.skills.orderBy('createdAt').toArray(), []) ?? [];
+  const activeSkill = skills.find(s => s.id === activeSkillId) ?? null;
   useEffect(() => {
     const refreshKey = () => setApiKey(getEffectiveApiKey());
     refreshKey();
@@ -1850,14 +1850,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     requestAnimationFrame(() => { textareaRef.current?.focus(); autoResizeTextarea(); });
   };
 
-  // Slash-command suggestions: shown while the user is typing "/" + a prefix,
-  // limited to the shortcuts they've enabled in the toolbox so they only ever
-  // see commands they chose to use.
+  // Slash-command suggestions: shown while the user is typing "/" + a prefix.
   const slashSuggestions = useMemo(() => {
     if (!input.startsWith('/') || input.includes(' ')) return [];
     const q = input.slice(1).toLowerCase();
-    return SHORTCUTS.filter(s => toolbox.shortcuts.includes(s.id) && s.id.startsWith(q));
-  }, [input, toolbox.shortcuts]);
+    return SLASH_COMMANDS.filter(s => s.id.startsWith(q));
+  }, [input]);
 
   const renderPdfAsImages = async (
     base64Data: string,
@@ -1992,14 +1990,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     const rawText = (text ?? input).trim();
     const sentAtts = attachments;
 
-    // Slash commands (typed in English by design). Only commands the user has
-    // enabled in the toolbox actually trigger — anything else is sent as
-    // plain text to Lily.
+    // Slash commands (typed in English by design): they trigger an action
+    // rather than being sent as a message. Anything that isn't a known command
+    // falls through and is sent to Lily as plain text.
     if (!text && rawText.startsWith('/') && sentAtts.length === 0) {
       const spaceIdx = rawText.indexOf(' ');
       const cmdWord = (spaceIdx === -1 ? rawText.slice(1) : rawText.slice(1, spaceIdx)).toLowerCase();
       const arg = spaceIdx === -1 ? '' : rawText.slice(spaceIdx + 1).trim();
-      const sc = SHORTCUTS.find(s => s.id === cmdWord && toolbox.shortcuts.includes(s.id));
+      const sc = SLASH_COMMANDS.find(s => s.id === cmdWord);
       if (sc) {
         setInput('');
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -2050,7 +2048,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           if (n) contextNotes.push(n);
         }
       }
-      const systemPrompt = buildSystemPrompt(contextNotes);
+      const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
 
       const allMsgs = [...messages, userMsg];
       // Keep a generous window of recent turns. gemini-2.5-flash has a very
@@ -2168,7 +2166,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, allNotes, webSearch, activeMode, economy, toolbox.shortcuts, compactHistory, t]);
+  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, allNotes, webSearch, activeMode, economy, activeSkill, compactHistory, t]);
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
@@ -2220,7 +2218,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       const accuracy = isAccuracyTask(lastUserText);
       let aiText: string;
       if ((lilyThinking || accuracy) && !economy) {
-        const systemPrompt = buildSystemPrompt(contextNotes);
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(accuracy && !lilyThinking ? t('🧠 じっくり考えてるよ…') : t('🧠 思考中...'));
@@ -2247,7 +2245,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else {
-        const systemPrompt = buildSystemPrompt(contextNotes);
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
           models: economy ? ['gemini-2.5-flash-lite'] : undefined,
@@ -2281,7 +2279,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, activeMode, economy, apiKey, webSearch]);
+  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, activeMode, economy, apiKey, webSearch, activeSkill]);
 
   const lilyDefaultNoteId = lilyNoteIds[0];
 
@@ -2372,26 +2370,34 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
               {showContextPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </span>
           </button>
-          {messages.length > 0 && (
-            <button className="clear-btn" onClick={handleSaveChat} title={t('この会話を保存')}>
-              <Save size={15} />
+          <div className="header-menu-wrap">
+            <button className="clear-btn" onClick={() => setShowHeaderMenu(v => !v)} title={t('メニュー')}>
+              <MoreVertical size={17} />
             </button>
-          )}
-          <button className="clear-btn" onClick={() => setShowHistory(true)} title={t('保存した会話の履歴')}>
-            <History size={15} />
-          </button>
-          {messages.length > 0 && (
-            <button className="clear-btn" onClick={() => setMessages([])} title={t('会話をリセット')}>
-              <RotateCcw size={15} />
-            </button>
-          )}
-          <button
-            className="help-btn"
-            onClick={() => { setHelpInitialTab('lily'); setShowHelp(true); }}
-            title={t('使い方ガイド')}
-          >
-            <HelpCircle size={16} />
-          </button>
+            {showHeaderMenu && (
+              <>
+                <div className="header-menu-backdrop" onClick={() => setShowHeaderMenu(false)} />
+                <div className="header-menu">
+                  {messages.length > 0 && (
+                    <button className="header-menu-item" onClick={() => { handleSaveChat(); setShowHeaderMenu(false); }}>
+                      <Save size={15} />{t('この会話を保存')}
+                    </button>
+                  )}
+                  <button className="header-menu-item" onClick={() => { setShowHistory(true); setShowHeaderMenu(false); }}>
+                    <History size={15} />{t('保存した会話')}
+                  </button>
+                  {messages.length > 0 && (
+                    <button className="header-menu-item" onClick={() => { setMessages([]); setShowHeaderMenu(false); }}>
+                      <RotateCcw size={15} />{t('会話をリセット')}
+                    </button>
+                  )}
+                  <button className="header-menu-item" onClick={() => { setHelpInitialTab('lily'); setShowHelp(true); setShowHeaderMenu(false); }}>
+                    <HelpCircle size={15} />{t('使い方ガイド')}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
       {showHelp && <HelpModal onClose={() => setShowHelp(false)} initialTab={helpInitialTab} />}
@@ -2412,7 +2418,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
             buildSystemPrompt(
               lilyAllNotes
                 ? (allNotes ?? [])
-                : (allNotes ?? []).filter(n => lilyNoteIds.includes(n.id!))
+                : (allNotes ?? []).filter(n => lilyNoteIds.includes(n.id!)),
+              activeSkill,
             ) + (activeMode ? `\n\n（${TONES.find(m => m.id === activeMode)?.directive ?? ''}）` : '')
           }
           modeLabel={TONES.find(m => m.id === activeMode)?.label}
@@ -2511,46 +2518,48 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       </div>
 
 
+      {/* Skills: tapping toggles the skill on; while on, Lily's whole behaviour
+          changes (system prompt + reference materials). */}
       <div className="quick-actions mode-row">
-        <button className="qa-toolbox-btn" onClick={() => setShowToolbox(true)} title={t('ツールボックスを開く（トーン・スキル・ショートカットを追加/削除できるよ）')}>
+        <button className="qa-toolbox-btn" onClick={() => setShowToolbox(true)} title={t('ツールボックスを開く（スキル・トーン・ショートカットを作成/編集できるよ）')}>
           <Wrench size={12} />
           <span>{t('ツール')}</span>
         </button>
-        {TONES.filter(mo => toolbox.tones.includes(mo.id)).map(mo => (
+        <span className="qa-label">{t('スキル')}</span>
+        {skills.map(sk => (
           <button
-            key={mo.id}
-            className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
-            onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
-            title={t('タップでON。次に送るメッセージからこのトーンで答えてくれるよ')}
+            key={sk.id}
+            className={`quick-chip skill-chip${activeSkillId === sk.id ? ' on' : ''}`}
+            onClick={() => setActiveSkillId(p => (p === sk.id ? null : sk.id!))}
+            title={sk.instructions.slice(0, 80)}
           >
-            {t(mo.label)}{activeMode === mo.id ? ' ✓' : ''}
+            {sk.emoji} {sk.name}{sk.references.length > 0 ? ' 📎' : ''}{activeSkillId === sk.id ? ' ✓' : ''}
           </button>
         ))}
       </div>
 
-      {SKILLS.filter(sk => toolbox.skills.includes(sk.id)).length > 0 && (
+      {enabledTones.length > 0 && (
         <div className="quick-actions mode-row skill-row">
-          <span className="qa-label">{t('スキル')}</span>
-          {SKILLS.filter(sk => toolbox.skills.includes(sk.id)).map(sk => (
+          <span className="qa-label">{t('トーン')}</span>
+          {TONES.filter(mo => enabledTones.includes(mo.id)).map(mo => (
             <button
-              key={sk.id}
-              className="quick-chip"
-              onClick={() => fillInput(sk.prompt)}
-              disabled={isLoading}
-              title={t(sk.description)}
+              key={mo.id}
+              className={`quick-chip mode-chip${activeMode === mo.id ? ' on' : ''}`}
+              onClick={() => setActiveMode(p => (p === mo.id ? null : mo.id))}
+              title={t('タップでON。次に送るメッセージからこのトーンで答えてくれるよ')}
             >
-              {t(sk.label)}
+              {t(mo.label)}{activeMode === mo.id ? ' ✓' : ''}
             </button>
           ))}
         </div>
       )}
 
-      {/* Quick actions */}
+      {/* Shortcuts: one-tap canned prompts (user-editable). */}
       <div className="quick-actions">
         <Wand2 size={14} className="qa-wand" />
-        {QUICK_ACTIONS.map(a => (
-          <button key={a.label} className="quick-chip" onClick={() => fillInput(a.prompt)} disabled={isLoading}>
-            {t(a.label)}
+        {shortcuts.map(sc => (
+          <button key={sc.id} className="quick-chip" onClick={() => fillInput(sc.prompt)} disabled={isLoading}>
+            {sc.label}
           </button>
         ))}
         <button
@@ -2730,6 +2739,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .context-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent); border: 1px solid var(--border); border-radius: 20px; padding: 4px 10px; font-size: 0.78rem; color: var(--fg-muted); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
         .context-chip.selected { color: var(--primary); border-color: var(--primary); }
         .clear-btn { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 5px 7px; cursor: pointer; color: var(--fg-muted); display: flex; align-items: center; }
+        .header-menu-wrap { position: relative; flex-shrink: 0; }
+        .header-menu-backdrop { position: fixed; inset: 0; z-index: 40; }
+        .header-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 41; background: var(--background); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.16); padding: 6px; min-width: 190px; display: flex; flex-direction: column; gap: 2px; }
+        .header-menu-item { display: flex; align-items: center; gap: 10px; background: none; border: none; border-radius: 8px; padding: 9px 12px; font-size: 0.84rem; color: var(--foreground); cursor: pointer; text-align: left; white-space: nowrap; }
+        .header-menu-item:hover { background: var(--accent); color: var(--primary); }
         .context-panel { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--accent); overflow-x: auto; flex-shrink: 0; }
         .note-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.78rem; color: var(--fg-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
@@ -2756,6 +2770,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .skill-row { padding-top: 0; }
         .qa-label { flex-shrink: 0; font-size: 0.7rem; font-weight: 700; color: var(--fg-muted); }
         .mode-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .skill-chip { border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); }
+        .skill-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
         .qa-toolbox-btn { flex-shrink: 0; display: flex; align-items: center; gap: 4px; background: var(--background); border: 1px solid var(--primary); border-radius: 16px; padding: 5px 10px; font-size: 0.72rem; font-weight: 700; color: var(--primary); cursor: pointer; white-space: nowrap; }
         .qa-toolbox-btn:hover { background: var(--primary); color: #fff; }
         .slash-suggestions { display: flex; flex-direction: column; gap: 2px; padding: 6px 14px; border-top: 1px solid var(--border); background: var(--accent); flex-shrink: 0; max-height: 160px; overflow-y: auto; }

@@ -1,64 +1,43 @@
 'use client';
 
-// User-curated "toolbox": which tones / skills / shortcut commands show up in
-// the chat UI. Default to a small starter set so the chat stays uncluttered;
-// users can add more (or remove the defaults) from the toolbox modal.
+// Which built-in tones the user has enabled to show as chips in the chat. Kept
+// small by default so the tone row stays uncluttered; users enable more from
+// the toolbox modal. (Skills and shortcuts manage their own storage since
+// they're user-authored — see lib/skills.ts and lib/shortcuts.ts.)
 
 import { useEffect, useState } from 'react';
 
-export type ToolboxCategory = 'tones' | 'skills' | 'shortcuts';
+const KEY = 'lily-enabled-tones-v1';
+const EVENT = 'lily-tones-changed';
 
-export interface ToolboxState {
-  tones: string[];
-  skills: string[];
-  shortcuts: string[];
-}
+const DEFAULT_TONES = ['casual', 'easy'];
 
-const KEY = 'lily-toolbox-enabled-v1';
-const EVENT = 'lily-toolbox-changed';
-
-const DEFAULTS: ToolboxState = {
-  tones: ['casual', 'easy'],
-  skills: [],
-  shortcuts: ['compact', 'clear', 'search', 'quiz', 'review'],
-};
-
-function load(): ToolboxState {
-  if (typeof window === 'undefined') return DEFAULTS;
+function load(): string[] {
+  if (typeof window === 'undefined') return DEFAULT_TONES;
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return DEFAULTS;
+    if (!raw) return DEFAULT_TONES;
     const parsed = JSON.parse(raw);
-    return {
-      tones: Array.isArray(parsed.tones) ? parsed.tones : DEFAULTS.tones,
-      skills: Array.isArray(parsed.skills) ? parsed.skills : DEFAULTS.skills,
-      shortcuts: Array.isArray(parsed.shortcuts) ? parsed.shortcuts : DEFAULTS.shortcuts,
-    };
+    return Array.isArray(parsed) ? parsed : DEFAULT_TONES;
   } catch {
-    return DEFAULTS;
+    return DEFAULT_TONES;
   }
 }
 
-function save(state: ToolboxState) {
-  localStorage.setItem(KEY, JSON.stringify(state));
+function save(list: string[]) {
+  localStorage.setItem(KEY, JSON.stringify(list));
   window.dispatchEvent(new Event(EVENT));
 }
 
-export function getToolboxState(): ToolboxState {
-  return load();
+export function toggleTone(id: string) {
+  const list = load();
+  save(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
 }
 
-export function toggleToolboxItem(category: ToolboxCategory, id: string) {
-  const state = load();
-  const list = state[category];
-  state[category] = list.includes(id) ? list.filter(x => x !== id) : [...list, id];
-  save(state);
-}
-
-export function useToolbox(): ToolboxState {
-  const [state, setState] = useState<ToolboxState>(load());
+export function useEnabledTones(): string[] {
+  const [list, setList] = useState<string[]>(load());
   useEffect(() => {
-    const handler = () => setState(load());
+    const handler = () => setList(load());
     window.addEventListener(EVENT, handler);
     window.addEventListener('storage', handler);
     return () => {
@@ -66,5 +45,5 @@ export function useToolbox(): ToolboxState {
       window.removeEventListener('storage', handler);
     };
   }, []);
-  return state;
+  return list;
 }
