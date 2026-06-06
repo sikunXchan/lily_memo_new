@@ -16,10 +16,10 @@ export type { Skill, SkillReference };
 const BUILTIN_SKILLS: Omit<Skill, 'id' | 'createdAt' | 'updatedAt'>[] = [
   {
     builtinKey: 'past-exam',
-    emoji: '📝',
-    name: '過去問の鬼',
+    emoji: '📖',
+    name: 'きちんと解説',
     instructions:
-      'あなたは資格試験の過去問解説に特化したモードです。ユーザーが問題を送ってきたら、必ず次の型で解説してください：\n1. 問題文の要点（何を問われているか）\n2. 正解とその根拠（なぜ正しいのか、根拠となる知識・原理・条文を明示する）\n3. 他の選択肢が誤りである理由（一つずつ、なぜ違うのか具体的に）\n4. 関連用語・周辺知識の補足\n曖昧な解説は禁止。根拠が曖昧なときは「ここは確証がない」と正直に言う。正解を断定する前に、本当にその根拠で合っているか一度自分で検証してから答えること。',
+      'あなたは「ちゃんと理解できる解説」に特化したモードです。過去問・単語の意味・仕組みの説明・概念の整理など、あらゆる「理解したい」場面で使います。\n\n【口調・形式】\n解説文体（〜である・〜だ）で統一する。「だよ・だね」語尾・絵文字・褒め言葉・激励（「えらいえらい」「がんばれ」等）は禁止。すでに送った内容の再掲は禁止（ユーザーは手元で確認できる）。\n\n【解説の型】\nリクエストの種類に応じて次のどちらかで答える：\n\n▼ 仕組み・概念の説明（「〜とは？」「〜はなぜ？」「〜の違いは？」など）\n1. 一言で言うと（核心を1〜2文）\n2. 仕組み・原理の説明（処理フローや関係図はMermaid図を使う）\n3. 具体例・よくある誤解\n4. ■ ポイント — 覚えておくべきことを箇条書き3〜5個\n\n▼ 問題・設問の解説（過去問・練習問題など）\n1. この問題で問われていること（1文）\n2. 正解の根拠 — 「書いてあるから」だけでなく「なぜそうなるのか」を説明\n3. 誤答の否定 — 「関係ない」ではなく「なぜこの文脈で関係しないのか」を具体的に\n4. 記述の場合 — 採点で点が取れる条件（含めるべきキーワード・情報）を明示\n5. ■ ポイント — この問題から得られる知識・用語を箇条書き3〜5個\n\n複数の設問・複数の概念がある場合、冒頭に「■ テーマ整理」を1回だけ置き、全体の前提となる仕組みを整理する。\n\n【禁止事項】\n根拠のない断定（確証がなければ「ここは確実ではない」と明示）、「〜と思います」等の曖昧表現、引用だけで仕組みの説明がない解説。',
     references: [],
   },
   {
@@ -49,11 +49,17 @@ export function ensureSkillsSeeded(): Promise<void> {
   seedPromise = (async () => {
     try {
       const all = await db.skills.toArray();
-      const haveKeys = new Set(all.map(s => s.builtinKey).filter(Boolean));
+      const byKey = new Map(all.filter(s => s.builtinKey).map(s => [s.builtinKey, s]));
       const now = Date.now();
-      const toAdd = BUILTIN_SKILLS.filter(s => !haveKeys.has(s.builtinKey));
+      const toAdd = BUILTIN_SKILLS.filter(s => !byKey.has(s.builtinKey));
       if (toAdd.length > 0) {
         await db.skills.bulkAdd(toAdd.map((s, i) => ({ ...s, createdAt: now + i, updatedAt: now + i })));
+      }
+      for (const builtin of BUILTIN_SKILLS) {
+        const existing = byKey.get(builtin.builtinKey);
+        if (existing?.id != null && existing.instructions !== builtin.instructions) {
+          await db.skills.update(existing.id, { instructions: builtin.instructions, updatedAt: now });
+        }
       }
     } catch (e) {
       console.error('skill seeding failed', e);
