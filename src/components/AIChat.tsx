@@ -2409,8 +2409,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </div>
       )}
 
-      {/* Shortcuts: one-tap canned prompts (user-editable). Hidden in EN mode. */}
-      {getAppLang() !== 'en' && (
+      {/* Shortcuts: one-tap canned prompts (user-editable). Hidden in EN mode or when none added. */}
+      {getAppLang() !== 'en' && shortcuts.length > 0 && (
         <div className="quick-actions">
           <Wand2 size={14} className="qa-wand" />
           {shortcuts.map(sc => (

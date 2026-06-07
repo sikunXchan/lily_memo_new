@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useRef, useState } from 'react';
 import {
   Book, FileText, Sparkles, GraduationCap, Settings,
-  Crosshair, Plus, Bell, ListTodo, Camera, X, Trophy,
+  Crosshair, Plus, ListTodo, Camera, X, Trophy,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Todo, AlbumPhoto } from '@/lib/db';
@@ -52,7 +52,7 @@ const BUBBLES: BubbleItem[] = [
   { key: 'memos',    label: 'メモ',      tint: '#ffb6c1', size: 124, pos: { left: '4%',   top: 0   }, floatDelay: 0,   windAnim: 0, windDur: 6.2 },
   { key: 'ai',       label: 'AI',        tint: '#c7d2fe', size: 102, pos: { right: '2%',  top: 14  }, floatDelay: 1.1, windAnim: 1, windDur: 5.8 },
   { key: 'study',    label: '学習',      tint: '#86efac', size: 92,  pos: { left: '26%',  top: 108 }, floatDelay: 0.6, windAnim: 0, windDur: 6.5 },
-  { key: 'news',     label: 'お知らせ', tint: '#fde68a', size: 68,  pos: { left: '47%',  top: 162 }, floatDelay: 1.3, windAnim: 1, windDur: 6.1 },
+  { key: 'news',     label: 'できること', tint: '#fde68a', size: 68,  pos: { left: '47%',  top: 162 }, floatDelay: 1.3, windAnim: 1, windDur: 6.1 },
   { key: 'pdf',      label: 'PDF',       tint: '#c4b5fd', size: 82,  pos: { left: '1%',   top: 224 }, floatDelay: 1.6, windAnim: 1, windDur: 5.5 },
   { key: 'todo',     label: 'ToDo',      tint: '#bbf7d0', size: 72,  pos: { left: '44%',  top: 256 }, floatDelay: 0.9, windAnim: 2, windDur: 6.4 },
   { key: 'focus',    label: '集中',      tint: '#a5b4fc', size: 74,  pos: { left: '34%',  top: 340 }, floatDelay: 2.4, windAnim: 2, windDur: 6.8 },
@@ -68,7 +68,7 @@ function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
     case 'memos':    return <Book {...p} />;
     case 'ai':       return <Sparkles {...p} />;
     case 'study':    return <GraduationCap {...p} />;
-    case 'news':     return <Bell {...p} />;
+    case 'news':     return <Sparkles {...p} />;
     case 'pdf':      return <FileText {...p} />;
     case 'todo':     return <ListTodo {...p} />;
     case 'focus':    return <Crosshair {...p} />;

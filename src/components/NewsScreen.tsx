@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Bell } from 'lucide-react';
+import { ArrowLeft, Sparkles } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 
 interface NewsScreenProps {
@@ -32,8 +32,8 @@ export default function NewsScreen({ onGoBack }: NewsScreenProps) {
         <button className="ns-back" onClick={onGoBack}>
           <ArrowLeft size={18} />
         </button>
-        <Bell size={16} color="#f59e0b" />
-        <span className="ns-title">{t('お知らせ')}</span>
+        <Sparkles size={16} color="#f59e0b" />
+        <span className="ns-title">{t('できること')}</span>
       </div>
 
       <div className="ns-body">
