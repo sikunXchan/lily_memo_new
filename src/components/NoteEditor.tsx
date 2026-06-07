@@ -17,7 +17,7 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck, Link2, Sparkles, Table2
+  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Sparkles, Table2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
@@ -140,8 +140,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
-  const [showNotePicker, setShowNotePicker] = useState(false);
-  const [notePickerQuery, setNotePickerQuery] = useState('');
+  const [showInsertMenu, setShowInsertMenu] = useState(false);
   const [showAIMenu, setShowAIMenu] = useState(false);
   const [aiRunning, setAIRunning] = useState<QuickActionId | null>(null);
   const [aiError, setAIError] = useState<string | null>(null);
@@ -236,6 +235,17 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showAIMenu]);
+
+  useEffect(() => {
+    if (!showInsertMenu) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.insert-menu-wrap')) return;
+      setShowInsertMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showInsertMenu]);
 
   // QAチェックボックス切替時に即時保存（debounceを待たずに保存）
   useEffect(() => {
@@ -759,12 +769,26 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                 <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')}><SquareCheck size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title={t('コード')}><Binary size={18} /></button>
                 <div className="header-divider" />
-                <button className="btn-tool" onClick={addNoteAsset} title={t('画像')}><ImageIcon size={18} /></button>
-                <button className="btn-tool" onClick={insertMermaid} title={t('図解')}><GitBranch size={18} /></button>
-                <button className="btn-tool" onClick={insertChart} title={t('グラフ')}><BarChart3 size={18} /></button>
-                <button className="btn-tool" onClick={insertQA} title="Q&A"><BookOpen size={18} /></button>
-                <button className="btn-tool" onClick={insertGeometry} title={t('幾何の図')}><Compass size={18} /></button>
-                <button className="btn-tool" onClick={insertTable} title={t('表を挿入')}><Table2 size={18} /></button>
+                <div className="insert-menu-wrap">
+                  <button
+                    className={`btn-tool${showInsertMenu ? ' active' : ''}`}
+                    onClick={() => setShowInsertMenu(p => !p)}
+                    title={t('挿入')}
+                  >
+                    <Plus size={18} />
+                  </button>
+                  {showInsertMenu && (
+                    <div className="insert-menu-dropdown">
+                      <div className="insert-menu-header">{t('挿入')}</div>
+                      <button className="insert-menu-item" onClick={() => { addNoteAsset(); setShowInsertMenu(false); }}><ImageIcon size={15} />{t('画像')}</button>
+                      <button className="insert-menu-item" onClick={() => { insertMermaid(); setShowInsertMenu(false); }}><GitBranch size={15} />{t('図解 (Mermaid)')}</button>
+                      <button className="insert-menu-item" onClick={() => { insertChart(); setShowInsertMenu(false); }}><BarChart3 size={15} />{t('グラフ')}</button>
+                      <button className="insert-menu-item" onClick={() => { insertQA(); setShowInsertMenu(false); }}><BookOpen size={15} />Q&A</button>
+                      <button className="insert-menu-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={15} />{t('幾何の図')}</button>
+                      <button className="insert-menu-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={15} />{t('表')}</button>
+                    </div>
+                  )}
+                </div>
                 <div className="ai-menu-wrap">
                   <button
                     className={`btn-tool${showAIMenu ? ' active' : ''}`}
@@ -791,51 +815,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                           </span>
                         </button>
                       ))}
-                    </div>
-                  )}
-                </div>
-                <div className="note-picker-wrap">
-                  <button
-                    className={`btn-tool${showNotePicker ? ' active' : ''}`}
-                    onClick={() => { setShowNotePicker(p => !p); setNotePickerQuery(''); }}
-                    title={t('メモリンクを挿入 [[メモ名]]')}
-                  >
-                    <Link2 size={18} />
-                  </button>
-                  {showNotePicker && (
-                    <div className="note-picker-dropdown">
-                      <input
-                        className="note-picker-input"
-                        placeholder={t('メモ名で絞り込み...')}
-                        value={notePickerQuery}
-                        onChange={e => setNotePickerQuery(e.target.value)}
-                        autoFocus
-                      />
-                      <div className="note-picker-list">
-                        {(allNotes ?? [])
-                          .filter(n => !notePickerQuery || (n.title || '').toLowerCase().includes(notePickerQuery.toLowerCase()))
-                          .slice(0, 30)
-                          .map(n => (
-                            <button
-                              key={n.id}
-                              className="note-picker-item"
-                              onClick={() => {
-                                editor?.chain().focus().insertContent({
-                                  type: 'noteLink',
-                                  attrs: { title: n.title || '無題', noteId: n.id ?? null },
-                                }).run();
-                                setShowNotePicker(false);
-                                setNotePickerQuery('');
-                              }}
-                            >
-                              {n.title || t('無題のメモ')}
-                            </button>
-                          ))
-                        }
-                        {(allNotes ?? []).filter(n => !notePickerQuery || (n.title || '').toLowerCase().includes(notePickerQuery.toLowerCase())).length === 0 && (
-                          <div className="note-picker-empty">{t('メモが見つかりません')}</div>
-                        )}
-                      </div>
                     </div>
                   )}
                 </div>
@@ -1257,47 +1236,47 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           .editor-content-wrapper { padding: 0; }
         }
 
-        /* ===== リンク挿入ピッカー ===== */
-        .note-picker-wrap { position: relative; }
-        .note-picker-dropdown {
+        /* ===== 挿入メニュー ===== */
+        .insert-menu-wrap { position: relative; }
+        .insert-menu-dropdown {
           position: absolute;
           top: calc(100% + 4px);
           left: 0;
           z-index: 200;
           background: var(--background);
           border: 1.5px solid var(--border);
-          border-radius: 10px;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.18);
-          min-width: 220px;
-          max-width: 300px;
+          border-radius: 12px;
+          box-shadow: 0 10px 32px rgba(0,0,0,0.18);
+          min-width: 180px;
           overflow: hidden;
         }
-        .note-picker-input {
-          width: 100%;
-          padding: 8px 12px;
-          border: none;
-          border-bottom: 1px solid var(--border);
-          background: var(--accent);
-          font-size: 0.82rem;
-          outline: none;
-        }
-        .note-picker-list { max-height: 220px; overflow-y: auto; }
-        .note-picker-item {
-          display: block;
-          width: 100%;
-          text-align: left;
+        .insert-menu-header {
           padding: 8px 14px;
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.5px;
+          text-transform: uppercase;
+          color: var(--primary);
+          background: color-mix(in srgb, var(--primary) 8%, transparent);
+          border-bottom: 1px solid var(--border);
+        }
+        .insert-menu-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          width: 100%;
+          padding: 9px 14px;
           background: none;
           border: none;
-          font-size: 0.85rem;
-          color: var(--foreground);
+          border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+          text-align: left;
           cursor: pointer;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          font-size: 0.84rem;
+          color: var(--foreground);
+          transition: background 0.14s;
         }
-        .note-picker-item:hover { background: var(--accent); }
-        .note-picker-empty { padding: 10px 14px; font-size: 0.82rem; color: var(--fg-muted); }
+        .insert-menu-item:last-child { border-bottom: none; }
+        .insert-menu-item:hover { background: var(--accent); }
 
         /* ===== AI クイック操作メニュー ===== */
         .ai-menu-wrap { position: relative; }

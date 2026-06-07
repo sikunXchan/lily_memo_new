@@ -213,29 +213,8 @@ export default function Sidebar({
           </button>
         </div>
 
-        <div className="view-toggle" role="tablist" aria-label={t('表示切替')}>
-          <button
-            role="tab"
-            aria-selected={viewMode === 'tree'}
-            className={`view-toggle-btn ${viewMode === 'tree' ? 'active' : ''}`}
-            onClick={() => changeViewMode('tree')}
-          >
-            <List size={13} />
-            <span>{t('ツリー')}</span>
-          </button>
-          <button
-            role="tab"
-            aria-selected={viewMode === 'graph'}
-            className={`view-toggle-btn ${viewMode === 'graph' ? 'active' : ''}`}
-            onClick={() => changeViewMode('graph')}
-          >
-            <Sparkles size={13} />
-            <span>{t('つながり')}</span>
-          </button>
-        </div>
-
         <div className="sidebar-content" style={{ minHeight: 0, overflowY: 'auto' }}>
-          {viewMode === 'graph' ? null : (
+          {(
           <div className="folder-list">
             {folders?.map(folder => (
               <div key={folder.id} className="folder-item-wrapper">
@@ -829,54 +808,6 @@ export default function Sidebar({
         `}</style>
       </aside>
 
-      {viewMode === 'graph' && (
-        <div className="graph-fullscreen">
-          <button
-            className="graph-close-btn"
-            onClick={() => changeViewMode('tree')}
-            title={t('閉じる')}
-            aria-label={t('グラフを閉じる')}
-          >
-            <X size={20} />
-          </button>
-          <DirectoryGraph
-            folders={folders ?? []}
-            notes={notes ?? []}
-            activeNoteId={activeNoteId}
-            onSelectNote={(id) => { onSelectNote(id); changeViewMode('tree'); if (window.innerWidth <= 768) onToggleMobile(); }}
-          />
-          <style jsx>{`
-            .graph-fullscreen {
-              position: fixed;
-              inset: 0;
-              z-index: 9999;
-              background: var(--background);
-              display: flex;
-              flex-direction: column;
-            }
-            .graph-close-btn {
-              position: absolute;
-              top: 16px;
-              right: 16px;
-              z-index: 10000;
-              background: var(--accent);
-              color: var(--foreground);
-              border-radius: 50%;
-              width: 40px;
-              height: 40px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              box-shadow: var(--shadow);
-              transition: background 0.2s, transform 0.15s;
-            }
-            .graph-close-btn:hover {
-              background: var(--border);
-              transform: scale(1.08);
-            }
-          `}</style>
-        </div>
-      )}
     </>
   );
 }
