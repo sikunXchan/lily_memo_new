@@ -366,12 +366,23 @@ function QACard({
   return (
     <div className={`qa-card ${pair.checked ? 'qa-card-checked' : ''}`}>
       {header}
-      <button
-        className={`qa-answer-btn ${show ? 'revealed' : ''}`}
-        onClick={() => setRevealed(r => !r)}
-      >
-        {show ? pair.a : t('答えを見る ▶')}
-      </button>
+      {show ? (
+        <div className="qa-answer-reveal">
+          <span className="qa-ans-body">{pair.a}</span>
+          {!revealAll && (
+            <button className="qa-hide-btn" onClick={() => setRevealed(false)}>
+              {t('隠す')}
+            </button>
+          )}
+        </div>
+      ) : (
+        <button
+          className="qa-answer-btn"
+          onClick={() => setRevealed(true)}
+        >
+          {t('答えを見る ▶')}
+        </button>
+      )}
       <CardStyles />
     </div>
   );
@@ -388,10 +399,12 @@ function CardStyles() {
       .qa-checkbox { margin-top: 2px; width: 18px; height: 18px; border-radius: 6px; accent-color: var(--primary); flex-shrink: 0; cursor: pointer; }
       .qa-num { font-weight: 800; color: #fff; background: var(--primary); width: 1.5rem; height: 1.5rem; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; flex-shrink: 0; }
       .qa-question-text { color: var(--foreground); font-weight: 600; padding-top: 1px; }
-      .qa-answer-btn { width: 100%; padding: 13px 16px; border: none; border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--foreground); font-size: 0.9rem; text-align: left; cursor: pointer; transition: background 0.15s; font-family: inherit; line-height: 1.6; }
-      .qa-answer-btn:not(.revealed) { color: var(--primary); font-weight: 700; }
-      .qa-answer-btn.revealed { background: var(--accent); font-weight: 600; }
+      .qa-answer-btn { width: 100%; padding: 13px 16px; border: none; border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--primary); font-size: 0.9rem; font-weight: 700; text-align: left; cursor: pointer; transition: background 0.15s; font-family: inherit; line-height: 1.6; }
       .qa-answer-btn:hover { background: var(--accent); }
+      .qa-answer-reveal { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: var(--accent); padding: 13px 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+      .qa-ans-body { flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--foreground); line-height: 1.6; white-space: pre-wrap; }
+      .qa-hide-btn { flex-shrink: 0; padding: 3px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); background: transparent; color: var(--fg-muted, #999); font-size: 0.75rem; cursor: pointer; font-family: inherit; transition: background 0.14s; }
+      .qa-hide-btn:hover { background: color-mix(in srgb, var(--border) 30%, transparent); }
       .qa-opts { display: flex; flex-direction: column; gap: 8px; padding: 0 16px 14px; }
       .qa-opt { text-align: left; padding: 11px 14px; border: 1.5px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 12px; background: var(--background); color: var(--foreground); font-size: 0.9rem; cursor: pointer; font-family: inherit; line-height: 1.5; transition: border-color 0.14s, background 0.14s, transform 0.1s; }
       .qa-opt:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--accent) 50%, transparent); transform: translateY(-1px); }
