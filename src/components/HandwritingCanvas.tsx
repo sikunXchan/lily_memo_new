@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eraser, Pencil, Undo2, Trash2, Maximize2, Minimize2, ZoomIn, ZoomOut, Plus } from 'lucide-react';
+import { Eraser, Pencil, Undo2, Trash2, Maximize2, Minimize2, ZoomIn, ZoomOut, Plus, Hand } from 'lucide-react';
 import type { HandwritingDoc, HandwritingStroke } from '@/lib/db';
 import { useT } from '@/lib/i18n';
 
@@ -14,7 +14,7 @@ interface HandwritingCanvasProps {
 const PEN_COLORS = ['#1a1a1a', '#e94e77', '#3273dc', '#23a55a', '#f5a623', '#9b59b6'];
 const PEN_WIDTHS = [1.5, 3, 6];
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.5, 2, 3];
-const PAGE_EXTEND_PX = 800;
+const PAGE_H = 900; // logical height of one page
 
 export default function HandwritingCanvas({ value, onChange, readOnly = false }: HandwritingCanvasProps) {
   const t = useT();
@@ -32,6 +32,7 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
   const [fitWidth, setFitWidth] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [pencilOnly, setPencilOnly] = useState(false);
 
   // Keep doc ref in sync with prop changes (e.g. note switch)
   useEffect(() => {
@@ -85,6 +86,9 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
     ctx.strokeStyle = 'rgba(150, 190, 255, 0.55)';
     ctx.lineWidth = 1;
     for (let y = 36; y < doc.height; y += 36) {
+      // Skip page boundary area (drawn separately)
+      const pageRel = y % PAGE_H;
+      if (pageRel < 4 || pageRel > PAGE_H - 4) continue;
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(doc.width, y);
@@ -97,6 +101,32 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
     ctx.moveTo(72, 0);
     ctx.lineTo(72, doc.height);
     ctx.stroke();
+    ctx.restore();
+
+    // Page dividers and page numbers
+    const numPages = Math.ceil(doc.height / PAGE_H);
+    ctx.save();
+    for (let p = 1; p <= numPages; p++) {
+      const pageBottom = Math.min(p * PAGE_H, doc.height);
+      // Page number — bottom-right of each page
+      ctx.fillStyle = '#c4b898';
+      ctx.font = '18px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(String(p), doc.width - 20, pageBottom - 8);
+      // Page divider line between pages
+      if (p < numPages) {
+        const y = p * PAGE_H;
+        ctx.strokeStyle = '#c4b898';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([12, 6]);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(doc.width, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
     ctx.restore();
 
     ctx.lineCap = 'round';
@@ -138,6 +168,7 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (readOnly) return;
+    if (pencilOnly && e.pointerType !== 'pen') return;
     e.preventDefault();
     canvasRef.current?.setPointerCapture(e.pointerId);
     pointerIdRef.current = e.pointerId;
@@ -153,6 +184,7 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (readOnly) return;
+    if (pencilOnly && e.pointerType !== 'pen') return;
     if (!isDrawingRef.current) return;
     if (pointerIdRef.current !== e.pointerId) return;
     const p = toCanvasPoint(e);
@@ -252,7 +284,7 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
 
   const extendPage = () => {
     if (readOnly) return;
-    const next: HandwritingDoc = { ...docRef.current, height: docRef.current.height + PAGE_EXTEND_PX };
+    const next: HandwritingDoc = { ...docRef.current, height: docRef.current.height + PAGE_H };
     docRef.current = next;
     onChange(next);
     redraw();
@@ -316,7 +348,14 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           </button>
           <button className="hw-btn" onClick={zoomIn} title={t('拡大')}><ZoomIn size={16} /></button>
           <div className="hw-divider" />
-          <button className="hw-btn" onClick={extendPage} title={t('下にページ追加')}><Plus size={16} /></button>
+          <button className="hw-btn" onClick={extendPage} title={t('ページを追加')}><Plus size={16} /></button>
+          <button
+            className={`hw-btn ${pencilOnly ? 'active' : ''}`}
+            onClick={() => setPencilOnly(p => !p)}
+            title={pencilOnly ? t('Apple Pencil専用（指でスクロール）') : t('全タッチモード（指でも描ける）')}
+          >
+            <Hand size={16} />
+          </button>
           <button className="hw-btn" onClick={toggleFullscreen} title={isFullscreen ? t('全画面解除') : t('全画面で編集')}>
             {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
@@ -338,7 +377,7 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
               onPointerLeave={onPointerUp}
-              style={{ width: displayWidth, height: displayHeight, touchAction: 'none' }}
+              style={{ width: displayWidth, height: displayHeight, touchAction: pencilOnly ? 'pan-x pan-y' : 'none' }}
             />
           </div>
         ) : (
@@ -354,7 +393,7 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
               onPointerLeave={onPointerUp}
-              style={{ width: '100%', height: '100%', touchAction: 'none' }}
+              style={{ width: '100%', height: '100%', touchAction: pencilOnly ? 'pan-x pan-y' : 'none' }}
             />
           </div>
         )}

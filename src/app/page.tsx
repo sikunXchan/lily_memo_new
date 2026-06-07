@@ -13,7 +13,6 @@ const NoteEditor = dynamic(() => import('@/components/NoteEditor'), { ssr: false
 const SettingsModal = dynamic(() => import('@/components/SettingsModal'), { ssr: false });
 const SearchModal = dynamic(() => import('@/components/SearchModal'), { ssr: false });
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
-const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
 const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
 const BubbleHome = dynamic(() => import('@/components/BubbleHome'), { ssr: false });
 const BackBubble = dynamic(() => import('@/components/BackBubble'), { ssr: false });
@@ -25,7 +24,7 @@ const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ss
 const NewsScreen = dynamic(() => import('@/components/NewsScreen'), { ssr: false });
 const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
 const TrophyRoom = dynamic(() => import('@/components/TrophyRoom'), { ssr: false });
-type TabType = 'memos' | 'pdf' | 'sketch' | 'settings' | 'ai' | 'study' | 'news' | 'todo';
+type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'news' | 'todo';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -117,7 +116,6 @@ export default function Home() {
 
   const openSettings = () => { setActiveTab('settings'); setActiveNoteId(undefined); };
   const openPDF = () => { setActiveTab('pdf'); setActiveNoteId(undefined); };
-  const openSketch = () => { setActiveTab('sketch'); setActiveNoteId(undefined); };
   const openAI = () => { setActiveTab('ai'); setActiveNoteId(undefined); };
   const goHome = () => {
     setActiveTab('memos');
@@ -144,7 +142,6 @@ export default function Home() {
 
   const handleMobileNavigate = (tab: string) => {
     if (tab === 'trophy') { setShowTrophy(true); return; }
-    if (tab === 'sketch') { openSketch(); return; }
     if (tab === 'memos') { setMobilePage('notes'); setActiveTab('memos'); setActiveNoteId(undefined); return; }
     setActiveTab(tab as TabType);
     setActiveNoteId(undefined);
@@ -152,10 +149,10 @@ export default function Home() {
 
   // BackBubble: shown on mobile when not on bubble home
   const onBubbleHome = isMobile && activeTab === 'memos' && !activeNoteId && mobilePage === 'bubbles';
-  const showBackBubble = isMobile && !showFocusMode && activeTab !== 'sketch' && activeTab !== 'ai' && !onBubbleHome;
+  const showBackBubble = isMobile && !showFocusMode && activeTab !== 'ai' && !onBubbleHome;
 
   return (
-    <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''} ${activeTab === 'sketch' ? 'sketch-mode' : ''}`}>
+    <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''}`}>
       {showSearch && (
         <SearchModal
           isOpen={showSearch}
@@ -163,7 +160,7 @@ export default function Home() {
           onSelectNote={handleSelectNote}
         />
       )}
-      {isDesktopLayout && activeTab !== 'sketch' && (
+      {isDesktopLayout && (
         <Sidebar
           activeNoteId={activeNoteId}
           onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
@@ -222,9 +219,6 @@ export default function Home() {
                   />
                 )}
                 {activeTab === 'pdf' && <PDFViewer />}
-                {activeTab === 'sketch' && (
-                  <SketchTab onClose={goHome} />
-                )}
                 {activeTab === 'ai' && (
                   <AIChat
                     onOpenSettings={openSettings}
@@ -245,7 +239,6 @@ export default function Home() {
                     onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
                     onOpenConnection={openConnection}
                     onSelectFolder={selectFolder}
-                    onOpenSketch={openSketch}
                     isDesktop={true}
                   />
                 )}
@@ -263,7 +256,7 @@ export default function Home() {
         <TrophyRoom onClose={() => setShowTrophy(false)} />
       )}
 
-      {sikunEnabled && activeTab !== 'sketch' && !showFocusMode && (
+      {sikunEnabled && !showFocusMode && (
         <InstanceSikun
           activeNoteId={activeNoteId}
           prevNoteId={recentNotes.find(id => id !== activeNoteId)}

@@ -8,27 +8,28 @@ import HandwritingCanvas from './HandwritingCanvas';
 import type { HandwritingDoc } from '@/lib/db';
 
 const BLOCK_DEFAULT: HandwritingDoc = { strokes: [], width: 1280, height: 900 };
-const PREVIEW_H = 180;
+const PAGE_LOGICAL_H = 900;
 
 function drawPreview(canvas: HTMLCanvasElement, doc: HandwritingDoc) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || 300;
+  const h = canvas.clientHeight || Math.round(w * PAGE_LOGICAL_H / (doc.width || 1280));
   canvas.width = w * dpr;
-  canvas.height = PREVIEW_H * dpr;
+  canvas.height = h * dpr;
   ctx.scale(dpr, dpr);
   const scale = w / (doc.width || 1280);
 
   // Paper background
   ctx.fillStyle = '#fdf9f0';
-  ctx.fillRect(0, 0, w, PREVIEW_H);
+  ctx.fillRect(0, 0, w, h);
 
   // Ruled lines (scaled to preview)
   ctx.save();
   ctx.strokeStyle = 'rgba(150, 190, 255, 0.55)';
   ctx.lineWidth = 1;
-  for (let y = 36 * scale; y < PREVIEW_H; y += 36 * scale) {
+  for (let y = 36 * scale; y < h; y += 36 * scale) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
@@ -38,19 +39,31 @@ function drawPreview(canvas: HTMLCanvasElement, doc: HandwritingDoc) {
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(72 * scale, 0);
-  ctx.lineTo(72 * scale, PREVIEW_H);
+  ctx.lineTo(72 * scale, h);
   ctx.stroke();
+  ctx.restore();
+
+  // Page number
+  ctx.save();
+  ctx.fillStyle = '#c4b898';
+  ctx.font = `${Math.max(10, 18 * scale)}px sans-serif`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('1', w - 8, h - 4);
   ctx.restore();
 
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const stroke of doc.strokes) {
     if (!stroke.points.length) continue;
+    // Only draw strokes visible in the first page height
+    const firstPt = stroke.points[0];
+    if (firstPt.y * scale > h) continue;
     ctx.beginPath();
     ctx.strokeStyle = stroke.color;
     ctx.lineWidth = Math.max(stroke.width * scale, 0.5);
-    ctx.moveTo(stroke.points[0].x * scale, stroke.points[0].y * scale);
-    for (const pt of stroke.points.slice(1)) ctx.lineTo(pt.x * scale, pt.y * scale);
+    ctx.moveTo(firstPt.x * scale, firstPt.y * scale);
+    for (const pt of stroke.points.slice(1)) ctx.lineTo(pt.x * scale, Math.min(pt.y * scale, h));
     ctx.stroke();
   }
 }
@@ -88,15 +101,21 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
         onClick={() => setEditing(true)}
       >
         {isEmpty ? (
-          <div className="hw-empty">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#b0a890" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-            <span>タップして手書き</span>
+          <div className="hw-empty-wrap">
+            <div className="hw-empty">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#b0a890" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              <span>タップして手書き</span>
+            </div>
           </div>
         ) : (
           <canvas
             ref={previewRef}
             className="hw-preview"
-            style={{ width: '100%', height: PREVIEW_H, display: 'block' }}
+            style={{
+              width: '100%',
+              aspectRatio: `${doc.width} / ${Math.min(PAGE_LOGICAL_H, doc.height)}`,
+              display: 'block',
+            }}
           />
         )}
       </div>
@@ -121,16 +140,25 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
           margin: 6px 0;
           overflow: hidden;
           transition: border-color 0.15s, box-shadow 0.15s;
-          min-height: 80px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
           background: #fdf9f0;
           user-select: none;
           box-shadow: 0 2px 8px rgba(0,0,0,0.07);
         }
+        .hw-block:empty-state {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 80px;
+        }
         .hw-block:hover { border-color: var(--primary); box-shadow: 0 3px 12px rgba(0,0,0,0.11); }
         .hw-selected { border: 2px solid var(--primary); }
+        .hw-empty-wrap {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 80px;
+          width: 100%;
+        }
         .hw-empty {
           display: flex;
           flex-direction: column;
@@ -169,8 +197,8 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
         }
         .hw-canvas-wrap {
           flex: 1;
-          overflow: hidden;
-          position: relative;
+          overflow: auto;
+          -webkit-overflow-scrolling: touch;
         }
       `}</style>
     </NodeViewWrapper>
