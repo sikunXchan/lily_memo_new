@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import StarterKit from '@tiptap/starter-kit';
@@ -220,16 +221,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     setIsMobileView(window.innerWidth <= 768);
   }, []);
 
-  useEffect(() => {
-    if (!showInsertMenu) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.insert-menu-wrap')) return;
-      setShowInsertMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showInsertMenu]);
 
   // QAチェックボックス切替時に即時保存（debounceを待たずに保存）
   useEffect(() => {
@@ -704,26 +695,30 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                 <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')}><SquareCheck size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title={t('コード')}><Binary size={18} /></button>
                 <div className="header-divider" />
-                <div className="insert-menu-wrap">
-                  <button
-                    className={`btn-tool${showInsertMenu ? ' active' : ''}`}
-                    onClick={() => setShowInsertMenu(p => !p)}
-                    title={t('挿入')}
-                  >
-                    <Plus size={18} />
-                  </button>
-                  {showInsertMenu && (
-                    <div className="insert-menu-dropdown">
-                      <div className="insert-menu-header">{t('挿入')}</div>
-                      <button className="insert-menu-item" onClick={() => { addNoteAsset(); setShowInsertMenu(false); }}><ImageIcon size={15} />{t('画像')}</button>
-                      <button className="insert-menu-item" onClick={() => { insertMermaid(); setShowInsertMenu(false); }}><GitBranch size={15} />{t('図解 (Mermaid)')}</button>
-                      <button className="insert-menu-item" onClick={() => { insertChart(); setShowInsertMenu(false); }}><BarChart3 size={15} />{t('グラフ')}</button>
-                      <button className="insert-menu-item" onClick={() => { insertQA(); setShowInsertMenu(false); }}><BookOpen size={15} />Q&A</button>
-                      <button className="insert-menu-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={15} />{t('幾何の図')}</button>
-                      <button className="insert-menu-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={15} />{t('表')}</button>
+                <button
+                  className={`btn-tool${showInsertMenu ? ' active' : ''}`}
+                  onClick={() => setShowInsertMenu(p => !p)}
+                  title={t('挿入')}
+                >
+                  <Plus size={18} />
+                </button>
+                {showInsertMenu && typeof document !== 'undefined' && createPortal(
+                  <div className="insert-sheet-backdrop" onClick={() => setShowInsertMenu(false)}>
+                    <div className="insert-sheet" onClick={e => e.stopPropagation()}>
+                      <div className="insert-sheet-handle" />
+                      <div className="insert-sheet-title">{t('挿入')}</div>
+                      <div className="insert-sheet-grid">
+                        <button className="insert-sheet-item" onClick={() => { addNoteAsset(); setShowInsertMenu(false); }}><ImageIcon size={22} /><span>{t('画像')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertMermaid(); setShowInsertMenu(false); }}><GitBranch size={22} /><span>{t('図解')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertChart(); setShowInsertMenu(false); }}><BarChart3 size={22} /><span>{t('グラフ')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertQA(); setShowInsertMenu(false); }}><BookOpen size={22} /><span>Q&A</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={22} /><span>{t('幾何')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={22} /><span>{t('表')}</span></button>
+                      </div>
                     </div>
-                  )}
-                </div>
+                  </div>,
+                  document.body
+                )}
                 <div className="header-divider" />
               </>
             )}
@@ -1142,47 +1137,61 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           .editor-content-wrapper { padding: 0; }
         }
 
-        /* ===== 挿入メニュー ===== */
-        .insert-menu-wrap { position: relative; }
-        .insert-menu-dropdown {
-          position: absolute;
-          top: calc(100% + 4px);
-          left: 0;
-          z-index: 200;
-          background: var(--background);
-          border: 1.5px solid var(--border);
-          border-radius: 12px;
-          box-shadow: 0 10px 32px rgba(0,0,0,0.18);
-          min-width: 180px;
-          overflow: hidden;
+        /* ===== 挿入ボトムシート ===== */
+        .insert-sheet-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.4);
+          z-index: 9000;
+          display: flex;
+          align-items: flex-end;
         }
-        .insert-menu-header {
-          padding: 8px 14px;
-          font-size: 0.72rem;
+        .insert-sheet {
+          width: 100%;
+          background: var(--background);
+          border-radius: 20px 20px 0 0;
+          padding: 12px 20px calc(24px + env(safe-area-inset-bottom));
+          animation: sheetSlideUp 0.22s ease;
+        }
+        @keyframes sheetSlideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+        .insert-sheet-handle {
+          width: 36px; height: 4px;
+          background: var(--border);
+          border-radius: 2px;
+          margin: 0 auto 14px;
+        }
+        .insert-sheet-title {
+          font-size: 0.78rem;
           font-weight: 800;
           letter-spacing: 0.5px;
           text-transform: uppercase;
           color: var(--primary);
-          background: color-mix(in srgb, var(--primary) 8%, transparent);
-          border-bottom: 1px solid var(--border);
+          margin-bottom: 16px;
         }
-        .insert-menu-item {
+        .insert-sheet-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+        }
+        .insert-sheet-item {
           display: flex;
+          flex-direction: column;
           align-items: center;
-          gap: 8px;
-          width: 100%;
-          padding: 9px 14px;
-          background: none;
-          border: none;
-          border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-          text-align: left;
+          gap: 6px;
+          padding: 14px 8px;
+          background: var(--accent);
+          border: 1.5px solid var(--border);
+          border-radius: 14px;
           cursor: pointer;
-          font-size: 0.84rem;
           color: var(--foreground);
+          font-size: 0.78rem;
+          font-weight: 600;
           transition: background 0.14s;
         }
-        .insert-menu-item:last-child { border-bottom: none; }
-        .insert-menu-item:hover { background: var(--accent); }
+        .insert-sheet-item:hover, .insert-sheet-item:active { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: var(--primary); color: var(--primary); }
 
         /* ===== AI クイック操作メニュー ===== */
         .ai-menu-wrap { position: relative; }
