@@ -35,7 +35,7 @@ const VOCAB_SHORTCUT: Shortcut = {
 そして生成した内容を問題セッションを問題に、答えのセッションを答えに挿入し、qaか穴埋め問題のどちらかの問題形式の問題を作成してください。`,
 };
 
-const DEFAULTS: Shortcut[] = [];
+const DEFAULTS: Shortcut[] = [VOCAB_SHORTCUT];
 
 function load(): Shortcut[] {
   if (typeof window === 'undefined') return DEFAULTS;
@@ -43,7 +43,16 @@ function load(): Shortcut[] {
     const raw = localStorage.getItem(KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : DEFAULTS;
+    if (!Array.isArray(parsed)) return DEFAULTS;
+    // Ensure the built-in vocab shortcut is always present (back-fill for
+    // existing users whose stored list pre-dates this default being added).
+    const hasVocab = parsed.some((s: Shortcut) => s.id === VOCAB_SHORTCUT.id);
+    if (!hasVocab) {
+      const merged = [VOCAB_SHORTCUT, ...parsed];
+      localStorage.setItem(KEY, JSON.stringify(merged));
+      return merged;
+    }
+    return parsed;
   } catch {
     return DEFAULTS;
   }
