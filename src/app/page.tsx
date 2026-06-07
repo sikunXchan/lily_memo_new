@@ -166,7 +166,6 @@ export default function Home() {
           onSelectNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
           onOpenSettings={openSettings}
           onOpenPDF={openPDF}
-          onOpenSketch={openSketch}
           onOpenAI={openAI}
           onOpenSearch={() => setShowSearch(true)}
           isMobileOpen={false}
