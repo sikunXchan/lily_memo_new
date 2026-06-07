@@ -23,7 +23,7 @@ import {
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
 
-import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension } from '@/lib/extensions';
+import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension, HandwritingExtension } from '@/lib/extensions';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
@@ -182,6 +182,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
       ChartExtension,
       QAExtension,
       GeometryExtension,
+      HandwritingExtension,
       Table.configure({ resizable: false }),
       TableRow,
       TableHeader,
@@ -660,6 +661,13 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
   };
 
+  const insertHandwriting = () => {
+    insertWithoutFocus({
+      type: 'handwriting',
+      attrs: { data: JSON.stringify({ strokes: [], width: 1280, height: 900 }) },
+    });
+  };
+
 
 
 
@@ -713,6 +721,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                         <button className="insert-sheet-item" onClick={() => { insertQA(); setShowInsertMenu(false); }}><BookOpen size={22} /><span>Q&A</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={22} /><span>{t('幾何')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={22} /><span>{t('表')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertHandwriting(); setShowInsertMenu(false); }}><Pencil size={22} /><span>{t('手書き')}</span></button>
                       </div>
                     </div>
                   </div>,

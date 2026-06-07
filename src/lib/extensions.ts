@@ -7,6 +7,7 @@ const ChartComponent = dynamic(() => import('@/components/ChartComponent'), { ss
 const QAComponent = dynamic(() => import('@/components/QAComponent'), { ssr: false });
 const ResizableImageComponent = dynamic(() => import('@/components/ResizableImageComponent'), { ssr: false });
 const GeometryComponent = dynamic(() => import('@/components/GeometryComponent'), { ssr: false });
+const HandwritingBlockComponent = dynamic(() => import('@/components/HandwritingBlock'), { ssr: false });
 
 export const MermaidExtension = Node.create({
   name: 'mermaid',
@@ -165,5 +166,29 @@ export const GeometryExtension = Node.create({
   },
   addNodeView() {
     return ReactNodeViewRenderer(GeometryComponent);
+  },
+});
+
+export const HandwritingExtension = Node.create({
+  name: 'handwriting',
+  group: 'block',
+  atom: true,
+  addAttributes() {
+    return {
+      data: {
+        default: JSON.stringify({ strokes: [], width: 1280, height: 900 }),
+        parseHTML: el => el.getAttribute('data-hw') || '{}',
+        renderHTML: attrs => ({ 'data-hw': attrs.data }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-type="handwriting"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'handwriting' })];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(HandwritingBlockComponent);
   },
 });
