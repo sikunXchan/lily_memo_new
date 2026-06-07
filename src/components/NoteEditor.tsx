@@ -238,9 +238,18 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   }, [editor]);
 
   // 編集モード↔閲覧モード切替でエディタのeditableを制御
+  // setEditable(true)するとTipTapがcontenteditable要素にフォーカスしてiOSキーボードが出るため
+  // requestAnimationFrameでblurして自動表示を防ぐ
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(isEditMode);
+    if (isEditMode) {
+      requestAnimationFrame(() => {
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+      });
+    }
   }, [editor, isEditMode]);
 
   // [[note]] リンクのクリックでメモを開く
@@ -442,12 +451,17 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           setNote(data);
           if (data.type === 'handwriting') {
             setHwDoc(parseHandwriting(data.content));
-            // Don't push handwriting JSON into TipTap — it would be treated as text.
             editor.commands.setContent('');
           } else {
             setHwDoc(EMPTY_HANDWRITING);
             editor.commands.setContent(data.content || '');
           }
+          // Prevent iOS keyboard from auto-showing after note load
+          requestAnimationFrame(() => {
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur();
+            }
+          });
         }
       } catch (e) {
         console.error('Failed to load note:', e);
@@ -802,6 +816,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
               onChange={(e) => updateTitle(e.target.value)}
               placeholder={t('タイトル...')}
               readOnly={!isEditMode}
+              tabIndex={isEditMode ? 0 : -1}
             />
             {isHandwriting ? (
               <div className="handwriting-host">
