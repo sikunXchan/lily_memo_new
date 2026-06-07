@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 const KEY = 'lily-enabled-tones-v1';
 const EVENT = 'lily-tones-changed';
 
-const DEFAULT_TONES = ['casual', 'easy', 'concise', 'detailed', 'socratic'];
+const DEFAULT_TONES: string[] = [];
 
 function load(): string[] {
   if (typeof window === 'undefined') return DEFAULT_TONES;

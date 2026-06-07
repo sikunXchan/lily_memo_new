@@ -6,7 +6,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw,
   Paperclip, X, Search,
-  FileDown, Wand2, Download, Pencil, HelpCircle, ArrowLeft,
+  FileDown, Wand2, Download, Pencil, ArrowLeft,
   Save, History, Trash2, Mic, Phone, Wrench, MoreVertical,
 } from 'lucide-react';
 import {
@@ -36,7 +36,7 @@ import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
-import { getEffectiveApiKey } from '@/lib/appLang';
+import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
@@ -509,98 +509,6 @@ function buildSystemPrompt(contextNotes: Note[], activeSkill?: Skill | null): st
 }
 
 /* ───────────── Block previews ───────────── */
-
-/* ─────────────── Help Modal ─────────────── */
-
-const LILY_FEATURES = [
-  { icon: '📝', title: 'メモ分析・要約', desc: '選択中のメモを読んで要点まとめ・アドバイス' },
-  { icon: '🗺️', title: 'マインドマップ', desc: 'アイデア出し・ブレスト → Mermaid mindmap で可視化' },
-  { icon: '📊', title: 'グラフ作成', desc: 'データを棒・折れ線・円グラフなどに可視化 (Chart.js)' },
-  { icon: '🔷', title: 'Mermaid 図', desc: 'フロー・シーケンス・クラス図・ER図・ガントチャート' },
-  { icon: '📐', title: '数学・幾何の図', desc: '座標平面に点・ベクトル・円・関数グラフを描画' },
-  { icon: '❓', title: 'Q&A・問題作成', desc: '一問一答・穴埋め・4択・○×・単語カードなど6形式' },
-  { icon: '📄', title: 'PDF・画像解析', desc: 'ファイルを添付して内容分析・要約・図表化' },
-  { icon: '💻', title: 'コードスニペット', desc: 'Python/JS/HTMLなどのコード生成・解説' },
-  { icon: '✉️', title: 'メール文面作成', desc: 'メモを元に報告メール・議事録メールの下書き' },
-  { icon: '✍️', title: 'トーン調整', desc: '文章をフォーマル/カジュアル/丁寧に書き換え' },
-  { icon: '📰', title: 'ブログ案', desc: 'メモからブログタイトル案・構成案を提案' },
-  { icon: '💾', title: 'メモ書き込み', desc: '「メモに書いて」で新規作成・選択中メモを上書き保存' },
-];
-
-const PRICE_ROWS = [
-  { label: 'Lily（通常の質問）', cost: '約 ¥0.3〜1' },
-  { label: 'Lily＋問題作成', cost: '約 ¥1〜8' },
-  { label: 'Lily＋PDF・画像', cost: '約 ¥1〜3' },
-  { label: 'Lily（思考モード）', cost: '約 ¥3〜6' },
-  { label: 'ネット検索 ON', cost: '＋数円／回' },
-  { label: 'Deep Research', cost: '約 ¥20〜100＋' },
-  { label: '🌱 節約モード', cost: '約 ¥0.1〜0.5' },
-];
-
-function HelpModal({ onClose, initialTab }: { onClose: () => void; initialTab: 'lily' | 'cost' }) {
-  const t = useT();
-  const [tab, setTab] = useState<'lily' | 'cost'>(initialTab);
-  return (
-    <div className="help-overlay" onClick={onClose}>
-      <div className="help-modal" onClick={e => e.stopPropagation()}>
-        <div className="help-header">
-          <span className="help-title">{t('使い方ガイド')}</span>
-          <button className="help-close" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="help-tabs">
-          {(['lily', 'cost'] as const).map(tk => (
-            <button key={tk} className={`help-tab${tab === tk ? ' active' : ''}`} onClick={() => setTab(tk)}>
-              {tk === 'lily' ? t('🌸 Lily') : t('💰 料金')}
-            </button>
-          ))}
-        </div>
-        <div className="help-body">
-          {tab === 'lily' && (
-            <div className="help-grid">
-              {LILY_FEATURES.map(f => (
-                <div key={f.title} className="help-card">
-                  <span className="help-card-icon">{f.icon}</span>
-                  <div><strong>{t(f.title)}</strong></div>
-                </div>
-              ))}
-            </div>
-          )}
-          {tab === 'cost' && (
-            <div className="price-table">
-              {PRICE_ROWS.map(r => (
-                <div key={r.label} className="price-row">
-                  <span className="price-label">{t(r.label)}</span>
-                  <span className="price-cost">{t(r.cost)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <style jsx>{`
-          .help-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px; }
-          .help-modal { background:var(--background); border-radius:16px; width:100%; max-width:520px; max-height:82vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.18); }
-          .help-header { display:flex; align-items:center; justify-content:space-between; padding:16px 18px 0; }
-          .help-title { font-size:1.05rem; font-weight:700; color:var(--primary); }
-          .help-close { background:none; border:none; cursor:pointer; color:var(--foreground); opacity:0.6; padding:4px; display:flex; }
-          .help-close:hover { opacity:1; }
-          .help-tabs { display:flex; gap:6px; padding:12px 18px 0; }
-          .help-tab { background:none; border:1.5px solid var(--border); border-radius:20px; padding:5px 14px; font-size:0.82rem; cursor:pointer; color:var(--foreground); opacity:0.65; transition:all 0.15s; }
-          .help-tab:hover { opacity:1; }
-          .help-tab.active { background:var(--primary); color:#fff; border-color:var(--primary); opacity:1; }
-          .help-body { overflow-y:auto; padding:14px 18px 20px; flex:1; }
-          .help-grid { display:flex; flex-direction:column; gap:8px; }
-          .help-card { display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--accent); border:1px solid var(--border); border-radius:10px; }
-          .help-card-icon { font-size:1.2rem; flex-shrink:0; }
-          .help-card strong { font-size:0.88rem; color:var(--foreground); }
-          .price-table { display:flex; flex-direction:column; gap:6px; }
-          .price-row { display:flex; align-items:center; justify-content:space-between; padding:9px 12px; background:var(--accent); border:1px solid var(--border); border-radius:10px; }
-          .price-label { font-size:0.85rem; font-weight:700; color:var(--foreground); }
-          .price-cost { font-size:0.85rem; font-weight:800; color:#16a34a; white-space:nowrap; }
-        `}</style>
-      </div>
-    </div>
-  );
-}
 
 function ImageSaveBar({ children }: { children: React.ReactNode }) {
   return (
@@ -1736,8 +1644,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [sikunProgress, setSikunProgress] = useState<string>('');
   const [sikunLiveThinking, setSikunLiveThinking] = useState<string>('');
   const pendingThinkingRef = useRef<string>('');
-  const [showHelp, setShowHelp] = useState(false);
-  const [helpInitialTab, setHelpInitialTab] = useState<'lily' | 'cost'>('lily');
   const [economy, setEconomy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
@@ -2343,7 +2249,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                     <span className="hmi-emoji">🧠</span><span className="hmi-label">{t('思考モード')}</span><span className="hmi-state">{lilyThinking ? 'ON' : 'OFF'}</span>
                   </button>
                   <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy}>
-                    <span className="hmi-emoji">🌱</span><span className="hmi-label">{t('節約モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
+                    <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
                   </button>
                   <div className="header-menu-divider" />
                   {messages.length > 0 && (
@@ -2359,9 +2265,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
                       <RotateCcw size={15} />{t('会話をリセット')}
                     </button>
                   )}
-                  <button className="header-menu-item" onClick={() => { setHelpInitialTab('lily'); setShowHelp(true); setShowHeaderMenu(false); }}>
-                    <HelpCircle size={15} />{t('使い方ガイド')}
-                  </button>
                 </div>
               </>,
               document.body,
@@ -2369,7 +2272,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
           </div>
         </div>
       </div>
-      {showHelp && <HelpModal onClose={() => setShowHelp(false)} initialTab={helpInitialTab} />}
       {showToolbox && <ToolboxModal onClose={() => setShowToolbox(false)} />}
       {showHistory && <ChatHistoryModal onClose={() => setShowHistory(false)} onLoad={handleLoadChat} />}
       {savedToast && <div className="chat-saved-toast">{t('会話を保存しました ✓')}</div>}
@@ -2507,15 +2409,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </div>
       )}
 
-      {/* Shortcuts: one-tap canned prompts (user-editable). */}
-      <div className="quick-actions">
-        <Wand2 size={14} className="qa-wand" />
-        {shortcuts.map(sc => (
-          <button key={sc.id} className="quick-chip" onClick={() => fillInput(sc.prompt)} disabled={isLoading}>
-            {sc.label}
-          </button>
-        ))}
-      </div>
+      {/* Shortcuts: one-tap canned prompts (user-editable). Hidden in EN mode. */}
+      {getAppLang() !== 'en' && (
+        <div className="quick-actions">
+          <Wand2 size={14} className="qa-wand" />
+          {shortcuts.map(sc => (
+            <button key={sc.id} className="quick-chip" onClick={() => fillInput(sc.prompt)} disabled={isLoading}>
+              {sc.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {(attachments.length > 0 || fileError) && (
         <div className="att-bar">

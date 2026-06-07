@@ -62,9 +62,9 @@ export default function Home() {
     if (savedViewMode === 'graph' || savedViewMode === 'tree') setSidebarViewMode(savedViewMode);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
+    setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') !== '0');
     const onSettingsChange = () => {
-      setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
+      setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') !== '0');
     };
     window.addEventListener('lily-settings-changed', onSettingsChange);
 
