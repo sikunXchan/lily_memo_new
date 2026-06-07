@@ -2,11 +2,10 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId, softDeleteNotes, softDeleteFolder } from '@/lib/db';
-import { useTheme } from './ThemeContext';
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
-  Plus, Search, Palette, Sun, Moon, ChevronRight, FolderPlus,
+  Plus, Search, Palette, ChevronRight, FolderPlus,
   Sparkles, FileText, Pencil, Trash2, List, Maximize2, X,
 } from 'lucide-react';
 import type { Note, Folder } from '@/lib/db';
@@ -41,7 +40,6 @@ interface DeletingFolderState { id: number; name: string; noteCount: number; }
 export default function HomeHero({
   onSelectNote, onOpenConnection, onSelectFolder, isDesktop,
 }: HomeHeroProps) {
-  const { theme, cycleTheme, nextThemeName } = useTheme();
   const t = useT();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -123,11 +121,6 @@ export default function HomeHero({
               <div className="hero-date">{dateLabel}</div>
               <div className="hero-title">Lily Memo</div>
             </div>
-            <button className="hero-theme-btn" onClick={cycleTheme}
-              title={t('テーマ切替（次: {name}）', { name: nextThemeName })} aria-label={t('テーマを切り替える')}>
-              <Palette size={14} color="#fff" />
-              {theme.dark ? <Moon size={12} color="#fff" /> : <Sun size={12} color="#fff" />}
-            </button>
           </div>
           <button className="hero-action" onClick={() => createNote()}>
             <Plus size={16} strokeWidth={2.4} style={{ color: 'var(--primary)', flexShrink: 0 }} />

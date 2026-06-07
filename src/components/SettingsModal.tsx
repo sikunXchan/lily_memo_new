@@ -206,34 +206,6 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
 
         <section className="settings-section">
           <div className="section-title">
-            <Palette size={20} />
-            <h3>{t('テーマ')}</h3>
-          </div>
-          <div className="section-content">
-            <p className="desc">{t('アプリ全体の配色を切り替えます。「夜空」は星空の背景になります。')}</p>
-            <div className="option-grid">
-              {THEME_LIST.map(id => {
-                const theme = THEMES[id];
-                return (
-                  <button
-                    key={id}
-                    className={`option-card ${themeId === id ? 'selected' : ''}`}
-                    onClick={() => setThemeId(id)}
-                  >
-                    <span className="swatch" style={{ background: theme.bg, borderColor: theme.border }}>
-                      <span className="swatch-dot" style={{ background: theme.primary }} />
-                    </span>
-                    <span className="option-name">{t(theme.name)}</span>
-                    <span className="option-tag">{t(theme.tag)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <div className="section-title">
             <Type size={20} />
             <h3>{t('フォント')}</h3>
           </div>
@@ -259,7 +231,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
           </div>
         </section>
 
-        <section className="settings-section">
+        {lang !== 'en' && <section className="settings-section">
           <div className="section-title">
             <Sparkles size={20} />
             <h3>{t('AIアシスタント (Lily)')}</h3>
@@ -283,7 +255,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
               {keySaved ? t('✓ 保存しました') : t('保存する')}
             </button>
           </div>
-        </section>
+        </section>}
 
         <section className="settings-section">
           <div className="section-title">
@@ -372,69 +344,6 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
             <button className={`btn-action ${liveSaved ? 'saved' : ''}`} onClick={saveLiveSync}>
               {liveSaved ? t('✓ 保存しました') : t('保存する')}
             </button>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <div className="section-title">
-            <Share2 size={20} />
-            <h3>{t('デバイス同期（手動）')}</h3>
-          </div>
-          <div className="section-content">
-            <p className="desc">{t('メモ・フォルダ・学習記録など、すべてのデータをデバイス間でコピーします。同じWi-Fiに繋がっている必要はありません。受信側のデータは送信側で上書きされます。')}</p>
-            <div className="sync-mode-row">
-              <button
-                className={`sync-mode-btn ${syncMode === 'export' ? 'active' : ''}`}
-                onClick={() => { setSyncMode('export'); setSyncStatus('idle'); setSyncMsg(''); setSyncCode(''); }}
-              >
-                {t('このデバイスから送る')}
-              </button>
-              <button
-                className={`sync-mode-btn ${syncMode === 'import' ? 'active' : ''}`}
-                onClick={() => { setSyncMode('import'); setSyncStatus('idle'); setSyncMsg(''); }}
-              >
-                {t('コードを受け取る')}
-              </button>
-            </div>
-
-            {syncMode === 'export' && (
-              <div className="sync-body">
-                {syncStatus !== 'ok' ? (
-                  <button className="btn-action" onClick={() => void doExport()} disabled={syncStatus === 'loading'}>
-                    {syncStatus === 'loading' ? t('処理中...') : t('コードを生成して送信')}
-                  </button>
-                ) : (
-                  <div className="sync-code-display">
-                    <span className="sync-code-label">{t('同期コード')}</span>
-                    <div className="sync-code-row">
-                      <span className="sync-code-val">{syncCode}</span>
-                      <button className="sync-copy-btn" onClick={copyCode}>
-                        {copied ? <Check size={14} /> : <Copy size={14} />}
-                        {copied ? t('コピー済み') : t('コピー')}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {syncMsg && <p className={`sync-msg sync-${syncStatus}`}>{syncMsg}</p>}
-              </div>
-            )}
-
-            {syncMode === 'import' && (
-              <div className="sync-body">
-                <p className="sync-warn">{t('⚠️ このデバイスの全データが送信元で上書きされます')}</p>
-                <input
-                  className="sync-input"
-                  value={syncInput}
-                  onChange={e => setSyncInput(e.target.value.toUpperCase())}
-                  placeholder={t('コードを入力 (例: AB12CD)')}
-                  maxLength={8}
-                />
-                <button className="btn-action" onClick={() => void doImport()} disabled={syncStatus === 'loading' || !syncInput.trim()}>
-                  {syncStatus === 'loading' ? t('取得中...') : t('全データを同期')}
-                </button>
-                {syncMsg && <p className={`sync-msg sync-${syncStatus}`}>{syncMsg}</p>}
-              </div>
-            )}
           </div>
         </section>
 
