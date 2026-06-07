@@ -39,7 +39,7 @@ function folderColorVar(f: Folder, idx: number) {
 interface DeletingFolderState { id: number; name: string; noteCount: number; }
 
 export default function HomeHero({
-  onSelectNote, onOpenConnection, onSelectFolder, onOpenSketch, isDesktop,
+  onSelectNote, onOpenConnection, onSelectFolder, isDesktop,
 }: HomeHeroProps) {
   const { theme, cycleTheme, nextThemeName } = useTheme();
   const t = useT();

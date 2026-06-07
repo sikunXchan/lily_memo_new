@@ -923,7 +923,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           position: fixed;
           width: ${ICON_SIZE}px;
           height: ${ICON_SIZE}px;
-          z-index: 9999;
+          z-index: 10001;
           cursor: pointer;
           touch-action: none;
           user-select: none;
@@ -994,7 +994,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           position: fixed; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none;
         }
         .sikun-radial-backdrop {
-          position: fixed; inset: 0; z-index: 9997;
+          position: fixed; inset: 0; z-index: 10001;
         }
         .sikun-radial-item {
           position: fixed;
@@ -1004,7 +1004,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           background: var(--background, #fff);
           box-shadow: 0 4px 14px rgba(0,0,0,0.2);
           display: flex; flex-direction: column; align-items: center; justify-content: center;
-          gap: 1px; cursor: pointer; z-index: 9999;
+          gap: 1px; cursor: pointer; z-index: 10002;
           animation: sikun-radial-pop 0.18s ease-out both;
         }
         @keyframes sikun-radial-pop {
@@ -1019,7 +1019,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           background: var(--background, #fff); color: var(--foreground, #222);
           border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: 14px;
           padding: 10px 26px 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.18);
-          font-size: 0.86rem; line-height: 1.55; z-index: 9998;
+          font-size: 0.86rem; line-height: 1.55; z-index: 10002;
           white-space: pre-wrap; word-wrap: break-word;
         }
         .sikun-bubble-close {
@@ -1052,7 +1052,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         }
         .sikun-input-row {
           position: fixed; display: flex; gap: 4px;
-          width: ${BUBBLE_W}px; max-width: calc(100vw - 24px); z-index: 9999;
+          width: ${BUBBLE_W}px; max-width: calc(100vw - 24px); z-index: 10002;
         }
         .sikun-input {
           flex: 1; padding: 8px 10px; border-radius: 18px;
