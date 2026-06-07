@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import StarterKit from '@tiptap/starter-kit';
@@ -17,7 +18,7 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Sparkles, Table2
+  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
@@ -29,7 +30,6 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
-import { runQuickAction, QUICK_ACTIONS, type QuickActionId } from '@/lib/quickAI';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getEffectiveApiKey } from '@/lib/appLang';
 import { useT, translate } from '@/lib/i18n';
@@ -141,9 +141,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [showInsertMenu, setShowInsertMenu] = useState(false);
-  const [showAIMenu, setShowAIMenu] = useState(false);
-  const [aiRunning, setAIRunning] = useState<QuickActionId | null>(null);
-  const [aiError, setAIError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
@@ -224,28 +221,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     setIsMobileView(window.innerWidth <= 768);
   }, []);
 
-  // AI クイック操作メニュー: 外側クリックで閉じる
-  useEffect(() => {
-    if (!showAIMenu) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.ai-menu-wrap')) return;
-      setShowAIMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showAIMenu]);
-
-  useEffect(() => {
-    if (!showInsertMenu) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.insert-menu-wrap')) return;
-      setShowInsertMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showInsertMenu]);
 
   // QAチェックボックス切替時に即時保存（debounceを待たずに保存）
   useEffect(() => {
@@ -657,55 +632,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     });
   };
 
-  const handleQuickAI = async (action: QuickActionId) => {
-    if (!editor || aiRunning) return;
-    const apiKey = getEffectiveApiKey();
-    if (!apiKey) {
-      setAIError(t('設定画面で Gemini API キーを登録してね'));
-      return;
-    }
-    const html = editor.getHTML();
-    const text = noteHtmlToText(html);
-    if (!text || text.length < 8) {
-      setAIError(t('メモが短すぎるよ。もう少し書いてから試してみて'));
-      return;
-    }
-    setAIError(null);
-    setAIRunning(action);
-    setShowAIMenu(false);
-    try {
-      const result = await runQuickAction(action, text, note?.title || '', apiKey);
-      const wasEditable = editor.isEditable;
-      if (!wasEditable) editor.setEditable(true);
-      const end = editor.state.doc.content.size;
-      if (result.kind === 'text') {
-        editor.chain().insertContentAt(end, result.html).run();
-      } else if (result.kind === 'qa') {
-        editor.chain().insertContentAt(end, {
-          type: 'qa',
-          attrs: { kind: result.qaKind, pairs: result.pairs },
-        }).run();
-      } else if (result.kind === 'tasklist') {
-        const heading = '<h3>✅ ToDo</h3>';
-        const list = `<ul data-type="taskList">${
-          result.items.map(t =>
-            `<li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>${
-              t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            }</p></div></li>`
-          ).join('')
-        }</ul>`;
-        editor.chain().insertContentAt(end, heading + list).run();
-      }
-      if (!wasEditable) editor.setEditable(false);
-      // Save immediately rather than waiting for debounce.
-      const content = editor.getHTML();
-      await db.notes.update(noteId, { content, updatedAt: Date.now() });
-    } catch (e) {
-      setAIError(e instanceof Error ? e.message : t('AI 処理に失敗したよ'));
-    } finally {
-      setAIRunning(null);
-    }
-  };
 
   const insertGeometry = () => {
     insertWithoutFocus({
@@ -769,55 +695,30 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                 <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')}><SquareCheck size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title={t('コード')}><Binary size={18} /></button>
                 <div className="header-divider" />
-                <div className="insert-menu-wrap">
-                  <button
-                    className={`btn-tool${showInsertMenu ? ' active' : ''}`}
-                    onClick={() => setShowInsertMenu(p => !p)}
-                    title={t('挿入')}
-                  >
-                    <Plus size={18} />
-                  </button>
-                  {showInsertMenu && (
-                    <div className="insert-menu-dropdown">
-                      <div className="insert-menu-header">{t('挿入')}</div>
-                      <button className="insert-menu-item" onClick={() => { addNoteAsset(); setShowInsertMenu(false); }}><ImageIcon size={15} />{t('画像')}</button>
-                      <button className="insert-menu-item" onClick={() => { insertMermaid(); setShowInsertMenu(false); }}><GitBranch size={15} />{t('図解 (Mermaid)')}</button>
-                      <button className="insert-menu-item" onClick={() => { insertChart(); setShowInsertMenu(false); }}><BarChart3 size={15} />{t('グラフ')}</button>
-                      <button className="insert-menu-item" onClick={() => { insertQA(); setShowInsertMenu(false); }}><BookOpen size={15} />Q&A</button>
-                      <button className="insert-menu-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={15} />{t('幾何の図')}</button>
-                      <button className="insert-menu-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={15} />{t('表')}</button>
+                <button
+                  className={`btn-tool${showInsertMenu ? ' active' : ''}`}
+                  onClick={() => setShowInsertMenu(p => !p)}
+                  title={t('挿入')}
+                >
+                  <Plus size={18} />
+                </button>
+                {showInsertMenu && typeof document !== 'undefined' && createPortal(
+                  <div className="insert-sheet-backdrop" onClick={() => setShowInsertMenu(false)}>
+                    <div className="insert-sheet" onClick={e => e.stopPropagation()}>
+                      <div className="insert-sheet-handle" />
+                      <div className="insert-sheet-title">{t('挿入')}</div>
+                      <div className="insert-sheet-grid">
+                        <button className="insert-sheet-item" onClick={() => { addNoteAsset(); setShowInsertMenu(false); }}><ImageIcon size={22} /><span>{t('画像')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertMermaid(); setShowInsertMenu(false); }}><GitBranch size={22} /><span>{t('図解')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertChart(); setShowInsertMenu(false); }}><BarChart3 size={22} /><span>{t('グラフ')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertQA(); setShowInsertMenu(false); }}><BookOpen size={22} /><span>Q&A</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={22} /><span>{t('幾何')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={22} /><span>{t('表')}</span></button>
+                      </div>
                     </div>
-                  )}
-                </div>
-                <div className="ai-menu-wrap">
-                  <button
-                    className={`btn-tool${showAIMenu ? ' active' : ''}`}
-                    onClick={() => { setShowAIMenu(p => !p); setAIError(null); }}
-                    disabled={!!aiRunning}
-                    title={t('AI クイック操作')}
-                  >
-                    {aiRunning ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                  </button>
-                  {showAIMenu && (
-                    <div className="ai-menu-dropdown">
-                      <div className="ai-menu-header">{t('AI でこのメモを…')}</div>
-                      {QUICK_ACTIONS.map(act => (
-                        <button
-                          key={act.id}
-                          className="ai-menu-item"
-                          onClick={() => handleQuickAI(act.id)}
-                          disabled={!!aiRunning}
-                        >
-                          <span className="ai-menu-emoji">{act.emoji}</span>
-                          <span className="ai-menu-text">
-                            <span className="ai-menu-label">{act.label}</span>
-                            <span className="ai-menu-desc">{act.description}</span>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  </div>,
+                  document.body
+                )}
                 <div className="header-divider" />
               </>
             )}
@@ -1236,47 +1137,61 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           .editor-content-wrapper { padding: 0; }
         }
 
-        /* ===== 挿入メニュー ===== */
-        .insert-menu-wrap { position: relative; }
-        .insert-menu-dropdown {
-          position: absolute;
-          top: calc(100% + 4px);
-          left: 0;
-          z-index: 200;
-          background: var(--background);
-          border: 1.5px solid var(--border);
-          border-radius: 12px;
-          box-shadow: 0 10px 32px rgba(0,0,0,0.18);
-          min-width: 180px;
-          overflow: hidden;
+        /* ===== 挿入ボトムシート ===== */
+        .insert-sheet-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.4);
+          z-index: 9000;
+          display: flex;
+          align-items: flex-end;
         }
-        .insert-menu-header {
-          padding: 8px 14px;
-          font-size: 0.72rem;
+        .insert-sheet {
+          width: 100%;
+          background: var(--background);
+          border-radius: 20px 20px 0 0;
+          padding: 12px 20px calc(24px + env(safe-area-inset-bottom));
+          animation: sheetSlideUp 0.22s ease;
+        }
+        @keyframes sheetSlideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+        .insert-sheet-handle {
+          width: 36px; height: 4px;
+          background: var(--border);
+          border-radius: 2px;
+          margin: 0 auto 14px;
+        }
+        .insert-sheet-title {
+          font-size: 0.78rem;
           font-weight: 800;
           letter-spacing: 0.5px;
           text-transform: uppercase;
           color: var(--primary);
-          background: color-mix(in srgb, var(--primary) 8%, transparent);
-          border-bottom: 1px solid var(--border);
+          margin-bottom: 16px;
         }
-        .insert-menu-item {
+        .insert-sheet-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+        }
+        .insert-sheet-item {
           display: flex;
+          flex-direction: column;
           align-items: center;
-          gap: 8px;
-          width: 100%;
-          padding: 9px 14px;
-          background: none;
-          border: none;
-          border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-          text-align: left;
+          gap: 6px;
+          padding: 14px 8px;
+          background: var(--accent);
+          border: 1.5px solid var(--border);
+          border-radius: 14px;
           cursor: pointer;
-          font-size: 0.84rem;
           color: var(--foreground);
+          font-size: 0.78rem;
+          font-weight: 600;
           transition: background 0.14s;
         }
-        .insert-menu-item:last-child { border-bottom: none; }
-        .insert-menu-item:hover { background: var(--accent); }
+        .insert-sheet-item:hover, .insert-sheet-item:active { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: var(--primary); color: var(--primary); }
 
         /* ===== AI クイック操作メニュー ===== */
         .ai-menu-wrap { position: relative; }
@@ -1486,12 +1401,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           to { transform: translateY(0); }
         }
       `}</style>
-      {aiError && (
-        <div className="ai-error-toast">
-          {aiError}
-          <button onClick={() => setAIError(null)}>×</button>
-        </div>
-      )}
     </div>
   );
 }
