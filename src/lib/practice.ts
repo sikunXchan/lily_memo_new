@@ -20,6 +20,7 @@ const PRACTICE_SYSTEM_PROMPT = `あなたは「Lily」、学習アプリの問�
 
 # 出力ルール（厳守）
 - 出力は **JSONオブジェクト1つだけ**。前置き・説明・コードフェンス（\`\`\`）は一切書かない。
+- **重要**: JSON文字列内でLaTeX（数式）を書くときは、バックスラッシュを必ず2つ重ねてエスケープする。例: \`\\\\vec{a}\`、\`\\\\frac{1}{2}\`、\`\\\\sqrt{2}\`。エスケープを忘れるとJSONが壊れる。
 - スキーマ:
 {
   "title": "問題セットの短いタイトル",
@@ -54,6 +55,7 @@ const PRACTICE_SYSTEM_PROMPT_EN = `You are "Lily", the problem-set generator AI 
 
 # Output rules (strict)
 - Output **exactly one JSON object**. No preamble, no explanation, no code fences.
+- **Important**: when writing LaTeX (math) inside JSON strings, always double-escape backslashes, e.g. \`\\\\vec{a}\`, \`\\\\frac{1}{2}\`, \`\\\\sqrt{2}\`. Forgetting this breaks the JSON.
 - Schema:
 {
   "title": "short title of the set",
@@ -113,6 +115,50 @@ function extractJsonObject(raw: string): string {
   return s.slice(start);
 }
 
+// Math/科学 questions are full of LaTeX (\vec, \frac, \sqrt, …). Models often
+// emit those backslashes WITHOUT escaping them for JSON, so `JSON.parse` chokes
+// on the invalid escape sequence. This repairs a JSON string by:
+//  • doubling any backslash inside a string that isn't a valid JSON escape, and
+//  • escaping raw control chars (newline/tab) that slipped inside a string.
+// Only touches characters inside string literals so structure is untouched.
+function repairJsonString(s: string): string {
+  let out = '';
+  let inStr = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (!inStr) {
+      out += c;
+      if (c === '"') inStr = true;
+      continue;
+    }
+    // ── inside a string ──
+    if (c === '"') { out += c; inStr = false; continue; }
+    if (c === '\n') { out += '\\n'; continue; }
+    if (c === '\r') { out += '\\r'; continue; }
+    if (c === '\t') { out += '\\t'; continue; }
+    if (c === '\\') {
+      const next = s[i + 1];
+      // Valid JSON escapes: " \ / b f n r t u
+      if (next && '"\\/bfnrtu'.includes(next)) { out += c + next; i++; }
+      else out += '\\\\'; // lone backslash (e.g. LaTeX \vec) → escape it
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+// Parse the model's JSON, retrying with a backslash/control-char repair pass
+// before giving up — LaTeX-heavy answers routinely need it.
+function parseModelJson(reply: string): Record<string, unknown> {
+  const jsonStr = extractJsonObject(reply);
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    return JSON.parse(repairJsonString(jsonStr));
+  }
+}
+
 function normalizeQuestion(q: Record<string, unknown>): PracticeQuestion | null {
   const type = q.type as PracticeQType;
   if (!['mcq', 'written', 'fill', 'tf'].includes(type)) return null;
@@ -167,7 +213,7 @@ export async function generateProblemSet(
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(extractJsonObject(reply));
+    parsed = parseModelJson(reply);
   } catch {
     throw new Error(getAppLang() === 'en'
       ? 'Could not read the generated problems. Try rephrasing.'
