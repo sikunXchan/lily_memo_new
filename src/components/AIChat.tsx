@@ -2428,28 +2428,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       )}
 
       <div className="messages-list">
-        {messages.length === 0 && (
-          <div className="welcome-screen">
-            <div className="welcome-lily-wrap">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png"
-                alt="Lily"
-                className="welcome-lily"
-              />
-            </div>
-            <p className="welcome-text">
-              {t('こんにちは、Lily だよ！🐶')}<br />{t('メモの要約・翻訳・メール作成・問題づくり・図やグラフの作成まで、文章でお願いするだけ。')}
-            </p>
-
-            <button
-              className="welcome-guide-btn"
-              onClick={() => { setHelpInitialTab('lily'); setShowHelp(true); }}
-            >
-              <span className="welcome-guide-main"><HelpCircle size={18} /> {t('使い方ガイドを見る')}</span>
-            </button>
-          </div>
-        )}
         {messages.map((msg, idx) => {
           const isLastLily = msg.role === 'lily' &&
             !messages.slice(idx + 1).some(m => m.role === 'lily');
@@ -2719,16 +2697,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .note-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.78rem; color: var(--fg-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
-        .welcome-screen { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 0; text-align: center; }
-        .welcome-lily-wrap { width: 160px; height: 200px; animation: float 3s ease-in-out infinite; display: flex; align-items: center; justify-content: center; }
-        .welcome-lily { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; image-rendering: -webkit-optimize-contrast; display: block; }
-        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-        .welcome-text { font-size: 0.9rem; color: var(--fg-muted); line-height: 1.6; margin: 0; }
-        .welcome-guide-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; margin: 6px 0 2px; padding: 13px 28px; border: none; border-radius: 18px; cursor: pointer; color: #fff; background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 55%, #ff9ec4)); box-shadow: 0 6px 18px color-mix(in srgb, var(--primary) 40%, transparent); transition: transform 0.15s, box-shadow 0.15s; animation: guidePulse 2.4s ease-in-out infinite; }
-        .welcome-guide-btn.siku { background: linear-gradient(135deg, #a05a2c, #d29156); box-shadow: 0 6px 18px rgba(139,69,19,0.35); }
-        .welcome-guide-btn:hover { transform: translateY(-2px); box-shadow: 0 9px 24px color-mix(in srgb, var(--primary) 50%, transparent); }
-        .welcome-guide-main { display: inline-flex; align-items: center; gap: 7px; font-weight: 800; font-size: 0.98rem; }
-        @keyframes guidePulse { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }
         .suggestion-chip { background: color-mix(in srgb, var(--primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); color: var(--primary); border-radius: 20px; padding: 6px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .suggestion-chip:hover { background: var(--primary); color: white; }

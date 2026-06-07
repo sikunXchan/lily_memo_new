@@ -7,7 +7,7 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Plus, Search, Palette, Sun, Moon, ChevronRight, FolderPlus,
-  Brush, Sparkles, FileText, Pencil, Trash2, List, Maximize2, X,
+  Sparkles, FileText, Pencil, Trash2, List, Maximize2, X,
 } from 'lucide-react';
 import type { Note, Folder } from '@/lib/db';
 import { useT } from '@/lib/i18n';
@@ -18,7 +18,6 @@ interface HomeHeroProps {
   onSelectNote: (id: number) => void;
   onOpenConnection?: () => void;
   onSelectFolder?: (id: number) => void;
-  onOpenSketch?: () => void;
   isDesktop?: boolean;
 }
 
@@ -166,11 +165,6 @@ export default function HomeHero({
                       <span className="folder-chip-name">{f.name}</span>
                     </button>
                   </li>))}</ul>}
-          </div>
-          <div className="tile tile-action" onClick={() => onOpenSketch?.()}
-            role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpenSketch?.()}>
-            <div className="tile-header"><span className="tile-label">SKETCH</span><ChevronRight size={13} className="tile-icon-faint" /></div>
-            <div className="tile-cta"><Brush size={22} className="tile-cta-icon" /><span>{t('落書きを開く')}</span></div>
           </div>
           <div className="tile tile-action" onClick={() => onOpenConnection?.()}
             role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && onOpenConnection?.()}>
