@@ -180,6 +180,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const [showProfile, setShowProfile] = useState(false);
 
   // Timer
+  const [timerMode, setTimerMode] = useState<'stopwatch' | 'pomodoro'>('stopwatch');
   const [isRunning, setIsRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const startTsRef = useRef<number | null>(null);
@@ -206,6 +207,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
   // Restore timer + category on mount
   useEffect(() => {
+    const modeStr = localStorage.getItem('study_timer_mode');
+    if (modeStr === 'pomodoro') setTimerMode('pomodoro');
+
     const catStr = localStorage.getItem(LS_KEY_CAT);
     if (catStr !== null) setSelectedCatId(catStr === 'null' ? null : parseInt(catStr, 10) || null);
 
@@ -275,6 +279,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       });
     }
   }, [categories, selectedCatId]);
+
+  const selectMode = useCallback((mode: 'stopwatch' | 'pomodoro') => {
+    if (isRunning) return;
+    setTimerMode(mode);
+    localStorage.setItem('study_timer_mode', mode);
+  }, [isRunning]);
 
   const selectCat = useCallback((id: number | null) => {
     if (isRunning) return;
@@ -497,22 +507,60 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             )}
           </div>
 
-          {/* Timer display */}
-          <div className={`timer-card ${isRunning ? 'running' : ''}`}>
-            {selectedCat && (
-              <div className="timer-cat-label">
-                <span className="timer-cat-dot" style={{ background: selectedCat.color }} />
-                {selectedCat.name}
-              </div>
-            )}
-            <div className="timer-display">{fmtClock(elapsed)}</div>
+          {/* Stopwatch / Pomodoro mode toggle */}
+          <div className="timer-mode-toggle">
             <button
-              className={`timer-btn ${isRunning ? 'stop' : 'start'}`}
-              onClick={isRunning ? () => void stopTimer() : startTimer}
+              className={`tmt-btn ${timerMode === 'stopwatch' ? 'active' : ''}`}
+              onClick={() => selectMode('stopwatch')}
+              disabled={isRunning}
             >
-              {isRunning ? <><Square size={16} fill="currentColor" /> {t('停止して保存')}</> : <><Play size={16} fill="currentColor" /> {t('スタート')}</>}
+              <Timer size={14} /> {t('ストップウォッチ')}
+            </button>
+            <button
+              className={`tmt-btn ${timerMode === 'pomodoro' ? 'active' : ''}`}
+              onClick={() => selectMode('pomodoro')}
+              disabled={isRunning}
+            >
+              <Zap size={14} /> {t('ポモドーロ')}
             </button>
           </div>
+
+          {/* Timer display */}
+          {timerMode === 'stopwatch' ? (
+            <div className={`timer-card ${isRunning ? 'running' : ''}`}>
+              {selectedCat && (
+                <div className="timer-cat-label">
+                  <span className="timer-cat-dot" style={{ background: selectedCat.color }} />
+                  {selectedCat.name}
+                </div>
+              )}
+              <div className="timer-display">{fmtClock(elapsed)}</div>
+              <button
+                className={`timer-btn ${isRunning ? 'stop' : 'start'}`}
+                onClick={isRunning ? () => void stopTimer() : startTimer}
+              >
+                {isRunning ? <><Square size={16} fill="currentColor" /> {t('停止して保存')}</> : <><Play size={16} fill="currentColor" /> {t('スタート')}</>}
+              </button>
+            </div>
+          ) : (
+            <div className="timer-card pomodoro-card">
+              {selectedCat && (
+                <div className="timer-cat-label">
+                  <span className="timer-cat-dot" style={{ background: selectedCat.color }} />
+                  {selectedCat.name}
+                </div>
+              )}
+              <div className="pomo-rhythm">
+                <span className="pomo-chip focus">📚 {getAppLang() === 'en' ? '25min' : '25分'}</span>
+                <span className="pomo-plus">+</span>
+                <span className="pomo-chip break">☕ {getAppLang() === 'en' ? '5min' : '5分'}</span>
+              </div>
+              <p className="pomo-desc">{t('集中と休憩をくり返して、深く集中しよう')}</p>
+              <button className="timer-btn start pomo-start" onClick={() => onOpenFocus?.()}>
+                <Zap size={16} fill="currentColor" /> {t('ポモドーロを開始')}
+              </button>
+            </div>
+          )}
 
           {/* Today + all-time total */}
           <div className="total-row">
@@ -824,6 +872,22 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .color-swatch.selected { border-color:#fff; box-shadow:0 0 0 2px var(--primary); transform:scale(1.2); }
         .cat-save-btn { background:var(--primary); color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:.82rem; font-weight:700; cursor:pointer; align-self:flex-end; }
         .cat-save-btn:disabled { opacity:.4; cursor:default; }
+
+        /* ── Timer mode toggle ── */
+        .timer-mode-toggle { display:flex; gap:6px; background:var(--accent); border:1px solid var(--border); border-radius:14px; padding:4px; }
+        .tmt-btn { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 8px; border-radius:10px; border:none; background:transparent; color:var(--fg-muted); font-size:.82rem; font-weight:700; cursor:pointer; transition:all .15s; font-family:inherit; }
+        .tmt-btn.active { background:var(--primary); color:#fff; box-shadow:0 2px 8px rgba(99,102,241,.25); }
+        .tmt-btn:disabled { opacity:.5; cursor:default; }
+
+        /* ── Pomodoro intro card ── */
+        .pomodoro-card { background:linear-gradient(135deg,color-mix(in srgb,var(--primary) 8%,var(--accent)),var(--accent)); }
+        .pomo-rhythm { display:flex; align-items:center; gap:10px; }
+        .pomo-chip { font-size:1rem; font-weight:800; padding:8px 16px; border-radius:14px; }
+        .pomo-chip.focus { background:color-mix(in srgb,var(--primary) 16%,transparent); color:var(--primary); }
+        .pomo-chip.break { background:color-mix(in srgb,#10b981 16%,transparent); color:#059669; }
+        .pomo-plus { font-size:1.1rem; font-weight:800; color:var(--fg-muted); }
+        .pomo-desc { font-size:.78rem; color:var(--fg-muted); margin:0; text-align:center; }
+        .pomo-start { margin-top:4px; }
 
         /* ── Timer ── */
         .timer-card { background:var(--accent); border:1.5px solid var(--border); border-radius:20px; padding:28px 20px; display:flex; flex-direction:column; align-items:center; gap:14px; transition:border-color .3s, background .3s; }

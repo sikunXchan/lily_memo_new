@@ -189,6 +189,9 @@ const EN: Record<string, string> = {
   // ── Study tracker / greeting / focus / trophies / badges ──
   "メモに戻る": "Back to memos",
   "学習トラッカー": "Study Tracker",
+  "演習": "Practice",
+  "ポモドーロを開始": "Start Pomodoro",
+  "集中と休憩をくり返して、深く集中しよう": "Repeat focus & breaks to dive deep",
   "タイマー": "Timer",
   "記録": "Stats",
   "次まで {h}": "{h} to next",
