@@ -35,7 +35,14 @@ const VOCAB_SHORTCUT: Shortcut = {
 そして生成した内容を問題セッションを問題に、答えのセッションを答えに挿入し、qaか穴埋め問題のどちらかの問題形式の問題を作成してください。`,
 };
 
-const DEFAULTS: Shortcut[] = [VOCAB_SHORTCUT];
+const DEFAULTS: Shortcut[] = [
+  { id: 'nichikore', label: '📚 日これ', prompt: 'これらの資料から問題(qa)を作成して。単語を問う問題形式で全ての単語を網羅してください。また、時系列順に並べてください。\n答えには読み方をふってください。\n\n【絶対厳守】資料に含まれる全ての単語を1つも漏らさず必ず全て問題にすること。「など」「以下省略」「…」で途中で止めることは禁止。最後の単語まで出力すること。' },
+  { id: 'continue', label: '▶ 続きを書いて', prompt: '問題が途中で止まっています。続きの未出題の単語を全て、同じ形式・同じqaブロック内で続けて出力してください。重複は入れず、まだ出題されていない単語だけを残らず書いてください。' },
+  VOCAB_SHORTCUT,
+  { id: 'email', label: '📧 メール文面', prompt: 'このメモの内容を元に、そのまま送れる丁寧なメールの下書きを作って。件名も付けてね。' },
+  { id: 'blog', label: '📝 ブログ案', prompt: 'このメモを元に、ブログ記事のタイトル案を3つと、それぞれの構成案を提案して。' },
+  { id: 'detail', label: '🔎 詳しく調べて', prompt: 'このメモに出てくる専門用語や関連トピックを、ネットの情報も使ってもう少し詳しく補足して。' },
+];
 
 function load(): Shortcut[] {
   if (typeof window === 'undefined') return DEFAULTS;
@@ -44,11 +51,12 @@ function load(): Shortcut[] {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return DEFAULTS;
-    // Ensure the built-in vocab shortcut is always present (back-fill for
-    // existing users whose stored list pre-dates this default being added).
-    const hasVocab = parsed.some((s: Shortcut) => s.id === VOCAB_SHORTCUT.id);
-    if (!hasVocab) {
-      const merged = [VOCAB_SHORTCUT, ...parsed];
+    // Back-fill any built-in shortcuts that are missing from the stored list
+    // (handles users whose localStorage pre-dates a default being added/restored).
+    const storedIds = new Set(parsed.map((s: Shortcut) => s.id));
+    const missing = DEFAULTS.filter(d => !storedIds.has(d.id));
+    if (missing.length > 0) {
+      const merged = [...missing, ...parsed];
       localStorage.setItem(KEY, JSON.stringify(merged));
       return merged;
     }
