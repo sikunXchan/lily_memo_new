@@ -2428,6 +2428,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       )}
 
       <div className="messages-list">
+        {messages.length === 0 && (
+          <div className="welcome-lily-wrap">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="welcome-lily" />
+          </div>
+        )}
         {messages.map((msg, idx) => {
           const isLastLily = msg.role === 'lily' &&
             !messages.slice(idx + 1).some(m => m.role === 'lily');
@@ -2697,6 +2703,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .note-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.78rem; color: var(--fg-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
+        .welcome-lily-wrap { display: flex; justify-content: center; padding: 24px 0 8px; animation: float 3s ease-in-out infinite; }
+        .welcome-lily { width: 140px; height: auto; object-fit: contain; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }
         .suggestion-chip { background: color-mix(in srgb, var(--primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); color: var(--primary); border-radius: 20px; padding: 6px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .suggestion-chip:hover { background: var(--primary); color: white; }
