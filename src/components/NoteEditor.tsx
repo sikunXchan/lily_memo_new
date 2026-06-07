@@ -15,7 +15,7 @@ import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, ty
 import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING, softDeleteNote } from '@/lib/db';
 import {
   ArrowLeft, Trash2, Type,
-  BarChart3, Binary, LayoutGrid,
+  BarChart3, Binary,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
   Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2
@@ -691,8 +691,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                 <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title={t('進む')}><Redo size={18} /></button>
                 <div className="header-divider" />
                 <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title={t('大見出し')}><Type size={18} /></button>
-                <button className={`btn-tool ${editor.isActive('bulletList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} title={t('箇条書き')}><LayoutGrid size={18} /></button>
-                <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')}><SquareCheck size={18} /></button>
+<button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')}><SquareCheck size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title={t('コード')}><Binary size={18} /></button>
                 <div className="header-divider" />
                 <button
