@@ -11,7 +11,7 @@ import {
 import {
   ArrowLeft, Sparkles, Wand2, ImagePlus, X, Play, Trash2,
   Check, ChevronRight, RotateCcw, Trophy, Loader2, PencilLine,
-  Settings2, MessageCircle, ChevronDown, ChevronUp,
+  Settings2, MessageCircle, ChevronDown, ChevronUp, Search,
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
@@ -162,8 +162,27 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [showGenOpts, setShowGenOpts] = useState(false);
   const [genTypes, setGenTypes] = useState<Set<string>>(new Set(['mcq', 'written', 'fill', 'tf']));
   const [genCount, setGenCount] = useState(5);
-  const [genDiff, setGenDiff] = useState<'easy' | 'medium' | 'hard'>('medium');
+  const [genDiff, setGenDiff] = useState<'easy' | 'medium' | 'hard' | 'oni'>('medium');
   const [genDaimon, setGenDaimon] = useState(false);
+
+  // ── Library management (search / subject filter) ──
+  const [search, setSearch] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState<string | null>(null);
+
+  const subjects = useMemo(() => {
+    const seen = new Set<string>();
+    for (const s of sets) if (s.subject) seen.add(s.subject);
+    return [...seen];
+  }, [sets]);
+
+  const filteredSets = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return sets.filter(s => {
+      if (subjectFilter && s.subject !== subjectFilter) return false;
+      if (q && !`${s.title} ${s.subject ?? ''}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [sets, search, subjectFilter]);
 
   // ── Solving state ──
   const [activeSet, setActiveSet] = useState<ProblemSet | null>(null);
@@ -191,8 +210,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     if (genCount !== 5) settings.push(en ? `${genCount} questions` : `${genCount}問`);
     if (genDiff !== 'medium') {
       const lbl = en
-        ? { easy: 'easy', medium: 'medium', hard: 'hard' }[genDiff]
-        : { easy: '易しめ', medium: '普通', hard: '難しめ' }[genDiff];
+        ? { easy: 'easy', medium: 'medium', hard: 'hard', oni: 'brutal (鬼)' }[genDiff]
+        : { easy: '易しめ', medium: '普通', hard: '難しめ', oni: '鬼' }[genDiff];
       settings.push(en ? `Difficulty: ${lbl}` : `難易度: ${lbl}`);
     }
     if (genDaimon) settings.push(en
@@ -632,9 +651,11 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <div className="ps-go-row">
                 <span className="ps-go-label">{en ? 'Level' : '難易度'}</span>
                 <div className="ps-go-chips">
-                  {(['easy', 'medium', 'hard'] as const).map(d => (
-                    <button key={d} className={`ps-go-chip ${genDiff === d ? 'on' : ''}`} onClick={() => setGenDiff(d)}>
-                      {en ? d : { easy: '易', medium: '普通', hard: '難' }[d]}
+                  {(['easy', 'medium', 'hard', 'oni'] as const).map(d => (
+                    <button key={d} className={`ps-go-chip ${d === 'oni' ? 'oni' : ''} ${genDiff === d ? 'on' : ''}`} onClick={() => setGenDiff(d)}>
+                      {en
+                        ? { easy: 'easy', medium: 'medium', hard: 'hard', oni: '👹 brutal' }[d]
+                        : { easy: '易', medium: '普通', hard: '難', oni: '👹 鬼' }[d]}
                     </button>
                   ))}
                 </div>
@@ -670,7 +691,11 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
         {/* ── Saved sets ── */}
         <div className="ps-list">
-          <p className="ps-list-title">{en ? 'Your problem sets' : '作った問題セット'}</p>
+          <div className="ps-list-head">
+            <p className="ps-list-title">{en ? 'Your problem sets' : '作った問題セット'}</p>
+            {sets.length > 0 && <span className="ps-list-count">{sets.length}</span>}
+          </div>
+
           {sets.length === 0 ? (
             <div className="ps-empty">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -679,27 +704,60 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <p className="ps-empty-sub">{en ? 'Ask Lily above to make one!' : '上のフォームから作ってみてね！'}</p>
             </div>
           ) : (
-            sets.map(set => (
-              <button key={set.id} className="ps-card" onClick={() => startSolving(set)}>
-                <div className="ps-card-main">
-                  <div className="ps-card-top">
-                    {set.subject && <span className="ps-card-subject">{set.subject}</span>}
-                    <span className="ps-card-count">{set.count}{en ? ' Q' : '問'}</span>
+            <>
+              {/* Search + subject filter — appears once the library grows */}
+              {sets.length > 4 && (
+                <div className="ps-filter">
+                  <div className="ps-search">
+                    <Search size={15} className="ps-search-ic" />
+                    <input
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      placeholder={en ? 'Search title / subject…' : 'タイトル・科目で検索…'}
+                    />
+                    {search && <button className="ps-search-clear" onClick={() => setSearch('')}><X size={14} /></button>}
                   </div>
-                  <span className="ps-card-name">{set.title}</span>
-                  {(set.attempts ?? 0) > 0 && (
-                    <span className="ps-card-best">
-                      <Trophy size={11} /> {en ? 'Best' : '最高'} {set.bestScore ?? 0}/{set.count}
-                      <span className="ps-card-attempts">・{en ? `${set.attempts}× ` : `${set.attempts}回`}</span>
-                    </span>
+                  {subjects.length > 1 && (
+                    <div className="ps-subj-chips">
+                      <button className={`ps-subj-chip ${!subjectFilter ? 'on' : ''}`} onClick={() => setSubjectFilter(null)}>
+                        {en ? 'All' : 'すべて'}
+                      </button>
+                      {subjects.map(s => (
+                        <button key={s} className={`ps-subj-chip ${subjectFilter === s ? 'on' : ''}`} onClick={() => setSubjectFilter(subjectFilter === s ? null : s)}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
-                <div className="ps-card-side">
-                  <span className="ps-card-play"><Play size={16} fill="currentColor" /></span>
-                  <span className="ps-card-del" onClick={(e) => void handleDelete(set.id!, e)}><Trash2 size={14} /></span>
-                </div>
-              </button>
-            ))
+              )}
+
+              {filteredSets.length === 0 ? (
+                <p className="ps-noresult">{en ? 'No matching sets.' : '一致する問題セットがないよ'}</p>
+              ) : (
+                filteredSets.map(set => (
+                  <button key={set.id} className="ps-card" onClick={() => startSolving(set)}>
+                    <div className="ps-card-main">
+                      <div className="ps-card-top">
+                        {set.subject && <span className="ps-card-subject">{set.subject}</span>}
+                        <span className="ps-card-count">{set.count}{en ? ' Q' : '問'}</span>
+                      </div>
+                      <span className="ps-card-name">{set.title}</span>
+                      {(set.attempts ?? 0) > 0 && (
+                        <span className="ps-card-best">
+                          <Trophy size={11} /> {en ? 'Best' : '最高'} {set.bestScore ?? 0}/{set.count}
+                          <span className="ps-card-attempts">・{en ? `${set.attempts}× ` : `${set.attempts}回`}</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="ps-card-side">
+                      <span className="ps-card-play"><Play size={16} fill="currentColor" /></span>
+                      <span className="ps-card-del" onClick={(e) => void handleDelete(set.id!, e)}><Trash2 size={14} /></span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </>
           )}
         </div>
       </div>
@@ -772,6 +830,8 @@ function PracticeStyles() {
   .ps-go-chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .ps-go-chip { background: var(--background); border: 1.5px solid var(--border); color: var(--fg-muted); border-radius: 99px; padding: 4px 12px; font-size: 0.74rem; font-weight: 600; cursor: pointer; transition: all .15s; }
   .ps-go-chip.on { background: color-mix(in srgb, #8b5cf6 15%, transparent); border-color: #8b5cf6; color: #8b5cf6; }
+  .ps-go-chip.oni { color: #dc2626; border-color: color-mix(in srgb, #dc2626 35%, var(--border)); font-weight: 800; }
+  .ps-go-chip.oni.on { background: linear-gradient(120deg, #dc2626, #b91c1c); border-color: #dc2626; color: #fff; box-shadow: 0 2px 10px rgba(220,38,38,.35); }
   .ps-gen-actions { display: flex; gap: 8px; align-items: center; }
   .ps-gen-attach { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
   .ps-gen-attach:hover { color: #8b5cf6; border-color: #8b5cf6; }
@@ -791,7 +851,20 @@ function PracticeStyles() {
 
   /* List */
   .ps-list { display: flex; flex-direction: column; gap: 10px; }
+  .ps-list-head { display: flex; align-items: center; gap: 8px; }
   .ps-list-title { font-size: 0.78rem; font-weight: 700; color: var(--fg-muted); margin: 0; }
+  .ps-list-count { font-size: 0.66rem; font-weight: 800; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 14%, transparent); padding: 1px 8px; border-radius: 99px; }
+  .ps-filter { display: flex; flex-direction: column; gap: 8px; }
+  .ps-search { position: relative; display: flex; align-items: center; }
+  .ps-search-ic { position: absolute; left: 11px; color: var(--fg-muted); pointer-events: none; }
+  .ps-search input { width: 100%; background: var(--background); border: 1px solid var(--border); border-radius: 12px; padding: 9px 32px 9px 34px; font-size: 0.85rem; color: var(--foreground); outline: none; font-family: inherit; }
+  .ps-search input:focus { border-color: #8b5cf6; }
+  .ps-search-clear { position: absolute; right: 8px; width: 22px; height: 22px; border-radius: 50%; border: none; background: var(--accent); color: var(--fg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .ps-subj-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .ps-subj-chips::-webkit-scrollbar { display: none; }
+  .ps-subj-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); color: var(--fg-muted); border-radius: 16px; padding: 4px 12px; font-size: 0.74rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; }
+  .ps-subj-chip.on { background: color-mix(in srgb, #8b5cf6 14%, transparent); border-color: #8b5cf6; color: #8b5cf6; }
+  .ps-noresult { font-size: 0.82rem; color: var(--fg-muted); text-align: center; padding: 20px 0; margin: 0; }
   .ps-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 30px 0; text-align: center; color: var(--fg-muted); }
   .ps-empty-img { width: 96px; height: auto; opacity: .9; animation: ps-float 3s ease-in-out infinite; }
   @keyframes ps-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
