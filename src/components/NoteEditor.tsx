@@ -17,7 +17,7 @@ import {
   BarChart3, Binary, LayoutGrid,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Sparkles, Table2
+  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
@@ -29,7 +29,6 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
-import { runQuickAction, QUICK_ACTIONS, type QuickActionId } from '@/lib/quickAI';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getEffectiveApiKey } from '@/lib/appLang';
 import { useT, translate } from '@/lib/i18n';
@@ -141,9 +140,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [showInsertMenu, setShowInsertMenu] = useState(false);
-  const [showAIMenu, setShowAIMenu] = useState(false);
-  const [aiRunning, setAIRunning] = useState<QuickActionId | null>(null);
-  const [aiError, setAIError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
@@ -223,18 +219,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   useEffect(() => {
     setIsMobileView(window.innerWidth <= 768);
   }, []);
-
-  // AI クイック操作メニュー: 外側クリックで閉じる
-  useEffect(() => {
-    if (!showAIMenu) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.ai-menu-wrap')) return;
-      setShowAIMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showAIMenu]);
 
   useEffect(() => {
     if (!showInsertMenu) return;
@@ -657,55 +641,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     });
   };
 
-  const handleQuickAI = async (action: QuickActionId) => {
-    if (!editor || aiRunning) return;
-    const apiKey = getEffectiveApiKey();
-    if (!apiKey) {
-      setAIError(t('設定画面で Gemini API キーを登録してね'));
-      return;
-    }
-    const html = editor.getHTML();
-    const text = noteHtmlToText(html);
-    if (!text || text.length < 8) {
-      setAIError(t('メモが短すぎるよ。もう少し書いてから試してみて'));
-      return;
-    }
-    setAIError(null);
-    setAIRunning(action);
-    setShowAIMenu(false);
-    try {
-      const result = await runQuickAction(action, text, note?.title || '', apiKey);
-      const wasEditable = editor.isEditable;
-      if (!wasEditable) editor.setEditable(true);
-      const end = editor.state.doc.content.size;
-      if (result.kind === 'text') {
-        editor.chain().insertContentAt(end, result.html).run();
-      } else if (result.kind === 'qa') {
-        editor.chain().insertContentAt(end, {
-          type: 'qa',
-          attrs: { kind: result.qaKind, pairs: result.pairs },
-        }).run();
-      } else if (result.kind === 'tasklist') {
-        const heading = '<h3>✅ ToDo</h3>';
-        const list = `<ul data-type="taskList">${
-          result.items.map(t =>
-            `<li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>${
-              t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            }</p></div></li>`
-          ).join('')
-        }</ul>`;
-        editor.chain().insertContentAt(end, heading + list).run();
-      }
-      if (!wasEditable) editor.setEditable(false);
-      // Save immediately rather than waiting for debounce.
-      const content = editor.getHTML();
-      await db.notes.update(noteId, { content, updatedAt: Date.now() });
-    } catch (e) {
-      setAIError(e instanceof Error ? e.message : t('AI 処理に失敗したよ'));
-    } finally {
-      setAIRunning(null);
-    }
-  };
 
   const insertGeometry = () => {
     insertWithoutFocus({
@@ -786,35 +721,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                       <button className="insert-menu-item" onClick={() => { insertQA(); setShowInsertMenu(false); }}><BookOpen size={15} />Q&A</button>
                       <button className="insert-menu-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={15} />{t('幾何の図')}</button>
                       <button className="insert-menu-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={15} />{t('表')}</button>
-                    </div>
-                  )}
-                </div>
-                <div className="ai-menu-wrap">
-                  <button
-                    className={`btn-tool${showAIMenu ? ' active' : ''}`}
-                    onClick={() => { setShowAIMenu(p => !p); setAIError(null); }}
-                    disabled={!!aiRunning}
-                    title={t('AI クイック操作')}
-                  >
-                    {aiRunning ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                  </button>
-                  {showAIMenu && (
-                    <div className="ai-menu-dropdown">
-                      <div className="ai-menu-header">{t('AI でこのメモを…')}</div>
-                      {QUICK_ACTIONS.map(act => (
-                        <button
-                          key={act.id}
-                          className="ai-menu-item"
-                          onClick={() => handleQuickAI(act.id)}
-                          disabled={!!aiRunning}
-                        >
-                          <span className="ai-menu-emoji">{act.emoji}</span>
-                          <span className="ai-menu-text">
-                            <span className="ai-menu-label">{act.label}</span>
-                            <span className="ai-menu-desc">{act.description}</span>
-                          </span>
-                        </button>
-                      ))}
                     </div>
                   )}
                 </div>
@@ -1486,12 +1392,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           to { transform: translateY(0); }
         }
       `}</style>
-      {aiError && (
-        <div className="ai-error-toast">
-          {aiError}
-          <button onClick={() => setAIError(null)}>×</button>
-        </div>
-      )}
     </div>
   );
 }
