@@ -21,6 +21,7 @@ const EN: Record<string, string> = {
   '落書き': 'Sketch',
   '学習': 'Study',
   'お知らせ': 'News',
+  'できること': 'Features',
   '集中': 'Focus',
   '設定': 'Settings',
   '新規': 'New',
