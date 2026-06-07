@@ -704,6 +704,19 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
         </div>
       </div>
 
+      {/* Full-screen overlay during generation — blocks all other taps */}
+      {genLoading && typeof document !== 'undefined' && createPortal(
+        <div className="ps-genload">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="ps-genload-img" />
+          <div className="ps-genload-spinner"><Loader2 size={26} className="ps-spin" /></div>
+          <p className="ps-genload-title">{en ? 'Lily is creating your problems…' : 'Lilyが問題を作ってるよ…'}</p>
+          <p className="ps-genload-sub">{en ? 'This can take a little while' : '少し時間がかかることがあるよ'}</p>
+          <PracticeStyles />
+        </div>,
+        document.body
+      )}
+
       <PracticeStyles />
     </div>
   );
@@ -767,6 +780,14 @@ function PracticeStyles() {
   .ps-gen-btn:disabled { opacity: .5; cursor: default; }
   .ps-spin { animation: ps-spin 1s linear infinite; }
   @keyframes ps-spin { to { transform: rotate(360deg); } }
+
+  /* Generation loading overlay (portaled, covers everything incl. home bubble) */
+  .ps-genload { position: fixed; inset: 0; z-index: 10001; background: color-mix(in srgb, var(--background) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; animation: psgl-fade .25s ease; }
+  @keyframes psgl-fade { from { opacity: 0; } to { opacity: 1; } }
+  .ps-genload-img { width: 110px; height: auto; animation: ps-float 3s ease-in-out infinite; filter: drop-shadow(0 8px 24px rgba(139,92,246,.35)); }
+  .ps-genload-spinner { color: #8b5cf6; margin-top: 8px; }
+  .ps-genload-title { font-size: 1.02rem; font-weight: 800; margin: 6px 0 0; background: linear-gradient(120deg, #8b5cf6, #ec4899); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .ps-genload-sub { font-size: 0.8rem; color: var(--fg-muted); margin: 0; }
 
   /* List */
   .ps-list { display: flex; flex-direction: column; gap: 10px; }
