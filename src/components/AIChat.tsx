@@ -7,7 +7,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw,
   Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, ArrowLeft,
-  Save, History, Trash2, Mic, Phone, Wrench, MoreVertical,
+  Save, History, Trash2, Mic, Phone, Wrench, MoreVertical, PencilLine,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -105,6 +105,8 @@ interface AIChatProps {
   onOpenSettings: () => void;
   onSwitchTab?: (tab: 'memos' | 'sketch' | 'pdf' | 'settings' | 'study') => void;
   onNoteCreated?: (noteId: number) => void;
+  initialContext?: string;
+  onContextConsumed?: () => void;
 }
 
 function escHtmlAttr(s: string): string {
@@ -1625,7 +1627,7 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
 }
 
 
-export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: AIChatProps) {
+export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, initialContext, onContextConsumed }: AIChatProps) {
   const t = useT();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -1652,6 +1654,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
   const [showToolbox, setShowToolbox] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [activeSkillId, setActiveSkillId] = useState<number | null>(null);
+  // Practice context passed from PracticeScreen via page.tsx
+  const [practiceCtxUI, setPracticeCtxUI] = useState<string | null>(null);
+  const practiceCtxRef = useRef<string | null>(null);
   const enabledTones = useEnabledTones();
   const shortcuts = useShortcuts();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -1663,6 +1668,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
     []
   );
   useEffect(() => { ensureSkillsSeeded(); }, []);
+
+  // Consume practice context passed from PracticeScreen (on mount only)
+  useEffect(() => {
+    if (initialContext) {
+      practiceCtxRef.current = initialContext;
+      setPracticeCtxUI(initialContext);
+      onContextConsumed?.();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const skills = useLiveQuery(() => db.skills.orderBy('createdAt').toArray(), []) ?? [];
   const activeSkill = skills.find(s => s.id === activeSkillId) ?? null;
   useEffect(() => {
@@ -1912,12 +1927,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       }
     }
 
+    const ctxPrefix = practiceCtxRef.current; // captured before async work
     const userText = rawText;
     if ((!userText && sentAtts.length === 0) || isLoading || !apiKey) return;
 
     setInput('');
     setAttachments([]);
     setFileError('');
+    if (ctxPrefix) { practiceCtxRef.current = null; setPracticeCtxUI(null); }
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setIsLoading(true);
 
@@ -1965,12 +1982,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
       const modeDirective = TONES.find(mo => mo.id === activeMode)?.directive;
       const lastIdx = recentMsgs.length - 1;
       const history: ChatTurn[] = recentMsgs.map((m, idx) => {
+        let msgText = m.text;
+        if (idx === lastIdx && m.role === 'user') {
+          // Prepend practice context (invisible to user, seen by Gemini)
+          if (ctxPrefix) msgText = `[演習コンテキスト]\n${ctxPrefix}\n\n---\n\n${msgText}`;
+          if (modeDirective) msgText = `${msgText}\n\n（${modeDirective}）`;
+        }
         const turn: ChatTurn = {
           role: m.role === 'user' ? 'user' : 'model',
-          text:
-            idx === lastIdx && m.role === 'user' && modeDirective
-              ? `${m.text}\n\n（${modeDirective}）`
-              : m.text,
+          text: msgText,
         };
         // Re-attach files for EVERY user message in the window that has them.
         // Each request is stateless — the model only sees attachments present
@@ -2456,6 +2476,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         </div>
       )}
 
+      {practiceCtxUI && (
+        <div className="practice-ctx-bar">
+          <PencilLine size={12} />
+          <span>{getAppLang() === 'en' ? 'Practice context attached — type your question' : '演習コンテキスト添付済み — 質問を入力してね'}</span>
+          <button onClick={() => { practiceCtxRef.current = null; setPracticeCtxUI(null); }} title="削除">
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
       <div className="input-area">
         <input
           ref={fileInputRef}
@@ -2644,6 +2674,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated }: A
         .send-btn:disabled { opacity: 0.4; cursor: default; }
         .web-toggle.eco-toggle.on { background: color-mix(in srgb, #16a34a 15%, transparent); border-color: #16a34a; color: #16a34a; }
         .web-toggle.eco-toggle.on .web-state { background: #16a34a; color: white; }
+        .practice-ctx-bar { display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-top: 1px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); background: color-mix(in srgb, #8b5cf6 8%, var(--background)); flex-shrink: 0; font-size: 0.76rem; font-weight: 700; color: #8b5cf6; }
+        .practice-ctx-bar span { flex: 1; }
+        .practice-ctx-bar button { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: none; background: color-mix(in srgb, #8b5cf6 20%, transparent); color: #8b5cf6; cursor: pointer; flex-shrink: 0; }
         .att-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--accent); flex-shrink: 0; overflow-x: auto; }
         .att-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 5px 8px 5px 10px; flex-shrink: 0; }
         .att-chip-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 6px; }
