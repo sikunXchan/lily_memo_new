@@ -11,6 +11,7 @@ import {
 import {
   ArrowLeft, Sparkles, Wand2, ImagePlus, X, Play, Trash2,
   Check, ChevronRight, RotateCcw, Trophy, Loader2, PencilLine,
+  Settings2, MessageCircle, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
@@ -91,11 +92,57 @@ function QuestionChart({ config }: { config: string }) {
 
 interface PracticeScreenProps {
   onGoBack: () => void;
+  onOpenAI?: (context: string) => void;
+}
+
+// ── Context builders for Lily AI hand-off ──────────────────────────────────
+function buildQuestionContext(
+  set: ProblemSet, q: PracticeQuestion, idx: number, total: number,
+  textAns: string, selected: number | null, isCorrect: boolean | undefined,
+): string {
+  const en = getAppLang() === 'en';
+  const lines: string[] = [
+    en ? `[Practice context] ${set.title}` : `[演習コンテキスト] ${set.title}`,
+    en ? `Question ${idx + 1} / ${total} (${typeLabel(q.type)})` : `問題 ${idx + 1} / ${total}（${typeLabel(q.type)}）`,
+  ];
+  if (q.passage) { lines.push(''); lines.push(en ? 'Reading passage:' : '本文:', q.passage); }
+  lines.push(''); lines.push(en ? 'Question:' : '問題文:', q.prompt);
+  const ans = q.answer ?? (q.choices && q.correct !== undefined ? q.choices[q.correct] : '');
+  if (ans) lines.push(en ? `Model answer: ${ans}` : `模範解答: ${ans}`);
+  if (q.explanation) lines.push(en ? `Explanation: ${q.explanation}` : `解説: ${q.explanation}`);
+  const userAns = q.type === 'mcq' && selected !== null && q.choices ? q.choices[selected] : textAns;
+  if (userAns) lines.push(en ? `Your answer: ${userAns}` : `あなたの回答: ${userAns}`);
+  if (isCorrect !== undefined) lines.push(en ? (isCorrect ? 'Result: Correct' : 'Result: Incorrect') : (isCorrect ? '結果: 正解' : '結果: 不正解'));
+  return lines.join('\n');
+}
+
+function buildResultContext(
+  set: ProblemSet, queue: PracticeQuestion[],
+  results: Record<string, boolean>, correct: number, total: number,
+): string {
+  const en = getAppLang() === 'en';
+  const pct = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const lines: string[] = [
+    en ? `[Practice results] ${set.title}` : `[演習結果] ${set.title}`,
+  ];
+  if (set.subject) lines.push(en ? `Subject: ${set.subject}` : `科目: ${set.subject}`);
+  lines.push(en ? `Score: ${correct} / ${total} (${pct}%)` : `スコア: ${correct} / ${total}（${pct}%）`);
+  const wrong = queue.filter(q => results[q.id] === false);
+  if (wrong.length > 0) {
+    lines.push(''); lines.push(en ? '--- Incorrect questions ---' : '--- 間違えた問題 ---');
+    for (const q of wrong) {
+      lines.push(''); lines.push(q.prompt);
+      const ans = q.answer ?? (q.choices && q.correct !== undefined ? q.choices[q.correct] : '');
+      if (ans) lines.push(en ? `Answer: ${ans}` : `正解: ${ans}`);
+      if (q.explanation) lines.push(en ? `Why: ${q.explanation}` : `解説: ${q.explanation}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 type View = 'list' | 'solve' | 'result';
 
-export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
+export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenProps) {
   const en = getAppLang() === 'en';
 
   const sets = useLiveQuery<ProblemSet[]>(
@@ -110,6 +157,13 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Generation settings ──
+  const [showGenOpts, setShowGenOpts] = useState(false);
+  const [genTypes, setGenTypes] = useState<Set<string>>(new Set(['mcq', 'written', 'fill', 'tf']));
+  const [genCount, setGenCount] = useState(5);
+  const [genDiff, setGenDiff] = useState<'easy' | 'medium' | 'hard'>('medium');
+  const [genDaimon, setGenDaimon] = useState(false);
 
   // ── Solving state ──
   const [activeSet, setActiveSet] = useState<ProblemSet | null>(null);
@@ -127,6 +181,28 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
     : ['光合成の選択問題を5問', '英語長文を1つ作って3問', '二次関数の記述問題を3問', '世界史の一問一答を10問'];
 
   // ── Generation ──
+  const buildGeneratePrompt = useCallback((): string => {
+    const base = genInput.trim();
+    const settings: string[] = [];
+    if (genTypes.size < 4) {
+      const labels = [...genTypes].map(t => TYPE_BADGE[t]?.[en ? 'en' : 'ja']).filter(Boolean).join(en ? ' / ' : '・');
+      settings.push(en ? `Question types: ${labels} only` : `問題形式: ${labels}のみ`);
+    }
+    if (genCount !== 5) settings.push(en ? `${genCount} questions` : `${genCount}問`);
+    if (genDiff !== 'medium') {
+      const lbl = en
+        ? { easy: 'easy', medium: 'medium', hard: 'hard' }[genDiff]
+        : { easy: '易しめ', medium: '普通', hard: '難しめ' }[genDiff];
+      settings.push(en ? `Difficulty: ${lbl}` : `難易度: ${lbl}`);
+    }
+    if (genDaimon) settings.push(en
+      ? 'Compound question format — use a shared passage/source and create multiple sub-questions from it'
+      : '大問形式 — 共通の本文・資料（passage）を設定し、そこから複数の設問を作成する');
+    if (settings.length === 0) return base;
+    const tag = en ? '[Settings]' : '[設定]';
+    return base ? `${base}\n\n${tag} ${settings.join(en ? ', ' : '、')}` : `${tag} ${settings.join(en ? ', ' : '、')}`;
+  }, [genInput, genTypes, genCount, genDiff, genDaimon, en]);
+
   const pickImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     const added: { att: ChatAttachment; url: string }[] = [];
@@ -151,7 +227,7 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
     setGenLoading(true);
     setGenError('');
     try {
-      const result = await generateProblemSet(genInput, genImages.map(g => g.att));
+      const result = await generateProblemSet(buildGeneratePrompt(), genImages.map(g => g.att));
       const id = await saveProblemSet(result);
       // Clean up the generation form
       genImages.forEach(g => URL.revokeObjectURL(g.url));
@@ -186,15 +262,13 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
     if (current.type === 'mcq' || current.type === 'tf') {
       return selected === current.correct;
     }
-    if (current.type === 'fill') {
-      return norm(textAns) === norm(current.answer ?? '') && textAns.trim() !== '';
-    }
-    return false; // written → self-graded
-  }, [current, selected, textAns]);
+    return false; // fill & written → self-graded
+  }, [current, selected]);
 
   const reveal = () => {
     if (!current) return;
-    if (current.type !== 'written') {
+    // mcq and tf are auto-graded; fill and written use self-grading
+    if (current.type === 'mcq' || current.type === 'tf') {
       setResults(r => ({ ...r, [current.id]: gradeCurrent() }));
     }
     setRevealed(true);
@@ -274,6 +348,14 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
             {wrongQuestions.length > 0 && (
               <button className="psr-btn primary" onClick={() => startSolving(activeSet, wrongQuestions)}>
                 <RotateCcw size={16} /> {en ? `Review ${wrongQuestions.length} wrong` : `間違えた${wrongQuestions.length}問を復習`}
+              </button>
+            )}
+            {onOpenAI && (
+              <button className="psr-btn lily" onClick={() => {
+                const ctx = buildResultContext(activeSet, queue, results, correctCount, total);
+                onOpenAI(ctx);
+              }}>
+                <MessageCircle size={16} /> {en ? 'Discuss with Lily' : 'Lilyに相談する'}
               </button>
             )}
             <button className="psr-btn" onClick={() => startSolving(activeSet)}>
@@ -395,14 +477,15 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
             {/* ── Reveal area ── */}
             {revealed && (
               <div className="psv-reveal">
-                {current.type !== 'written' && (
+                {/* mcq/tf: auto verdict. fill/written: self-grade only */}
+                {(current.type === 'mcq' || current.type === 'tf') && (
                   <div className={`psv-verdict ${isCorrect ? 'ok' : 'ng'}`}>
                     {isCorrect ? <><Check size={18} /> {en ? 'Correct!' : '正解！'}</> : <><X size={18} /> {en ? 'Incorrect' : '不正解'}</>}
                   </div>
                 )}
                 {(current.type === 'fill' || current.type === 'written') && current.answer && (
                   <div className="psv-answer">
-                    <span className="psv-answer-label">{en ? 'Answer' : '模範解答'}</span>
+                    <span className="psv-answer-label">{en ? 'Model answer' : '模範解答'}</span>
                     <Rich src={current.answer} className="rich" />
                   </div>
                 )}
@@ -412,9 +495,9 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
                     <Rich src={current.explanation} className="rich" />
                   </div>
                 )}
-                {current.type === 'written' && (
+                {(current.type === 'written' || current.type === 'fill') && (
                   <div className="psv-selfgrade">
-                    <span className="psv-sg-q">{en ? 'How did you do?' : '自己採点：'}</span>
+                    <span className="psv-sg-q">{en ? 'Self-grade:' : '自己採点：'}</span>
                     <button className={`psv-sg-btn ok ${isCorrect === true ? 'on' : ''}`} onClick={() => selfGrade(true)}>
                       <Check size={15} /> {en ? 'Got it' : 'できた'}
                     </button>
@@ -422,6 +505,14 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
                       <X size={15} /> {en ? 'Missed' : 'できなかった'}
                     </button>
                   </div>
+                )}
+                {onOpenAI && (
+                  <button className="psv-lily-btn" onClick={() => {
+                    const ctx = buildQuestionContext(activeSet!, current, index, total, textAns, selected, results[current.id]);
+                    onOpenAI(ctx);
+                  }}>
+                    <MessageCircle size={14} /> {en ? 'Ask Lily for more' : 'Lilyに詳しく聞く'}
+                  </button>
                 )}
               </div>
             )}
@@ -500,6 +591,64 @@ export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
             ))}
           </div>
 
+          {/* ── Detailed settings ── */}
+          <button className="ps-gen-opts-toggle" onClick={() => setShowGenOpts(v => !v)} disabled={genLoading}>
+            <Settings2 size={13} /> {en ? 'Options' : '詳細設定'}
+            {showGenOpts ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+
+          {showGenOpts && (
+            <div className="ps-gen-opts">
+              {/* Question types */}
+              <div className="ps-go-row">
+                <span className="ps-go-label">{en ? 'Types' : '形式'}</span>
+                <div className="ps-go-chips">
+                  {(['mcq', 'fill', 'written', 'tf'] as const).map(t => (
+                    <button key={t} className={`ps-go-chip ${genTypes.has(t) ? 'on' : ''}`} onClick={() => {
+                      setGenTypes(prev => {
+                        const next = new Set(prev);
+                        if (next.has(t)) { if (next.size > 1) next.delete(t); }
+                        else next.add(t);
+                        return next;
+                      });
+                    }}>
+                      {TYPE_BADGE[t]?.emoji} {TYPE_BADGE[t]?.[en ? 'en' : 'ja']}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Question count */}
+              <div className="ps-go-row">
+                <span className="ps-go-label">{en ? 'Count' : '問題数'}</span>
+                <div className="ps-go-chips">
+                  {[3, 5, 10, 20].map(n => (
+                    <button key={n} className={`ps-go-chip ${genCount === n ? 'on' : ''}`} onClick={() => setGenCount(n)}>
+                      {n}{en ? 'Q' : '問'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Difficulty */}
+              <div className="ps-go-row">
+                <span className="ps-go-label">{en ? 'Level' : '難易度'}</span>
+                <div className="ps-go-chips">
+                  {(['easy', 'medium', 'hard'] as const).map(d => (
+                    <button key={d} className={`ps-go-chip ${genDiff === d ? 'on' : ''}`} onClick={() => setGenDiff(d)}>
+                      {en ? d : { easy: '易', medium: '普通', hard: '難' }[d]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* 大問 format */}
+              <div className="ps-go-row">
+                <span className="ps-go-label">{en ? 'Format' : '形式'}</span>
+                <button className={`ps-go-chip ${genDaimon ? 'on' : ''}`} onClick={() => setGenDaimon(v => !v)}>
+                  📄 {en ? 'Compound (大問)' : '大問形式'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {genError && <p className="ps-gen-err">{genError}</p>}
 
           <div className="ps-gen-actions">
@@ -575,6 +724,10 @@ function PracticeStyles() {
   .rich code.rt-code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
   .rich img { max-width: 100%; border-radius: 8px; }
   .rich .katex { font-size: 1.05em; }
+  .rich table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.85em; }
+  .rich th, .rich td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
+  .rich th { background: var(--accent); font-weight: 700; }
+  .rich tr:nth-child(even) td { background: color-mix(in srgb, var(--accent) 60%, transparent); }
 
   .ps-root { flex: 1; display: flex; flex-direction: column; background: var(--background); overflow: hidden; }
   .ps-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background); flex-shrink: 0; }
@@ -598,6 +751,14 @@ function PracticeStyles() {
   .ps-sg-chip { flex-shrink: 0; background: var(--background); border: 1px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); color: #8b5cf6; border-radius: 16px; padding: 5px 12px; font-size: 0.74rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; }
   .ps-sg-chip:hover:not(:disabled) { background: color-mix(in srgb, #8b5cf6 12%, transparent); }
   .ps-gen-err { font-size: 0.78rem; color: #ef4444; margin: 0; font-weight: 600; }
+  .ps-gen-opts-toggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 1px solid var(--border); color: var(--fg-muted); border-radius: 99px; padding: 4px 12px; font-size: 0.74rem; font-weight: 700; cursor: pointer; transition: all .15s; }
+  .ps-gen-opts-toggle:hover { color: #8b5cf6; border-color: #8b5cf6; }
+  .ps-gen-opts { display: flex; flex-direction: column; gap: 10px; padding: 10px; background: var(--background); border: 1px solid var(--border); border-radius: 12px; }
+  .ps-go-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ps-go-label { font-size: 0.7rem; font-weight: 700; color: var(--fg-muted); width: 44px; flex-shrink: 0; }
+  .ps-go-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ps-go-chip { background: var(--background); border: 1.5px solid var(--border); color: var(--fg-muted); border-radius: 99px; padding: 4px 12px; font-size: 0.74rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .ps-go-chip.on { background: color-mix(in srgb, #8b5cf6 15%, transparent); border-color: #8b5cf6; color: #8b5cf6; }
   .ps-gen-actions { display: flex; gap: 8px; align-items: center; }
   .ps-gen-attach { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
   .ps-gen-attach:hover { color: #8b5cf6; border-color: #8b5cf6; }
@@ -689,6 +850,8 @@ function PracticeStyles() {
   .psv-sg-btn.ok.on { background: #10b981; color: #fff; border-color: #10b981; }
   .psv-sg-btn.ng { color: #ef4444; }
   .psv-sg-btn.ng.on { background: #ef4444; color: #fff; border-color: #ef4444; }
+  .psv-lily-btn { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 99px; border: 1.5px solid color-mix(in srgb, #8b5cf6 40%, var(--border)); background: color-mix(in srgb, #8b5cf6 8%, var(--background)); color: #8b5cf6; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all .15s; }
+  .psv-lily-btn:hover { background: color-mix(in srgb, #8b5cf6 16%, var(--background)); }
 
   .psv-bottom { flex-shrink: 0; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--background); }
   .psv-action { width: 100%; max-width: 680px; margin: 0 auto; height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; border: none; background: var(--foreground); color: var(--background); font-size: 1rem; font-weight: 800; cursor: pointer; transition: all .15s; }
@@ -720,6 +883,7 @@ function PracticeStyles() {
   .psr-btn { width: 100%; height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--accent); color: var(--foreground); font-size: 0.92rem; font-weight: 700; cursor: pointer; transition: all .15s; }
   .psr-btn:hover { transform: translateY(-1px); }
   .psr-btn.primary { background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; }
+  .psr-btn.lily { background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); color: #8b5cf6; border-color: color-mix(in srgb, #8b5cf6 35%, var(--border)); }
   .psr-btn.ghost { background: transparent; color: var(--fg-muted); border: none; }
     `}</style>
   );

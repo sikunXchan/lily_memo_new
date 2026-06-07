@@ -42,6 +42,7 @@ export default function Home() {
   const [showTrophy, setShowTrophy] = useState(false);
   // 'bubbles' = BubbleHome, 'notes' = old HomeHero note list
   const [mobilePage, setMobilePage] = useState<'bubbles' | 'notes'>('bubbles');
+  const [practiceAIContext, setPracticeAIContext] = useState<string | null>(null);
 
   useEffect(() => {
     const checkLayout = () => {
@@ -118,6 +119,7 @@ export default function Home() {
   const openSettings = () => { setActiveTab('settings'); setActiveNoteId(undefined); };
   const openPDF = () => { setActiveTab('pdf'); setActiveNoteId(undefined); };
   const openAI = () => { setActiveTab('ai'); setActiveNoteId(undefined); };
+  const openAIWithContext = (ctx: string) => { setPracticeAIContext(ctx); setActiveTab('ai'); setActiveNoteId(undefined); };
   const goHome = () => {
     setActiveTab('memos');
     setActiveNoteId(undefined);
@@ -211,7 +213,7 @@ export default function Home() {
                 )}
                 {/* Practice / 演習 screen */}
                 {isMobile && activeTab === 'practice' && (
-                  <PracticeScreen onGoBack={goHome} />
+                  <PracticeScreen onGoBack={goHome} onOpenAI={openAIWithContext} />
                 )}
                 {/* Mobile memo tree */}
                 {isMobile && activeTab === 'memos' && mobilePage === 'notes' && (
@@ -227,6 +229,8 @@ export default function Home() {
                     onOpenSettings={openSettings}
                     onSwitchTab={(tab) => { setActiveTab(tab as TabType); setActiveNoteId(undefined); }}
                     onNoteCreated={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
+                    initialContext={practiceAIContext ?? undefined}
+                    onContextConsumed={() => setPracticeAIContext(null)}
                   />
                 )}
                 {activeTab === 'study' && (
