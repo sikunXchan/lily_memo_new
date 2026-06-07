@@ -18,15 +18,37 @@ function drawPreview(canvas: HTMLCanvasElement, doc: HandwritingDoc) {
   canvas.width = w * dpr;
   canvas.height = PREVIEW_H * dpr;
   ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, PREVIEW_H);
   const scale = w / (doc.width || 1280);
+
+  // Paper background
+  ctx.fillStyle = '#fdf9f0';
+  ctx.fillRect(0, 0, w, PREVIEW_H);
+
+  // Ruled lines (scaled to preview)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(150, 190, 255, 0.55)';
+  ctx.lineWidth = 1;
+  for (let y = 36 * scale; y < PREVIEW_H; y += 36 * scale) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255, 130, 130, 0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(72 * scale, 0);
+  ctx.lineTo(72 * scale, PREVIEW_H);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   for (const stroke of doc.strokes) {
     if (!stroke.points.length) continue;
     ctx.beginPath();
     ctx.strokeStyle = stroke.color;
     ctx.lineWidth = Math.max(stroke.width * scale, 0.5);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
     ctx.moveTo(stroke.points[0].x * scale, stroke.points[0].y * scale);
     for (const pt of stroke.points.slice(1)) ctx.lineTo(pt.x * scale, pt.y * scale);
     ctx.stroke();
@@ -66,7 +88,10 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
         onClick={() => setEditing(true)}
       >
         {isEmpty ? (
-          <div className="hw-empty">✏️ タップして手書き</div>
+          <div className="hw-empty">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#b0a890" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            <span>タップして手書き</span>
+          </div>
         ) : (
           <canvas
             ref={previewRef}
@@ -90,27 +115,36 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
 
       <style jsx>{`
         .hw-block {
-          border: 2px dashed var(--border);
+          border: 1.5px solid #d6c9a8;
           border-radius: 12px;
           cursor: pointer;
           margin: 6px 0;
           overflow: hidden;
-          transition: border-color 0.15s;
-          min-height: 60px;
+          transition: border-color 0.15s, box-shadow 0.15s;
+          min-height: 80px;
           display: flex;
           align-items: center;
           justify-content: center;
-          background: var(--accent);
+          background: #fdf9f0;
           user-select: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.07);
         }
-        .hw-block:hover { border-color: var(--primary); }
+        .hw-block:hover { border-color: var(--primary); box-shadow: 0 3px 12px rgba(0,0,0,0.11); }
         .hw-selected { border: 2px solid var(--primary); }
-        .hw-empty { color: var(--fg-muted, #999); font-size: 0.9rem; padding: 20px; }
+        .hw-empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          color: #b0a890;
+          font-size: 0.85rem;
+          padding: 24px;
+        }
         .hw-fullscreen {
           position: fixed;
           inset: 0;
           z-index: 10000;
-          background: var(--background);
+          background: #f0ebe0;
           display: flex;
           flex-direction: column;
         }
@@ -119,7 +153,8 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
           align-items: center;
           padding: 10px 16px;
           padding-top: calc(10px + env(safe-area-inset-top));
-          border-bottom: 1px solid var(--border);
+          border-bottom: 1px solid #d6c9a8;
+          background: #fdf9f0;
           flex-shrink: 0;
         }
         .hw-done-btn {
