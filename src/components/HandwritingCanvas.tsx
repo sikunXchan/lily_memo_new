@@ -75,7 +75,30 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
       canvas.height = doc.height * dpr;
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, doc.width, doc.height);
+
+    // Paper background
+    ctx.fillStyle = '#fdf9f0';
+    ctx.fillRect(0, 0, doc.width, doc.height);
+
+    // Ruled lines (36px spacing)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(150, 190, 255, 0.55)';
+    ctx.lineWidth = 1;
+    for (let y = 36; y < doc.height; y += 36) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(doc.width, y);
+      ctx.stroke();
+    }
+    // Margin line
+    ctx.strokeStyle = 'rgba(255, 130, 130, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(72, 0);
+    ctx.lineTo(72, doc.height);
+    ctx.stroke();
+    ctx.restore();
+
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     for (const stroke of doc.strokes) {
@@ -428,12 +451,12 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           border-radius: 50%;
         }
         .hw-canvas-wrap {
-          background: #fff;
-          border: 1px solid var(--border);
+          background: #fdf9f0;
+          border: 1px solid #d6c9a8;
           border-radius: 12px;
           overflow: auto;
           -webkit-overflow-scrolling: touch;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.08), inset 0 0 0 1px rgba(255,255,255,0.6);
           max-height: 75vh;
         }
         .is-fullscreen .hw-canvas-wrap {
@@ -442,7 +465,8 @@ export default function HandwritingCanvas({ value, onChange, readOnly = false }:
           border-radius: 8px;
         }
         :global([data-theme='dark']) .hw-canvas-wrap {
-          background: #f5f5f5;
+          background: #fdf9f0;
+          border-color: #d6c9a8;
         }
         .hw-canvas-stage {
           position: relative;
