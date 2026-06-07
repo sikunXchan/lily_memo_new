@@ -1,0 +1,726 @@
+'use client';
+
+import { useState, useRef, useMemo, useCallback } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { createPortal } from 'react-dom';
+import { Bar, Line, Pie, Scatter } from 'react-chartjs-2';
+import {
+  Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement,
+  LineElement, ArcElement, Title, Tooltip, Legend, Filler,
+} from 'chart.js';
+import {
+  ArrowLeft, Sparkles, Wand2, ImagePlus, X, Play, Trash2,
+  Check, ChevronRight, RotateCcw, Trophy, Loader2, PencilLine,
+} from 'lucide-react';
+import 'katex/dist/katex.min.css';
+import { db } from '@/lib/db';
+import type { ProblemSet, PracticeQuestion } from '@/lib/db';
+import {
+  generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
+} from '@/lib/practice';
+import type { ChatAttachment } from '@/lib/gemini';
+import { renderRich } from '@/lib/richText';
+import { getAppLang } from '@/lib/appLang';
+
+ChartJS.register(
+  CategoryScale, LinearScale, BarElement, PointElement, LineElement,
+  ArcElement, Title, Tooltip, Legend, Filler,
+);
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+const TYPE_BADGE: Record<string, { ja: string; en: string; emoji: string }> = {
+  mcq:     { ja: '選択',   en: 'Choice',  emoji: '🔘' },
+  written: { ja: '記述',   en: 'Written', emoji: '✍️' },
+  fill:    { ja: '穴埋め', en: 'Fill-in', emoji: '⬜' },
+  tf:      { ja: '○×',    en: 'T/F',     emoji: '⭕' },
+};
+
+function typeLabel(type: string): string {
+  const b = TYPE_BADGE[type];
+  if (!b) return '';
+  return getAppLang() === 'en' ? b.en : b.ja;
+}
+
+const norm = (s: string) =>
+  s.replace(/\s+/g, '').replace(/[、。．,，.・]/g, '').toLowerCase();
+
+function fileToAttachment(file: File): Promise<ChatAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1] ?? '';
+      resolve({ mimeType: file.type, data: base64 });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Rich text ──────────────────────────────────────────────────────────────────
+function Rich({ src, className }: { src: string; className?: string }) {
+  const html = useMemo(() => renderRich(src), [src]);
+  return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+// ── Chart renderer (parses AI's Chart.js JSON config) ────────────────────────────
+function QuestionChart({ config }: { config: string }) {
+  const parsed = useMemo(() => {
+    try {
+      const c = JSON.parse(config);
+      if (c && c.data) return c;
+    } catch { /* ignore */ }
+    return null;
+  }, [config]);
+  if (!parsed) return null;
+  const type = parsed.type || 'bar';
+  const data = parsed.data;
+  const options = { responsive: true, maintainAspectRatio: false, ...(parsed.options || {}) };
+  return (
+    <div className="pq-chart">
+      {type === 'line'    && <Line data={data} options={options} />}
+      {type === 'pie'     && <Pie data={data} options={options} />}
+      {type === 'scatter' && <Scatter data={data} options={options} />}
+      {(type === 'bar' || !['line', 'pie', 'scatter'].includes(type)) && <Bar data={data} options={options} />}
+      <style jsx>{`
+        .pq-chart { height: 220px; background: #fff; border-radius: 12px; padding: 12px; margin: 12px 0; border: 1px solid var(--border); }
+      `}</style>
+    </div>
+  );
+}
+
+interface PracticeScreenProps {
+  onGoBack: () => void;
+}
+
+type View = 'list' | 'solve' | 'result';
+
+export default function PracticeScreen({ onGoBack }: PracticeScreenProps) {
+  const en = getAppLang() === 'en';
+
+  const sets = useLiveQuery<ProblemSet[]>(
+    () => db.problemSets.orderBy('createdAt').reverse().toArray(), []
+  ) ?? [];
+
+  const [view, setView] = useState<View>('list');
+
+  // ── Generation state ──
+  const [genInput, setGenInput] = useState('');
+  const [genImages, setGenImages] = useState<{ att: ChatAttachment; url: string }[]>([]);
+  const [genLoading, setGenLoading] = useState(false);
+  const [genError, setGenError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Solving state ──
+  const [activeSet, setActiveSet] = useState<ProblemSet | null>(null);
+  const [queue, setQueue] = useState<PracticeQuestion[]>([]);
+  const [index, setIndex] = useState(0);
+  // qid -> { correct: boolean }
+  const [results, setResults] = useState<Record<string, boolean>>({});
+  // current question working state
+  const [selected, setSelected] = useState<number | null>(null);
+  const [textAns, setTextAns] = useState('');
+  const [revealed, setRevealed] = useState(false);
+
+  const SUGGESTIONS = en
+    ? ['5 multiple-choice questions on photosynthesis', 'A short English reading passage with 3 questions', 'Quiz me on WWII causes']
+    : ['光合成の選択問題を5問', '英語長文を1つ作って3問', '二次関数の記述問題を3問', '世界史の一問一答を10問'];
+
+  // ── Generation ──
+  const pickImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    const added: { att: ChatAttachment; url: string }[] = [];
+    for (const f of files.slice(0, 4)) {
+      if (!f.type.startsWith('image/')) continue;
+      added.push({ att: await fileToAttachment(f), url: URL.createObjectURL(f) });
+    }
+    setGenImages(prev => [...prev, ...added].slice(0, 4));
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const removeImage = (i: number) => {
+    setGenImages(prev => {
+      URL.revokeObjectURL(prev[i]?.url);
+      return prev.filter((_, j) => j !== i);
+    });
+  };
+
+  const handleGenerate = async () => {
+    if (genLoading) return;
+    if (!genInput.trim() && genImages.length === 0) return;
+    setGenLoading(true);
+    setGenError('');
+    try {
+      const result = await generateProblemSet(genInput, genImages.map(g => g.att));
+      const id = await saveProblemSet(result);
+      // Clean up the generation form
+      genImages.forEach(g => URL.revokeObjectURL(g.url));
+      setGenImages([]);
+      setGenInput('');
+      // Jump straight into solving the freshly-made set
+      const fresh = await db.problemSets.get(id);
+      if (fresh) startSolving(fresh);
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
+  // ── Solving ──
+  const startSolving = useCallback((set: ProblemSet, only?: PracticeQuestion[]) => {
+    setActiveSet(set);
+    setQueue(only ?? set.questions);
+    setIndex(0);
+    setResults({});
+    setSelected(null);
+    setTextAns('');
+    setRevealed(false);
+    setView('solve');
+  }, []);
+
+  const current = queue[index];
+
+  const gradeCurrent = useCallback((): boolean => {
+    if (!current) return false;
+    if (current.type === 'mcq' || current.type === 'tf') {
+      return selected === current.correct;
+    }
+    if (current.type === 'fill') {
+      return norm(textAns) === norm(current.answer ?? '') && textAns.trim() !== '';
+    }
+    return false; // written → self-graded
+  }, [current, selected, textAns]);
+
+  const reveal = () => {
+    if (!current) return;
+    if (current.type !== 'written') {
+      setResults(r => ({ ...r, [current.id]: gradeCurrent() }));
+    }
+    setRevealed(true);
+  };
+
+  const selfGrade = (ok: boolean) => {
+    if (!current) return;
+    setResults(r => ({ ...r, [current.id]: ok }));
+  };
+
+  const next = async () => {
+    if (index + 1 < queue.length) {
+      setIndex(i => i + 1);
+      setSelected(null);
+      setTextAns('');
+      setRevealed(false);
+    } else {
+      // Finished — record & go to results
+      const correct = Object.values(results).filter(Boolean).length;
+      if (activeSet?.id) await recordAttempt(activeSet.id, correct);
+      setView('result');
+    }
+  };
+
+  const correctCount = Object.values(results).filter(Boolean).length;
+  const total = queue.length;
+  const wrongQuestions = queue.filter(q => results[q.id] === false);
+
+  // ── Delete ──
+  const handleDelete = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(en ? 'Delete this problem set?' : 'この問題セットを削除する？')) return;
+    await deleteProblemSet(id);
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RESULT VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (view === 'result' && activeSet) {
+    const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+    const msg = pct >= 90 ? (en ? 'Perfect! 🎉' : '完璧だね！🎉')
+      : pct >= 70 ? (en ? 'Great work! ✨' : 'よくできました！✨')
+      : pct >= 40 ? (en ? 'Keep going! 💪' : 'その調子！💪')
+      : (en ? "Let's review together 🌱" : '一緒に復習しよう🌱');
+    const ring = 2 * Math.PI * 52;
+    return (
+      <div className="ps-root">
+        <div className="ps-result">
+          <div className="psr-ring-wrap">
+            <svg viewBox="0 0 120 120" className="psr-ring">
+              <circle cx="60" cy="60" r="52" className="psr-ring-bg" />
+              <circle cx="60" cy="60" r="52" className="psr-ring-fg"
+                strokeDasharray={ring}
+                strokeDashoffset={ring - (ring * pct) / 100}
+              />
+            </svg>
+            <div className="psr-ring-center">
+              <span className="psr-pct">{pct}<small>%</small></span>
+              <span className="psr-frac">{correctCount}/{total}</span>
+            </div>
+          </div>
+          <p className="psr-msg">{msg}</p>
+          <p className="psr-sub">{activeSet.title}</p>
+
+          {/* Per-question review */}
+          <div className="psr-review">
+            {queue.map((q, i) => (
+              <div key={q.id} className={`psr-rev-row ${results[q.id] ? 'ok' : 'ng'}`}>
+                <span className="psr-rev-num">{i + 1}</span>
+                <span className="psr-rev-badge">{TYPE_BADGE[q.type]?.emoji} {typeLabel(q.type)}</span>
+                <span className="psr-rev-icon">{results[q.id] ? <Check size={16} /> : <X size={16} />}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="psr-actions">
+            {wrongQuestions.length > 0 && (
+              <button className="psr-btn primary" onClick={() => startSolving(activeSet, wrongQuestions)}>
+                <RotateCcw size={16} /> {en ? `Review ${wrongQuestions.length} wrong` : `間違えた${wrongQuestions.length}問を復習`}
+              </button>
+            )}
+            <button className="psr-btn" onClick={() => startSolving(activeSet)}>
+              <Play size={16} /> {en ? 'Retry all' : 'もう一度全部'}
+            </button>
+            <button className="psr-btn ghost" onClick={() => { setView('list'); setActiveSet(null); }}>
+              {en ? 'Back to list' : '一覧に戻る'}
+            </button>
+          </div>
+        </div>
+        <PracticeStyles />
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SOLVE VIEW (full-screen, portal)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (view === 'solve' && current) {
+    const isCorrect = results[current.id];
+    const canReveal = current.type === 'written'
+      ? true
+      : current.type === 'fill'
+        ? textAns.trim() !== ''
+        : selected !== null;
+
+    const overlay = (
+      <div className="ps-solve">
+        {/* Top bar */}
+        <div className="psv-top">
+          <button className="psv-close" onClick={() => { setView('list'); setActiveSet(null); }}>
+            <X size={20} />
+          </button>
+          <div className="psv-progress-track">
+            <div className="psv-progress-fill" style={{ width: `${((index) / total) * 100}%` }} />
+          </div>
+          <span className="psv-count">{index + 1}<small>/{total}</small></span>
+        </div>
+
+        {/* Scrollable question body */}
+        <div className="psv-body">
+          <div className="psv-card" key={current.id}>
+            <div className="psv-type">{TYPE_BADGE[current.type]?.emoji} {typeLabel(current.type)}</div>
+
+            {current.passage && (
+              <div className="psv-passage">
+                <Rich src={current.passage} className="rich" />
+              </div>
+            )}
+
+            {current.chart && <QuestionChart config={current.chart} />}
+
+            <Rich src={current.prompt} className="rich psv-prompt" />
+
+            {/* ── Answer area ── */}
+            {current.type === 'mcq' && current.choices && (
+              <div className="psv-choices">
+                {current.choices.map((c, i) => {
+                  const state = !revealed
+                    ? (selected === i ? 'sel' : '')
+                    : i === current.correct ? 'correct'
+                      : selected === i ? 'wrong' : '';
+                  return (
+                    <button
+                      key={i}
+                      className={`psv-choice ${state}`}
+                      disabled={revealed}
+                      onClick={() => setSelected(i)}
+                    >
+                      <span className="psv-choice-mark">{String.fromCharCode(65 + i)}</span>
+                      <Rich src={c} className="rich psv-choice-text" />
+                      {revealed && i === current.correct && <Check size={18} className="psv-choice-ic" />}
+                      {revealed && selected === i && i !== current.correct && <X size={18} className="psv-choice-ic" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {current.type === 'tf' && (
+              <div className="psv-tf">
+                {[0, 1].map(v => {
+                  const state = !revealed
+                    ? (selected === v ? 'sel' : '')
+                    : v === current.correct ? 'correct'
+                      : selected === v ? 'wrong' : '';
+                  return (
+                    <button key={v} className={`psv-tf-btn ${state}`} disabled={revealed} onClick={() => setSelected(v)}>
+                      {v === 0 ? '⭕' : '❌'}
+                      <span>{v === 0 ? (en ? 'True' : '正しい') : (en ? 'False' : '誤り')}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {current.type === 'fill' && (
+              <input
+                className={`psv-input ${revealed ? (isCorrect ? 'ok' : 'ng') : ''}`}
+                value={textAns}
+                onChange={e => setTextAns(e.target.value)}
+                placeholder={en ? 'Your answer…' : '答えを入力…'}
+                disabled={revealed}
+                onKeyDown={e => { if (e.key === 'Enter' && canReveal && !revealed) reveal(); }}
+              />
+            )}
+
+            {current.type === 'written' && (
+              <textarea
+                className="psv-textarea"
+                value={textAns}
+                onChange={e => setTextAns(e.target.value)}
+                placeholder={en ? 'Write your answer…' : '答えを書いてみよう…'}
+                disabled={revealed}
+                rows={4}
+              />
+            )}
+
+            {/* ── Reveal area ── */}
+            {revealed && (
+              <div className="psv-reveal">
+                {current.type !== 'written' && (
+                  <div className={`psv-verdict ${isCorrect ? 'ok' : 'ng'}`}>
+                    {isCorrect ? <><Check size={18} /> {en ? 'Correct!' : '正解！'}</> : <><X size={18} /> {en ? 'Incorrect' : '不正解'}</>}
+                  </div>
+                )}
+                {(current.type === 'fill' || current.type === 'written') && current.answer && (
+                  <div className="psv-answer">
+                    <span className="psv-answer-label">{en ? 'Answer' : '模範解答'}</span>
+                    <Rich src={current.answer} className="rich" />
+                  </div>
+                )}
+                {current.explanation && (
+                  <div className="psv-explain">
+                    <span className="psv-explain-label">💡 {en ? 'Explanation' : '解説'}</span>
+                    <Rich src={current.explanation} className="rich" />
+                  </div>
+                )}
+                {current.type === 'written' && (
+                  <div className="psv-selfgrade">
+                    <span className="psv-sg-q">{en ? 'How did you do?' : '自己採点：'}</span>
+                    <button className={`psv-sg-btn ok ${isCorrect === true ? 'on' : ''}`} onClick={() => selfGrade(true)}>
+                      <Check size={15} /> {en ? 'Got it' : 'できた'}
+                    </button>
+                    <button className={`psv-sg-btn ng ${isCorrect === false ? 'on' : ''}`} onClick={() => selfGrade(false)}>
+                      <X size={15} /> {en ? 'Missed' : 'できなかった'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom action */}
+        <div className="psv-bottom">
+          {!revealed ? (
+            <button className="psv-action" disabled={!canReveal} onClick={reveal}>
+              {en ? 'Check answer' : '答えを確認'}
+            </button>
+          ) : (
+            <button
+              className="psv-action next"
+              disabled={current.type === 'written' && isCorrect === undefined}
+              onClick={() => void next()}
+            >
+              {index + 1 < total ? <>{en ? 'Next' : '次へ'} <ChevronRight size={18} /></> : <>{en ? 'See results' : '結果を見る'} <Trophy size={18} /></>}
+            </button>
+          )}
+        </div>
+
+        <PracticeStyles />
+      </div>
+    );
+    return typeof document !== 'undefined' ? createPortal(overlay, document.body) : overlay;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LIST VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  return (
+    <div className="ps-root">
+      {/* Header */}
+      <div className="ps-header">
+        <button className="ps-back" onClick={onGoBack}><ArrowLeft size={18} /></button>
+        <PencilLine size={16} className="ps-head-ic" />
+        <span className="ps-title">{en ? 'Practice' : '演習'}</span>
+      </div>
+
+      <div className="ps-body">
+        {/* ── Generation panel ── */}
+        <div className="ps-gen">
+          <div className="ps-gen-head">
+            <Sparkles size={15} className="ps-gen-spark" />
+            <span>{en ? 'Make a problem set with Lily' : 'Lilyに問題を作ってもらう'}</span>
+          </div>
+
+          {genImages.length > 0 && (
+            <div className="ps-gen-imgs">
+              {genImages.map((g, i) => (
+                <div key={i} className="ps-gen-img">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={g.url} alt="" />
+                  <button onClick={() => removeImage(i)}><X size={12} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <textarea
+            className="ps-gen-input"
+            value={genInput}
+            onChange={e => setGenInput(e.target.value)}
+            placeholder={en
+              ? 'e.g. "5 multiple-choice questions on the water cycle", or attach a textbook photo'
+              : '例：「光合成の選択問題を5問」や教科書の写真を添付'}
+            rows={3}
+            disabled={genLoading}
+          />
+
+          <div className="ps-gen-suggest">
+            {SUGGESTIONS.map((s, i) => (
+              <button key={i} className="ps-sg-chip" disabled={genLoading} onClick={() => setGenInput(s)}>{s}</button>
+            ))}
+          </div>
+
+          {genError && <p className="ps-gen-err">{genError}</p>}
+
+          <div className="ps-gen-actions">
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pickImages} />
+            <button className="ps-gen-attach" onClick={() => fileRef.current?.click()} disabled={genLoading}>
+              <ImagePlus size={16} />
+            </button>
+            <button
+              className="ps-gen-btn"
+              onClick={() => void handleGenerate()}
+              disabled={genLoading || (!genInput.trim() && genImages.length === 0)}
+            >
+              {genLoading
+                ? <><Loader2 size={16} className="ps-spin" /> {en ? 'Creating…' : '作成中…'}</>
+                : <><Wand2 size={16} /> {en ? 'Generate' : '作成する'}</>}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Saved sets ── */}
+        <div className="ps-list">
+          <p className="ps-list-title">{en ? 'Your problem sets' : '作った問題セット'}</p>
+          {sets.length === 0 ? (
+            <div className="ps-empty">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="ps-empty-img" />
+              <p>{en ? 'No sets yet.' : 'まだ問題セットがないよ'}</p>
+              <p className="ps-empty-sub">{en ? 'Ask Lily above to make one!' : '上のフォームから作ってみてね！'}</p>
+            </div>
+          ) : (
+            sets.map(set => (
+              <button key={set.id} className="ps-card" onClick={() => startSolving(set)}>
+                <div className="ps-card-main">
+                  <div className="ps-card-top">
+                    {set.subject && <span className="ps-card-subject">{set.subject}</span>}
+                    <span className="ps-card-count">{set.count}{en ? ' Q' : '問'}</span>
+                  </div>
+                  <span className="ps-card-name">{set.title}</span>
+                  {(set.attempts ?? 0) > 0 && (
+                    <span className="ps-card-best">
+                      <Trophy size={11} /> {en ? 'Best' : '最高'} {set.bestScore ?? 0}/{set.count}
+                      <span className="ps-card-attempts">・{en ? `${set.attempts}× ` : `${set.attempts}回`}</span>
+                    </span>
+                  )}
+                </div>
+                <div className="ps-card-side">
+                  <span className="ps-card-play"><Play size={16} fill="currentColor" /></span>
+                  <span className="ps-card-del" onClick={(e) => void handleDelete(set.id!, e)}><Trash2 size={14} /></span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      <PracticeStyles />
+    </div>
+  );
+}
+
+// ── Styles ─────────────────────────────────────────────────────────────────────
+// All practice styles live in one global block. Class names are uniquely
+// prefixed (ps-/psv-/psr-/pq-/rich) so global scope is safe and lets the same
+// rules apply across the list, full-screen solve (portaled) and result views.
+function PracticeStyles() {
+  return (
+    <style jsx global>{`
+  .rich { font-size: 0.9rem; line-height: 1.7; color: var(--foreground); word-break: break-word; }
+  .rich p { margin: 0 0 8px; }
+  .rich p:last-child { margin-bottom: 0; }
+  .rich ul, .rich ol { padding-left: 20px; margin: 6px 0; }
+  .rich strong { font-weight: 700; }
+  .rich code.rt-code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+  .rich img { max-width: 100%; border-radius: 8px; }
+  .rich .katex { font-size: 1.05em; }
+
+  .ps-root { flex: 1; display: flex; flex-direction: column; background: var(--background); overflow: hidden; }
+  .ps-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background); flex-shrink: 0; }
+  .ps-back { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: var(--accent); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--primary); flex-shrink: 0; }
+  .ps-head-ic { color: #8b5cf6; }
+  .ps-title { font-size: 18px; font-weight: 800; background: linear-gradient(120deg, #8b5cf6, #ec4899); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .ps-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; -webkit-overflow-scrolling: touch; }
+
+  /* Generation panel */
+  .ps-gen { background: linear-gradient(135deg, color-mix(in srgb, #8b5cf6 10%, var(--background)), color-mix(in srgb, #ec4899 7%, var(--background))); border: 1.5px solid color-mix(in srgb, #8b5cf6 25%, transparent); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .ps-gen-head { display: flex; align-items: center; gap: 7px; font-size: 0.86rem; font-weight: 800; color: var(--foreground); }
+  .ps-gen-spark { color: #8b5cf6; }
+  .ps-gen-imgs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ps-gen-img { position: relative; width: 60px; height: 60px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  .ps-gen-img img { width: 100%; height: 100%; object-fit: cover; }
+  .ps-gen-img button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,.6); border: none; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .ps-gen-input { width: 100%; background: var(--background); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; font-size: 0.88rem; color: var(--foreground); outline: none; font-family: inherit; resize: none; line-height: 1.5; }
+  .ps-gen-input:focus { border-color: #8b5cf6; }
+  .ps-gen-suggest { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .ps-gen-suggest::-webkit-scrollbar { display: none; }
+  .ps-sg-chip { flex-shrink: 0; background: var(--background); border: 1px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); color: #8b5cf6; border-radius: 16px; padding: 5px 12px; font-size: 0.74rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; }
+  .ps-sg-chip:hover:not(:disabled) { background: color-mix(in srgb, #8b5cf6 12%, transparent); }
+  .ps-gen-err { font-size: 0.78rem; color: #ef4444; margin: 0; font-weight: 600; }
+  .ps-gen-actions { display: flex; gap: 8px; align-items: center; }
+  .ps-gen-attach { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .ps-gen-attach:hover { color: #8b5cf6; border-color: #8b5cf6; }
+  .ps-gen-btn { flex: 1; height: 42px; border-radius: 12px; border: none; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; font-size: 0.9rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all .15s; }
+  .ps-gen-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(139,92,246,.35); }
+  .ps-gen-btn:disabled { opacity: .5; cursor: default; }
+  .ps-spin { animation: ps-spin 1s linear infinite; }
+  @keyframes ps-spin { to { transform: rotate(360deg); } }
+
+  /* List */
+  .ps-list { display: flex; flex-direction: column; gap: 10px; }
+  .ps-list-title { font-size: 0.78rem; font-weight: 700; color: var(--fg-muted); margin: 0; }
+  .ps-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 30px 0; text-align: center; color: var(--fg-muted); }
+  .ps-empty-img { width: 96px; height: auto; opacity: .9; animation: ps-float 3s ease-in-out infinite; }
+  @keyframes ps-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  .ps-empty-sub { font-size: 0.78rem; }
+  .ps-card { display: flex; align-items: stretch; gap: 12px; text-align: left; background: var(--accent); border: 1.5px solid var(--border); border-radius: 16px; padding: 14px; cursor: pointer; transition: all .15s; font-family: inherit; }
+  .ps-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.1); border-color: color-mix(in srgb, #8b5cf6 40%, var(--border)); }
+  .ps-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .ps-card-top { display: flex; align-items: center; gap: 8px; }
+  .ps-card-subject { font-size: 0.66rem; font-weight: 700; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 14%, transparent); padding: 2px 8px; border-radius: 99px; }
+  .ps-card-count { font-size: 0.66rem; font-weight: 700; color: var(--fg-muted); }
+  .ps-card-name { font-size: 0.96rem; font-weight: 700; color: var(--foreground); line-height: 1.3; }
+  .ps-card-best { display: inline-flex; align-items: center; gap: 4px; font-size: 0.7rem; font-weight: 600; color: #f59e0b; }
+  .ps-card-attempts { color: var(--fg-muted); }
+  .ps-card-side { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+  .ps-card-play { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; display: flex; align-items: center; justify-content: center; }
+  .ps-card-del { width: 28px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--fg-muted); }
+  .ps-card-del:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
+
+  .ps-solve { position: fixed; inset: 0; z-index: 10000; background: var(--background); display: flex; flex-direction: column; }
+  .psv-top { display: flex; align-items: center; gap: 12px; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top)); flex-shrink: 0; }
+  .psv-close { width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--accent); color: var(--fg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .psv-progress-track { flex: 1; height: 8px; background: var(--accent); border-radius: 99px; overflow: hidden; }
+  .psv-progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #8b5cf6, #ec4899); transition: width .4s ease; }
+  .psv-count { font-size: 0.85rem; font-weight: 800; color: var(--foreground); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .psv-count small { color: var(--fg-muted); font-weight: 600; }
+
+  .psv-body { flex: 1; overflow-y: auto; padding: 4px 16px 20px; -webkit-overflow-scrolling: touch; }
+  .psv-card { max-width: 680px; margin: 0 auto; animation: psv-in .3s cubic-bezier(.2,.8,.3,1); }
+  @keyframes psv-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .psv-type { display: inline-block; font-size: 0.7rem; font-weight: 700; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, transparent); padding: 3px 10px; border-radius: 99px; margin-bottom: 12px; }
+  .psv-passage { background: var(--accent); border: 1px solid var(--border); border-left: 3px solid #8b5cf6; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; max-height: 320px; overflow-y: auto; }
+  .psv-prompt { font-size: 1.02rem !important; font-weight: 600; margin-bottom: 18px; }
+
+  .psv-choices { display: flex; flex-direction: column; gap: 10px; }
+  .psv-choice { display: flex; align-items: center; gap: 12px; text-align: left; background: var(--accent); border: 2px solid var(--border); border-radius: 14px; padding: 13px 14px; cursor: pointer; transition: all .15s; font-family: inherit; }
+  .psv-choice:hover:not(:disabled) { border-color: color-mix(in srgb, #8b5cf6 50%, var(--border)); }
+  .psv-choice.sel { border-color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 10%, var(--background)); }
+  .psv-choice.correct { border-color: #10b981; background: color-mix(in srgb, #10b981 12%, var(--background)); }
+  .psv-choice.wrong { border-color: #ef4444; background: color-mix(in srgb, #ef4444 10%, var(--background)); }
+  .psv-choice:disabled { cursor: default; }
+  .psv-choice-mark { width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; background: var(--background); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.82rem; color: var(--fg-muted); }
+  .psv-choice.sel .psv-choice-mark { background: #8b5cf6; color: #fff; border-color: #8b5cf6; }
+  .psv-choice.correct .psv-choice-mark { background: #10b981; color: #fff; border-color: #10b981; }
+  .psv-choice.wrong .psv-choice-mark { background: #ef4444; color: #fff; border-color: #ef4444; }
+  .psv-choice-text { flex: 1; }
+  .psv-choice-ic { flex-shrink: 0; }
+  .psv-choice.correct .psv-choice-ic { color: #10b981; }
+  .psv-choice.wrong .psv-choice-ic { color: #ef4444; }
+
+  .psv-tf { display: flex; gap: 12px; }
+  .psv-tf-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 22px 12px; border-radius: 16px; border: 2px solid var(--border); background: var(--accent); cursor: pointer; font-size: 1.8rem; transition: all .15s; }
+  .psv-tf-btn span { font-size: 0.82rem; font-weight: 700; color: var(--foreground); }
+  .psv-tf-btn.sel { border-color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 10%, var(--background)); }
+  .psv-tf-btn.correct { border-color: #10b981; background: color-mix(in srgb, #10b981 12%, var(--background)); }
+  .psv-tf-btn.wrong { border-color: #ef4444; background: color-mix(in srgb, #ef4444 10%, var(--background)); }
+  .psv-tf-btn:disabled { cursor: default; }
+
+  .psv-input { width: 100%; background: var(--accent); border: 2px solid var(--border); border-radius: 12px; padding: 13px 14px; font-size: 1rem; color: var(--foreground); outline: none; font-family: inherit; }
+  .psv-input:focus { border-color: #8b5cf6; }
+  .psv-input.ok { border-color: #10b981; }
+  .psv-input.ng { border-color: #ef4444; }
+  .psv-textarea { width: 100%; background: var(--accent); border: 2px solid var(--border); border-radius: 12px; padding: 13px 14px; font-size: 0.95rem; color: var(--foreground); outline: none; font-family: inherit; resize: vertical; line-height: 1.6; }
+  .psv-textarea:focus { border-color: #8b5cf6; }
+
+  .psv-reveal { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; animation: psv-in .3s ease; }
+  .psv-verdict { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 0.9rem; font-weight: 800; padding: 6px 14px; border-radius: 99px; }
+  .psv-verdict.ok { color: #10b981; background: color-mix(in srgb, #10b981 14%, transparent); }
+  .psv-verdict.ng { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
+  .psv-answer { background: color-mix(in srgb, #10b981 8%, var(--background)); border: 1px solid color-mix(in srgb, #10b981 30%, transparent); border-radius: 12px; padding: 12px 14px; }
+  .psv-answer-label { display: block; font-size: 0.72rem; font-weight: 800; color: #10b981; margin-bottom: 6px; }
+  .psv-explain { background: var(--accent); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .psv-explain-label { display: block; font-size: 0.72rem; font-weight: 800; color: #f59e0b; margin-bottom: 6px; }
+  .psv-selfgrade { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .psv-sg-q { font-size: 0.82rem; font-weight: 700; color: var(--fg-muted); }
+  .psv-sg-btn { display: inline-flex; align-items: center; gap: 5px; padding: 8px 16px; border-radius: 99px; border: 2px solid var(--border); background: var(--background); font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all .15s; }
+  .psv-sg-btn.ok { color: #10b981; }
+  .psv-sg-btn.ok.on { background: #10b981; color: #fff; border-color: #10b981; }
+  .psv-sg-btn.ng { color: #ef4444; }
+  .psv-sg-btn.ng.on { background: #ef4444; color: #fff; border-color: #ef4444; }
+
+  .psv-bottom { flex-shrink: 0; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--background); }
+  .psv-action { width: 100%; max-width: 680px; margin: 0 auto; height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; border: none; background: var(--foreground); color: var(--background); font-size: 1rem; font-weight: 800; cursor: pointer; transition: all .15s; }
+  .psv-action.next { background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; }
+  .psv-action:disabled { opacity: .35; cursor: default; }
+
+  .ps-result { flex: 1; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 32px 20px calc(32px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; }
+  .psr-ring-wrap { position: relative; width: 160px; height: 160px; margin-bottom: 8px; animation: psr-pop .5s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes psr-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .psr-ring { width: 160px; height: 160px; transform: rotate(-90deg); }
+  .psr-ring-bg { fill: none; stroke: var(--accent); stroke-width: 10; }
+  .psr-ring-fg { fill: none; stroke: url(#psr-grad); stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 1s cubic-bezier(.3,1,.4,1); stroke: #8b5cf6; }
+  .psr-ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .psr-pct { font-size: 2.6rem; font-weight: 900; color: var(--foreground); line-height: 1; }
+  .psr-pct small { font-size: 1.1rem; color: var(--fg-muted); }
+  .psr-frac { font-size: 0.86rem; font-weight: 700; color: var(--fg-muted); margin-top: 2px; }
+  .psr-msg { font-size: 1.3rem; font-weight: 800; margin: 8px 0 2px; background: linear-gradient(120deg, #8b5cf6, #ec4899); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .psr-sub { font-size: 0.84rem; color: var(--fg-muted); margin: 0 0 20px; text-align: center; }
+  .psr-review { width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; }
+  .psr-rev-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; background: var(--accent); border: 1px solid var(--border); border-left: 3px solid var(--border); }
+  .psr-rev-row.ok { border-left-color: #10b981; }
+  .psr-rev-row.ng { border-left-color: #ef4444; }
+  .psr-rev-num { width: 22px; height: 22px; border-radius: 50%; background: var(--background); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800; color: var(--fg-muted); flex-shrink: 0; }
+  .psr-rev-badge { flex: 1; font-size: 0.78rem; font-weight: 600; color: var(--foreground); }
+  .psr-rev-icon { flex-shrink: 0; }
+  .psr-rev-row.ok .psr-rev-icon { color: #10b981; }
+  .psr-rev-row.ng .psr-rev-icon { color: #ef4444; }
+  .psr-actions { width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 10px; }
+  .psr-btn { width: 100%; height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--accent); color: var(--foreground); font-size: 0.92rem; font-weight: 700; cursor: pointer; transition: all .15s; }
+  .psr-btn:hover { transform: translateY(-1px); }
+  .psr-btn.primary { background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; }
+  .psr-btn.ghost { background: transparent; color: var(--fg-muted); border: none; }
+    `}</style>
+  );
+}

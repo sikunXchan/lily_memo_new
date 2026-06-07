@@ -24,7 +24,8 @@ const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ss
 const NewsScreen = dynamic(() => import('@/components/NewsScreen'), { ssr: false });
 const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
 const TrophyRoom = dynamic(() => import('@/components/TrophyRoom'), { ssr: false });
-type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'news' | 'todo';
+const PracticeScreen = dynamic(() => import('@/components/PracticeScreen'), { ssr: false });
+type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'news' | 'todo' | 'practice';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -198,7 +199,6 @@ export default function Home() {
                   <BubbleHome
                     onSelectNote={(id) => setActiveNoteId(id)}
                     onNavigate={handleMobileNavigate}
-                    onOpenFocus={() => setShowFocusMode(true)}
                   />
                 )}
                 {/* News screen */}
@@ -208,6 +208,10 @@ export default function Home() {
                 {/* ToDo screen */}
                 {isMobile && activeTab === 'todo' && (
                   <TodoScreen onGoBack={goHome} />
+                )}
+                {/* Practice / 演習 screen */}
+                {isMobile && activeTab === 'practice' && (
+                  <PracticeScreen onGoBack={goHome} />
                 )}
                 {/* Mobile memo tree */}
                 {isMobile && activeTab === 'memos' && mobilePage === 'notes' && (
