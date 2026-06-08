@@ -25,7 +25,8 @@ const NewsScreen = dynamic(() => import('@/components/NewsScreen'), { ssr: false
 const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
 const TrophyRoom = dynamic(() => import('@/components/TrophyRoom'), { ssr: false });
 const PracticeScreen = dynamic(() => import('@/components/PracticeScreen'), { ssr: false });
-type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'news' | 'todo' | 'practice';
+const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
+type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'news' | 'todo' | 'practice' | 'sketch';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -214,6 +215,10 @@ export default function Home() {
                 {/* Practice / 演習 screen */}
                 {isMobile && activeTab === 'practice' && (
                   <PracticeScreen onGoBack={goHome} onOpenAI={openAIWithContext} />
+                )}
+                {/* Sketch / 落書き screen */}
+                {isMobile && activeTab === 'sketch' && (
+                  <SketchTab onClose={goHome} />
                 )}
                 {/* Mobile memo tree */}
                 {isMobile && activeTab === 'memos' && mobilePage === 'notes' && (

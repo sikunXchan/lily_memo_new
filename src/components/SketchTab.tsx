@@ -24,10 +24,10 @@ const PEN_WIDTHS = [1.5, 3, 6, 10];
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
 const ERASER_RADIUS = 12;
-// Notebook-style grid (graph-paper look). Drawn in world space so it
-// pans/zooms with the strokes, like an infinite sheet of grid paper.
-const GRID = 40;
-const GRID_MAJOR_EVERY = 5;
+// Notebook-style ruled lines. Drawn in world space so they pan/zoom
+// with the strokes, like an infinite sheet of lined paper.
+const LINE_SPACING = 32;   // vertical gap between ruled lines
+const MARGIN_X     = 64;   // left margin line (red rule)
 
 export default function SketchTab({ onClose }: SketchTabProps) {
   const t = useT();
@@ -87,41 +87,38 @@ export default function SketchTab({ onClose }: SketchTabProps) {
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#fdf8f0'; // cream notebook paper
     ctx.fillRect(0, 0, size.w, size.h);
 
     ctx.translate(view.tx, view.ty);
     ctx.scale(view.scale, view.scale);
 
-    // --- Notebook grid background ---
+    // --- Lined notebook background ---
     {
       const left = -view.tx / view.scale;
       const top = -view.ty / view.scale;
       const right = (size.w - view.tx) / view.scale;
       const bottom = (size.h - view.ty) / view.scale;
-      const startX = Math.floor(left / GRID) * GRID;
-      const startY = Math.floor(top / GRID) * GRID;
-      // Keep lines ~1px regardless of zoom.
-      const minor = 0.6 / view.scale;
-      const major = 1 / view.scale;
-      for (let x = startX; x <= right; x += GRID) {
-        const isMajor = Math.round(x / GRID) % GRID_MAJOR_EVERY === 0;
-        ctx.strokeStyle = isMajor ? '#cfd8e3' : '#e5ebf2';
-        ctx.lineWidth = isMajor ? major : minor;
-        ctx.beginPath();
-        ctx.moveTo(x, top);
-        ctx.lineTo(x, bottom);
-        ctx.stroke();
-      }
-      for (let y = startY; y <= bottom; y += GRID) {
-        const isMajor = Math.round(y / GRID) % GRID_MAJOR_EVERY === 0;
-        ctx.strokeStyle = isMajor ? '#cfd8e3' : '#e5ebf2';
-        ctx.lineWidth = isMajor ? major : minor;
+      const lineW = 0.8 / view.scale;
+
+      // Horizontal ruled lines
+      ctx.strokeStyle = '#b8cfe8';
+      ctx.lineWidth = lineW;
+      const startY = Math.floor(top / LINE_SPACING) * LINE_SPACING;
+      for (let y = startY; y <= bottom; y += LINE_SPACING) {
         ctx.beginPath();
         ctx.moveTo(left, y);
         ctx.lineTo(right, y);
         ctx.stroke();
       }
+
+      // Red margin line
+      ctx.strokeStyle = '#f4a0a0';
+      ctx.lineWidth = 1.2 / view.scale;
+      ctx.beginPath();
+      ctx.moveTo(MARGIN_X, top);
+      ctx.lineTo(MARGIN_X, bottom);
+      ctx.stroke();
     }
 
     ctx.lineCap = 'round';

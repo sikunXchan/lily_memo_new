@@ -387,7 +387,16 @@ export async function syncEarnedBadges(): Promise<BadgeDef[]> {
   for (const id of earned) {
     if (!alreadyIds.has(id)) toAdd.push({ badgeId: id, earnedAt: now });
   }
-  if (toAdd.length > 0) await db.earnedBadges.bulkPut(toAdd);
+  if (toAdd.length > 0) {
+    await db.earnedBadges.bulkPut(toAdd);
+    if (typeof window !== 'undefined') {
+      try {
+        const prev = JSON.parse(localStorage.getItem('lily_pending_badge_show') ?? '[]') as string[];
+        const next = [...prev, ...toAdd.map(e => e.badgeId)];
+        localStorage.setItem('lily_pending_badge_show', JSON.stringify(next));
+      } catch {}
+    }
+  }
 
   const newIds = new Set(toAdd.map(e => e.badgeId));
   return BADGES.filter(b => newIds.has(b.id));
