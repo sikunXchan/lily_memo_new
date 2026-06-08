@@ -108,9 +108,10 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
   for (let i = 0; i < 7; i++) weekDays.push(addDaysIso(weekStart, i));
   const weekMid = parseIso(addDaysIso(weekStart, 3)); // for the month/year label
 
-  const pending  = todos.filter(t => !t.done);
-  const done     = todos.filter(t => t.done);
-  const progress = todos.length > 0 ? Math.round((done.length / todos.length) * 100) : 0;
+  const listTodos = todos.filter(t => !t.dueDate);
+  const pending  = listTodos.filter(t => !t.done);
+  const done     = listTodos.filter(t => t.done);
+  const progress = listTodos.length > 0 ? Math.round((done.length / listTodos.length) * 100) : 0;
 
   // Sections are built as plain data and mapped INLINE in the return below.
   // styled-jsx only injects its scoping className onto JSX written lexically
@@ -131,8 +132,8 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         </button>
         <div className="td-header-mid">
           <span className="td-title">{t('タスク')}</span>
-          {todos.length > 0 && (
-            <span className="td-subtitle">{t('{done} / {total} 完了', { done: done.length, total: todos.length })}</span>
+          {listTodos.length > 0 && (
+            <span className="td-subtitle">{t('{done} / {total} 完了', { done: done.length, total: listTodos.length })}</span>
           )}
         </div>
         {pending.length > 0 && (
@@ -141,7 +142,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
       </div>
 
       {/* Progress bar (list view only) */}
-      {view === 'list' && todos.length > 0 && (
+      {view === 'list' && listTodos.length > 0 && (
         <div className="td-progress-track">
           <div className="td-progress-fill" style={{ width: `${progress}%` }} />
         </div>
@@ -223,13 +224,12 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
             {selDayTodos.length === 0 ? (
               <p className="td-cal-empty">{t('この日の予定はまだないよ')}</p>
             ) : selDayTodos.map(todo => (
-              <div key={todo.id} className={`td-card cal${todo.done ? ' done' : ''}`}>
+              <div key={todo.id} className="td-card cal">
                 <button
-                  className={`td-check${todo.done ? ' checked' : ''}`}
-                  onClick={() => void toggleDone(todo)}
-                  aria-label={t(todo.done ? '未完了に戻す' : '完了にする')}
+                  className="td-check"
+                  onClick={() => void deleteTodo(todo.id!)}
+                  aria-label={t('完了にする')}
                 >
-                  {todo.done && <Check size={11} strokeWidth={3.5} />}
                 </button>
                 <span className="td-text">{todo.text}</span>
                 <button className="td-cal-del" onClick={() => void deleteTodo(todo.id!)} aria-label={t('削除')}>
@@ -266,7 +266,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
       {/* List */}
       {view === 'list' && (
       <div className="td-scroll">
-        {todos.length === 0 && (
+        {listTodos.length === 0 && (
           <div className="td-empty">
             <span className="td-empty-icon">🎯</span>
             <p className="td-empty-title">{t('タスクをゼロに！')}</p>
@@ -305,10 +305,6 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
                       </button>
 
                       <span className="td-text">{todo.text}</span>
-
-                      {todo.dueDate && (
-                        <span className="td-date-chip"><CalendarDays size={11} strokeWidth={2.4} /> {fmtDayLabel(todo.dueDate)}</span>
-                      )}
 
                       <button
                         className={`td-pin${todo.pinned ? ' on' : ''}`}
