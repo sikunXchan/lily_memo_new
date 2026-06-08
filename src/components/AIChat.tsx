@@ -56,7 +56,7 @@ initMermaid();
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12MB per file
 const MAX_FILES = 5;
-const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain';
+const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,.md,.txt';
 
 interface AttachmentMeta {
   id: string;
@@ -1816,12 +1816,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         const base64 = result.split(',')[1] ?? '';
         const id = crypto.randomUUID();
         const isPdf = file.type === 'application/pdf';
+        const isMdOrTxt = !isPdf && !file.type.startsWith('image/') &&
+          (file.name.endsWith('.md') || file.name.endsWith('.txt') ||
+           file.type === 'text/markdown' || file.type === 'text/x-markdown');
         // Large images (>2 MB) use File API; PDFs use pdf.js text extraction.
         const useLargeImageUpload = !isPdf && file.size > 2 * 1024 * 1024;
         const meta: AttachmentMeta = {
           id,
           name: file.name,
-          mimeType: file.type || 'application/octet-stream',
+          mimeType: isMdOrTxt ? 'text/plain' : (file.type || 'application/octet-stream'),
           data: base64,
           isImage: file.type.startsWith('image/'),
           uploading: isPdf || (useLargeImageUpload && !!apiKey),
