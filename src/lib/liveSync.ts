@@ -70,29 +70,30 @@ function schedulePush() {
 async function mergeSnapshot(remote: LiveSnapshot) {
   _isMerging = true;
   try {
-    // Notes: syncId-based, newer updatedAt wins
+    // Notes: syncId-based, newer updatedAt wins. Tombstones (deletedAt) carry a
+    // bumped updatedAt, so a remote deletion overwrites an older live local copy.
     for (const r of remote.notes) {
       if (!r.syncId) continue;
       const local = await db.notes.where('syncId').equals(r.syncId).first();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = r; // never carry the remote device's auto-id
       if (!local) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id: _id, ...rest } = r;
         await db.notes.add({ ...rest, syncId: r.syncId || newSyncId() });
       } else if ((r.updatedAt ?? 0) > (local.updatedAt ?? 0)) {
-        await db.notes.update(local.id!, r);
+        await db.notes.update(local.id!, rest);
       }
     }
 
-    // Folders: syncId-based, newer updatedAt wins
+    // Folders: syncId-based, newer updatedAt wins (same tombstone rules).
     for (const r of remote.folders) {
       if (!r.syncId) continue;
       const local = await db.folders.where('syncId').equals(r.syncId).first();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = r; // never carry the remote device's auto-id
       if (!local) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id: _id, ...rest } = r;
         await db.folders.add({ ...rest, syncId: r.syncId || newSyncId() });
       } else if ((r.updatedAt ?? 0) > (local.updatedAt ?? 0)) {
-        await db.folders.update(local.id!, r);
+        await db.folders.update(local.id!, rest);
       }
     }
 
