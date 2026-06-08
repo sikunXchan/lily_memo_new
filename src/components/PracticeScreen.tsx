@@ -9,7 +9,7 @@ import {
   LineElement, ArcElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js';
 import {
-  ArrowLeft, Sparkles, Wand2, ImagePlus, X, Play, Trash2,
+  ArrowLeft, Sparkles, Wand2, ImagePlus, FileText, X, Play, Trash2,
   Check, ChevronRight, RotateCcw, Trophy, Loader2, PencilLine,
   Settings2, MessageCircle, ChevronDown, ChevronUp, Search,
 } from 'lucide-react';
@@ -44,6 +44,13 @@ function typeLabel(type: string): string {
 
 const norm = (s: string) =>
   s.replace(/\s+/g, '').replace(/[、。．,，.・]/g, '').toLowerCase();
+
+function utf8ToBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+}
 
 function fileToAttachment(file: File): Promise<ChatAttachment> {
   return new Promise((resolve, reject) => {
@@ -154,9 +161,11 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   // ── Generation state ──
   const [genInput, setGenInput] = useState('');
   const [genImages, setGenImages] = useState<{ att: ChatAttachment; url: string }[]>([]);
+  const [genMdFiles, setGenMdFiles] = useState<{ name: string; content: string }[]>([]);
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const mdRef = useRef<HTMLInputElement>(null);
 
   // ── Generation settings ──
   const [showGenOpts, setShowGenOpts] = useState(false);
@@ -240,17 +249,32 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     });
   };
 
+  const pickMdFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    for (const f of files.slice(0, 3)) {
+      const content = await f.text();
+      setGenMdFiles(prev => [...prev, { name: f.name, content }].slice(0, 3));
+    }
+    if (mdRef.current) mdRef.current.value = '';
+  };
+  const removeMdFile = (i: number) => setGenMdFiles(prev => prev.filter((_, j) => j !== i));
+
   const handleGenerate = async () => {
     if (genLoading) return;
-    if (!genInput.trim() && genImages.length === 0) return;
+    if (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0) return;
     setGenLoading(true);
     setGenError('');
     try {
-      const result = await generateProblemSet(buildGeneratePrompt(), genImages.map(g => g.att));
+      const mdAtts: ChatAttachment[] = genMdFiles.map(f => ({
+        mimeType: 'text/plain',
+        data: utf8ToBase64(f.content),
+      }));
+      const result = await generateProblemSet(buildGeneratePrompt(), [...mdAtts, ...genImages.map(g => g.att)]);
       const id = await saveProblemSet(result);
       // Clean up the generation form
       genImages.forEach(g => URL.revokeObjectURL(g.url));
       setGenImages([]);
+      setGenMdFiles([]);
       setGenInput('');
       // Jump straight into solving the freshly-made set
       const fresh = await db.problemSets.get(id);
@@ -581,6 +605,18 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             <span>{en ? 'Make a problem set with Lily' : 'Lilyに問題を作ってもらう'}</span>
           </div>
 
+          {genMdFiles.length > 0 && (
+            <div className="ps-gen-mds">
+              {genMdFiles.map((f, i) => (
+                <div key={i} className="ps-gen-md-chip">
+                  <FileText size={12} />
+                  <span>{f.name}</span>
+                  <button onClick={() => removeMdFile(i)}><X size={11} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {genImages.length > 0 && (
             <div className="ps-gen-imgs">
               {genImages.map((g, i) => (
@@ -674,13 +710,17 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
           <div className="ps-gen-actions">
             <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pickImages} />
-            <button className="ps-gen-attach" onClick={() => fileRef.current?.click()} disabled={genLoading}>
+            <input ref={mdRef} type="file" accept=".md,.txt,text/plain,text/markdown" multiple hidden onChange={e => void pickMdFiles(e)} />
+            <button className="ps-gen-attach" onClick={() => fileRef.current?.click()} disabled={genLoading} title={en ? 'Attach image' : '画像を添付'}>
               <ImagePlus size={16} />
+            </button>
+            <button className="ps-gen-attach" onClick={() => mdRef.current?.click()} disabled={genLoading} title={en ? 'Attach text/markdown' : 'テキスト・mdを添付'}>
+              <FileText size={16} />
             </button>
             <button
               className="ps-gen-btn"
               onClick={() => void handleGenerate()}
-              disabled={genLoading || (!genInput.trim() && genImages.length === 0)}
+              disabled={genLoading || (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0)}
             >
               {genLoading
                 ? <><Loader2 size={16} className="ps-spin" /> {en ? 'Creating…' : '作成中…'}</>
@@ -811,6 +851,10 @@ function PracticeStyles() {
   .ps-gen { background: linear-gradient(135deg, color-mix(in srgb, #8b5cf6 10%, var(--background)), color-mix(in srgb, #ec4899 7%, var(--background))); border: 1.5px solid color-mix(in srgb, #8b5cf6 25%, transparent); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
   .ps-gen-head { display: flex; align-items: center; gap: 7px; font-size: 0.86rem; font-weight: 800; color: var(--foreground); }
   .ps-gen-spark { color: #8b5cf6; }
+  .ps-gen-mds { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ps-gen-md-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px 4px 8px; border-radius: 99px; background: color-mix(in srgb, #8b5cf6 14%, var(--background)); border: 1px solid color-mix(in srgb, #8b5cf6 30%, transparent); font-size: .72rem; font-weight: 700; color: #8b5cf6; max-width: 200px; }
+  .ps-gen-md-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-gen-md-chip button { display: flex; align-items: center; justify-content: center; border: none; background: none; cursor: pointer; padding: 0; color: #8b5cf6; opacity: .7; flex-shrink: 0; }
   .ps-gen-imgs { display: flex; gap: 8px; flex-wrap: wrap; }
   .ps-gen-img { position: relative; width: 60px; height: 60px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
   .ps-gen-img img { width: 100%; height: 100%; object-fit: cover; }
