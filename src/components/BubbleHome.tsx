@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useRef, useState } from 'react';
 import {
   Book, FileText, Sparkles, GraduationCap, Settings,
-  Plus, ListTodo, Camera, X, PencilLine,
+  Plus, ListTodo, Camera, X, PencilLine, Pen,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Todo, AlbumPhoto } from '@/lib/db';
@@ -58,6 +58,7 @@ const BUBBLES: BubbleItem[] = [
   { key: 'todo',     label: 'ToDo',      tint: '#bbf7d0', size: 72,  pos: { right: '16%', top: 298 }, floatDelay: 0.9, windAnim: 2, windDur: 6.4 },
   { key: 'new',      label: '新規',      tint: '#fecdd3', size: 62,  pos: { left: '10%',  top: 350 }, floatDelay: 1.8, windAnim: 1, windDur: 5.9, isNew: true },
   { key: 'settings', label: '設定',      tint: '#e2e8f0', size: 66,  pos: { right: '6%',  top: 350 }, floatDelay: 0.3, windAnim: 0, windDur: 7.2 },
+  { key: 'sketch',   label: '落書き',    tint: '#fef3c7', size: 70,  pos: { left: '44%',  top: 420 }, floatDelay: 1.0, windAnim: 1, windDur: 6.0 },
 ];
 
 function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
@@ -72,6 +73,7 @@ function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
     case 'pdf':      return <FileText {...p} />;
     case 'todo':     return <ListTodo {...p} />;
     case 'settings': return <Settings {...p} />;
+    case 'sketch':   return <Pen {...p} />;
     case 'new':      return <Plus size={Math.round(size * 0.34)} color="#ff8da1" strokeWidth={2.6} />;
     default:         return null;
   }

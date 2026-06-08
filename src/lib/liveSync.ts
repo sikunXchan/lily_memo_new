@@ -1,6 +1,6 @@
 import { liveQuery } from 'dexie';
 import { db, newSyncId } from './db';
-import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge } from './db';
+import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet } from './db';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
 const POLL_INTERVAL_MS  = 30_000;
@@ -16,6 +16,7 @@ interface LiveSnapshot {
   savedChats:       SavedChat[];
   todos:            Todo[];
   earnedBadges:     EarnedBadge[];
+  problemSets:      ProblemSet[];
   ts: number;
 }
 
@@ -29,7 +30,7 @@ let _dexieSub:    { unsubscribe: () => void }    | null = null;
 
 // ── Build local snapshot ─────────────────────────────────────────
 async function buildSnapshot(): Promise<LiveSnapshot> {
-  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges] = await Promise.all([
+  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets] = await Promise.all([
     db.notes.toArray(),
     db.folders.toArray(),
     db.studySessions.toArray(),
@@ -39,8 +40,9 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     db.savedChats.toArray(),
     db.todos.toArray(),
     db.earnedBadges.toArray(),
+    db.problemSets.toArray(),
   ]);
-  return { notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, ts: Date.now() };
+  return { notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, ts: Date.now() };
 }
 
 // ── Push to Redis ────────────────────────────────────────────────
@@ -190,6 +192,19 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       }
     }
 
+    // Problem sets: union by createdAt (immutable after creation).
+    if (remote.problemSets?.length) {
+      const localSets = await db.problemSets.toArray();
+      const setKeys = new Set(localSets.map(p => p.createdAt));
+      for (const r of remote.problemSets) {
+        if (!setKeys.has(r.createdAt)) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id: _id, ...rest } = r;
+          await db.problemSets.add(rest as ProblemSet);
+        }
+      }
+    }
+
     // Todos: per-record last-write-wins keyed by createdAt (stable across
     // devices). updatedAt is the version clock — it is bumped on every
     // mutation INCLUDING soft-delete, so a deletion always carries a fresh
@@ -263,6 +278,7 @@ export function initLiveSync(key: string) {
     db.savedChats.count(),
     db.earnedBadges.count(),
     db.todos.orderBy('updatedAt').last().then(t => t?.updatedAt ?? 0),
+    db.problemSets.count(),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());
 

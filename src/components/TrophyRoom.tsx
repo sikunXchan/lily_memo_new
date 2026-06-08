@@ -8,6 +8,15 @@ import {
   BADGES, ROOMS, computeStudyStats, condProgress,
 } from '@/lib/badges';
 import type { BadgeDef, BadgeCondition } from '@/lib/badges';
+
+const CONFETTI_COLORS = ['#f472b6', '#fcd34d', '#60a5fa', '#34d399', '#a78bfa', '#fb923c'];
+const CONFETTI = Array.from({ length: 44 }, (_, i) => ({
+  left: +((i * 137.508) % 100).toFixed(2),
+  delay: +(((i * 13.7) % 10) / 16).toFixed(2),
+  dur: +(1.8 + ((i * 29) % 14) / 10).toFixed(2),
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  size: 7 + ((i * 7) % 7),
+}));
 import { getStudyProfile } from '@/lib/studyProfile';
 import { useT } from '@/lib/i18n';
 
@@ -49,12 +58,27 @@ export default function TrophyRoom({ onClose }: Props) {
   const earned = useLiveQuery(() => db.earnedBadges.toArray(), [], []);
   const profile = getStudyProfile();
   const [selected, setSelected] = useState<BadgeDef | null>(null);
+  const [celebrate, setCelebrate] = useState<BadgeDef[]>([]);
+
+  // On first open, consume any pending badge IDs stored by syncEarnedBadges.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('lily_pending_badge_show');
+      if (!raw) return;
+      const ids: string[] = JSON.parse(raw);
+      if (!ids.length) return;
+      localStorage.removeItem('lily_pending_badge_show');
+      const defs = ids.map(id => BADGES.find(b => b.id === id)).filter((b): b is BadgeDef => !!b);
+      if (defs.length > 0) setCelebrate(defs);
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (selected) setSelected(null); else onClose(); } };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (celebrate.length > 0) { setCelebrate(c => c.slice(1)); } else if (selected) setSelected(null); else onClose(); } };
     window.addEventListener('keydown', onEsc);
     return () => window.removeEventListener('keydown', onEsc);
-  }, [selected, onClose]);
+  }, [selected, celebrate, onClose]);
 
   const stats = computeStudyStats(sessions ?? [], { weekday: profile.weekdayGoalHours, holiday: profile.holidayGoalHours });
   const earnedMap = new Map(earned.map(e => [e.badgeId, e.earnedAt]));
@@ -132,6 +156,38 @@ export default function TrophyRoom({ onClose }: Props) {
                 </>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Badge celebration overlay */}
+      {celebrate.length > 0 && (
+        <div className="tr-celebrate" onClick={() => setCelebrate(c => c.slice(1))}>
+          <div className="tr-confetti">
+            {CONFETTI.map((c, i) => (
+              <span
+                key={i}
+                style={{
+                  left: `${c.left}%`,
+                  width: `${c.size}px`,
+                  height: `${c.size}px`,
+                  background: c.color,
+                  animationDelay: `${c.delay}s`,
+                  animationDuration: `${c.dur}s`,
+                }}
+              />
+            ))}
+          </div>
+          <div className="tr-celebrate-card" onClick={e => e.stopPropagation()}>
+            <p className="tr-celebrate-title">🎉 {t('新しいバッジ獲得！')}</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="tr-celebrate-img" src={celebrate[0].image} alt={t(celebrate[0].title)} />
+            <p className="tr-celebrate-name">{t(celebrate[0].title)}</p>
+            <p className="tr-celebrate-desc">{t(celebrate[0].desc)}</p>
+            {celebrate.length > 1 && <p className="tr-celebrate-more">{t('ほか {n} 個も獲得！', { n: celebrate.length - 1 })}</p>}
+            <button className="tr-celebrate-ok" onClick={() => setCelebrate(c => c.slice(1))}>
+              {celebrate.length > 1 ? t('次へ') : t('やったー！')}
+            </button>
           </div>
         </div>
       )}
@@ -230,6 +286,45 @@ export default function TrophyRoom({ onClose }: Props) {
           font-size: 0.88rem; font-weight: 800; cursor: pointer;
         }
         .tr-detail-close:hover { opacity: 0.85; }
+
+        .tr-celebrate {
+          position: fixed; inset: 0; z-index: 6700;
+          background: rgba(0,0,0,0.65); backdrop-filter: blur(6px);
+          display: flex; align-items: center; justify-content: center; padding: 20px;
+        }
+        .tr-confetti {
+          position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+        }
+        .tr-confetti span {
+          position: absolute; top: -12px; border-radius: 3px;
+          animation: tr-fall linear both;
+        }
+        @keyframes tr-fall {
+          0%   { transform: translateY(0)    rotate(0deg);   opacity: 1; }
+          80%  { opacity: 1; }
+          100% { transform: translateY(105vh) rotate(720deg); opacity: 0; }
+        }
+        .tr-celebrate-card {
+          position: relative; z-index: 1;
+          background: var(--background); border: 1px solid var(--border);
+          border-radius: 22px; padding: 24px 22px; text-align: center; max-width: 320px; width: 100%;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: pop 0.25s cubic-bezier(.2,1.4,.4,1);
+        }
+        .tr-celebrate-title { font-size: 1rem; font-weight: 900; color: var(--foreground); margin: 0 0 12px; }
+        .tr-celebrate-img {
+          width: 130px; height: 130px; object-fit: contain;
+          -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; pointer-events: none;
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.25));
+        }
+        .tr-celebrate-name { font-size: 1.15rem; font-weight: 900; color: var(--foreground); margin: 10px 0 4px; }
+        .tr-celebrate-desc { font-size: 0.84rem; color: var(--fg-muted); margin: 0 0 8px; line-height: 1.5; }
+        .tr-celebrate-more { font-size: 0.8rem; font-weight: 800; color: var(--primary); margin: 0 0 8px; }
+        .tr-celebrate-ok {
+          margin-top: 12px; background: var(--primary); color: #fff;
+          border: none; border-radius: 13px; padding: 11px 28px;
+          font-size: 0.9rem; font-weight: 900; cursor: pointer;
+        }
+        .tr-celebrate-ok:hover { opacity: 0.88; }
       `}</style>
     </div>
   );
