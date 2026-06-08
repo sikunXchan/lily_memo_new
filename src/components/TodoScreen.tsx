@@ -24,6 +24,17 @@ function fmtDayLabel(iso: string): string {
   const d = parseIso(iso);
   return `${d.getMonth() + 1}/${d.getDate()} (${WEEKDAYS_JA[d.getDay()]})`;
 }
+// Sunday that starts the week containing `d`.
+function startOfWeek(d: Date): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - x.getDay());
+  return x;
+}
+function addDaysIso(iso: string, n: number): string {
+  const d = parseIso(iso);
+  d.setDate(d.getDate() + n);
+  return isoOf(d);
+}
 
 interface TodoScreenProps {
   onGoBack: () => void;
@@ -64,15 +75,13 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
     setSwipedId(null);
   }, []);
 
-  // ── Calendar (予定表) view state ──
+  // ── Calendar (予定表) — week view state ──
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const todayIso = isoOf(new Date());
   const [selDay, setSelDay] = useState<string>(todayIso);
-  const [calCursor, setCalCursor] = useState(() => {
-    const d = new Date();
-    return { y: d.getFullYear(), m: d.getMonth() };
-  });
+  const [weekStart, setWeekStart] = useState<string>(() => isoOf(startOfWeek(new Date())));
   const [calText, setCalText] = useState('');
+  const weekTouchX = useRef(0);
 
   const addTodoForDay = useCallback(async (text: string, day: string) => {
     const v = text.trim();
@@ -82,10 +91,11 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
     setCalText('');
   }, []);
 
-  const prevMonth = () => setCalCursor(c => (c.m === 0 ? { y: c.y - 1, m: 11 } : { y: c.y, m: c.m - 1 }));
-  const nextMonth = () => setCalCursor(c => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }));
+  const prevWeek = () => setWeekStart(w => addDaysIso(w, -7));
+  const nextWeek = () => setWeekStart(w => addDaysIso(w, 7));
+  const goThisWeek = () => { setWeekStart(isoOf(startOfWeek(new Date()))); setSelDay(todayIso); };
 
-  // Map dueDate → todos, and build the month grid cells.
+  // Map dueDate → todos, and the 7 days of the displayed week.
   const dueByDay = new Map<string, Todo[]>();
   for (const td of todos) {
     if (!td.dueDate) continue;
@@ -94,11 +104,9 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
     dueByDay.set(td.dueDate, arr);
   }
   const selDayTodos = todos.filter(td => td.dueDate === selDay);
-  const firstDow = new Date(calCursor.y, calCursor.m, 1).getDay();
-  const daysInMonth = new Date(calCursor.y, calCursor.m + 1, 0).getDate();
-  const calCells: (string | null)[] = [];
-  for (let i = 0; i < firstDow; i++) calCells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) calCells.push(isoOf(new Date(calCursor.y, calCursor.m, d)));
+  const weekDays: string[] = [];
+  for (let i = 0; i < 7; i++) weekDays.push(addDaysIso(weekStart, i));
+  const weekMid = parseIso(addDaysIso(weekStart, 3)); // for the month/year label
 
   const pending  = todos.filter(t => !t.done);
   const done     = todos.filter(t => t.done);
@@ -149,34 +157,47 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         </button>
       </div>
 
-      {/* ── Calendar (予定表) view ── */}
+      {/* ── Calendar (予定表) — week view ── */}
       {view === 'calendar' && (
         <div className="td-cal-scroll">
           <div className="td-cal-head">
-            <button className="td-cal-nav" onClick={prevMonth} aria-label={t('前の月')}><ChevronLeft size={18} /></button>
-            <span className="td-cal-title">{calCursor.y}{t('年')} {calCursor.m + 1}{t('月')}</span>
-            <button className="td-cal-nav" onClick={nextMonth} aria-label={t('次の月')}><ChevronRight size={18} /></button>
+            <button className="td-cal-nav" onClick={prevWeek} aria-label={t('前の週')}><ChevronLeft size={18} /></button>
+            <button className="td-cal-title" onClick={goThisWeek}>
+              {weekMid.getFullYear()}{t('年')} {weekMid.getMonth() + 1}{t('月')}
+            </button>
+            <button className="td-cal-nav" onClick={nextWeek} aria-label={t('次の週')}><ChevronRight size={18} /></button>
           </div>
-          <div className="td-cal-grid">
-            {WEEKDAYS_JA.map((w, i) => (
-              <div key={`wd${i}`} className={`td-cal-wd${i === 0 ? ' sun' : ''}${i === 6 ? ' sat' : ''}`}>{w}</div>
-            ))}
-            {calCells.map((iso, idx) => iso === null ? (
-              <div key={`b${idx}`} className="td-cal-cell empty" />
-            ) : (
-              <button
-                key={iso}
-                className={`td-cal-cell${iso === selDay ? ' sel' : ''}${iso === todayIso ? ' today' : ''}`}
-                onClick={() => setSelDay(iso)}
-              >
-                <span className="td-cal-d">{parseIso(iso).getDate()}</span>
-                {dueByDay.get(iso)?.length ? (
-                  <span className={`td-cal-dot${dueByDay.get(iso)!.every(x => x.done) ? ' alldone' : ''}`}>
-                    {dueByDay.get(iso)!.filter(x => !x.done).length || '✓'}
+
+          {/* 7-day strip (swipe left/right to change week) */}
+          <div
+            className="td-week"
+            onTouchStart={e => { weekTouchX.current = e.touches[0].clientX; }}
+            onTouchEnd={e => {
+              const dx = weekTouchX.current - e.changedTouches[0].clientX;
+              if      (dx > 45)  nextWeek();
+              else if (dx < -45) prevWeek();
+            }}
+          >
+            {weekDays.map(iso => {
+              const d = parseIso(iso);
+              const list = dueByDay.get(iso);
+              const undone = list ? list.filter(x => !x.done).length : 0;
+              return (
+                <button
+                  key={iso}
+                  className={`td-wday${iso === selDay ? ' sel' : ''}${iso === todayIso ? ' today' : ''}`}
+                  onClick={() => setSelDay(iso)}
+                >
+                  <span className={`td-wday-wd${d.getDay() === 0 ? ' sun' : ''}${d.getDay() === 6 ? ' sat' : ''}`}>
+                    {WEEKDAYS_JA[d.getDay()]}
                   </span>
-                ) : null}
-              </button>
-            ))}
+                  <span className="td-wday-num">{d.getDate()}</span>
+                  {list?.length ? (
+                    <span className={`td-wday-dot${undone === 0 ? ' alldone' : ''}`}>{undone > 0 ? undone : '✓'}</span>
+                  ) : <span className="td-wday-dot ph" />}
+                </button>
+              );
+            })}
           </div>
 
           {/* Selected-day panel */}
@@ -390,7 +411,12 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           display: flex; align-items: center; justify-content: space-between;
           padding: 2px 4px 12px;
         }
-        .td-cal-title { font-size: 1rem; font-weight: 800; color: var(--foreground); }
+        .td-cal-title {
+          font-size: 1rem; font-weight: 800; color: var(--foreground);
+          background: none; border: none; cursor: pointer; font-family: inherit;
+          padding: 4px 10px; border-radius: 9px;
+        }
+        .td-cal-title:active { background: var(--accent); }
         .td-cal-nav {
           width: 34px; height: 34px; border-radius: 10px;
           border: 1px solid var(--border); background: var(--accent);
@@ -398,36 +424,38 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           cursor: pointer; color: var(--foreground);
         }
         .td-cal-nav:active { opacity: .55; }
-        .td-cal-grid {
-          display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
-        }
-        .td-cal-wd {
-          text-align: center; font-size: .66rem; font-weight: 700;
-          color: var(--fg-muted); padding: 2px 0 6px;
-        }
-        .td-cal-wd.sun { color: #f87171; }
-        .td-cal-wd.sat { color: #60a5fa; }
-        .td-cal-cell {
-          position: relative; aspect-ratio: 1 / 1;
-          border: 1.5px solid transparent; border-radius: 11px;
-          background: var(--accent); cursor: pointer;
-          display: flex; align-items: center; justify-content: center;
-          font-family: inherit; padding: 0;
-        }
-        .td-cal-cell.empty { background: transparent; cursor: default; }
-        .td-cal-cell.today { background: rgba(52,211,153,.14); }
-        .td-cal-cell.sel { border-color: #34d399; box-shadow: 0 0 0 2px rgba(52,211,153,.25); }
-        .td-cal-d { font-size: .82rem; font-weight: 600; color: var(--foreground); }
-        .td-cal-dot {
-          position: absolute; top: 3px; right: 3px; min-width: 15px; height: 15px;
-          border-radius: 99px; padding: 0 3px;
-          background: linear-gradient(135deg, #34d399, #22d3ee); color: #fff;
-          font-size: .58rem; font-weight: 800;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .td-cal-dot.alldone { background: var(--fg-faint); }
 
-        .td-cal-day { margin-top: 16px; }
+        /* ── Week strip ── */
+        .td-week {
+          display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;
+          touch-action: pan-y;
+        }
+        .td-wday {
+          position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px;
+          padding: 8px 0 7px; border-radius: 13px; cursor: pointer; font-family: inherit;
+          border: 1.5px solid transparent; background: var(--accent);
+          transition: background .12s, border-color .12s;
+        }
+        .td-wday.today { background: rgba(52,211,153,.14); }
+        .td-wday.sel {
+          border-color: #34d399;
+          background: linear-gradient(135deg, rgba(52,211,153,.18), rgba(34,211,238,.18));
+          box-shadow: 0 0 0 2px rgba(52,211,153,.22);
+        }
+        .td-wday-wd { font-size: .6rem; font-weight: 700; color: var(--fg-muted); }
+        .td-wday-wd.sun { color: #f87171; }
+        .td-wday-wd.sat { color: #60a5fa; }
+        .td-wday-num { font-size: 1.02rem; font-weight: 800; color: var(--foreground); line-height: 1; }
+        .td-wday-dot {
+          min-width: 16px; height: 16px; border-radius: 99px; padding: 0 4px;
+          background: linear-gradient(135deg, #34d399, #22d3ee); color: #fff;
+          font-size: .6rem; font-weight: 800;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .td-wday-dot.alldone { background: var(--fg-faint); }
+        .td-wday-dot.ph { background: transparent; } /* keeps row height stable */
+
+        .td-cal-day { margin-top: 20px; }
         .td-cal-day-label {
           font-size: .8rem; font-weight: 800; color: var(--foreground);
           padding: 0 2px 8px;
