@@ -82,6 +82,8 @@ export interface SavedChat {
   messages: string;
   count: number;
   createdAt: number;
+  updatedAt?: number;  // version clock — bumped on mutation incl. soft-delete
+  deletedAt?: number;  // tombstone for sync; UI filters these out
 }
 
 export interface Exam {
@@ -139,6 +141,8 @@ export interface Todo {
   createdAt: number;
   updatedAt?: number;  // bumped on every mutation — drives last-write-wins sync
   deletedAt?: number;  // tombstone for sync — UI filters these out
+  dueDate?: string;    // 'YYYY-MM-DD' — optional scheduled date (予定表 calendar)
+  startTime?: string;  // optional 'HH:MM' time-of-day for the scheduled date
 }
 
 export interface AlbumPhoto {
@@ -199,6 +203,8 @@ export interface ProblemSet {
   createdAt: number;
   bestScore?: number;    // best correct-count across attempts
   attempts?: number;     // how many times solved
+  updatedAt?: number;    // version clock — bumped on mutation incl. soft-delete
+  deletedAt?: number;    // tombstone for sync; UI filters these out
 }
 
 export class LilyDatabase extends Dexie {
@@ -311,6 +317,24 @@ export class LilyDatabase extends Dexie {
     this.version(18).stores({
       problemSets: '++id, title, subject, createdAt',
     });
+    // v19: give savedChats & problemSets a version clock + tombstone so their
+    // deletions sync (previously add-only union). Todos gain a dueDate index so
+    // the 予定表 (calendar) view can query by scheduled day.
+    this.version(19).stores({
+      todos: '++id, done, pinned, createdAt, updatedAt, deletedAt, dueDate',
+      savedChats: '++id, model, createdAt, updatedAt, deletedAt',
+      problemSets: '++id, title, subject, createdAt, updatedAt, deletedAt',
+    }).upgrade(async tx => {
+      const now = Date.now();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await tx.table('savedChats').toCollection().modify((c: any) => {
+        if (!c.updatedAt) c.updatedAt = c.createdAt ?? now;
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await tx.table('problemSets').toCollection().modify((p: any) => {
+        if (!p.updatedAt) p.updatedAt = p.createdAt ?? now;
+      });
+    });
   }
 }
 
@@ -343,4 +367,14 @@ export async function softDeleteSession(id: number): Promise<void> {
 export async function softDeleteCategory(id: number): Promise<void> {
   const t = Date.now();
   await db.studyCategories.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteSavedChat(id: number): Promise<void> {
+  const t = Date.now();
+  await db.savedChats.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteProblemSet(id: number): Promise<void> {
+  const t = Date.now();
+  await db.problemSets.update(id, { deletedAt: t, updatedAt: t });
 }

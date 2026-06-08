@@ -104,10 +104,18 @@ export function mergeSnapshots(base: SyncSnapshot, incoming: SyncSnapshot): Sync
       r => (r.createdAt != null ? String(r.createdAt) : null),
       r => num(r.updatedAt) || num(r.createdAt),
     ),
+    savedChats: mergeLWW(
+      b.savedChats ?? [], i.savedChats ?? [],
+      r => (r.createdAt != null ? String(r.createdAt) : null),
+      r => num(r.updatedAt) || num(r.createdAt),
+    ),
+    problemSets: mergeLWW(
+      b.problemSets ?? [], i.problemSets ?? [],
+      r => (r.createdAt != null ? String(r.createdAt) : null),
+      r => num(r.updatedAt) || num(r.createdAt),
+    ),
     exams: mergeUnion(b.exams ?? [], i.exams ?? [], r => `${str(r.name) ?? ''}|${str(r.examDate) ?? ''}`),
     scheduleDays: mergeUnion(b.scheduleDays ?? [], i.scheduleDays ?? [], r => str(r.date)),
-    savedChats: mergeUnion(b.savedChats ?? [], i.savedChats ?? [], r => (r.createdAt != null ? String(r.createdAt) : null)),
-    problemSets: mergeUnion(b.problemSets ?? [], i.problemSets ?? [], r => (r.createdAt != null ? String(r.createdAt) : null)),
     earnedBadges: mergeBadges(b.earnedBadges ?? [], i.earnedBadges ?? []),
   };
 }

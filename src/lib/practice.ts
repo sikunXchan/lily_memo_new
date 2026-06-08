@@ -254,19 +254,23 @@ export async function generateProblemSet(
 
 // ── Store helpers ────────────────────────────────────────────────────────────
 export async function saveProblemSet(r: GenerateResult): Promise<number> {
+  const now = Date.now();
   const set: ProblemSet = {
     title: r.title,
     subject: r.subject,
     questions: r.questions,
     count: r.questions.length,
-    createdAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
     attempts: 0,
   };
   return await db.problemSets.add(set) as number;
 }
 
+// Soft-delete (tombstone) so the deletion propagates through live sync.
 export async function deleteProblemSet(id: number): Promise<void> {
-  await db.problemSets.delete(id);
+  const t = Date.now();
+  await db.problemSets.update(id, { deletedAt: t, updatedAt: t });
 }
 
 export async function recordAttempt(id: number, correct: number): Promise<void> {
@@ -275,5 +279,6 @@ export async function recordAttempt(id: number, correct: number): Promise<void> 
   await db.problemSets.update(id, {
     attempts: (set.attempts ?? 0) + 1,
     bestScore: Math.max(set.bestScore ?? 0, correct),
+    updatedAt: Date.now(),
   });
 }
