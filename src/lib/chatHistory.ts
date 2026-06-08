@@ -35,22 +35,29 @@ export async function saveChat(
   model: 'lily' | 'sikunlily',
   messages: readonly unknown[],
 ): Promise<number> {
+  const now = Date.now();
   const entry: SavedChat = {
     title: makeTitle(messages),
     model,
     messages: JSON.stringify(stripHeavy(messages)),
     count: messages.length,
-    createdAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
   };
   return (await db.savedChats.add(entry)) as number;
 }
 
+// Soft-delete (tombstone) so the deletion propagates through live sync — a hard
+// delete would just vanish locally and the other device would re-add it.
 export async function deleteSavedChat(id: number): Promise<void> {
-  await db.savedChats.delete(id);
+  const t = Date.now();
+  await db.savedChats.update(id, { deletedAt: t, updatedAt: t });
 }
 
 export async function clearSavedChats(): Promise<void> {
-  await db.savedChats.clear();
+  const t = Date.now();
+  const live = await db.savedChats.filter(c => !c.deletedAt).toArray();
+  await Promise.all(live.map(c => db.savedChats.update(c.id!, { deletedAt: t, updatedAt: t })));
 }
 
 export function parseSavedMessages<T>(chat: SavedChat): T[] {

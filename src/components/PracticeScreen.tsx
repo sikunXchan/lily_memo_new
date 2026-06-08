@@ -146,7 +146,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const en = getAppLang() === 'en';
 
   const sets = useLiveQuery<ProblemSet[]>(
-    () => db.problemSets.orderBy('createdAt').reverse().toArray(), []
+    () => db.problemSets.orderBy('createdAt').reverse().filter(s => !s.deletedAt).toArray(), []
   ) ?? [];
 
   const [view, setView] = useState<View>('list');

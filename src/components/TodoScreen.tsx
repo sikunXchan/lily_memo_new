@@ -2,12 +2,28 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, Plus, Pin, Check, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft, Plus, Pin, Check, Trash2,
+  CalendarDays, List as ListIcon, ChevronLeft, ChevronRight,
+} from 'lucide-react';
 import { db } from '@/lib/db';
 import type { Todo } from '@/lib/db';
 import { useT } from '@/lib/i18n';
 
 const DEL_W = 80;
+const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
+
+function isoOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function parseIso(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+function fmtDayLabel(iso: string): string {
+  const d = parseIso(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} (${WEEKDAYS_JA[d.getDay()]})`;
+}
 
 interface TodoScreenProps {
   onGoBack: () => void;
@@ -48,6 +64,42 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
     setSwipedId(null);
   }, []);
 
+  // ── Calendar (予定表) view state ──
+  const [view, setView] = useState<'list' | 'calendar'>('list');
+  const todayIso = isoOf(new Date());
+  const [selDay, setSelDay] = useState<string>(todayIso);
+  const [calCursor, setCalCursor] = useState(() => {
+    const d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+  const [calText, setCalText] = useState('');
+
+  const addTodoForDay = useCallback(async (text: string, day: string) => {
+    const v = text.trim();
+    if (!v) return;
+    const now = Date.now();
+    await db.todos.add({ text: v, done: false, pinned: false, createdAt: now, updatedAt: now, dueDate: day });
+    setCalText('');
+  }, []);
+
+  const prevMonth = () => setCalCursor(c => (c.m === 0 ? { y: c.y - 1, m: 11 } : { y: c.y, m: c.m - 1 }));
+  const nextMonth = () => setCalCursor(c => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }));
+
+  // Map dueDate → todos, and build the month grid cells.
+  const dueByDay = new Map<string, Todo[]>();
+  for (const td of todos) {
+    if (!td.dueDate) continue;
+    const arr = dueByDay.get(td.dueDate) ?? [];
+    arr.push(td);
+    dueByDay.set(td.dueDate, arr);
+  }
+  const selDayTodos = todos.filter(td => td.dueDate === selDay);
+  const firstDow = new Date(calCursor.y, calCursor.m, 1).getDay();
+  const daysInMonth = new Date(calCursor.y, calCursor.m + 1, 0).getDate();
+  const calCells: (string | null)[] = [];
+  for (let i = 0; i < firstDow; i++) calCells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) calCells.push(isoOf(new Date(calCursor.y, calCursor.m, d)));
+
   const pending  = todos.filter(t => !t.done);
   const done     = todos.filter(t => t.done);
   const progress = todos.length > 0 ? Math.round((done.length / todos.length) * 100) : 0;
@@ -80,14 +132,96 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         )}
       </div>
 
-      {/* Progress bar */}
-      {todos.length > 0 && (
+      {/* Progress bar (list view only) */}
+      {view === 'list' && todos.length > 0 && (
         <div className="td-progress-track">
           <div className="td-progress-fill" style={{ width: `${progress}%` }} />
         </div>
       )}
 
+      {/* View toggle: list / calendar */}
+      <div className="td-viewtabs">
+        <button className={`td-vtab${view === 'list' ? ' on' : ''}`} onClick={() => setView('list')}>
+          <ListIcon size={14} strokeWidth={2.4} /> {t('リスト')}
+        </button>
+        <button className={`td-vtab${view === 'calendar' ? ' on' : ''}`} onClick={() => setView('calendar')}>
+          <CalendarDays size={14} strokeWidth={2.4} /> {t('カレンダー')}
+        </button>
+      </div>
+
+      {/* ── Calendar (予定表) view ── */}
+      {view === 'calendar' && (
+        <div className="td-cal-scroll">
+          <div className="td-cal-head">
+            <button className="td-cal-nav" onClick={prevMonth} aria-label={t('前の月')}><ChevronLeft size={18} /></button>
+            <span className="td-cal-title">{calCursor.y}{t('年')} {calCursor.m + 1}{t('月')}</span>
+            <button className="td-cal-nav" onClick={nextMonth} aria-label={t('次の月')}><ChevronRight size={18} /></button>
+          </div>
+          <div className="td-cal-grid">
+            {WEEKDAYS_JA.map((w, i) => (
+              <div key={`wd${i}`} className={`td-cal-wd${i === 0 ? ' sun' : ''}${i === 6 ? ' sat' : ''}`}>{w}</div>
+            ))}
+            {calCells.map((iso, idx) => iso === null ? (
+              <div key={`b${idx}`} className="td-cal-cell empty" />
+            ) : (
+              <button
+                key={iso}
+                className={`td-cal-cell${iso === selDay ? ' sel' : ''}${iso === todayIso ? ' today' : ''}`}
+                onClick={() => setSelDay(iso)}
+              >
+                <span className="td-cal-d">{parseIso(iso).getDate()}</span>
+                {dueByDay.get(iso)?.length ? (
+                  <span className={`td-cal-dot${dueByDay.get(iso)!.every(x => x.done) ? ' alldone' : ''}`}>
+                    {dueByDay.get(iso)!.filter(x => !x.done).length || '✓'}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+
+          {/* Selected-day panel */}
+          <div className="td-cal-day">
+            <div className="td-cal-day-label">{fmtDayLabel(selDay)}{selDay === todayIso ? ` ・${t('今日')}` : ''}</div>
+            <div className="td-add-row">
+              <input
+                className="td-input"
+                placeholder={t('この日の予定を追加...')}
+                value={calText}
+                onChange={e => setCalText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') void addTodoForDay(calText, selDay); }}
+              />
+              <button
+                className="td-add-btn"
+                onClick={() => void addTodoForDay(calText, selDay)}
+                disabled={!calText.trim()}
+                aria-label={t('追加')}
+              >
+                <Plus size={18} strokeWidth={2.8} />
+              </button>
+            </div>
+            {selDayTodos.length === 0 ? (
+              <p className="td-cal-empty">{t('この日の予定はまだないよ')}</p>
+            ) : selDayTodos.map(todo => (
+              <div key={todo.id} className={`td-card cal${todo.done ? ' done' : ''}`}>
+                <button
+                  className={`td-check${todo.done ? ' checked' : ''}`}
+                  onClick={() => void toggleDone(todo)}
+                  aria-label={t(todo.done ? '未完了に戻す' : '完了にする')}
+                >
+                  {todo.done && <Check size={11} strokeWidth={3.5} />}
+                </button>
+                <span className="td-text">{todo.text}</span>
+                <button className="td-cal-del" onClick={() => void deleteTodo(todo.id!)} aria-label={t('削除')}>
+                  <Trash2 size={16} strokeWidth={2} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Add row — kept at top so it never collides with the floating Home bubble */}
+      {view === 'list' && (
       <div className="td-add-row">
         <input
           ref={inputRef}
@@ -106,8 +240,10 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           <Plus size={18} strokeWidth={2.8} />
         </button>
       </div>
+      )}
 
       {/* List */}
+      {view === 'list' && (
       <div className="td-scroll">
         {todos.length === 0 && (
           <div className="td-empty">
@@ -149,6 +285,10 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
                       <span className="td-text">{todo.text}</span>
 
+                      {todo.dueDate && (
+                        <span className="td-date-chip"><CalendarDays size={11} strokeWidth={2.4} /> {fmtDayLabel(todo.dueDate)}</span>
+                      )}
+
                       <button
                         className={`td-pin${todo.pinned ? ' on' : ''}`}
                         onClick={e => { e.stopPropagation(); void togglePin(todo); }}
@@ -168,6 +308,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           </section>
         ))}
       </div>
+      )}
 
       <style jsx>{`
         /* ── Root ── */
@@ -215,6 +356,97 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           background: linear-gradient(90deg, #34d399, #22d3ee);
           transition: width .6s cubic-bezier(.34,1.1,.64,1);
         }
+
+        /* ── View toggle (list / calendar) ── */
+        .td-viewtabs {
+          display: flex; gap: 6px; padding: 0 14px 12px; flex-shrink: 0;
+        }
+        .td-vtab {
+          flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+          padding: 8px 0; border-radius: 12px; cursor: pointer;
+          border: 1.5px solid var(--border); background: var(--accent);
+          color: var(--fg-muted); font-size: .78rem; font-weight: 700;
+          transition: all .15s;
+        }
+        .td-vtab.on {
+          border-color: transparent; color: #fff;
+          background: linear-gradient(135deg, #34d399, #22d3ee);
+          box-shadow: 0 2px 8px rgba(52,211,153,.32);
+        }
+
+        /* ── Date chip on list items ── */
+        .td-date-chip {
+          display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0;
+          font-size: .64rem; font-weight: 700; color: #0891b2;
+          background: rgba(34,211,238,.13); border-radius: 99px; padding: 2px 8px;
+        }
+
+        /* ── Calendar (予定表) ── */
+        .td-cal-scroll {
+          flex: 1; overflow-y: auto; padding: 0 14px 96px;
+          -webkit-overflow-scrolling: touch;
+        }
+        .td-cal-head {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 2px 4px 12px;
+        }
+        .td-cal-title { font-size: 1rem; font-weight: 800; color: var(--foreground); }
+        .td-cal-nav {
+          width: 34px; height: 34px; border-radius: 10px;
+          border: 1px solid var(--border); background: var(--accent);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; color: var(--foreground);
+        }
+        .td-cal-nav:active { opacity: .55; }
+        .td-cal-grid {
+          display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+        }
+        .td-cal-wd {
+          text-align: center; font-size: .66rem; font-weight: 700;
+          color: var(--fg-muted); padding: 2px 0 6px;
+        }
+        .td-cal-wd.sun { color: #f87171; }
+        .td-cal-wd.sat { color: #60a5fa; }
+        .td-cal-cell {
+          position: relative; aspect-ratio: 1 / 1;
+          border: 1.5px solid transparent; border-radius: 11px;
+          background: var(--accent); cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          font-family: inherit; padding: 0;
+        }
+        .td-cal-cell.empty { background: transparent; cursor: default; }
+        .td-cal-cell.today { background: rgba(52,211,153,.14); }
+        .td-cal-cell.sel { border-color: #34d399; box-shadow: 0 0 0 2px rgba(52,211,153,.25); }
+        .td-cal-d { font-size: .82rem; font-weight: 600; color: var(--foreground); }
+        .td-cal-dot {
+          position: absolute; top: 3px; right: 3px; min-width: 15px; height: 15px;
+          border-radius: 99px; padding: 0 3px;
+          background: linear-gradient(135deg, #34d399, #22d3ee); color: #fff;
+          font-size: .58rem; font-weight: 800;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .td-cal-dot.alldone { background: var(--fg-faint); }
+
+        .td-cal-day { margin-top: 16px; }
+        .td-cal-day-label {
+          font-size: .8rem; font-weight: 800; color: var(--foreground);
+          padding: 0 2px 8px;
+        }
+        .td-cal-empty {
+          text-align: center; font-size: .76rem; color: var(--fg-faint);
+          padding: 14px 0;
+        }
+        .td-card.cal {
+          border-radius: 12px; margin-bottom: 6px; cursor: default;
+          box-shadow: 0 1px 2px rgba(0,0,0,.05);
+        }
+        .td-cal-del {
+          width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+          border: none; background: transparent; padding: 0; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          color: var(--fg-faint);
+        }
+        .td-cal-del:active { color: #ef4444; transform: scale(.82); }
 
         /* ── Add row ── */
         .td-add-row {

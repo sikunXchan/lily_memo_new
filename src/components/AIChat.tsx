@@ -1572,7 +1572,7 @@ function BoxingOverlay() {
 
 function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c: SavedChat) => void }) {
   const t = useT();
-  const chats = useLiveQuery(() => db.savedChats.orderBy('createdAt').reverse().toArray(), []);
+  const chats = useLiveQuery(() => db.savedChats.orderBy('createdAt').reverse().filter(c => !c.deletedAt).toArray(), []);
   return (
     <div className="history-overlay" onClick={onClose}>
       <div className="history-modal" onClick={e => e.stopPropagation()}>

@@ -70,29 +70,30 @@ function schedulePush() {
 async function mergeSnapshot(remote: LiveSnapshot) {
   _isMerging = true;
   try {
-    // Notes: syncId-based, newer updatedAt wins
+    // Notes: syncId-based, newer updatedAt wins. Tombstones (deletedAt) carry a
+    // bumped updatedAt, so a remote deletion overwrites an older live local copy.
     for (const r of remote.notes) {
       if (!r.syncId) continue;
       const local = await db.notes.where('syncId').equals(r.syncId).first();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = r; // never carry the remote device's auto-id
       if (!local) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id: _id, ...rest } = r;
         await db.notes.add({ ...rest, syncId: r.syncId || newSyncId() });
       } else if ((r.updatedAt ?? 0) > (local.updatedAt ?? 0)) {
-        await db.notes.update(local.id!, r);
+        await db.notes.update(local.id!, rest);
       }
     }
 
-    // Folders: syncId-based, newer updatedAt wins
+    // Folders: syncId-based, newer updatedAt wins (same tombstone rules).
     for (const r of remote.folders) {
       if (!r.syncId) continue;
       const local = await db.folders.where('syncId').equals(r.syncId).first();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = r; // never carry the remote device's auto-id
       if (!local) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { id: _id, ...rest } = r;
         await db.folders.add({ ...rest, syncId: r.syncId || newSyncId() });
       } else if ((r.updatedAt ?? 0) > (local.updatedAt ?? 0)) {
-        await db.folders.update(local.id!, r);
+        await db.folders.update(local.id!, rest);
       }
     }
 
@@ -164,15 +165,24 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       }
     }
 
-    // Saved chats: union by createdAt (each chat is immutable after creation)
+    // Saved chats: per-record last-write-wins keyed by createdAt, with tombstone
+    // support so deletions propagate (updatedAt is the version clock).
     if (remote.savedChats?.length) {
       const localChats = await db.savedChats.toArray();
-      const chatKeys = new Set(localChats.map(c => c.createdAt));
+      const map = new Map(localChats.map(c => [c.createdAt, c]));
       for (const r of remote.savedChats) {
-        if (!chatKeys.has(r.createdAt)) {
+        const local = map.get(r.createdAt);
+        const rUpdated = r.updatedAt ?? r.createdAt;
+        if (!local) {
+          if (!r.deletedAt) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { id: _id, ...rest } = r;
+            await db.savedChats.add(rest as SavedChat);
+          }
+        } else if (rUpdated > (local.updatedAt ?? local.createdAt)) {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { id: _id, ...rest } = r;
-          await db.savedChats.add(rest as SavedChat);
+          await db.savedChats.update(local.id!, rest);
         }
       }
     }
@@ -192,15 +202,24 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       }
     }
 
-    // Problem sets: union by createdAt (immutable after creation).
+    // Problem sets: per-record last-write-wins keyed by createdAt, with
+    // tombstone support so deletions (and attempt/score updates) propagate.
     if (remote.problemSets?.length) {
       const localSets = await db.problemSets.toArray();
-      const setKeys = new Set(localSets.map(p => p.createdAt));
+      const map = new Map(localSets.map(p => [p.createdAt, p]));
       for (const r of remote.problemSets) {
-        if (!setKeys.has(r.createdAt)) {
+        const local = map.get(r.createdAt);
+        const rUpdated = r.updatedAt ?? r.createdAt;
+        if (!local) {
+          if (!r.deletedAt) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { id: _id, ...rest } = r;
+            await db.problemSets.add(rest as ProblemSet);
+          }
+        } else if (rUpdated > (local.updatedAt ?? local.createdAt)) {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { id: _id, ...rest } = r;
-          await db.problemSets.add(rest as ProblemSet);
+          await db.problemSets.update(local.id!, rest);
         }
       }
     }
@@ -275,9 +294,11 @@ export function initLiveSync(key: string) {
     db.studySessions.orderBy('updatedAt').last().then(s => s?.updatedAt ?? 0),
     db.studyCategories.orderBy('updatedAt').last().then(c => c?.updatedAt ?? 0),
     db.exams.count(),
+    db.savedChats.orderBy('updatedAt').last().then(c => c?.updatedAt ?? 0),
     db.savedChats.count(),
     db.earnedBadges.count(),
     db.todos.orderBy('updatedAt').last().then(t => t?.updatedAt ?? 0),
+    db.problemSets.orderBy('updatedAt').last().then(p => p?.updatedAt ?? 0),
     db.problemSets.count(),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());

@@ -7,6 +7,7 @@
 // Users can create their own; the defaults below are editable samples.
 
 import { useEffect, useState } from 'react';
+import { getAppLang } from './appLang';
 
 export interface Shortcut {
   id: string;
@@ -16,6 +17,9 @@ export interface Shortcut {
 
 const KEY = 'lily-shortcuts-v1';
 const EVENT = 'lily-shortcuts-changed';
+
+// Shortcuts whose content is Japan-specific (日本語教材向け). Hidden in English mode.
+const JA_ONLY_IDS = new Set(['nichikore', 'vocab']);
 
 const VOCAB_SHORTCUT: Shortcut = {
   id: 'vocab',
@@ -71,8 +75,12 @@ function persist(list: Shortcut[]) {
   window.dispatchEvent(new Event(EVENT));
 }
 
+function filterByLang(list: Shortcut[]): Shortcut[] {
+  return getAppLang() === 'en' ? list.filter(s => !JA_ONLY_IDS.has(s.id)) : list;
+}
+
 export function getShortcuts(): Shortcut[] {
-  return load();
+  return filterByLang(load());
 }
 
 export function saveShortcut(sc: Shortcut) {
@@ -89,14 +97,18 @@ export function deleteShortcut(id: string) {
 
 export function useShortcuts(): Shortcut[] {
   const [list, setList] = useState<Shortcut[]>(load());
+  const [lang, setLang] = useState<string>(() => getAppLang());
   useEffect(() => {
     const handler = () => setList(load());
+    const langHandler = () => setLang(getAppLang());
     window.addEventListener(EVENT, handler);
     window.addEventListener('storage', handler);
+    window.addEventListener('lily-lang-changed', langHandler);
     return () => {
       window.removeEventListener(EVENT, handler);
       window.removeEventListener('storage', handler);
+      window.removeEventListener('lily-lang-changed', langHandler);
     };
   }, []);
-  return list;
+  return lang === 'en' ? list.filter(s => !JA_ONLY_IDS.has(s.id)) : list;
 }
