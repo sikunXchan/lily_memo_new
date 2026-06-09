@@ -47,7 +47,15 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
 
 // ── Push to Redis ────────────────────────────────────────────────
 async function push() {
-  if (!_key || _isMerging) return;
+  if (!_key) return;
+  // If we're mid-merge or still inside the post-merge suppress window, don't
+  // drop this push — defer it until the window closes. Otherwise a local change
+  // made right after a remote merge (e.g. an AI-created note added within the
+  // 12s suppress window after the initial poll) would never get pushed.
+  if (_isMerging || Date.now() < _suppressUntil) {
+    schedulePush();
+    return;
+  }
   try {
     const snapshot = await buildSnapshot();
     const body = JSON.stringify({ key: _key, snapshot });
@@ -61,9 +69,14 @@ async function push() {
 }
 
 function schedulePush() {
-  if (_isMerging || Date.now() < _suppressUntil) return;
   if (_pushTimer) clearTimeout(_pushTimer);
-  _pushTimer = setTimeout(() => void push(), PUSH_DEBOUNCE_MS);
+  const now = Date.now();
+  // When inside the suppress window (or mid-merge) wait until just after it
+  // closes instead of using the normal debounce — and never drop the push.
+  const delay = (_isMerging || now < _suppressUntil)
+    ? Math.max(PUSH_DEBOUNCE_MS, _suppressUntil - now + 250)
+    : PUSH_DEBOUNCE_MS;
+  _pushTimer = setTimeout(() => void push(), delay);
 }
 
 // ── Merge remote snapshot into local DB ─────────────────────────
