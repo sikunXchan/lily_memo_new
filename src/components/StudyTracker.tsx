@@ -92,7 +92,7 @@ function toYMD(d: Date): string {
 function segsFrom(list: StudySession[]): BucketSeg[] {
   const map = new Map<string, BucketSeg>();
   for (const s of list) {
-    const key = s.categoryId != null ? `c${s.categoryId}` : 'none';
+    const key = s.categoryName ?? 'none';
     const prev = map.get(key);
     if (prev) prev.secs += s.duration;
     else map.set(key, { name: s.categoryName ?? 'なし', color: s.categoryColor ?? '#94a3b8', secs: s.duration });
@@ -370,7 +370,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const periodTotal    = periodSessions.reduce((sum, s) => sum + s.duration, 0);
   const catMap = new Map<string, { name: string; color: string; secs: number }>();
   for (const s of periodSessions) {
-    const key = s.categoryId !== null ? `c${s.categoryId}` : 'none';
+    const key = s.categoryName ?? 'none';
     const prev = catMap.get(key);
     catMap.set(key, { name: s.categoryName ?? 'カテゴリなし', color: s.categoryColor ?? '#94a3b8', secs: (prev?.secs ?? 0) + s.duration });
   }
@@ -380,7 +380,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const grandTotal = sessions.reduce((sum, s) => sum + s.duration, 0);
   const allCatMap = new Map<string, { name: string; color: string; secs: number }>();
   for (const s of sessions) {
-    const key = s.categoryId !== null ? `c${s.categoryId}` : 'none';
+    const key = s.categoryName ?? 'none';
     const prev = allCatMap.get(key);
     allCatMap.set(key, { name: s.categoryName ?? 'カテゴリなし', color: s.categoryColor ?? '#94a3b8', secs: (prev?.secs ?? 0) + s.duration });
   }

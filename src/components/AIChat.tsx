@@ -956,6 +956,9 @@ function InsertableBlockCard({
         {block.type === 'qa' && <QAPreview code={block.rawCode} />}
         {block.type === 'geometry' && <GeometryPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'file' && <FilePreview block={block} />}
+        {block.type === 'table' && (
+          <div className="table-preview" dangerouslySetInnerHTML={{ __html: markdownTableToHtml(block.rawCode) }} />
+        )}
         {(block.type === 'memo_create' || block.type === 'memo_overwrite') && (
           <pre className="memo-block-preview">{block.rawCode.slice(0, 200)}{block.rawCode.length > 200 ? '\n…' : ''}</pre>
         )}
@@ -1005,6 +1008,10 @@ function InsertableBlockCard({
         .pdf-btn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; background:var(--primary); color:white; border:none; border-radius:8px; padding:8px; font-size:0.82rem; font-weight:700; cursor:pointer; margin-bottom:8px; }
         .pdf-btn:disabled { opacity:0.6; cursor:default; }
         .memo-block-preview { font-size: 0.75rem; color: var(--fg-muted); background: var(--accent); border-radius: 8px; padding: 10px; margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow: auto; }
+        .table-preview { overflow-x: auto; margin-bottom: 8px; border-radius: 8px; }
+        .table-preview :global(table) { border-collapse: collapse; width: 100%; font-size: 0.78rem; }
+        .table-preview :global(th), .table-preview :global(td) { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+        .table-preview :global(th) { background: color-mix(in srgb, var(--primary) 12%, transparent); font-weight: 700; }
         .memo-confirm-btn { display: flex; align-items: center; justify-content: center; width: 100%; background: var(--primary); color: white; border: none; border-radius: 8px; padding: 9px; font-size: 0.84rem; font-weight: 700; cursor: pointer; margin-top: 4px; }
         .block-insert-row { display: flex; gap: 8px; align-items: center; }
         .note-select { flex: 1; min-width: 0; background: var(--accent); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; font-size: 0.8rem; color: var(--foreground); outline: none; }
