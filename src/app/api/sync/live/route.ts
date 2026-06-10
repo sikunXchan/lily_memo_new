@@ -11,6 +11,19 @@ function sanitizeKey(k: string): string {
   return (k ?? '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32).toLowerCase();
 }
 
+// Compare-and-set: write the merged snapshot only if the stored ts hasn't
+// changed since we read it. Two devices pushing at the same time used to race
+// the read-modify-write: the second write silently discarded every record the
+// first device had just contributed. With CAS the loser retries the merge on
+// top of the winner's data instead.
+const CAS_SCRIPT = `
+local cur = redis.call('GET', KEYS[2])
+if (cur or '') ~= ARGV[2] then return 0 end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[3]))
+redis.call('SET', KEYS[2], ARGV[4], 'EX', tonumber(ARGV[3]))
+return 1
+`;
+
 // POST /api/sync/live — push snapshot from a device.
 // The incoming snapshot is MERGED into the stored one (per-record
 // last-write-wins) rather than overwriting it, so concurrent creations and
@@ -30,26 +43,36 @@ export async function POST(req: NextRequest) {
   if (!key) return NextResponse.json({ error: 'invalid key' }, { status: 400 });
 
   const incoming = (parsed.snapshot ?? {}) as SyncSnapshot;
+  const dataKey = `lily:live:${key}:data`;
+  const tsKey   = `lily:live:${key}:ts`;
 
-  // Read the stored snapshot and merge into it. (Read-modify-write: the window
-  // between read and write is tiny relative to the 3s client push debounce, so
-  // it's vastly safer than the previous unconditional overwrite.)
-  let base: SyncSnapshot = {};
-  try {
-    const raw = await redis.get<string>(`lily:live:${key}:data`);
-    if (raw) base = (typeof raw === 'string' ? JSON.parse(raw) : raw) as SyncSnapshot;
-  } catch { /* corrupt or missing — start from incoming only */ }
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // Read the stored snapshot (and its version stamp) and merge into it.
+    let base: SyncSnapshot = {};
+    let curTs: number | null = null;
+    try {
+      const [raw, storedTs] = await Promise.all([
+        redis.get<string>(dataKey),
+        redis.get<number>(tsKey),
+      ]);
+      if (raw) base = (typeof raw === 'string' ? JSON.parse(raw) : raw) as SyncSnapshot;
+      curTs = storedTs ?? null;
+    } catch { /* corrupt or missing — start from incoming only */ }
 
-  const merged = mergeSnapshots(base, incoming);
-  const ts = Date.now();
-  const payload = JSON.stringify({ ...merged, ts });
+    const merged = mergeSnapshots(base, incoming);
+    const ts = Date.now();
+    const payload = JSON.stringify({ ...merged, ts });
 
-  await Promise.all([
-    redis.set(`lily:live:${key}:data`, payload, { ex: TTL_S }),
-    redis.set(`lily:live:${key}:ts`,   ts,      { ex: TTL_S }),
-  ]);
-
-  return NextResponse.json({ ok: true, ts });
+    const ok = await redis.eval(
+      CAS_SCRIPT,
+      [dataKey, tsKey],
+      [payload, curTs == null ? '' : String(curTs), String(TTL_S), String(ts)],
+    );
+    if (ok === 1) return NextResponse.json({ ok: true, ts });
+    // Someone else wrote between our read and write — re-read and re-merge.
+  }
+  return NextResponse.json({ error: 'conflict' }, { status: 409 });
 }
 
 // GET /api/sync/live?key=...&since=... — poll for newer snapshot

@@ -2021,11 +2021,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(accuracy && !lilyThinking ? t('🧠 じっくり考えてるよ…') : t('🧠 思考中...'));
+        // Explicit thinking mode buys the strongest reasoning available:
+        // gemini-2.5-pro first (falls back to flash on quota) and a large
+        // thinking budget. Auto-engaged accuracy tasks stay on flash for
+        // speed but still get a meaningful budget.
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
           apiKey,
-          2048,
+          lilyThinking ? 8192 : 4096,
           {
             onThinkingDelta: (delta) => {
               thinkingAccum += delta;
@@ -2035,7 +2039,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+          lilyThinking
+            ? ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
+            : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
           webSearch || opts?.forceSearch,
           65536,
           accuracy ? 0.35 : 0.6,
@@ -2060,7 +2066,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         role: 'lily',
         text: textContent || (
           questions.length > 0
-            ? `${questions.map(q => q.question).join('\n')}\n\n${t('下のフォームから教えてね！🐶')}`
+            ? `${questions.map(q => q.question).join('\n')}\n\n${t('下のフォームから回答してください')}`
             : '...'
         ),
         timestamp: Date.now(),
@@ -2075,7 +2081,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: `${t('ごめんね、エラーが起きちゃった 🐶')}\n${e instanceof Error ? e.message : t('不明なエラー')}`,
+        text: `${t('エラーが発生しました')}\n${e instanceof Error ? e.message : t('不明なエラー')}`,
         timestamp: Date.now(),
       }]);
     } finally {
@@ -2141,7 +2147,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           history,
           systemPrompt,
           apiKey,
-          2048,
+          lilyThinking ? 8192 : 4096,
           {
             onThinkingDelta: (delta) => {
               thinkingAccum += delta;
@@ -2151,7 +2157,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+          lilyThinking
+            ? ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
+            : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
           webSearch,
           65536,
           accuracy ? 0.35 : 0.6,
@@ -2175,7 +2183,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: textContent || (questions.length > 0 ? `${questions.map(q => q.question).join('\n')}\n\n${t('下のフォームから教えてね！🐶')}` : '...'),
+        text: textContent || (questions.length > 0 ? `${questions.map(q => q.question).join('\n')}\n\n${t('下のフォームから回答してください')}` : '...'),
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
@@ -2188,7 +2196,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: `${t('ごめんね、エラーが起きちゃった 🐶')}\n${e instanceof Error ? e.message : t('不明なエラー')}`,
+        text: `${t('エラーが発生しました')}\n${e instanceof Error ? e.message : t('不明なエラー')}`,
         timestamp: Date.now(),
       }]);
     } finally {

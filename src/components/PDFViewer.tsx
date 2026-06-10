@@ -6,11 +6,14 @@ import {
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
   Play, Pause, RotateCcw, RotateCw, Highlighter, Pencil, Trash2,
   Image as ImageIcon, Plus, Maximize2, Minimize2,
-  Minus, MessageSquare, ChevronDown, ChevronUp,
+  Minus, MessageSquare, ChevronDown, ChevronUp, FileDown,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { registerPdfProvider, registerPdfAnnotator, type SikunAnnotation } from '@/lib/pdfBridge';
+import { pdfPagesToMarkdown } from '@/lib/pdfToMarkdown';
+import { downloadTextFile } from '@/lib/fileGen';
+import { db, newSyncId } from '@/lib/db';
 import { useT } from '@/lib/i18n';
 
 if (typeof window !== 'undefined') {
@@ -218,6 +221,16 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
   const [photoRotations, setPhotoRotations] = useState<number[]>([]);
   const [isConvertingPDF, setIsConvertingPDF] = useState(false);
 
+  // PDF → Markdown conversion
+  const [mdState, setMdState] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
+  const [mdProgress, setMdProgress] = useState('');
+  const [mdResult, setMdResult] = useState('');
+  const [mdError, setMdError] = useState('');
+  const [mdSaved, setMdSaved] = useState(false);
+  // Bumped whenever the open document changes so an in-flight conversion of a
+  // closed/replaced PDF can't surface its (now irrelevant) result.
+  const mdRunIdRef = useRef(0);
+
   // Canvas & DOM refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -299,6 +312,84 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     setError(''); setIsLoading(false); setTimerRunning(false);
     setOpenUrl(''); setAnnotations({}); setAnnotationMode('none');
     setTextInputPos(null); setShowComments(false); setSikunAnnotations({});
+    mdRunIdRef.current++;
+    setMdState('idle'); setMdProgress(''); setMdResult(''); setMdError(''); setMdSaved(false);
+  };
+
+  // ---- PDF → Markdown ----
+  const MD_MAX_PAGES = 50;
+
+  // Best-effort document name for the .md file / memo title.
+  const pdfBaseName = (): string => {
+    try {
+      if (openUrl && !openUrl.startsWith('blob:')) {
+        const last = decodeURIComponent(new URL(openUrl, window.location.href).pathname.split('/').pop() ?? '');
+        const name = last.replace(/\.pdf$/i, '').trim();
+        if (name) return name;
+      }
+    } catch { /* fall through */ }
+    const d = new Date();
+    return `PDF_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const handlePdfToMarkdown = async () => {
+    const doc = pdfDocRef.current;
+    if (!doc || mdState === 'working') return;
+    const runId = ++mdRunIdRef.current;
+    setMdState('working'); setMdError(''); setMdResult(''); setMdSaved(false);
+    try {
+      const total = doc.numPages;
+      const n = Math.min(total, MD_MAX_PAGES);
+      const images: string[] = [];
+      for (let i = 1; i <= n; i++) {
+        setMdProgress(t('ページを画像化中... ({done}/{total})', { done: i, total: n }));
+        const page = await doc.getPage(i);
+        const vp = page.getViewport({ scale: 1.5 });
+        const cv = document.createElement('canvas');
+        cv.width = vp.width; cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext('2d')!, viewport: vp }).promise;
+        images.push(cv.toDataURL('image/jpeg', 0.8).split(',')[1]);
+        if (runId !== mdRunIdRef.current) return;
+      }
+      const md = await pdfPagesToMarkdown(images, p =>
+        setMdProgress(t('Markdownに変換中... ({done}/{total}ページ)', { done: p.done, total: p.total })));
+      if (runId !== mdRunIdRef.current) return;
+      const result = total > n
+        ? `${md}\n\n---\n\n（${t('元のPDFは全{total}ページですが、最初の{n}ページのみ変換しました。', { total, n })}）`
+        : md;
+      setMdResult(result);
+      setMdState('done');
+    } catch (e) {
+      if (runId !== mdRunIdRef.current) return;
+      setMdError(e instanceof Error ? e.message : 'unknown error');
+      setMdState('error');
+    }
+  };
+
+  const handleMdDownload = () => {
+    if (!mdResult) return;
+    downloadTextFile(mdResult, `${pdfBaseName()}.md`);
+  };
+
+  const handleMdSaveAsMemo = async () => {
+    if (!mdResult || mdSaved) return;
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const now = Date.now();
+    await db.notes.add({
+      syncId: newSyncId(),
+      title: `${pdfBaseName()} (Markdown)`,
+      content: `<p>${mdResult.split('\n').map(esc).join('</p><p>')}</p>`,
+      type: 'text',
+      createdAt: now,
+      updatedAt: now,
+    });
+    setMdSaved(true);
+  };
+
+  const closeMdModal = () => {
+    mdRunIdRef.current++;
+    setMdState('idle'); setMdProgress(''); setMdResult(''); setMdError(''); setMdSaved(false);
   };
 
   // ---- Overlay drawing ----
@@ -795,6 +886,9 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             <button className={`pdf-icon-btn${annotationMode === 'pen' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'pen' ? 'none' : 'pen')} title={t('ペン手書き')}>
               <Pencil size={18} />
             </button>
+            <button className={`pdf-icon-btn${mdState === 'working' ? ' active' : ''}`} onClick={() => void handlePdfToMarkdown()} disabled={!hasPDF || mdState === 'working'} title={t('PDFをMarkdown化')}>
+              <FileDown size={18} />
+            </button>
             <button className={`pdf-icon-btn${showTimer ? ' active' : ''}`} onClick={() => { setShowTimer(v => !v); setTimerCollapsed(false); }} title={t('タイマー')}>
               <Clock size={18} />
             </button>
@@ -974,6 +1068,46 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
               </div>
             </div>
           )
+        )}
+
+        {/* PDF → Markdown progress / result */}
+        {mdState !== 'idle' && (
+          <div className="md-modal-overlay" onClick={mdState === 'working' ? undefined : closeMdModal}>
+            <div className="md-modal" onClick={e => e.stopPropagation()}>
+              {mdState === 'working' && (
+                <>
+                  <div className="pdf-spinner" />
+                  <p className="md-modal-title">{t('PDFをMarkdownに変換中')}</p>
+                  <p className="md-modal-sub">{mdProgress}</p>
+                </>
+              )}
+              {mdState === 'error' && (
+                <>
+                  <p className="md-modal-title">{t('Markdown変換に失敗しました')}</p>
+                  <p className="md-modal-sub">{mdError}</p>
+                  <div className="md-modal-actions">
+                    <button className="md-btn" onClick={closeMdModal}>{t('閉じる')}</button>
+                    <button className="md-btn primary" onClick={() => void handlePdfToMarkdown()}>{t('もう一度試す')}</button>
+                  </div>
+                </>
+              )}
+              {mdState === 'done' && (
+                <>
+                  <p className="md-modal-title">{t('Markdown変換が完了しました')}</p>
+                  <pre className="md-preview">{mdResult.slice(0, 1200)}{mdResult.length > 1200 ? '\n…' : ''}</pre>
+                  <div className="md-modal-actions">
+                    <button className="md-btn" onClick={closeMdModal}>{t('閉じる')}</button>
+                    <button className="md-btn" onClick={() => void handleMdSaveAsMemo()} disabled={mdSaved}>
+                      {mdSaved ? t('✓ メモに保存済み') : t('メモとして保存')}
+                    </button>
+                    <button className="md-btn primary" onClick={handleMdDownload}>
+                      <FileDown size={14} /> {t('.md をダウンロード')}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         )}
 
         {/* Canvas area — stable centering */}
@@ -1376,6 +1510,38 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             border-radius:50%; animation:spin 0.8s linear infinite;
           }
           @keyframes spin { to { transform:rotate(360deg); } }
+
+          /* ── PDF → Markdown modal ── */
+          .md-modal-overlay {
+            position:absolute; inset:0; z-index:60;
+            background:rgba(0,0,0,0.55);
+            display:flex; align-items:center; justify-content:center; padding:16px;
+          }
+          .md-modal {
+            background:var(--background); border-radius:16px;
+            padding:22px 18px; max-width:480px; width:100%;
+            display:flex; flex-direction:column; align-items:center; gap:10px;
+            box-shadow:0 8px 40px rgba(0,0,0,0.35);
+            max-height:80%;
+          }
+          .md-modal-title { font-size:0.98rem; font-weight:700; color:var(--foreground); margin:0; text-align:center; }
+          .md-modal-sub { font-size:0.78rem; color:var(--fg-muted); margin:0; text-align:center; word-break:break-all; }
+          .md-preview {
+            width:100%; flex:1; min-height:0; overflow:auto;
+            background:var(--accent); border:1px solid var(--border); border-radius:10px;
+            padding:10px 12px; margin:0;
+            font-size:0.72rem; line-height:1.5; color:var(--foreground);
+            white-space:pre-wrap; word-break:break-word;
+            max-height:300px;
+          }
+          .md-modal-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; width:100%; }
+          .md-btn {
+            display:flex; align-items:center; gap:5px;
+            border:1px solid var(--border); background:var(--accent); color:var(--foreground);
+            border-radius:10px; padding:8px 14px; font-size:0.8rem; font-weight:700; cursor:pointer;
+          }
+          .md-btn.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
+          .md-btn:disabled { opacity:0.55; cursor:default; }
         `}</style>
       </div>
     );
