@@ -10,7 +10,7 @@ import {
   loadSikunHistory, saveSikunHistory, toChatTurns,
   type SikunMessage,
 } from '@/lib/sikunHistory';
-import { getEffectiveApiKey } from '@/lib/appLang';
+import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
 
 interface InstanceSikunProps {
   activeNoteId?: number;
@@ -74,6 +74,12 @@ function currentTonePrompt(): string {
 
 function timeOfDayPlaceholder(): string {
   const h = new Date().getHours();
+  if (getAppLang() === 'en') {
+    if (h >= 5 && h < 11) return 'Morning. What do you want to know?';
+    if (h >= 11 && h < 17) return 'Ask sikun...';
+    if (h >= 17 && h < 22) return 'Long day? Need a hand?';
+    return 'Up late? I\'ll keep it short';
+  }
   if (h >= 5 && h < 11) return 'おはよう、何か聞きたいか？';
   if (h >= 11 && h < 17) return 'sikunに話す...';
   if (h >= 17 && h < 22) return 'お疲れさま。何か手伝おうか？';

@@ -37,7 +37,7 @@ import {
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
-import { useT } from '@/lib/i18n';
+import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
 import { ensureSkillsSeeded, skillPromptAddon, type Skill } from '@/lib/skills';
@@ -114,22 +114,22 @@ function escHtmlAttr(s: string): string {
 }
 
 function detectMermaidLabel(code: string): string {
-  if (/sequenceDiagram/i.test(code)) return 'シーケンス図';
-  if (/classDiagram/i.test(code)) return 'クラス図';
-  if (/gantt/i.test(code)) return 'ガントチャート';
-  if (/pie/i.test(code)) return '円グラフ(Mermaid)';
-  if (/erDiagram/i.test(code)) return 'ER図';
-  if (/^\s*mindmap/im.test(code)) return 'マインドマップ';
-  if (/graph|flowchart/i.test(code)) return 'フローチャート';
-  return 'Mermaid図';
+  if (/sequenceDiagram/i.test(code)) return translate('シーケンス図');
+  if (/classDiagram/i.test(code)) return translate('クラス図');
+  if (/gantt/i.test(code)) return translate('ガントチャート');
+  if (/pie/i.test(code)) return translate('円グラフ(Mermaid)');
+  if (/erDiagram/i.test(code)) return translate('ER図');
+  if (/^\s*mindmap/im.test(code)) return translate('マインドマップ');
+  if (/graph|flowchart/i.test(code)) return translate('フローチャート');
+  return translate('Mermaid図');
 }
 
 function detectChartLabel(code: string): string {
   try {
     const p = JSON.parse(code);
     const m: Record<string, string> = { bar: '棒グラフ', line: '折れ線グラフ', pie: '円グラフ', scatter: '散布図' };
-    return m[p.type as string] ?? 'グラフ';
-  } catch { return 'グラフ'; }
+    return translate(m[p.type as string] ?? 'グラフ');
+  } catch { return translate('グラフ'); }
 }
 
 // Requests where correctness/completeness matter more than speed — problem &
@@ -265,7 +265,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     try {
       parseGeometry(jsonStr.trim());
       const id = crypto.randomUUID();
-      blocks.push({ id, type: 'geometry', rawCode: jsonStr.trim(), previewLabel: '数学・幾何の図' });
+      blocks.push({ id, type: 'geometry', rawCode: jsonStr.trim(), previewLabel: translate('数学・幾何の図') });
       return blockMarker(id);
     } catch {
       return _full; // not a geometry block, leave it
@@ -288,13 +288,13 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     if (type === 'qa') {
       const pairs = parseQAPairs(trimmed);
       if (pairs.length === 0) return '\n[Q&Aの解析に失敗しちゃった]\n';
-      const label = `${pairs.length}問の${QA_KIND_LABEL[parseQAKind(trimmed)]}`;
+      const label = translate('{n}問の{kind}', { n: pairs.length, kind: translate(QA_KIND_LABEL[parseQAKind(trimmed)]) });
       blocks.push({ id, type: 'qa', rawCode: trimmed, previewLabel: label });
       return blockMarker(id);
     }
     if (type === 'geometry') {
       try { parseGeometry(trimmed); } catch { return '\n[図の生成に失敗しちゃった]\n'; }
-      blocks.push({ id, type: 'geometry', rawCode: trimmed, previewLabel: '数学・幾何の図' });
+      blocks.push({ id, type: 'geometry', rawCode: trimmed, previewLabel: translate('数学・幾何の図') });
       return blockMarker(id);
     }
     if (type === 'memo_create' && allowMemoBlocks) {
@@ -302,7 +302,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const titleMatch = firstLine.match(/^@@memo_create\s*:\s*(.+)/);
       const memoTitle = titleMatch?.[1]?.trim() || '新しいメモ';
       const content = trimmed.split('\n').slice(1).join('\n').trim();
-      blocks.push({ id, type: 'memo_create', rawCode: content, previewLabel: `メモ作成: ${memoTitle}`, memoTitle });
+      blocks.push({ id, type: 'memo_create', rawCode: content, previewLabel: translate('メモ作成: {title}', { title: memoTitle }), memoTitle });
       return blockMarker(id);
     }
     if (type === 'memo_overwrite' && allowMemoBlocks) {
@@ -310,7 +310,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const idMatch = firstLine.match(/^@@memo_overwrite\s*:\s*(\d+)/);
       const memoId = idMatch ? Number(idMatch[1]) : undefined;
       const content = trimmed.split('\n').slice(1).join('\n').trim();
-      blocks.push({ id, type: 'memo_overwrite', rawCode: content, previewLabel: `メモ上書き: ID ${memoId ?? '不明'}`, memoId });
+      blocks.push({ id, type: 'memo_overwrite', rawCode: content, previewLabel: translate('メモ上書き: ID {id}', { id: memoId ?? '?' }), memoId });
       return blockMarker(id);
     }
     if (type === 'folder_create') {
@@ -319,7 +319,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const colorMatch = lines.find((l: string) => l.startsWith('@@color:'))?.match(/^@@color:\s*(.+)/);
       const folderName = nameMatch?.[1]?.trim() || '新しいフォルダ';
       const folderColor = colorMatch?.[1]?.trim();
-      blocks.push({ id, type: 'folder_create', rawCode: trimmed, previewLabel: `フォルダ作成: 📁 ${folderName}`, folderName, folderColor });
+      blocks.push({ id, type: 'folder_create', rawCode: trimmed, previewLabel: translate('フォルダ作成: 📁 {name}', { name: folderName }), folderName, folderColor });
       return blockMarker(id);
     }
     if (type === 'note_move') {
@@ -328,11 +328,11 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
       const folderMatch = lines.find((l: string) => l.startsWith('@@to_folder:'))?.match(/^@@to_folder:\s*(.+)/);
       const memoId = idMatch ? Number(idMatch[1]) : undefined;
       const targetFolderName = folderMatch?.[1]?.trim() || '未分類';
-      blocks.push({ id, type: 'note_move', rawCode: trimmed, previewLabel: `移動: ID ${memoId ?? '?'} → 📁 ${targetFolderName}`, memoId, targetFolderName });
+      blocks.push({ id, type: 'note_move', rawCode: trimmed, previewLabel: translate('移動: ID {id} → 📁 {name}', { id: memoId ?? '?', name: targetFolderName }), memoId, targetFolderName });
       return blockMarker(id);
     }
     if (type === 'table') {
-      blocks.push({ id, type: 'table', rawCode: trimmed, previewLabel: '表' });
+      blocks.push({ id, type: 'table', rawCode: trimmed, previewLabel: translate('表') });
       return blockMarker(id);
     }
     return '';

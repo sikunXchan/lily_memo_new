@@ -2,17 +2,20 @@
 
 import { Home } from 'lucide-react';
 
+import { useT } from '@/lib/i18n';
+
 interface BackBubbleProps {
   onGoHome: () => void;
 }
 
 export default function BackBubble({ onGoHome }: BackBubbleProps) {
+  const t = useT();
   return (
-    <button className="bb-wrap" onClick={onGoHome} aria-label="ホームに戻る">
+    <button className="bb-wrap" onClick={onGoHome} aria-label={t('ホームに戻る')}>
       <span className="bb-icon-skin">
         <Home size={18} color="#ff8da1" strokeWidth={2.2} />
       </span>
-      <span className="bb-label">ホーム</span>
+      <span className="bb-label">{t('ホーム')}</span>
 
       <style jsx>{`
         .bb-wrap {

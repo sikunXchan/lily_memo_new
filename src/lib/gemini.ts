@@ -12,8 +12,9 @@ export interface ChatAttachment {
 // proxy (/api/gemini/...) so the key stays server-side; Japanese mode calls
 // Gemini directly with the user's own key. The language flag also makes the
 // model reply in English without translating the (Japanese) system prompts.
-let _useProxy = false;
-let _lang: 'ja' | 'en' = 'ja';
+// English/proxy is the app default; applyAppLang() overrides at startup.
+let _useProxy = true;
+let _lang: 'ja' | 'en' = 'en';
 
 export function setGeminiMode(opts: { proxy?: boolean; lang?: 'ja' | 'en' }): void {
   if (opts.proxy !== undefined) _useProxy = opts.proxy;

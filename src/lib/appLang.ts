@@ -1,9 +1,9 @@
 import { setGeminiMode } from './gemini';
 
 // App language / AI mode.
-//   'ja' → Japanese UI, the user supplies their own Gemini key (BYO, offline).
 //   'en' → English UI + English AI, routed through the server proxy so it works
-//          with zero configuration (used for the hackathon submission).
+//          with zero configuration. DEFAULT (hackathon submission).
+//   'ja' → Japanese UI, the user supplies their own Gemini key (BYO, offline).
 export type AppLang = 'ja' | 'en';
 
 const LS_KEY = 'lily_app_lang';
@@ -13,8 +13,9 @@ const LS_KEY = 'lily_app_lang';
 export const PROXY_KEY = '__proxy__';
 
 export function getAppLang(): AppLang {
-  if (typeof window === 'undefined') return 'ja';
-  return localStorage.getItem(LS_KEY) === 'en' ? 'en' : 'ja';
+  if (typeof window === 'undefined') return 'en';
+  // English is the default; Japanese only when explicitly chosen in settings.
+  return localStorage.getItem(LS_KEY) === 'ja' ? 'ja' : 'en';
 }
 
 // Push the current language into the Gemini layer (proxy on for English).

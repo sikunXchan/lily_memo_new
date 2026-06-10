@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Mic, MicOff, Volume2, Send } from 'lucide-react';
 import { callGeminiChat } from '@/lib/gemini';
+import { getAppLang } from '@/lib/appLang';
 import type { ChatTurn } from '@/lib/gemini';
 import { pickAudioMime, transcribeAudioBlob, isNoSpeech } from '@/lib/audioTranscribe';
 import { useT } from '@/lib/i18n';
@@ -104,11 +105,14 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
       synth.cancel();
       const doSpeak = () => {
         const utter = new SpeechSynthesisUtterance(text);
-        utter.lang = 'ja-JP';
+        const en = getAppLang() === 'en';
+        utter.lang = en ? 'en-US' : 'ja-JP';
         utter.rate = 1.05;
         const voices = synth.getVoices();
-        const jaVoice = voices.find(v => v.lang.startsWith('ja')) ?? voices.find(v => v.lang.includes('JP'));
-        if (jaVoice) utter.voice = jaVoice;
+        const voice = en
+          ? (voices.find(v => v.lang.startsWith('en')) ?? null)
+          : (voices.find(v => v.lang.startsWith('ja')) ?? voices.find(v => v.lang.includes('JP')) ?? null);
+        if (voice) utter.voice = voice;
         utter.onend = () => resolve();
         utter.onerror = () => resolve();
         synth.resume();
@@ -155,7 +159,9 @@ export default function VoiceChat({ apiKey, systemPrompt, modeLabel, onClose }: 
     try {
       const voiceSystemPrompt =
         systemPrompt +
-        '\n\n【音声対話モード】答えは音声で読み上げるので、必ず2〜3文程度の簡潔な日本語で答えてください。長文・箇条書き・マークダウンは使わないこと。';
+        (getAppLang() === 'en'
+          ? '\n\n[Voice mode] Your answer will be read aloud, so reply in 2-3 short, plain English sentences. No long text, bullet lists or markdown.'
+          : '\n\n【音声対話モード】答えは音声で読み上げるので、必ず2〜3文程度の簡潔な日本語で答えてください。長文・箇条書き・マークダウンは使わないこと。');
 
       const response = await callGeminiChat(messagesRef.current, voiceSystemPrompt, apiKey);
       messagesRef.current = [...messagesRef.current, { role: 'model', text: response }];

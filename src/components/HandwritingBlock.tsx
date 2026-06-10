@@ -1,6 +1,7 @@
 'use client';
 
 import { NodeViewWrapper } from '@tiptap/react';
+import { translate } from '@/lib/i18n';
 import type { ReactNodeViewProps } from '@tiptap/react';
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -322,7 +323,7 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
   const clearPage = () => {
     const cp = currentPageRef.current;
     if (!data.pages[cp]?.strokes.length) return;
-    if (!confirm('このページを全消去しますか？')) return;
+    if (!confirm(translate('このページを全消去しますか？'))) return;
     setData(prev => {
       const newPages = prev.pages.map((p, i) =>
         i === cp ? { strokes: [] as HandwritingStroke[] } : p
@@ -355,7 +356,7 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#b0a890" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
-              <span>タップして手書き</span>
+              <span>{translate('タップして手書き')}</span>
             </div>
           </div>
         ) : (
@@ -369,7 +370,7 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
       {editing && typeof document !== 'undefined' && createPortal(
         <div className="nb-fullscreen">
           <div className="nb-topbar">
-            <button className="nb-done-btn" onClick={() => setEditing(false)}>✓ 完了</button>
+            <button className="nb-done-btn" onClick={() => setEditing(false)}>✓ {translate('完了')}</button>
             <div className="nb-sep" />
             {/* Drawing tools */}
             <button className={`nb-btn ${tool === 'pen' ? 'active' : ''}`} onClick={() => setTool('pen')}>
@@ -408,7 +409,7 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
             <button
               className={`nb-btn ${pencilOnly ? 'active' : ''}`}
               onClick={() => setPencilOnly(p => !p)}
-              title={pencilOnly ? 'Apple Pencil専用（指でスクロール）' : '全タッチ（指でも描ける）'}
+              title={pencilOnly ? translate('Apple Pencil専用（指でスクロール）') : translate('全タッチ（指でも描ける）')}
             >
               <Hand size={16} />
             </button>
@@ -431,7 +432,7 @@ export default function HandwritingBlock({ node, updateAttributes, selected }: R
                 <ChevronRight size={18} />
               </button>
               <div className="nb-sep" />
-              <button className="nb-page-btn" onClick={addPage} title="ページを追加">
+              <button className="nb-page-btn" onClick={addPage} title={translate('ページを追加')}>
                 <Plus size={16} />
               </button>
             </div>
