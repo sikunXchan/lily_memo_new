@@ -13,9 +13,11 @@
 
 import { callGeminiChat } from './gemini';
 import type { ChatTurn } from './gemini';
+import { getAppLang } from './appLang';
 
 // Sentinel the model returns when the audio contains no intelligible speech.
 export const NO_SPEECH = '(無音)';
+const NO_SPEECH_EN = '(no speech)';
 
 /** Pick a MediaRecorder mime type the current browser actually supports. */
 export function pickAudioMime(): string {
@@ -127,11 +129,18 @@ async function blobToWavBase64(blob: Blob, targetRate = 16000): Promise<string> 
   }
 }
 
-const TRANSCRIBE_PROMPT =
-  '次の音声を日本語で正確に文字起こししてください。' +
-  'フィラー（えー、あの等）は省き、句読点を補って自然な文章にしてください。' +
-  '文字起こししたテキストだけを出力し、前置き・説明・記号は一切付けないでください。' +
-  `音声が無音または聞き取れない場合は、正確に「${NO_SPEECH}」とだけ出力してください。`;
+function transcribePrompt(): string {
+  if (getAppLang() === 'en') {
+    return 'Transcribe the following audio accurately in the language being spoken. ' +
+      'Omit filler words (um, uh, etc.) and add punctuation so the text reads naturally. ' +
+      'Output ONLY the transcript — no preamble, explanation or symbols. ' +
+      `If the audio is silent or unintelligible, output exactly "${NO_SPEECH_EN}" and nothing else.`;
+  }
+  return '次の音声を日本語で正確に文字起こししてください。' +
+    'フィラー（えー、あの等）は省き、句読点を補って自然な文章にしてください。' +
+    '文字起こししたテキストだけを出力し、前置き・説明・記号は一切付けないでください。' +
+    `音声が無音または聞き取れない場合は、正確に「${NO_SPEECH}」とだけ出力してください。`;
+}
 
 /**
  * Transcribe a recorded audio blob with Gemini.
@@ -143,10 +152,11 @@ export async function transcribeAudioBlob(
   extraInstruction?: string,
 ): Promise<string> {
   const base64 = await blobToWavBase64(blob);
+  const prompt = transcribePrompt();
   const history: ChatTurn[] = [
     {
       role: 'user',
-      text: extraInstruction ? `${TRANSCRIBE_PROMPT}\n${extraInstruction}` : TRANSCRIBE_PROMPT,
+      text: extraInstruction ? `${prompt}\n${extraInstruction}` : prompt,
       attachments: [{ mimeType: 'audio/wav', data: base64 }],
     },
   ];

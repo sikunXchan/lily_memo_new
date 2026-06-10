@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { translate } from '@/lib/i18n';
 import { ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import type { Folder, Note } from '@/lib/db';
 
@@ -111,7 +112,7 @@ function layoutNodes(
         refId: n.id!,
         x, y, r: 4,
         color: resolveColor(n.color),
-        label: n.title || '無題のメモ',
+        label: n.title || translate('無題のメモ'),
       });
     });
     return { nodes, links };
@@ -164,7 +165,7 @@ function layoutNodes(
         refId: n.id!,
         x, y, r: 3.2,
         color: resolveColor(n.color ?? undefined) || fp.color,
-        label: n.title || '無題のメモ',
+        label: n.title || translate('無題のメモ'),
       });
       links.push({ ax: fp.x, ay: fp.y, bx: x, by: y });
     });
@@ -181,7 +182,7 @@ function layoutNodes(
       refId: n.id!,
       x, y, r: 3.2,
       color: resolveColor(n.color),
-      label: n.title || '無題のメモ',
+      label: n.title || translate('無題のメモ'),
     });
   });
 
@@ -507,17 +508,17 @@ export default function DirectoryGraph({ folders, notes, activeNoteId, onSelectN
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       />
-      <div className="graph-controls" aria-label="ズーム操作">
-        <button className="gc-btn" onClick={zoomInBtn} title="拡大" aria-label="拡大">
+      <div className="graph-controls" aria-label={translate('ズーム操作')}>
+        <button className="gc-btn" onClick={zoomInBtn} title={translate('拡大')} aria-label={translate('拡大')}>
           <ZoomIn size={14} />
         </button>
-        <button className="gc-btn gc-label" onClick={resetView} title="リセット">
+        <button className="gc-btn gc-label" onClick={resetView} title={translate('リセット')}>
           {Math.round(view.scale * 100)}%
         </button>
-        <button className="gc-btn" onClick={zoomOutBtn} title="縮小" aria-label="縮小">
+        <button className="gc-btn" onClick={zoomOutBtn} title={translate('縮小')} aria-label={translate('縮小')}>
           <ZoomOut size={14} />
         </button>
-        <button className="gc-btn" onClick={resetView} title="全体表示" aria-label="全体表示">
+        <button className="gc-btn" onClick={resetView} title={translate('全体表示')} aria-label={translate('全体表示')}>
           <Maximize size={14} />
         </button>
       </div>

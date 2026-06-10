@@ -37,7 +37,7 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
           }
         }
         if (!ok) {
-          if (!cancelled) { setError('構文エラー'); setEditing(true); }
+          if (!cancelled) { setError(t('構文エラー')); setEditing(true); }
           return;
         }
         const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
@@ -45,7 +45,7 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
         if (!cancelled) { setSvg(renderedSvg); setError(''); }
       } catch (err) {
         console.error('Mermaid render error:', err);
-        if (!cancelled) { setError('構文エラー'); setEditing(true); }
+        if (!cancelled) { setError(t('構文エラー')); setEditing(true); }
       }
     };
     void doRender();

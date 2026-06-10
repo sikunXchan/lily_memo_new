@@ -5,6 +5,8 @@ import { X, Mic, Square, Pause, Play, GraduationCap, ChevronDown, ChevronUp } fr
 import { callGeminiChat } from '@/lib/gemini';
 import type { ChatTurn } from '@/lib/gemini';
 import { pickAudioMime, transcribeAudioBlob, isNoSpeech } from '@/lib/audioTranscribe';
+import { useT, translate } from '@/lib/i18n';
+import { getAppLang } from '@/lib/appLang';
 
 interface LectureRecorderProps {
   apiKey: string;
@@ -35,6 +37,7 @@ function formatDuration(ms: number): string {
 }
 
 export default function LectureRecorder({ apiKey, onClose, onComplete }: LectureRecorderProps) {
+  const t = useT();
   const [phase, setPhase] = useState<Phase>('idle');
   const [liveText, setLiveText] = useState('');
   const [chunks, setChunks] = useState<Chunk[]>([]);
@@ -75,7 +78,9 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     setChunks(prev => prev.map(c => c.id === chunkId ? { ...c, state: 'cleaning' } : c));
     chunksRef.current = chunksRef.current.map(c => c.id === chunkId ? { ...c, state: 'cleaning' } : c);
     try {
-      const prompt = `以下は授業の音声認識の生テキストです。誤認識を修正し、句読点を追加して、自然な日本語の文章に整形してください。内容は変えないでください。\n\n${raw}`;
+      const prompt = getAppLang() === 'en'
+        ? `The following is raw speech-to-text from a class lecture. Fix recognition errors and add punctuation to produce natural, well-formed prose in the language actually spoken. Do not change the content.\n\n${raw}`
+        : `以下は授業の音声認識の生テキストです。誤認識を修正し、句読点を追加して、自然な日本語の文章に整形してください。内容は変えないでください。\n\n${raw}`;
       const history: ChatTurn[] = [{ role: 'user', text: prompt }];
       const clean = await callGeminiChat(history, '', apiKey, {
         models: ['gemini-2.5-flash-lite', 'gemini-2.5-flash'],
@@ -101,7 +106,7 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     const chunkStart = formatDuration(
       Math.max(0, totalElapsed - (chunkBaseElapsedRef.current + (now - chunkSessionStartRef.current)))
     );
-    const label = `チャンク${chunkNum} (${chunkStart}〜${chunkEnd})`;
+    const label = translate('チャンク{n}', { n: chunkNum }) + ` (${chunkStart}–${chunkEnd})`;
     const id = crypto.randomUUID();
     const newChunk: Chunk = { id, raw, clean: '', state: 'pending', label };
 
@@ -212,7 +217,7 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      setError('マイクへのアクセスに失敗したよ。設定でマイクを許可してね。');
+      setError(translate('マイクにアクセスできませんでした。設定でマイクを許可してください。'));
       return;
     }
     mediaStreamRef.current = stream;
@@ -293,18 +298,65 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     }
 
     const allText = chunksRef.current
-      .map((c, i) => `【第${i + 1}チャンク】\n${c.clean || c.raw}`)
+      .map((c, i) => (getAppLang() === 'en' ? `[Part ${i + 1}]\n` : `【第${i + 1}チャンク】\n`) + (c.clean || c.raw))
       .join('\n\n---\n\n');
 
     if (!allText.trim()) {
-      setError('文字起こしがありませんでした。もう一度試してね。');
+      setError(translate('文字起こしを取得できませんでした。もう一度お試しください。'));
       setPhase('idle');
       phaseRef.current = 'idle';
       return;
     }
 
     const totalMin = Math.round(elapsedRef.current / 60000);
-    const summaryPrompt = `以下は${totalMin > 0 ? `約${totalMin}分` : ''}の授業の文字起こしです。以下の順で日本語で出力してください。
+    const summaryPrompt = getAppLang() === 'en'
+      ? `The following is a transcript of a ${totalMin > 0 ? `roughly ${totalMin}-minute ` : ''}class lecture. Output the following sections in English, in this order.
+
+## Lecture summary (Cornell notes style)
+
+**Key points (important concepts, facts and claims as bullets)**
+- (list the key points here)
+
+**Detailed notes (supporting detail for each point)**
+(details here)
+
+**Summary (3–5 sentences covering the whole lecture)**
+(summary here)
+
+## Key terms & concepts
+
+(bulleted terms with short plain-language explanations)
+
+## Practice questions
+
+\`\`\`qa
+Q1: (question)
+A1: (answer)
+Q2: (question)
+A2: (answer)
+Q3: (question)
+A3: (answer)
+Q4: (question)
+A4: (answer)
+Q5: (question)
+A5: (answer)
+Q6: (question)
+A6: (answer)
+Q7: (question)
+A7: (answer)
+Q8: (question)
+A8: (answer)
+Q9: (question)
+A9: (answer)
+Q10: (question)
+A10: (answer)
+\`\`\`
+
+---
+
+[Lecture transcript]
+${allText}`
+      : `以下は${totalMin > 0 ? `約${totalMin}分` : ''}の授業の文字起こしです。以下の順で日本語で出力してください。
 
 ## 授業まとめ（コーネルノート形式）
 
@@ -360,7 +412,7 @@ ${allText}`;
       setFinalSummary(summary);
       setPhase('done');
     } catch (e) {
-      setError(`まとめの生成に失敗しました: ${e instanceof Error ? e.message : '不明なエラー'}`);
+      setError(`${translate('まとめの生成に失敗しました')}: ${e instanceof Error ? e.message : translate('不明なエラー')}`);
       setPhase('idle');
     }
   }, [stopIntervals, flushChunk, apiKey]);
@@ -398,7 +450,7 @@ ${allText}`;
         <div className="lr-header">
           <div className="lr-header-left">
             <GraduationCap size={18} className="lr-header-icon" />
-            <span className="lr-header-title">授業リアルタイム要約</span>
+            <span className="lr-header-title">{t('授業リアルタイム要約')}</span>
           </div>
           <button className="lr-close-btn" onClick={onClose}>
             <X size={18} />
@@ -413,9 +465,9 @@ ${allText}`;
           {(isRunning || isPaused) && (
             <div className="lr-phase-label">
               {isRunning ? (
-                <><span className="lr-rec-dot" />録音中</>
+                <><span className="lr-rec-dot" />{t('録音中')}</>
               ) : (
-                <><span className="lr-pause-dot" />一時停止</>
+                <><span className="lr-pause-dot" />{t('一時停止')}</>
               )}
             </div>
           )}
@@ -425,7 +477,7 @@ ${allText}`;
         {isRunning && (
           <div className="lr-chunk-area">
             <div className="lr-chunk-label">
-              次のチャンクまで {formatDuration(Math.max(0, CHUNK_INTERVAL_MS - chunkElapsed))}
+              {t('次のチャンクまで {time}', { time: formatDuration(Math.max(0, CHUNK_INTERVAL_MS - chunkElapsed)) })}
             </div>
             <div className="lr-chunk-bar">
               <div className="lr-chunk-fill" style={{ width: `${chunkProgressPct}%` }} />
@@ -439,7 +491,7 @@ ${allText}`;
             {chunks.map((c, i) => (
               <span key={c.id} className={`lr-chunk-pill lr-chunk-pill--${c.state}`}>
                 {c.state === 'cleaning' ? '🔄' : c.state === 'done' ? '✅' : c.state === 'error' ? '❌' : '⏳'}
-                {' '}チャンク{i + 1}
+                {' '}{t('チャンク{n}', { n: i + 1 })}
               </span>
             ))}
           </div>
@@ -452,11 +504,11 @@ ${allText}`;
               className="lr-transcript-toggle"
               onClick={() => setTranscriptOpen(o => !o)}
             >
-              📝 文字起こし {transcriptOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              📝 {t('文字起こし')} {transcriptOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {transcriptOpen && (
               <div className="lr-live-text" ref={liveScrollRef}>
-                {liveText || '音声を待っています…'}
+                {liveText || t('音声を待っています…')}
               </div>
             )}
           </div>
@@ -464,8 +516,8 @@ ${allText}`;
         {(isRunning || isPaused) && !liveText && (
           <div className="lr-waiting">
             <div className="lr-mic-pulse"><Mic size={28} /></div>
-            <p className="lr-waiting-text">授業が始まったら話してください</p>
-            <p className="lr-waiting-sub">マイク音声を Gemini が高精度で文字起こしします（数十秒ごとに反映）</p>
+            <p className="lr-waiting-text">{t('授業が始まったら話してください')}</p>
+            <p className="lr-waiting-sub">{t('マイク音声を Gemini が高精度で文字起こしします（数十秒ごとに反映）')}</p>
           </div>
         )}
 
@@ -473,20 +525,20 @@ ${allText}`;
         {isFinalizing && (
           <div className="lr-finalizing">
             <div className="lr-spinner" />
-            <span className="lr-finalizing-text">授業をまとめています…</span>
-            <span className="lr-finalizing-sub">Gemini が分析中（数十秒かかります）</span>
+            <span className="lr-finalizing-text">{t('授業をまとめています…')}</span>
+            <span className="lr-finalizing-sub">{t('Gemini が分析中（数十秒かかります）')}</span>
           </div>
         )}
 
         {/* Done */}
         {isDone && finalSummary && (
           <div className="lr-done">
-            <div className="lr-done-badge">✅ まとめ完了</div>
+            <div className="lr-done-badge">✅ {t('まとめ完了')}</div>
             <div className="lr-done-preview">
-              <pre className="lr-done-text">{finalSummary.slice(0, 500)}{finalSummary.length > 500 ? '\n\n…（チャットで全文表示）' : ''}</pre>
+              <pre className="lr-done-text">{finalSummary.slice(0, 500)}{finalSummary.length > 500 ? `\n\n${t('…（チャットで全文表示）')}` : ''}</pre>
             </div>
             <button className="lr-send-btn" onClick={() => onComplete(finalSummary)}>
-              🎉 チャットに送る
+              🎉 {t('チャットに送る')}
             </button>
           </div>
         )}
@@ -495,10 +547,10 @@ ${allText}`;
         {phase === 'idle' && !error && (
           <div className="lr-idle-info">
             <ul className="lr-info-list">
-              <li>🎤 マイク音声を Gemini が高精度でリアルタイム文字起こし</li>
-              <li>⏱️ 10分ごとに自動でチャンクを Gemini が整形</li>
-              <li>📖 終了後に授業まとめ＋重要用語＋テスト問題を生成</li>
-              <li>💡 約50分の授業で Gemini 使用料 ≈ ¥10 前後</li>
+              <li>🎤 {t('マイク音声を Gemini が高精度でリアルタイム文字起こし')}</li>
+              <li>⏱️ {t('10分ごとに自動でチャンクを Gemini が整形')}</li>
+              <li>📖 {t('終了後に授業まとめ＋重要用語＋テスト問題を生成')}</li>
+              <li>💡 {t('約50分の授業で Gemini 使用料 ≈ ¥10 前後')}</li>
             </ul>
           </div>
         )}
@@ -511,18 +563,18 @@ ${allText}`;
             {phase === 'idle' && (
               <button className="lr-btn lr-btn--start" onClick={() => void startRecording()}>
                 <Mic size={20} />
-                録音開始
+                {t('録音開始')}
               </button>
             )}
             {isRunning && (
               <>
                 <button className="lr-btn lr-btn--pause" onClick={pauseRecording}>
                   <Pause size={20} />
-                  一時停止
+                  {t('一時停止')}
                 </button>
                 <button className="lr-btn lr-btn--stop" onClick={() => void stopRecording()}>
                   <Square size={20} />
-                  終了・まとめ
+                  {t('終了・まとめ')}
                 </button>
               </>
             )}
@@ -530,11 +582,11 @@ ${allText}`;
               <>
                 <button className="lr-btn lr-btn--start" onClick={resumeRecording}>
                   <Play size={20} />
-                  再開
+                  {t('再開')}
                 </button>
                 <button className="lr-btn lr-btn--stop" onClick={() => void stopRecording()}>
                   <Square size={20} />
-                  終了・まとめ
+                  {t('終了・まとめ')}
                 </button>
               </>
             )}

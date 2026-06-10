@@ -9,9 +9,16 @@ import {
 import { db } from '@/lib/db';
 import type { Todo } from '@/lib/db';
 import { useT } from '@/lib/i18n';
+import { getAppLang } from '@/lib/appLang';
 
 const DEL_W = 80;
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
+const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function weekdayLabels(): string[] {
+  return getAppLang() === 'en' ? WEEKDAYS_EN : WEEKDAYS_JA;
+}
 
 function isoOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -22,7 +29,13 @@ function parseIso(iso: string): Date {
 }
 function fmtDayLabel(iso: string): string {
   const d = parseIso(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} (${WEEKDAYS_JA[d.getDay()]})`;
+  return `${d.getMonth() + 1}/${d.getDate()} (${weekdayLabels()[d.getDay()]})`;
+}
+// "2026年 6月" in Japanese, "Jun 2026" in English.
+function fmtMonthTitle(d: Date): string {
+  return getAppLang() === 'en'
+    ? `${MONTHS_EN[d.getMonth()]} ${d.getFullYear()}`
+    : `${d.getFullYear()}年 ${d.getMonth() + 1}月`;
 }
 // Sunday that starts the week containing `d`.
 function startOfWeek(d: Date): Date {
@@ -164,7 +177,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           <div className="td-cal-head">
             <button className="td-cal-nav" onClick={prevWeek} aria-label={t('前の週')}><ChevronLeft size={18} /></button>
             <button className="td-cal-title" onClick={goThisWeek}>
-              {weekMid.getFullYear()}{t('年')} {weekMid.getMonth() + 1}{t('月')}
+              {fmtMonthTitle(weekMid)}
             </button>
             <button className="td-cal-nav" onClick={nextWeek} aria-label={t('次の週')}><ChevronRight size={18} /></button>
           </div>
@@ -190,7 +203,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
                   onClick={() => setSelDay(iso)}
                 >
                   <span className={`td-wday-wd${d.getDay() === 0 ? ' sun' : ''}${d.getDay() === 6 ? ' sat' : ''}`}>
-                    {WEEKDAYS_JA[d.getDay()]}
+                    {weekdayLabels()[d.getDay()]}
                   </span>
                   <span className="td-wday-num">{d.getDate()}</span>
                   {list?.length ? (

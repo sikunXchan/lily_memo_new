@@ -9,7 +9,7 @@ import {
   Sparkles, FileText, Pencil, Trash2, List, Maximize2, X,
 } from 'lucide-react';
 import type { Note, Folder } from '@/lib/db';
-import { useT } from '@/lib/i18n';
+import { useT, translate } from '@/lib/i18n';
 
 const DirectoryGraph = dynamic(() => import('./DirectoryGraph'), { ssr: false });
 
@@ -65,7 +65,7 @@ export default function HomeHero({
   const createNote = async (folderId?: number) => {
     const t = Date.now();
     const id = await db.notes.add({
-      syncId: newSyncId(), title: '無題のメモ', content: '',
+      syncId: newSyncId(), title: translate('無題のメモ'), content: '',
       folderId, type: 'text', createdAt: t, updatedAt: t,
     });
     if (folderId) setExpandedFolders(p => ({ ...p, [folderId]: true }));

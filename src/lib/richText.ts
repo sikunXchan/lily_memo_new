@@ -4,6 +4,7 @@
 // as math, and the final HTML is sanitized (no scripts / on* attrs).
 
 import { marked } from 'marked';
+import { translate } from './i18n';
 import katex from 'katex';
 import { common, createLowlight } from 'lowlight';
 
@@ -94,6 +95,8 @@ const CALLOUTS: Record<string, { label: string; icon: string; cls: string }> = {
   WARNING:   { label: '注意',   icon: '⚠️', cls: 'warning' },
   CAUTION:   { label: '警告',   icon: '🚨', cls: 'caution' },
 };
+// Localized at render time (labels above are the Japanese i18n keys).
+const calloutLabel = (label: string) => translate(label);
 
 // Collapse consecutive `> ...` blockquote lines that open with a `[!TYPE]`
 // marker into a styled callout box. The body is rendered as Markdown so it can
@@ -117,7 +120,7 @@ function transformCallouts(src: string, stash: (html: string) => string): string
     const inner = marked.parse(body.join('\n')) as string;
     out.push(stash(
       `<div class="rt-callout rt-callout-${meta.cls}">` +
-      `<div class="rt-callout-head">${meta.icon} ${meta.label}</div>` +
+      `<div class="rt-callout-head">${meta.icon} ${calloutLabel(meta.label)}</div>` +
       `<div class="rt-callout-body">${inner}</div>` +
       `</div>`
     ));
@@ -131,7 +134,7 @@ function addSectionCopyButtons(html: string): string {
   return html.replace(
     /(<h([123])[^>]*>)([\s\S]*?)(<\/h\2>)/g,
     (_m, open: string, _lvl: string, inner: string, close: string) =>
-      `${open}${inner}<button type="button" class="section-copy-btn" aria-label="このセクションをコピー">⎘</button>${close}`
+      `${open}${inner}<button type="button" class="section-copy-btn" aria-label="${translate('このセクションをコピー')}">⎘</button>${close}`
   );
 }
 
@@ -169,7 +172,7 @@ export function renderRich(src: string): string {
     const head =
       `<div class="rt-pre-head">` +
       `<span class="rt-pre-lang">${escLang || 'code'}</span>` +
-      `<button type="button" class="code-copy-btn" aria-label="このコードをコピー">⎘ コピー</button>` +
+      `<button type="button" class="code-copy-btn" aria-label="${translate('このコードをコピー')}">⎘ ${translate('コピー')}</button>` +
       `</div>`;
     return stashBlock(
       `<div class="rt-codeblock">${head}<pre class="rt-pre"${langAttr}><code class="${codeClass}">${body}</code></pre></div>`

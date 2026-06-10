@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useTheme } from './ThemeContext';
-import { useT } from '@/lib/i18n';
+import { useT, translate } from '@/lib/i18n';
 
 // Heavy: pulls in react-force-graph-2d + d3 + canvas-confetti shaders.
 // Only needed when the user switches to the graph view.
@@ -126,7 +126,7 @@ export default function Sidebar({
     const now = Date.now();
     const id = await db.notes.add({
       syncId: newSyncId(),
-      title: '無題のメモ',
+      title: translate('無題のメモ'),
       content: '',
       folderId,
       type: 'text',

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Folder as FolderType, Note } from '@/lib/db';
-import { useT } from '@/lib/i18n';
+import { useT, translate } from '@/lib/i18n';
 
 interface MemoTreeScreenProps {
   onSelectNote: (id: number) => void;
@@ -37,7 +37,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
   const createNote = useCallback(async (folderId?: number) => {
     const t = Date.now();
     const id = await db.notes.add({
-      syncId: newSyncId(), title: '無題のメモ', content: '',
+      syncId: newSyncId(), title: translate('無題のメモ'), content: '',
       folderId, type: 'text', createdAt: t, updatedAt: t,
     });
     onSelectNote(id as number);
