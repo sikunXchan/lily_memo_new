@@ -123,8 +123,6 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
   const listTodos = todos.filter(t => !t.dueDate);
   const pending  = listTodos.filter(t => !t.done);
-  const done     = listTodos.filter(t => t.done);
-  const progress = listTodos.length > 0 ? Math.round((done.length / listTodos.length) * 100) : 0;
 
   // Sections are built as plain data and mapped INLINE in the return below.
   // styled-jsx only injects its scoping className onto JSX written lexically
@@ -132,7 +130,6 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
   // function does NOT get scoped, which silently breaks every rule here.
   const sections = [
     { key: 'pending', dotClass: 'active-dot', label: 'やること', list: pending },
-    { key: 'done',    dotClass: 'done-dot',   label: '完了',     list: done },
   ].filter(s => s.list.length > 0);
 
   return (
@@ -145,21 +142,11 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         </button>
         <div className="td-header-mid">
           <span className="td-title">{t('タスク')}</span>
-          {listTodos.length > 0 && (
-            <span className="td-subtitle">{t('{done} / {total} 完了', { done: done.length, total: listTodos.length })}</span>
-          )}
         </div>
         {pending.length > 0 && (
           <div className="td-badge">{pending.length}</div>
         )}
       </div>
-
-      {/* Progress bar (list view only) */}
-      {view === 'list' && listTodos.length > 0 && (
-        <div className="td-progress-track">
-          <div className="td-progress-fill" style={{ width: `${progress}%` }} />
-        </div>
-      )}
 
       {/* View toggle: list / calendar */}
       <div className="td-viewtabs">
@@ -300,7 +287,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
                 <div key={todo.id} className={`td-item${todo.pinned ? ' pinned-item' : ''}`}>
                   <div className={`td-inner${swiped ? ' slid' : ''}`}>
                     <div
-                      className={`td-card${todo.done ? ' done' : ''}${todo.pinned ? ' pinned' : ''}`}
+                      className={`td-card${todo.pinned ? ' pinned' : ''}`}
                       onTouchStart={e => { touchStartX.current = e.touches[0].clientX; }}
                       onTouchEnd={e => {
                         const dx = touchStartX.current - e.changedTouches[0].clientX;
@@ -310,11 +297,11 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
                       onClick={() => { if (swiped) setSwipedId(null); }}
                     >
                       <button
-                        className={`td-check${todo.done ? ' checked' : ''}`}
-                        onClick={e => { e.stopPropagation(); void toggleDone(todo); }}
-                        aria-label={t(todo.done ? '未完了に戻す' : '完了にする')}
+                        className="td-check"
+                        onClick={e => { e.stopPropagation(); void deleteTodo(todo.id!); }}
+                        aria-label={t('完了にする')}
                       >
-                        {todo.done && <Check size={11} strokeWidth={3.5} />}
+                        <Check size={11} strokeWidth={3.5} />
                       </button>
 
                       <span className="td-text">{todo.text}</span>
