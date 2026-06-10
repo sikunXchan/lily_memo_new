@@ -1,0 +1,545 @@
+{
+  "folders": [
+    {
+      "id": 1,
+      "syncId": "f-cs-001",
+      "name": "Computer Science",
+      "color": "#5B8DEF",
+      "createdAt": 1779667200000,
+      "updatedAt": 1779667200000
+    },
+    {
+      "id": 2,
+      "syncId": "f-webdev-001",
+      "name": "Web Development",
+      "color": "#9B6DFF",
+      "createdAt": 1779667200000,
+      "updatedAt": 1779667200000
+    },
+    {
+      "id": 3,
+      "syncId": "f-hackathon-001",
+      "name": "Hackathon",
+      "color": "#F0A500",
+      "createdAt": 1781049600000,
+      "updatedAt": 1781049600000
+    }
+  ],
+  "notes": [
+    {
+      "id": 1,
+      "syncId": "n-ds-001",
+      "title": "Data Structures Overview",
+      "content": "<h2>Arrays</h2><p>Fixed-size sequential memory. O(1) random access by index. O(n) insert/delete at arbitrary positions. Best for random access patterns.</p><h2>Linked Lists</h2><p>Dynamic size. O(1) insert/delete at head. O(n) random access. Singly vs doubly linked. Useful when size changes frequently.</p><h2>Hash Tables</h2><p>Key-value store. O(1) average for insert, delete, lookup. Collision handling via chaining or open addressing. Load factor matters for performance.</p><h2>Trees</h2><p><strong>BST:</strong> O(log n) search/insert/delete on average. Balanced variants (AVL, Red-Black) guarantee O(log n) worst case.</p><p><strong>Heaps:</strong> Priority queues. O(1) find-min, O(log n) extract-min. Implemented as array.</p><h2>Graphs</h2><p><strong>BFS:</strong> Shortest path (unweighted). Uses a queue. O(V+E). Level-order traversal.</p><p><strong>DFS:</strong> Cycle detection, topological sort. Uses stack or recursion. O(V+E).</p><p><strong>Dijkstra:</strong> Shortest path with non-negative weights. O((V+E) log V) with min-heap.</p>",
+      "folderId": 1,
+      "color": null,
+      "createdAt": 1779667200000,
+      "updatedAt": 1779840000000,
+      "type": "text"
+    },
+    {
+      "id": 2,
+      "syncId": "n-react-001",
+      "title": "React Hooks Cheatsheet",
+      "content": "<h2>useState</h2><p>Manage local state. Returns <code>[value, setter]</code>. Re-renders component when state changes.</p><h2>useEffect</h2><p>Side effects: data fetching, subscriptions, DOM mutation. Runs after render. Return cleanup function for subscriptions.</p><pre><code>useEffect(() => {\n  const sub = subscribe(id);\n  return () => sub.unsubscribe();\n}, [id]);</code></pre><h2>useCallback</h2><p>Memoize a <em>function</em>. Prevents re-creating the same function on every render. Useful when passing callbacks to memoized children.</p><h2>useMemo</h2><p>Memoize the <em>result</em> of an expensive computation. Only recomputes when dependencies change. Don't overuse — the memoization itself has a cost.</p><h2>useRef</h2><p>Persist a mutable value without triggering a re-render. Also used to access DOM elements directly.</p><h2>useContext</h2><p>Consume context value without prop drilling. Pair with <code>createContext</code> and a <code>Provider</code> component.</p><h2>Custom Hooks</h2><p>Extract stateful logic into reusable functions. Must start with <code>use</code>. Can call other hooks.</p>",
+      "folderId": 2,
+      "color": null,
+      "createdAt": 1779753600000,
+      "updatedAt": 1780531200000,
+      "type": "text"
+    },
+    {
+      "id": 3,
+      "syncId": "n-ts-001",
+      "title": "TypeScript Tips",
+      "content": "<h2>Type vs Interface</h2><p><strong>Interface:</strong> Extendable via <code>extends</code>, declaration merging. Best for object shapes and class contracts.</p><p><strong>Type:</strong> More flexible — unions, intersections, mapped types, conditional types. Can't be merged.</p><h2>Utility Types</h2><ul><li><strong>Partial&lt;T&gt;</strong> — all properties optional</li><li><strong>Required&lt;T&gt;</strong> — all properties required</li><li><strong>Pick&lt;T, K&gt;</strong> — subset of properties</li><li><strong>Omit&lt;T, K&gt;</strong> — exclude specific properties</li><li><strong>Record&lt;K, V&gt;</strong> — key-value map type</li><li><strong>Readonly&lt;T&gt;</strong> — immutable properties</li><li><strong>ReturnType&lt;T&gt;</strong> — infer return type of function</li></ul><h2>Generics</h2><p>Write reusable, type-safe code. Use <code>extends</code> for constraints. Prefer explicit type parameters over <code>any</code>.</p><h2>Type Guards</h2><p>Narrow types at runtime: <code>typeof</code>, <code>instanceof</code>, <code>in</code> operator, or user-defined guards returning <code>value is Type</code>.</p><h2>Discriminated Unions</h2><p>Add a <code>kind</code> or <code>type</code> literal field to each variant. TypeScript narrows automatically in switch statements.</p>",
+      "folderId": 2,
+      "color": null,
+      "createdAt": 1779840000000,
+      "updatedAt": 1780444800000,
+      "type": "text"
+    },
+    {
+      "id": 4,
+      "syncId": "n-bigo-001",
+      "title": "Big O Notation",
+      "content": "<h2>Time Complexity (best to worst)</h2><ul><li><strong>O(1)</strong> — Constant: array index access, hash table lookup</li><li><strong>O(log n)</strong> — Logarithmic: binary search, balanced BST operations</li><li><strong>O(n)</strong> — Linear: linear scan, single loop</li><li><strong>O(n log n)</strong> — Linearithmic: merge sort, heap sort, efficient comparison sorting</li><li><strong>O(n²)</strong> — Quadratic: bubble sort, insertion sort, naive string matching</li><li><strong>O(2ⁿ)</strong> — Exponential: recursive Fibonacci, power set generation</li><li><strong>O(n!)</strong> — Factorial: brute-force permutations, traveling salesman</li></ul><h2>Space Complexity</h2><p>Recursion depth adds O(depth) stack frames. Iterative solutions usually save space. DFS on a tree: O(h) stack, BFS: O(w) queue.</p><h2>Amortized Analysis</h2><p>Dynamic array append: O(1) amortized even though occasional doubling is O(n). Total cost spread over all operations.</p><h2>Best / Average / Worst Case</h2><p>QuickSort: O(n log n) average, O(n²) worst. Randomized pivot selection makes worst case very unlikely in practice.</p><h2>Drop Constants Rule</h2><p>O(2n) = O(n). O(n² + n) = O(n²). Big O describes growth rate, not exact cost.</p>",
+      "folderId": 1,
+      "color": null,
+      "createdAt": 1779926400000,
+      "updatedAt": 1779926400000,
+      "type": "text"
+    },
+    {
+      "id": 5,
+      "syncId": "n-rest-001",
+      "title": "REST API Best Practices",
+      "content": "<h2>URL Design</h2><p>Use nouns, not verbs. Plural for collections. Hierarchical to show relationships.</p><ul><li><code>GET /users</code> — list users</li><li><code>GET /users/:id</code> — get one user</li><li><code>POST /users</code> — create user</li><li><code>PUT /users/:id</code> — full replace</li><li><code>PATCH /users/:id</code> — partial update</li><li><code>DELETE /users/:id</code> — delete</li></ul><h2>HTTP Status Codes</h2><ul><li>200 OK, 201 Created, 204 No Content</li><li>400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found</li><li>409 Conflict, 422 Unprocessable Entity, 429 Too Many Requests</li><li>500 Internal Server Error, 503 Service Unavailable</li></ul><h2>Versioning</h2><p>URL versioning (<code>/api/v1/</code>) is most explicit. Header versioning is cleaner but harder to test. Be explicit about deprecation timelines.</p><h2>Pagination</h2><p>Cursor-based for large / real-time datasets. Offset-based is simpler but inconsistent under mutations. Include <code>next</code>/<code>prev</code> links in response.</p><h2>Error Format</h2><p>Consistent error envelope: <code>{ error: { code, message, details } }</code>. Never leak stack traces in production.</p>",
+      "folderId": 2,
+      "color": null,
+      "createdAt": 1780012800000,
+      "updatedAt": 1780617600000,
+      "type": "text"
+    },
+    {
+      "id": 6,
+      "syncId": "n-sysdesign-001",
+      "title": "System Design: Scalability",
+      "content": "<h2>Horizontal vs Vertical Scaling</h2><p><strong>Vertical:</strong> Bigger machine. Simpler, no code change, but has a ceiling and a single point of failure.</p><p><strong>Horizontal:</strong> More machines. Requires load balancing and stateless services. Scales linearly.</p><h2>Load Balancing</h2><p>Algorithms: round-robin, least connections, IP hash (session stickiness). Tools: Nginx, HAProxy, AWS ALB. Health checks matter.</p><h2>Caching</h2><p><strong>CDN:</strong> Edge caching for static assets — dramatically cuts latency globally.</p><p><strong>Redis:</strong> In-memory cache for computed results, session data, rate limiting. Cache invalidation is the hardest problem.</p><p>Cache-aside, read-through, write-through patterns — choose based on consistency requirements.</p><h2>Database Scaling</h2><p><strong>Read replicas:</strong> Route reads to replicas. Eventual consistency. Works for 90% of read-heavy cases.</p><p><strong>Sharding:</strong> Horizontal partition by a shard key. Consistent hashing minimises resharding pain.</p><h2>Async Processing</h2><p>Message queues (Kafka, RabbitMQ, SQS) decouple services, absorb traffic spikes, and enable retries. Prefer async for anything that doesn't need an immediate response.</p><h2>CAP Theorem</h2><p>Consistency, Availability, Partition Tolerance — pick 2. In practice: partition tolerance is non-negotiable, so choose between strong consistency (CP: PostgreSQL, MongoDB) and high availability (AP: Cassandra, DynamoDB).</p>",
+      "folderId": 1,
+      "color": null,
+      "createdAt": 1780099200000,
+      "updatedAt": 1780876800000,
+      "type": "text"
+    },
+    {
+      "id": 7,
+      "syncId": "n-hackathon-001",
+      "title": "Hackathon: Lily Memo Demo Pitch",
+      "content": "<h2>Product Overview</h2><p><strong>Lily Memo</strong> is an AI-powered study companion PWA. Local-first with IndexedDB — works fully offline. Optional cross-device sync via encrypted Redis.</p><h2>Key Features to Demo</h2><ul><li>Rich text note-taking with AI analysis (Lily)</li><li>Study session timer — stopwatch and Pomodoro modes</li><li>Weekly calendar for scheduling tasks</li><li>Progress tracking with gamified badge system</li><li>English / Japanese bilingual interface</li><li>Backup &amp; restore — full data portability, no lock-in</li></ul><h2>Tech Stack</h2><ul><li>Next.js 16 + React 19 + TypeScript</li><li>Dexie (IndexedDB) for local storage</li><li>Gemini AI (server proxy in English mode)</li><li>Upstash Redis for optional live sync</li><li>Deployed on Vercel</li></ul><h2>Demo Script</h2><ol><li>Open app in English mode — show note creation</li><li>Ask Lily to analyse a note → AI response</li><li>Start a 25-min Pomodoro timer</li><li>Open Calendar view → add a task for today</li><li>Show Badge room — earned badges from study history</li><li>Download backup → restore on second device</li></ol><h2>Why Lily Memo?</h2><p>Students need a focused, intelligent study tool that respects privacy. No account required, no cloud dependency for core features — your data stays on your device.</p>",
+      "folderId": 3,
+      "color": null,
+      "createdAt": 1781049600000,
+      "updatedAt": 1781049600000,
+      "type": "text"
+    }
+  ],
+  "images": {},
+  "savedChats": [
+    {
+      "title": "React Hooks & Timer Implementation",
+      "model": "lily",
+      "messages": "[{\"id\":\"m1\",\"role\":\"user\",\"text\":\"Can you explain the difference between useCallback and useMemo in React?\",\"timestamp\":1780531200000},{\"id\":\"m2\",\"role\":\"lily\",\"text\":\"Great question! Both are performance optimisation hooks, but they serve different purposes.\\n\\n**useCallback** memoises a *function reference* so it stays the same between renders:\\n\\n```js\\nconst handleClick = useCallback(() => {\\n  doSomething(a, b);\\n}, [a, b]);\\n```\\n\\nUse it when you pass a callback to a child component that relies on reference equality (e.g. wrapped in `React.memo`) to avoid unnecessary re-renders.\\n\\n**useMemo** memoises the *return value* of a function:\\n\\n```js\\nconst sortedList = useMemo(() => {\\n  return [...items].sort((a, b) => a.value - b.value);\\n}, [items]);\\n```\\n\\nUse it for expensive computations that don't need to run on every render.\\n\\nKey insight: `useCallback(fn, deps)` is exactly equivalent to `useMemo(() => fn, deps)`. Both should only be used when you have a measurable performance problem — premature memoisation adds complexity and memory overhead for no gain.\",\"timestamp\":1780531260000},{\"id\":\"m3\",\"role\":\"user\",\"text\":\"When should I use useRef vs useState for tracking a timer interval?\",\"timestamp\":1780531320000},{\"id\":\"m4\",\"role\":\"lily\",\"text\":\"The rule is simple: **if the value doesn't need to trigger a re-render, use useRef**.\\n\\nFor a timer, split it like this:\\n\\n```js\\nconst intervalRef = useRef(null);   // no re-render needed\\nconst [seconds, setSeconds] = useState(0);  // triggers re-render to update display\\n\\nconst start = () => {\\n  intervalRef.current = setInterval(() => {\\n    setSeconds(s => s + 1);\\n  }, 1000);\\n};\\n\\nconst stop = () => {\\n  clearInterval(intervalRef.current);\\n  intervalRef.current = null;\\n};\\n```\\n\\nYou never *display* the interval ID — it's just a handle you need to cancel the timer. Storing it in state would cause an extra, unnecessary re-render every time `start` is called.\\n\\nMental model: `useRef` is a mutable instance variable on the component. It persists across renders but mutating it doesn't schedule a re-render. Think of it as `this.myField` from a class component.\",\"timestamp\":1780531380000}]",
+      "count": 4,
+      "createdAt": 1780531200000
+    }
+  ],
+  "studyCategories": [
+    {
+      "id": 1,
+      "name": "Computer Science",
+      "color": "#5B8DEF",
+      "createdAt": 1779667200000,
+      "syncId": "c_computer_science",
+      "updatedAt": 1779667200000
+    },
+    {
+      "id": 2,
+      "name": "Web Development",
+      "color": "#9B6DFF",
+      "createdAt": 1779667200000,
+      "syncId": "c_web_development",
+      "updatedAt": 1779667200000
+    },
+    {
+      "id": 3,
+      "name": "English",
+      "color": "#F0A500",
+      "createdAt": 1779667200000,
+      "syncId": "c_english",
+      "updatedAt": 1779667200000
+    }
+  ],
+  "studySessions": [
+    {
+      "date": "2026-05-25",
+      "startTime": 1779717600000,
+      "endTime": 1779724800000,
+      "duration": 7200,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-05-25_1779717600000",
+      "updatedAt": 1779724800000
+    },
+    {
+      "date": "2026-05-25",
+      "startTime": 1779728400000,
+      "endTime": 1779733800000,
+      "duration": 5400,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "pomodoro",
+      "syncId": "s_2026-05-25_1779728400000",
+      "updatedAt": 1779733800000
+    },
+    {
+      "date": "2026-05-26",
+      "startTime": 1779825600000,
+      "endTime": 1779831000000,
+      "duration": 5400,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-05-26_1779825600000",
+      "updatedAt": 1779831000000
+    },
+    {
+      "date": "2026-05-26",
+      "startTime": 1779832800000,
+      "endTime": 1779834600000,
+      "duration": 1800,
+      "categoryId": 3,
+      "categoryName": "English",
+      "categoryColor": "#F0A500",
+      "source": "pomodoro",
+      "syncId": "s_2026-05-26_1779832800000",
+      "updatedAt": 1779834600000
+    },
+    {
+      "date": "2026-05-27",
+      "startTime": 1779894000000,
+      "endTime": 1779901200000,
+      "duration": 7200,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "stopwatch",
+      "syncId": "s_2026-05-27_1779894000000",
+      "updatedAt": 1779901200000
+    },
+    {
+      "date": "2026-05-28",
+      "startTime": 1779976800000,
+      "endTime": 1779985800000,
+      "duration": 9000,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-05-28_1779976800000",
+      "updatedAt": 1779985800000
+    },
+    {
+      "date": "2026-05-28",
+      "startTime": 1779994800000,
+      "endTime": 1779998400000,
+      "duration": 3600,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "pomodoro",
+      "syncId": "s_2026-05-28_1779994800000",
+      "updatedAt": 1779998400000
+    },
+    {
+      "date": "2026-05-29",
+      "startTime": 1780084800000,
+      "endTime": 1780088400000,
+      "duration": 3600,
+      "categoryId": 3,
+      "categoryName": "English",
+      "categoryColor": "#F0A500",
+      "source": "stopwatch",
+      "syncId": "s_2026-05-29_1780084800000",
+      "updatedAt": 1780088400000
+    },
+    {
+      "date": "2026-05-30",
+      "startTime": 1780167600000,
+      "endTime": 1780178400000,
+      "duration": 10800,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-05-30_1780167600000",
+      "updatedAt": 1780178400000
+    },
+    {
+      "date": "2026-05-31",
+      "startTime": 1780221600000,
+      "endTime": 1780228800000,
+      "duration": 7200,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "pomodoro",
+      "syncId": "s_2026-05-31_1780221600000",
+      "updatedAt": 1780228800000
+    },
+    {
+      "date": "2026-05-31",
+      "startTime": 1780239600000,
+      "endTime": 1780243200000,
+      "duration": 3600,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-05-31_1780239600000",
+      "updatedAt": 1780243200000
+    },
+    {
+      "date": "2026-06-01",
+      "startTime": 1780311600000,
+      "endTime": 1780318800000,
+      "duration": 7200,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-01_1780311600000",
+      "updatedAt": 1780318800000
+    },
+    {
+      "date": "2026-06-01",
+      "startTime": 1780326000000,
+      "endTime": 1780331400000,
+      "duration": 5400,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "pomodoro",
+      "syncId": "s_2026-06-01_1780326000000",
+      "updatedAt": 1780331400000
+    },
+    {
+      "date": "2026-06-02",
+      "startTime": 1780434000000,
+      "endTime": 1780437600000,
+      "duration": 3600,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-02_1780434000000",
+      "updatedAt": 1780437600000
+    },
+    {
+      "date": "2026-06-03",
+      "startTime": 1780495200000,
+      "endTime": 1780506000000,
+      "duration": 10800,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-03_1780495200000",
+      "updatedAt": 1780506000000
+    },
+    {
+      "date": "2026-06-04",
+      "startTime": 1780578000000,
+      "endTime": 1780587000000,
+      "duration": 9000,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-04_1780578000000",
+      "updatedAt": 1780587000000
+    },
+    {
+      "date": "2026-06-04",
+      "startTime": 1780588800000,
+      "endTime": 1780592400000,
+      "duration": 3600,
+      "categoryId": 3,
+      "categoryName": "English",
+      "categoryColor": "#F0A500",
+      "source": "pomodoro",
+      "syncId": "s_2026-06-04_1780588800000",
+      "updatedAt": 1780592400000
+    },
+    {
+      "date": "2026-06-04",
+      "startTime": 1780599600000,
+      "endTime": 1780601400000,
+      "duration": 1800,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "pomodoro",
+      "syncId": "s_2026-06-04_1780599600000",
+      "updatedAt": 1780601400000
+    },
+    {
+      "date": "2026-06-05",
+      "startTime": 1780668000000,
+      "endTime": 1780675200000,
+      "duration": 7200,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-05_1780668000000",
+      "updatedAt": 1780675200000
+    },
+    {
+      "date": "2026-06-05",
+      "startTime": 1780686000000,
+      "endTime": 1780689600000,
+      "duration": 3600,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "pomodoro",
+      "syncId": "s_2026-06-05_1780686000000",
+      "updatedAt": 1780689600000
+    },
+    {
+      "date": "2026-06-06",
+      "startTime": 1780776000000,
+      "endTime": 1780786800000,
+      "duration": 10800,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-06_1780776000000",
+      "updatedAt": 1780786800000
+    },
+    {
+      "date": "2026-06-07",
+      "startTime": 1780826400000,
+      "endTime": 1780833600000,
+      "duration": 7200,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "pomodoro",
+      "syncId": "s_2026-06-07_1780826400000",
+      "updatedAt": 1780833600000
+    },
+    {
+      "date": "2026-06-07",
+      "startTime": 1780840800000,
+      "endTime": 1780844400000,
+      "duration": 3600,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-07_1780840800000",
+      "updatedAt": 1780844400000
+    },
+    {
+      "date": "2026-06-08",
+      "startTime": 1780912800000,
+      "endTime": 1780927200000,
+      "duration": 14400,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-08_1780912800000",
+      "updatedAt": 1780927200000
+    },
+    {
+      "date": "2026-06-08",
+      "startTime": 1780930800000,
+      "endTime": 1780938000000,
+      "duration": 7200,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "pomodoro",
+      "syncId": "s_2026-06-08_1780930800000",
+      "updatedAt": 1780938000000
+    },
+    {
+      "date": "2026-06-09",
+      "startTime": 1781031600000,
+      "endTime": 1781038800000,
+      "duration": 7200,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-09_1781031600000",
+      "updatedAt": 1781038800000
+    },
+    {
+      "date": "2026-06-09",
+      "startTime": 1781040600000,
+      "endTime": 1781046000000,
+      "duration": 5400,
+      "categoryId": 2,
+      "categoryName": "Web Development",
+      "categoryColor": "#9B6DFF",
+      "source": "pomodoro",
+      "syncId": "s_2026-06-09_1781040600000",
+      "updatedAt": 1781046000000
+    },
+    {
+      "date": "2026-06-10",
+      "startTime": 1781085600000,
+      "endTime": 1781092800000,
+      "duration": 7200,
+      "categoryId": 1,
+      "categoryName": "Computer Science",
+      "categoryColor": "#5B8DEF",
+      "source": "stopwatch",
+      "syncId": "s_2026-06-10_1781085600000",
+      "updatedAt": 1781092800000
+    }
+  ],
+  "todos": [
+    {
+      "text": "Prepare demo flow for hackathon presentation",
+      "done": false,
+      "pinned": true,
+      "createdAt": 1781049600000,
+      "updatedAt": 1781049600000,
+      "dueDate": "2026-06-11"
+    },
+    {
+      "text": "Write README with setup instructions",
+      "done": false,
+      "pinned": false,
+      "createdAt": 1781049600000,
+      "updatedAt": 1781049600000
+    },
+    {
+      "text": "Record demo video (backup in case of no wifi)",
+      "done": false,
+      "pinned": false,
+      "createdAt": 1781049600000,
+      "updatedAt": 1781049600000,
+      "dueDate": "2026-06-11"
+    },
+    {
+      "text": "Add error handling to API proxy route",
+      "done": true,
+      "pinned": false,
+      "createdAt": 1780963200000,
+      "updatedAt": 1781049600000
+    },
+    {
+      "text": "Test backup restore on a second browser",
+      "done": true,
+      "pinned": false,
+      "createdAt": 1780876800000,
+      "updatedAt": 1780963200000
+    }
+  ],
+  "earnedBadges": [
+    { "badgeId": "fun_first",   "earnedAt": 1779724800000 },
+    { "badgeId": "total_1h",    "earnedAt": 1779724800000 },
+    { "badgeId": "daily_2h",    "earnedAt": 1779724800000 },
+    { "badgeId": "total_3h",    "earnedAt": 1779733800000 },
+    { "badgeId": "streak_2",    "earnedAt": 1779831000000 },
+    { "badgeId": "total_5h",    "earnedAt": 1779831000000 },
+    { "badgeId": "streak_3",    "earnedAt": 1779901200000 },
+    { "badgeId": "total_10h",   "earnedAt": 1779998400000 },
+    { "badgeId": "streak_5",    "earnedAt": 1780088400000 },
+    { "badgeId": "fun_weekend", "earnedAt": 1780178400000 },
+    { "badgeId": "fun_7days",   "earnedAt": 1780228800000 },
+    { "badgeId": "streak_7",    "earnedAt": 1780243200000 },
+    { "badgeId": "total_20h",   "earnedAt": 1780318800000 },
+    { "badgeId": "streak_10",   "earnedAt": 1780506000000 },
+    { "badgeId": "total_30h",   "earnedAt": 1780601400000 },
+    { "badgeId": "fun_multi",   "earnedAt": 1780601400000 },
+    { "badgeId": "streak_14",   "earnedAt": 1780844400000 },
+    { "badgeId": "fun_pomo10",  "earnedAt": 1780938000000 },
+    { "badgeId": "daily_4h",    "earnedAt": 1780938000000 },
+    { "badgeId": "daily_6h",    "earnedAt": 1780938000000 },
+    { "badgeId": "total_50h",   "earnedAt": 1781092800000 }
+  ],
+  "timestamp": 1781092800000,
+  "version": 1
+}
