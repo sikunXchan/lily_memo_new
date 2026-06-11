@@ -8,6 +8,7 @@ import {
   Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, ArrowLeft,
   Save, History, Trash2, Mic, Phone, Wrench, MoreVertical, PencilLine,
+  NotebookText, Check,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -1734,6 +1735,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const [lilyNoteIds, setLilyNoteIds] = useState<number[]>([]);
   const [lilyThinking, setLilyThinking] = useState(false);
   const [showContextPanel, setShowContextPanel] = useState(false);
+  const [contextSearch, setContextSearch] = useState('');
   const [apiKey, setApiKey] = useState<string>('');
   const [attachments, setAttachments] = useState<AttachmentMeta[]>([]);
   const [fileError, setFileError] = useState('');
@@ -1765,6 +1767,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     () => db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray(),
     []
   );
+  const chatFolders = useLiveQuery(
+    () => db.folders.filter(f => !f.deletedAt).toArray(),
+    []
+  ) ?? [];
   useEffect(() => { ensureSkillsSeeded(); }, []);
 
   // Consume practice context passed from PracticeScreen (on mount only)
@@ -2427,35 +2433,84 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         />
       )}
 
-      {showContextPanel && (
-        <div className="context-panel">
-          <button
-            className={`note-chip${lilyAllNotes ? ' active' : ''}`}
-            onClick={() => { setLilyAllNotes(true); setLilyNoteIds([]); setShowContextPanel(false); }}
-          >
-            {t('📚 全メモを参照')}
-          </button>
-          <button
-            className={`note-chip${!lilyAllNotes && lilyNoteIds.length === 0 ? ' active' : ''}`}
-            onClick={() => { setLilyAllNotes(false); setLilyNoteIds([]); setShowContextPanel(false); }}
-          >
-            {t('なし')}
-          </button>
-          {allNotes?.map(n => (
-            <button
-              key={n.id}
-              className={`note-chip${lilyNoteIds.includes(n.id!) ? ' active' : ''}`}
-              onClick={() => {
-                setLilyAllNotes(false);
-                setLilyNoteIds(prev =>
-                  prev.includes(n.id!) ? prev.filter(id => id !== n.id) : [...prev, n.id!]
-                );
-              }}
-            >
-              {lilyNoteIds.includes(n.id!) ? '✓ ' : ''}{n.title || t('無題のメモ')}
-            </button>
-          ))}
-        </div>
+      {showContextPanel && typeof document !== 'undefined' && createPortal(
+        <div className="ctx-backdrop" onClick={() => setShowContextPanel(false)}>
+          <div className="ctx-modal" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="ctx-head">
+              <NotebookText size={16} className="ctx-head-ic" />
+              <span>{t('参照するメモを選ぶ')}</span>
+              <button className="ctx-close" onClick={() => setShowContextPanel(false)}><X size={16} /></button>
+            </div>
+
+            {/* Quick options */}
+            <div className="ctx-quick">
+              <button
+                className={`ctx-quick-btn${lilyAllNotes ? ' on' : ''}`}
+                onClick={() => { setLilyAllNotes(true); setLilyNoteIds([]); }}
+              >
+                📚 {t('全メモ')}
+              </button>
+              <button
+                className={`ctx-quick-btn${!lilyAllNotes && lilyNoteIds.length === 0 ? ' on' : ''}`}
+                onClick={() => { setLilyAllNotes(false); setLilyNoteIds([]); }}
+              >
+                {t('なし')}
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="ctx-search">
+              <Search size={14} />
+              <input
+                value={contextSearch}
+                onChange={e => setContextSearch(e.target.value)}
+                placeholder={t('メモを検索…')}
+              />
+              {contextSearch && <button onClick={() => setContextSearch('')}><X size={12} /></button>}
+            </div>
+
+            {/* Note list */}
+            <div className="ctx-list">
+              {(allNotes ?? [])
+                .filter(n => !contextSearch || `${n.title} ${chatFolders.find(f => f.id === n.folderId)?.name ?? ''}`.toLowerCase().includes(contextSearch.toLowerCase()))
+                .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+                .map(n => {
+                  const sel = lilyNoteIds.includes(n.id!);
+                  const fname = chatFolders.find(f => f.id === n.folderId)?.name;
+                  return (
+                    <button
+                      key={n.id}
+                      className={`ctx-item${sel ? ' on' : ''}${lilyAllNotes ? ' dim' : ''}`}
+                      onClick={() => {
+                        setLilyAllNotes(false);
+                        setLilyNoteIds(prev => prev.includes(n.id!) ? prev.filter(id => id !== n.id) : [...prev, n.id!]);
+                      }}
+                    >
+                      <span className="ctx-check">{sel && <Check size={11} />}</span>
+                      <span className="ctx-item-info">
+                        <span className="ctx-item-title">{n.title || t('無題のメモ')}</span>
+                        {fname && <span className="ctx-item-folder">{fname}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+            </div>
+
+            {/* Footer */}
+            <div className="ctx-foot">
+              <span className="ctx-foot-count">
+                {lilyAllNotes
+                  ? t('📚 全メモ参照中')
+                  : lilyNoteIds.length > 0
+                    ? t('{n}件 選択中', { n: lilyNoteIds.length })
+                    : t('参照なし')}
+              </span>
+              <button className="ctx-done" onClick={() => setShowContextPanel(false)}>{t('決定')}</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       <div className="messages-list">
@@ -2756,9 +2811,34 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .header-menu-item.toggle.on .hmi-state { color: var(--primary); }
         .header-menu-item.toggle:disabled { opacity: 0.4; cursor: default; }
         .header-menu-item.toggle:disabled:hover { background: none; color: var(--foreground); }
-        .context-panel { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--accent); overflow-x: auto; flex-shrink: 0; }
-        .note-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.78rem; color: var(--fg-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
-        .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
+        /* Note context picker modal */
+        .ctx-backdrop { position: fixed; inset: 0; z-index: 10010; background: rgba(0,0,0,.45); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; animation: ctx-fade .18s ease; }
+        @keyframes ctx-fade { from { opacity: 0; } to { opacity: 1; } }
+        .ctx-modal { width: 100%; max-width: 420px; max-height: min(76vh, 580px); display: flex; flex-direction: column; background: var(--background); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.28); }
+        .ctx-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; font-size: .9rem; font-weight: 800; border-bottom: 1px solid var(--border); }
+        .ctx-head-ic { color: var(--primary); }
+        .ctx-close { margin-left: auto; display: flex; align-items: center; border: none; background: none; color: var(--fg-muted); cursor: pointer; padding: 2px; border-radius: 8px; }
+        .ctx-close:hover { color: var(--foreground); background: var(--border); }
+        .ctx-quick { display: flex; gap: 8px; padding: 10px 14px 6px; }
+        .ctx-quick-btn { flex: 1; padding: 7px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: .8rem; font-weight: 700; background: none; color: var(--fg-muted); cursor: pointer; transition: all .14s; }
+        .ctx-quick-btn.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .ctx-search { display: flex; align-items: center; gap: 8px; margin: 4px 14px 8px; padding: 7px 12px; background: color-mix(in srgb, var(--fg-muted) 8%, var(--background)); border: 1px solid var(--border); border-radius: 10px; color: var(--fg-muted); }
+        .ctx-search input { flex: 1; border: none; background: none; outline: none; font-size: .84rem; color: var(--foreground); font-family: inherit; }
+        .ctx-search button { display: flex; align-items: center; border: none; background: none; cursor: pointer; color: var(--fg-muted); padding: 0; }
+        .ctx-list { flex: 1; overflow-y: auto; padding: 4px 10px; display: flex; flex-direction: column; gap: 2px; }
+        .ctx-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px; border: none; background: none; border-radius: 10px; cursor: pointer; transition: background .12s; }
+        .ctx-item:hover:not(.dim) { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+        .ctx-item.on { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+        .ctx-item.dim { opacity: .4; cursor: default; }
+        .ctx-check { flex-shrink: 0; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; color: #fff; }
+        .ctx-item.on .ctx-check { background: var(--primary); border-color: var(--primary); }
+        .ctx-item-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+        .ctx-item-title { font-size: .84rem; font-weight: 600; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ctx-item-folder { font-size: .68rem; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ctx-foot { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-top: 1px solid var(--border); }
+        .ctx-foot-count { font-size: .78rem; font-weight: 700; color: var(--fg-muted); }
+        .ctx-done { margin-left: auto; padding: 7px 20px; border: none; border-radius: 10px; background: var(--primary); color: #fff; font-size: .84rem; font-weight: 700; cursor: pointer; }
+        .ctx-done:hover { filter: brightness(1.1); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
         .welcome-lily-wrap { display: flex; flex-direction: column; align-items: center; padding: 32px 0 10px; gap: 26px; animation: welcome-in 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
         @keyframes welcome-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
