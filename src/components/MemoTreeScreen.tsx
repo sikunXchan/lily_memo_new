@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   ArrowLeft, Plus, Search, ChevronRight, Folder, FileText, FolderPlus, Check, X,
-  ScanLine, Loader2,
+  Images, Loader2,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Folder as FolderType, Note } from '@/lib/db';
@@ -120,8 +120,8 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           <button className="mt-icon-btn" onClick={openNewFolder} title={t('フォルダを追加')}>
             <FolderPlus size={18} />
           </button>
-          <button className="mt-icon-btn" onClick={() => scanRef.current?.click()} title={t('写真から清書')}>
-            <ScanLine size={18} />
+          <button className="mt-icon-btn" onClick={() => scanRef.current?.click()} title={t('ギャラリーから清書')}>
+            <Images size={18} />
           </button>
           <button className="mt-icon-btn mt-add-btn" onClick={() => void createNote()}>
             <Plus size={18} />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { createPortal } from 'react-dom';
 import { Bar, Line, Pie, Scatter } from 'react-chartjs-2';
@@ -12,6 +12,7 @@ import {
   ArrowLeft, Sparkles, Wand2, ImagePlus, FileText, X, Play, Trash2,
   Check, ChevronRight, RotateCcw, Trophy, Loader2, PencilLine,
   Settings2, MessageCircle, ChevronDown, ChevronUp, Search, NotebookText,
+  Clock, GraduationCap,
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
@@ -186,6 +187,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [genCount, setGenCount] = useState(5);
   const [genDiff, setGenDiff] = useState<'easy' | 'medium' | 'hard' | 'oni'>('medium');
   const [genDaimon, setGenDaimon] = useState(false);
+  const [genExam, setGenExam] = useState(false);
+  const [genExamMin, setGenExamMin] = useState(30);
 
   // ── Library management (search / subject filter) ──
   const [search, setSearch] = useState('');
@@ -216,6 +219,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [selected, setSelected] = useState<number | null>(null);
   const [textAns, setTextAns] = useState('');
   const [revealed, setRevealed] = useState(false);
+  // Exam countdown — null when not a timed exam attempt.
+  const [remainingSec, setRemainingSec] = useState<number | null>(null);
 
   const SUGGESTIONS = en
     ? ['5 multiple-choice questions on photosynthesis', 'A short English reading passage with 3 questions', 'Quiz me on WWII causes']
@@ -239,10 +244,13 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     if (genDaimon) settings.push(en
       ? 'Compound question format — use a shared passage/source and create multiple sub-questions from it'
       : '大問形式 — 共通の本文・資料（passage）を設定し、そこから複数の設問を作成する');
+    if (genExam) settings.push(en
+      ? `Exam format — build a real ${genExamMin}-minute mock exam: compound structure, points on every question summing to 100, broad coverage`
+      : `模試形式 — 本番の試験のように、制限時間${genExamMin}分相当の分量で作る。大問構成・全問に配点（合計100点）・分野を満遍なくカバー`);
     if (settings.length === 0) return base;
     const tag = en ? '[Settings]' : '[設定]';
     return base ? `${base}\n\n${tag} ${settings.join(en ? ', ' : '、')}` : `${tag} ${settings.join(en ? ', ' : '、')}`;
-  }, [genInput, genTypes, genCount, genDiff, genDaimon, en]);
+  }, [genInput, genTypes, genCount, genDiff, genDaimon, genExam, genExamMin, en]);
 
   const pickImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -317,7 +325,10 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
         buildGeneratePrompt(),
         [...mdAtts, ...noteAtts, ...genImages.map(g => g.att)],
       );
-      const id = await saveProblemSet(result);
+      const id = await saveProblemSet(result, {
+        examMode: genExam,
+        timeLimitSec: genExam ? genExamMin * 60 : undefined,
+      });
       // Clean up the generation form
       genImages.forEach(g => URL.revokeObjectURL(g.url));
       setGenImages([]);
@@ -343,6 +354,9 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setSelected(null);
     setTextAns('');
     setRevealed(false);
+    // Run the countdown only for a full timed-exam attempt (not a wrong-only review).
+    const timed = !only && !!set.examMode && !!set.timeLimitSec;
+    setRemainingSec(timed ? set.timeLimitSec! : null);
     setView('solve');
   }, []);
 
@@ -370,6 +384,13 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setResults(r => ({ ...r, [current.id]: ok }));
   };
 
+  const finishAttempt = useCallback(async () => {
+    const correct = Object.values(results).filter(Boolean).length;
+    if (activeSet?.id) await recordAttempt(activeSet.id, correct);
+    setRemainingSec(null);
+    setView('result');
+  }, [results, activeSet]);
+
   const next = async () => {
     if (index + 1 < queue.length) {
       setIndex(i => i + 1);
@@ -377,16 +398,32 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       setTextAns('');
       setRevealed(false);
     } else {
-      // Finished — record & go to results
-      const correct = Object.values(results).filter(Boolean).length;
-      if (activeSet?.id) await recordAttempt(activeSet.id, correct);
-      setView('result');
+      await finishAttempt();
     }
   };
+
+  // Exam countdown: tick once a second while solving a timed set.
+  const timerOn = view === 'solve' && remainingSec != null;
+  useEffect(() => {
+    if (!timerOn) return;
+    const id = setInterval(() => {
+      setRemainingSec(s => (s == null ? s : Math.max(0, s - 1)));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [timerOn]);
+
+  // Auto-submit the moment the clock hits zero.
+  useEffect(() => {
+    if (view === 'solve' && remainingSec === 0) void finishAttempt();
+  }, [remainingSec, view, finishAttempt]);
 
   const correctCount = Object.values(results).filter(Boolean).length;
   const total = queue.length;
   const wrongQuestions = queue.filter(q => results[q.id] === false);
+  // Exam scoring (points) — falls back to correct-count when no points present.
+  const totalPoints = queue.reduce((s, q) => s + (q.points ?? 0), 0);
+  const earnedPoints = queue.reduce((s, q) => s + (results[q.id] ? (q.points ?? 0) : 0), 0);
+  const isExam = !!activeSet?.examMode && totalPoints > 0;
 
   // ── Delete ──
   const handleDelete = async (id: number, e: React.MouseEvent) => {
@@ -399,7 +436,9 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   // RESULT VIEW
   // ═══════════════════════════════════════════════════════════════════════════
   if (view === 'result' && activeSet) {
-    const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+    const pct = isExam
+      ? Math.round((earnedPoints / totalPoints) * 100)
+      : total > 0 ? Math.round((correctCount / total) * 100) : 0;
     const msg = pct >= 90 ? (en ? 'Perfect! 🎉' : '完璧だね！🎉')
       : pct >= 70 ? (en ? 'Great work! ✨' : 'よくできました！✨')
       : pct >= 40 ? (en ? 'Keep going! 💪' : 'その調子！💪')
@@ -418,11 +457,13 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             </svg>
             <div className="psr-ring-center">
               <span className="psr-pct">{pct}<small>%</small></span>
-              <span className="psr-frac">{correctCount}/{total}</span>
+              <span className="psr-frac">
+                {isExam ? (en ? `${earnedPoints}/${totalPoints} pts` : `${earnedPoints}/${totalPoints}点`) : `${correctCount}/${total}`}
+              </span>
             </div>
           </div>
           <p className="psr-msg">{msg}</p>
-          <p className="psr-sub">{activeSet.title}</p>
+          <p className="psr-sub">{isExam && <GraduationCap size={13} className="psr-exam-ic" />}{activeSet.title}</p>
 
           {/* Per-question review */}
           <div className="psr-review">
@@ -483,6 +524,12 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           <div className="psv-progress-track">
             <div className="psv-progress-fill" style={{ width: `${((index) / total) * 100}%` }} />
           </div>
+          {remainingSec != null && (
+            <span className={`psv-timer ${remainingSec <= 60 ? 'low' : ''}`}>
+              <Clock size={13} />
+              {Math.floor(remainingSec / 60)}:{String(remainingSec % 60).padStart(2, '0')}
+            </span>
+          )}
           <span className="psv-count">{index + 1}<small>/{total}</small></span>
         </div>
 
@@ -762,7 +809,23 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 <button className={`ps-go-chip ${genDaimon ? 'on' : ''}`} onClick={() => setGenDaimon(v => !v)}>
                   📄 {en ? 'Compound (大問)' : '大問形式'}
                 </button>
+                <button className={`ps-go-chip exam ${genExam ? 'on' : ''}`} onClick={() => setGenExam(v => !v)}>
+                  🎓 {en ? 'Mock exam' : '模試'}
+                </button>
               </div>
+              {/* Exam time limit (only when mock-exam is on) */}
+              {genExam && (
+                <div className="ps-go-row">
+                  <span className="ps-go-label">{en ? 'Time' : '制限時間'}</span>
+                  <div className="ps-go-chips">
+                    {[15, 30, 50, 60, 90].map(m => (
+                      <button key={m} className={`ps-go-chip ${genExamMin === m ? 'on' : ''}`} onClick={() => setGenExamMin(m)}>
+                        {m}{en ? 'min' : '分'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -897,6 +960,12 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                   <button key={set.id} className="ps-card" onClick={() => startSolving(set)}>
                     <div className="ps-card-main">
                       <div className="ps-card-top">
+                        {set.examMode && (
+                          <span className="ps-card-exam">
+                            <GraduationCap size={11} /> {en ? 'Exam' : '模試'}
+                            {set.timeLimitSec ? ` ${Math.round(set.timeLimitSec / 60)}${en ? 'min' : '分'}` : ''}
+                          </span>
+                        )}
                         {set.subject && <span className="ps-card-subject">{set.subject}</span>}
                         <span className="ps-card-count">{set.count}{en ? ' Q' : '問'}</span>
                       </div>
@@ -994,6 +1063,7 @@ function PracticeStyles() {
   .ps-go-chip.on { background: color-mix(in srgb, #8b5cf6 15%, transparent); border-color: #8b5cf6; color: #8b5cf6; }
   .ps-go-chip.oni { color: #dc2626; border-color: color-mix(in srgb, #dc2626 35%, var(--border)); font-weight: 800; }
   .ps-go-chip.oni.on { background: linear-gradient(120deg, #dc2626, #b91c1c); border-color: #dc2626; color: #fff; box-shadow: 0 2px 10px rgba(220,38,38,.35); }
+  .ps-go-chip.exam.on { background: linear-gradient(120deg, #0ea5e9, #6366f1); border-color: #0ea5e9; color: #fff; box-shadow: 0 2px 10px rgba(14,165,233,.35); }
   .ps-gen-actions { display: flex; gap: 8px; align-items: center; }
   .ps-gen-attach { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
   .ps-gen-attach:hover { color: #8b5cf6; border-color: #8b5cf6; }
@@ -1066,6 +1136,7 @@ function PracticeStyles() {
   .ps-card-top { display: flex; align-items: center; gap: 8px; }
   .ps-card-subject { font-size: 0.66rem; font-weight: 700; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 14%, transparent); padding: 2px 8px; border-radius: 99px; }
   .ps-card-count { font-size: 0.66rem; font-weight: 700; color: var(--fg-muted); }
+  .ps-card-exam { display: inline-flex; align-items: center; gap: 3px; font-size: 0.66rem; font-weight: 800; color: #0ea5e9; background: color-mix(in srgb, #0ea5e9 15%, transparent); padding: 2px 8px; border-radius: 99px; }
   .ps-card-name { font-size: 0.96rem; font-weight: 700; color: var(--foreground); line-height: 1.3; }
   .ps-card-best { display: inline-flex; align-items: center; gap: 4px; font-size: 0.7rem; font-weight: 600; color: #f59e0b; }
   .ps-card-attempts { color: var(--fg-muted); }
@@ -1081,6 +1152,9 @@ function PracticeStyles() {
   .psv-progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #8b5cf6, #ec4899); transition: width .4s ease; }
   .psv-count { font-size: 0.85rem; font-weight: 800; color: var(--foreground); flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .psv-count small { color: var(--fg-muted); font-weight: 600; }
+  .psv-timer { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 4px 10px; border-radius: 99px; font-size: 0.82rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0ea5e9; background: color-mix(in srgb, #0ea5e9 14%, transparent); }
+  .psv-timer.low { color: #ef4444; background: color-mix(in srgb, #ef4444 14%, transparent); animation: psv-timer-pulse 1s ease-in-out infinite; }
+  @keyframes psv-timer-pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
 
   .psv-body { flex: 1; overflow-y: auto; padding: 4px 16px 20px; -webkit-overflow-scrolling: touch; }
   .psv-card { max-width: 680px; margin: 0 auto; animation: psv-in .3s cubic-bezier(.2,.8,.3,1); }
@@ -1155,6 +1229,7 @@ function PracticeStyles() {
   .psr-frac { font-size: 0.86rem; font-weight: 700; color: var(--fg-muted); margin-top: 2px; }
   .psr-msg { font-size: 1.3rem; font-weight: 800; margin: 8px 0 2px; background: linear-gradient(120deg, #8b5cf6, #ec4899); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .psr-sub { font-size: 0.84rem; color: var(--fg-muted); margin: 0 0 20px; text-align: center; }
+  .psr-exam-ic { color: #0ea5e9; vertical-align: -2px; margin-right: 4px; }
   .psr-review { width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px; }
   .psr-rev-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; background: var(--accent); border: 1px solid var(--border); border-left: 3px solid var(--border); }
   .psr-rev-row.ok { border-left-color: #10b981; }

@@ -131,7 +131,7 @@ const EN: Record<string, string> = {
   '見つかりませんでした': 'Not found',
   '{m}月{d}日': '{m}/{d}',
   'フォルダを追加': 'Add folder',
-  '写真から清書': 'Tidy up from a photo',
+  'ギャラリーから清書': 'Tidy up from gallery',
   '清書中…': 'Tidying up…',
   '写真を読み取っているよ': 'Reading your photo…',
   'フォルダ名...': 'Folder name...',
