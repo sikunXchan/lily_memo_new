@@ -192,6 +192,7 @@ export interface PracticeQuestion {
   correct?: number;      // mcq: index of correct option / tf: 0=○(true) 1=×(false)
   answer?: string;       // written / fill: the model answer
   explanation?: string;  // shown after answering
+  points?: number;       // exam mode: marks allocated to this question
 }
 
 export interface ProblemSet {
@@ -200,6 +201,8 @@ export interface ProblemSet {
   subject?: string;
   questions: PracticeQuestion[];
   count: number;
+  examMode?: boolean;    // a timed, points-based mock exam (vs casual practice)
+  timeLimitSec?: number; // exam mode: countdown length in seconds
   createdAt: number;
   bestScore?: number;    // best correct-count across attempts
   attempts?: number;     // how many times solved
