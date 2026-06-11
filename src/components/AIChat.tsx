@@ -142,6 +142,58 @@ function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
 }
 
+const QUOTES_JA: { text: string; author: string }[] = [
+  { text: '天才とは、1%のひらめきと99%の努力だ。', author: 'トーマス・エジソン' },
+  { text: '千里の道も一歩から。', author: '老子' },
+  { text: '成功の秘訣は、始めることだ。', author: 'マーク・トウェイン' },
+  { text: '困難の中に機会がある。', author: 'アルバート・アインシュタイン' },
+  { text: '明日死ぬと思って生きなさい。永遠に生きると思って学びなさい。', author: 'マハトマ・ガンジー' },
+  { text: '教育は、世界を変えるために使える最も強力な武器だ。', author: 'ネルソン・マンデラ' },
+  { text: '学ぶことをやめたとき、人は老いる。', author: 'ヘンリー・フォード' },
+  { text: '今日できることを明日に延ばすな。', author: 'ベンジャミン・フランクリン' },
+  { text: '成功とは、失敗から失敗へ、熱意を失わずに進むことだ。', author: 'ウィンストン・チャーチル' },
+  { text: 'どれだけ遅くとも、止まらない限り問題はない。', author: '孔子' },
+  { text: '夢を見ることができれば、それは実現できる。', author: 'ウォルト・ディズニー' },
+  { text: '偉大であるためには、まず始めなければならない。', author: 'ジグ・ジグラー' },
+  { text: '努力する人は希望を語り、怠ける人は不満を語る。', author: '井上靖' },
+  { text: '他人が諦めるところから、本当の努力が始まる。', author: '大谷翔平' },
+  { text: '不可能とは、小さな人間の言葉だ。', author: 'ムハマド・アリ' },
+  { text: '失敗は成功のもと。', author: 'ことわざ' },
+  { text: '一つのドアが閉まれば、別のドアが開く。', author: 'アレクサンダー・グラハム・ベル' },
+  { text: '人生でもっとも大切なことは、才能を生かすことではなく、才能を与えられるほど努力することだ。', author: 'ソフィア・ローレン' },
+  { text: '自分自身を信じなさい。あなたの力は、あなたが思っているよりずっと大きい。', author: 'テオドール・ルーズベルト' },
+  { text: '昨日の自分より成長していれば、それで十分だ。', author: '武者小路実篤' },
+];
+
+const QUOTES_EN: { text: string; author: string }[] = [
+  { text: 'Genius is one percent inspiration and ninety-nine percent perspiration.', author: 'Thomas Edison' },
+  { text: 'A journey of a thousand miles begins with a single step.', author: 'Lao Tzu' },
+  { text: 'The secret of getting ahead is getting started.', author: 'Mark Twain' },
+  { text: 'In the middle of every difficulty lies opportunity.', author: 'Albert Einstein' },
+  { text: 'Live as if you were to die tomorrow. Learn as if you were to live forever.', author: 'Mahatma Gandhi' },
+  { text: 'Education is the most powerful weapon you can use to change the world.', author: 'Nelson Mandela' },
+  { text: 'Anyone who stops learning is old, whether at twenty or eighty.', author: 'Henry Ford' },
+  { text: "Don't put off until tomorrow what you can do today.", author: 'Benjamin Franklin' },
+  { text: 'Success is not final, failure is not fatal — it is the courage to continue that counts.', author: 'Winston Churchill' },
+  { text: 'It does not matter how slowly you go as long as you do not stop.', author: 'Confucius' },
+  { text: 'All our dreams can come true, if we have the courage to pursue them.', author: 'Walt Disney' },
+  { text: "You don't have to be great to start, but you have to start to be great.", author: 'Zig Ziglar' },
+  { text: 'The only way to do great work is to love what you do.', author: 'Steve Jobs' },
+  { text: 'The harder you work for something, the greater you will feel when you achieve it.', author: 'Anonymous' },
+  { text: 'Impossible is a word found only in the dictionary of fools.', author: 'Muhammad Ali' },
+  { text: 'Failure is the mother of success.', author: 'Proverb' },
+  { text: 'When one door closes, another opens.', author: 'Alexander Graham Bell' },
+  { text: 'Believe in yourself and all that you are. Know that there is something inside you that is greater than any obstacle.', author: 'Christian D. Larson' },
+  { text: 'Do what you can, with what you have, where you are.', author: 'Theodore Roosevelt' },
+  { text: 'You are never too old to set another goal or to dream a new dream.', author: 'C.S. Lewis' },
+];
+
+function getDailyQuote(lang: string): { text: string; author: string } {
+  const quotes = lang === 'en' ? QUOTES_EN : QUOTES_JA;
+  const dayIndex = Math.floor(Date.now() / 86400000);
+  return quotes[dayIndex % quotes.length];
+}
+
 type QAKind = 'qa' | 'fill' | 'order' | 'choice' | 'truefalse' | 'flash';
 
 function parseQAKind(code: string): QAKind {
@@ -2372,6 +2424,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           <div className="welcome-lily-wrap">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="welcome-lily" />
+            {(() => {
+              const q = getDailyQuote(getAppLang());
+              return (
+                <div className="welcome-quote">
+                  <p className="welcome-quote-text">"{q.text}"</p>
+                  <p className="welcome-quote-author">— {q.author}</p>
+                </div>
+              );
+            })()}
           </div>
         )}
         {messages.map((msg, idx) => {
@@ -2655,9 +2716,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .note-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.78rem; color: var(--fg-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
-        .welcome-lily-wrap { display: flex; justify-content: center; padding: 24px 0 8px; animation: float 3s ease-in-out infinite; }
-        .welcome-lily { width: 140px; height: auto; object-fit: contain; }
+        .welcome-lily-wrap { display: flex; flex-direction: column; align-items: center; padding: 24px 0 8px; gap: 20px; }
+        .welcome-lily { width: 140px; height: auto; object-fit: contain; animation: float 3s ease-in-out infinite; }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .welcome-quote { max-width: 300px; text-align: center; padding: 0 4px; }
+        .welcome-quote-text { font-size: 0.82rem; line-height: 1.6; color: var(--fg); font-style: italic; margin: 0 0 6px; }
+        .welcome-quote-author { font-size: 0.74rem; color: var(--fg-muted); margin: 0; }
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }
         .suggestion-chip { background: color-mix(in srgb, var(--primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); color: var(--primary); border-radius: 20px; padding: 6px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .suggestion-chip:hover { background: var(--primary); color: white; }
