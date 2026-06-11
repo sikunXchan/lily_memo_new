@@ -579,6 +579,7 @@ const EN: Record<string, string> = {
   "タップして話す": "Tap to speak",
 
   // ── AI chat & settings (AIChat/SettingsModal/NewsScreen/TodoScreen) ──
+  "今日の一言": "Quote of the day",
   "タスク": "Tasks",
   "{done} / {total} 完了": "{done} / {total} done",
   "新しいタスクを追加...": "Add a new task...",

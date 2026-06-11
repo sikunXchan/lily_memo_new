@@ -163,6 +163,26 @@ const QUOTES_JA: { text: string; author: string }[] = [
   { text: '人生でもっとも大切なことは、才能を生かすことではなく、才能を与えられるほど努力することだ。', author: 'ソフィア・ローレン' },
   { text: '自分自身を信じなさい。あなたの力は、あなたが思っているよりずっと大きい。', author: 'テオドール・ルーズベルト' },
   { text: '昨日の自分より成長していれば、それで十分だ。', author: '武者小路実篤' },
+  { text: '私は失敗したことがない。ただ、1万通りのうまくいかない方法を見つけただけだ。', author: 'トーマス・エジソン' },
+  { text: '生きるとは呼吸することではない。行動することだ。', author: 'ジャン＝ジャック・ルソー' },
+  { text: '為せば成る、為さねば成らぬ何事も。', author: '上杉鷹山' },
+  { text: '七転び八起き。', author: 'ことわざ' },
+  { text: '好きこそものの上手なれ。', author: 'ことわざ' },
+  { text: '人間の真価は、その人が死んだとき、何を残したかではなく、何を生きたかにある。', author: 'アインシュタイン' },
+  { text: 'やってみせ、言って聞かせて、させてみせ、ほめてやらねば人は動かじ。', author: '山本五十六' },
+  { text: '継続は力なり。', author: 'ことわざ' },
+  { text: '今日という日は、残りの人生の最初の日である。', author: 'チャールズ・ディードリッヒ' },
+  { text: '知識への投資は、常に最高の利息を生む。', author: 'ベンジャミン・フランクリン' },
+  { text: '小さいことを積み重ねるのが、とんでもないところへ行くただ一つの道。', author: 'イチロー' },
+  { text: '人生において重要なのは、生きることそのものではなく、よく生きることだ。', author: 'ソクラテス' },
+  { text: '最大の栄光は、決して転ばないことではなく、転ぶたびに起き上がることにある。', author: 'ネルソン・マンデラ' },
+  { text: '想像力は知識より重要だ。', author: 'アルベルト・アインシュタイン' },
+  { text: 'チャンスは、苦境の最中に見出される。', author: 'アルベルト・アインシュタイン' },
+  { text: 'すべての偉業は、不可能だと言われることから始まった。', author: 'ルイ・パスツール' },
+  { text: '時は金なり。', author: 'ベンジャミン・フランクリン' },
+  { text: '行動なき夢は、ただの白昼夢に過ぎない。', author: '日本のことわざ' },
+  { text: '辛抱する木に金がなる。', author: 'ことわざ' },
+  { text: '初心忘るべからず。', author: '世阿弥' },
 ];
 
 const QUOTES_EN: { text: string; author: string }[] = [
@@ -186,6 +206,25 @@ const QUOTES_EN: { text: string; author: string }[] = [
   { text: 'Believe in yourself and all that you are. Know that there is something inside you that is greater than any obstacle.', author: 'Christian D. Larson' },
   { text: 'Do what you can, with what you have, where you are.', author: 'Theodore Roosevelt' },
   { text: 'You are never too old to set another goal or to dream a new dream.', author: 'C.S. Lewis' },
+  { text: "I have not failed. I've just found 10,000 ways that won't work.", author: 'Thomas Edison' },
+  { text: 'The future belongs to those who believe in the beauty of their dreams.', author: 'Eleanor Roosevelt' },
+  { text: 'Whether you think you can or you think you can\'t, you\'re right.', author: 'Henry Ford' },
+  { text: 'The expert in anything was once a beginner.', author: 'Helen Hayes' },
+  { text: 'Learning never exhausts the mind.', author: 'Leonardo da Vinci' },
+  { text: 'The beautiful thing about learning is that no one can take it away from you.', author: 'B.B. King' },
+  { text: 'Strive for progress, not perfection.', author: 'Anonymous' },
+  { text: 'Continuous effort is the key to unlocking our potential.', author: 'Winston Churchill' },
+  { text: 'Today is the first day of the rest of your life.', author: 'Charles Dederich' },
+  { text: 'An investment in knowledge pays the best interest.', author: 'Benjamin Franklin' },
+  { text: 'Push yourself, because no one else is going to do it for you.', author: 'Anonymous' },
+  { text: 'Great things never come from comfort zones.', author: 'Anonymous' },
+  { text: 'Imagination is more important than knowledge.', author: 'Albert Einstein' },
+  { text: 'The greatest glory in living lies not in never falling, but in rising every time we fall.', author: 'Nelson Mandela' },
+  { text: 'Quality is not an act, it is a habit.', author: 'Aristotle' },
+  { text: 'The roots of education are bitter, but the fruit is sweet.', author: 'Aristotle' },
+  { text: 'Start where you are. Use what you have. Do what you can.', author: 'Arthur Ashe' },
+  { text: 'The only limit to our realization of tomorrow is our doubts of today.', author: 'Franklin D. Roosevelt' },
+  { text: 'Knowing is not enough; we must apply. Willing is not enough; we must do.', author: 'Bruce Lee' },
 ];
 
 function getDailyQuote(lang: string): { text: string; author: string } {
@@ -2422,13 +2461,18 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       <div className="messages-list">
         {messages.length === 0 && (
           <div className="welcome-lily-wrap">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="welcome-lily" />
+            <div className="welcome-lily-stage">
+              <span className="welcome-halo" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="welcome-lily" />
+            </div>
             {(() => {
               const q = getDailyQuote(getAppLang());
               return (
                 <div className="welcome-quote">
-                  <p className="welcome-quote-text">"{q.text}"</p>
+                  <span className="welcome-quote-mark">“</span>
+                  <span className="welcome-quote-label">{t('今日の一言')}</span>
+                  <p className="welcome-quote-text">{q.text}</p>
                   <p className="welcome-quote-author">— {q.author}</p>
                 </div>
               );
@@ -2716,12 +2760,41 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .note-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); border-radius: 16px; padding: 5px 12px; font-size: 0.78rem; color: var(--fg-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
         .note-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
-        .welcome-lily-wrap { display: flex; flex-direction: column; align-items: center; padding: 24px 0 8px; gap: 20px; }
-        .welcome-lily { width: 140px; height: auto; object-fit: contain; animation: float 3s ease-in-out infinite; }
+        .welcome-lily-wrap { display: flex; flex-direction: column; align-items: center; padding: 32px 0 10px; gap: 26px; animation: welcome-in 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+        @keyframes welcome-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        .welcome-lily-stage { position: relative; display: flex; justify-content: center; align-items: center; }
+        .welcome-halo {
+          position: absolute; width: 180px; height: 180px; border-radius: 50%;
+          background: radial-gradient(circle, color-mix(in srgb, var(--primary) 38%, transparent) 0%, transparent 68%);
+          filter: blur(14px); animation: halo-pulse 4s ease-in-out infinite;
+        }
+        @keyframes halo-pulse { 0%, 100% { transform: scale(1); opacity: 0.75; } 50% { transform: scale(1.15); opacity: 1; } }
+        .welcome-lily { position: relative; width: 142px; height: auto; object-fit: contain; animation: float 3.4s ease-in-out infinite; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.18)); }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-        .welcome-quote { max-width: 300px; text-align: center; padding: 0 4px; }
-        .welcome-quote-text { font-size: 0.82rem; line-height: 1.6; color: var(--fg); font-style: italic; margin: 0 0 6px; }
-        .welcome-quote-author { font-size: 0.74rem; color: var(--fg-muted); margin: 0; }
+        .welcome-quote {
+          position: relative; max-width: 320px; margin: 0 14px; padding: 22px 22px 18px;
+          text-align: center; border-radius: 20px;
+          background: color-mix(in srgb, var(--card, var(--background)) 82%, transparent);
+          border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+          box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--primary) 40%, transparent), inset 0 1px 0 rgba(255,255,255,0.06);
+          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); overflow: hidden;
+        }
+        .welcome-quote::before {
+          content: ''; position: absolute; inset: 0; pointer-events: none;
+          background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 10%, transparent) 0%, transparent 55%);
+        }
+        .welcome-quote-mark {
+          position: absolute; top: -6px; left: 14px; font-size: 4rem; line-height: 1;
+          font-family: Georgia, 'Times New Roman', serif;
+          color: color-mix(in srgb, var(--primary) 28%, transparent); user-select: none; pointer-events: none;
+        }
+        .welcome-quote-label {
+          position: relative; display: inline-block; margin-bottom: 10px;
+          font-size: 0.64rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+          color: var(--primary); opacity: 0.85;
+        }
+        .welcome-quote-text { position: relative; font-size: 0.92rem; line-height: 1.7; color: var(--fg); font-weight: 600; margin: 0 0 10px; }
+        .welcome-quote-author { position: relative; font-size: 0.76rem; color: var(--fg-muted); font-weight: 600; margin: 0; }
         .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 400px; }
         .suggestion-chip { background: color-mix(in srgb, var(--primary) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); color: var(--primary); border-radius: 20px; padding: 6px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
         .suggestion-chip:hover { background: var(--primary); color: white; }
