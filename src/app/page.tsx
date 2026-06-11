@@ -151,9 +151,12 @@ export default function Home() {
     setActiveNoteId(undefined);
   };
 
-  // BackBubble: shown on mobile when not on bubble home
+  // BackBubble: shown on mobile when not on bubble home.
+  // Hidden on practice/memos/todo — those screens have their own back affordance.
   const onBubbleHome = isMobile && activeTab === 'memos' && !activeNoteId && mobilePage === 'bubbles';
-  const showBackBubble = isMobile && !showFocusMode && activeTab !== 'ai' && !onBubbleHome;
+  const showBackBubble = isMobile && !showFocusMode
+    && !['ai', 'practice', 'memos', 'todo'].includes(activeTab)
+    && !onBubbleHome;
 
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''}`}>

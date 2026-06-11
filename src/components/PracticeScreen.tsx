@@ -73,19 +73,103 @@ function Rich({ src, className }: { src: string; className?: string }) {
   return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
+// ── Chart helpers ─────────────────────────────────────────────────────────────
+
+// Strip LaTeX delimiters and commands from a string so Chart.js can display it.
+function stripLatexForChart(s: string): string {
+  if (/^#[0-9a-f]/i.test(s) || /^rgba?\(/.test(s) || /^https?:/.test(s)) return s;
+  const processInner = (inner: string) =>
+    inner
+      .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, '($1)/($2)')
+      .replace(/\\sqrt\{([^}]*)\}/g, '√$1')
+      .replace(/\\[a-zA-Z]+\*?\{([^}]*)\}/g, '$1')
+      .replace(/\\[a-zA-Z]+/g, '')
+      .replace(/\^2(?![0-9])/g, '²')
+      .replace(/\^3(?![0-9])/g, '³')
+      .replace(/\^\{([^}]*)\}/g, '^$1')
+      .replace(/[{}]/g, '')
+      .trim();
+  return s
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_m, inner: string) => processInner(inner))
+    .replace(/\$((?:[^$\\]|\\.)*?)\$/g, (_m, inner: string) => processInner(inner))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function processChartStrings(val: unknown): unknown {
+  if (typeof val === 'string') return stripLatexForChart(val);
+  if (Array.isArray(val)) return val.map(processChartStrings);
+  if (val && typeof val === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      result[k] = processChartStrings(v);
+    }
+    return result;
+  }
+  return val;
+}
+
+// Prepare a raw AI chart config for rendering: strip LaTeX from text fields and
+// apply exam-style defaults (grid lines, no fill under lines, no animation).
+function prepareChartConfig(cfg: Record<string, unknown>): Record<string, unknown> {
+  const clean = processChartStrings(cfg) as Record<string, unknown>;
+  const type = (clean.type as string) || 'bar';
+
+  // Exam-style line charts: no fill, subtle smoothing
+  if (type === 'line') {
+    const d = clean.data as Record<string, unknown> | undefined;
+    if (d && Array.isArray(d.datasets)) {
+      d.datasets = (d.datasets as Record<string, unknown>[]).map(ds => ({
+        ...ds,
+        fill: false,
+        tension: ds.tension !== undefined ? ds.tension : 0.2,
+        borderWidth: ds.borderWidth !== undefined ? ds.borderWidth : 2,
+      }));
+    }
+  }
+
+  const existingOpts = ((clean.options as Record<string, unknown>) ?? {});
+  const existingScales = ((existingOpts.scales as Record<string, unknown>) ?? {});
+
+  clean.options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    ...existingOpts,
+    ...(type !== 'pie' ? {
+      scales: {
+        x: {
+          grid: { display: true, color: 'rgba(0,0,0,0.1)' },
+          ticks: { color: '#444' },
+          ...((existingScales.x as Record<string, unknown>) ?? {}),
+        },
+        y: {
+          grid: { display: true, color: 'rgba(0,0,0,0.1)' },
+          ticks: { color: '#444' },
+          ...((existingScales.y as Record<string, unknown>) ?? {}),
+        },
+      },
+    } : {}),
+  };
+
+  return clean;
+}
+
 // ── Chart renderer (parses AI's Chart.js JSON config) ────────────────────────────
 function QuestionChart({ config }: { config: string }) {
   const parsed = useMemo(() => {
     try {
       const c = JSON.parse(config);
-      if (c && c.data) return c;
+      if (c && c.data) return prepareChartConfig(c);
     } catch { /* ignore */ }
     return null;
   }, [config]);
   if (!parsed) return null;
-  const type = parsed.type || 'bar';
-  const data = parsed.data;
-  const options = { responsive: true, maintainAspectRatio: false, ...(parsed.options || {}) };
+  const type = (parsed.type as string) || 'bar';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = parsed.data as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const options = parsed.options as any;
   return (
     <div className="pq-chart">
       {type === 'line'    && <Line data={data} options={options} />}
@@ -93,7 +177,7 @@ function QuestionChart({ config }: { config: string }) {
       {type === 'scatter' && <Scatter data={data} options={options} />}
       {(type === 'bar' || !['line', 'pie', 'scatter'].includes(type)) && <Bar data={data} options={options} />}
       <style jsx>{`
-        .pq-chart { height: 220px; background: #fff; border-radius: 12px; padding: 12px; margin: 12px 0; border: 1px solid var(--border); }
+        .pq-chart { height: 240px; background: #fff; border-radius: 12px; padding: 12px; margin: 12px 0; border: 1px solid var(--border); }
       `}</style>
     </div>
   );
@@ -184,7 +268,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   // ── Generation settings ──
   const [showGenOpts, setShowGenOpts] = useState(false);
   const [genTypes, setGenTypes] = useState<Set<string>>(new Set(['mcq', 'written', 'fill', 'tf']));
-  const [genCount, setGenCount] = useState(5);
+  const [genCount, setGenCount] = useState<number | 'auto'>('auto');
   const [genDiff, setGenDiff] = useState<'easy' | 'medium' | 'hard' | 'oni'>('medium');
   const [genDaimon, setGenDaimon] = useState(false);
   const [genExam, setGenExam] = useState(false);
@@ -224,7 +308,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       const labels = [...genTypes].map(t => TYPE_BADGE[t]?.[en ? 'en' : 'ja']).filter(Boolean).join(en ? ' / ' : '・');
       settings.push(en ? `Question types: ${labels} only` : `問題形式: ${labels}のみ`);
     }
-    if (genCount !== 5) settings.push(en ? `${genCount} questions` : `${genCount}問`);
+    if (genCount !== 'auto') settings.push(en ? `${genCount} questions` : `${genCount}問`);
     if (genDiff !== 'medium') {
       const lbl = en
         ? { easy: 'easy', medium: 'medium', hard: 'hard', oni: 'brutal (鬼)' }[genDiff]
@@ -772,13 +856,26 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               {/* Question count */}
               <div className="ps-go-row">
                 <span className="ps-go-label">{en ? 'Count' : '問題数'}</span>
-                <div className="ps-go-chips">
-                  {[3, 5, 10, 20].map(n => (
-                    <button key={n} className={`ps-go-chip ${genCount === n ? 'on' : ''}`} onClick={() => setGenCount(n)}>
-                      {n}{en ? 'Q' : '問'}
-                    </button>
-                  ))}
-                </div>
+                <button
+                  className={`ps-go-chip ${genCount === 'auto' ? 'on' : ''}`}
+                  onClick={() => setGenCount('auto')}
+                >
+                  {en ? 'auto' : 'おまかせ'}
+                </button>
+                <input
+                  type="number"
+                  className={`ps-go-count-input${genCount !== 'auto' ? ' active' : ''}`}
+                  min={1}
+                  max={50}
+                  value={genCount === 'auto' ? '' : String(genCount)}
+                  placeholder={en ? 'N' : '問数'}
+                  onChange={e => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!isNaN(v) && v >= 1 && v <= 50) setGenCount(v);
+                    else if (e.target.value === '') setGenCount('auto');
+                  }}
+                  onFocus={() => { if (genCount === 'auto') setGenCount(5); }}
+                />
               </div>
               {/* Difficulty */}
               <div className="ps-go-row">
@@ -1041,6 +1138,10 @@ function PracticeStyles() {
   .ps-go-chip.oni { color: #dc2626; border-color: color-mix(in srgb, #dc2626 35%, var(--border)); font-weight: 800; }
   .ps-go-chip.oni.on { background: linear-gradient(120deg, #dc2626, #b91c1c); border-color: #dc2626; color: #fff; box-shadow: 0 2px 10px rgba(220,38,38,.35); }
   .ps-go-chip.exam.on { background: linear-gradient(120deg, #0ea5e9, #6366f1); border-color: #0ea5e9; color: #fff; box-shadow: 0 2px 10px rgba(14,165,233,.35); }
+  .ps-go-count-input { width: 58px; padding: 4px 8px; border: 1.5px solid var(--border); border-radius: 99px; background: var(--background); font-size: 0.74rem; font-weight: 600; color: var(--fg-muted); text-align: center; outline: none; font-family: inherit; -moz-appearance: textfield; }
+  .ps-go-count-input::-webkit-outer-spin-button, .ps-go-count-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .ps-go-count-input.active { border-color: #8b5cf6; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, var(--background)); }
+  .ps-go-count-input:focus { border-color: #8b5cf6; }
   .ps-gen-actions { display: flex; gap: 8px; align-items: center; }
   .ps-gen-attach { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
   .ps-gen-attach:hover { color: #8b5cf6; border-color: #8b5cf6; }
