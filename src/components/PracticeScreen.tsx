@@ -192,22 +192,12 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
   // ── Library management (search / subject filter) ──
   const [search, setSearch] = useState('');
-  const [subjectFilter, setSubjectFilter] = useState<string | null>(null);
-
-  const subjects = useMemo(() => {
-    const seen = new Set<string>();
-    for (const s of sets) if (s.subject) seen.add(s.subject);
-    return [...seen];
-  }, [sets]);
 
   const filteredSets = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return sets.filter(s => {
-      if (subjectFilter && s.subject !== subjectFilter) return false;
-      if (q && !`${s.title} ${s.subject ?? ''}`.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [sets, search, subjectFilter]);
+    if (!q) return sets;
+    return sets.filter(s => `${s.title} ${s.subject ?? ''}`.toLowerCase().includes(q));
+  }, [sets, search]);
 
   // ── Solving state ──
   const [activeSet, setActiveSet] = useState<ProblemSet | null>(null);
@@ -872,7 +862,6 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <div className="ps-notepick-search">
                 <Search size={14} />
                 <input
-                  autoFocus
                   value={notePickerSearch}
                   onChange={e => setNotePickerSearch(e.target.value)}
                   placeholder={en ? 'Search notes…' : 'メモを検索…'}
@@ -938,18 +927,6 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                     />
                     {search && <button className="ps-search-clear" onClick={() => setSearch('')}><X size={14} /></button>}
                   </div>
-                  {subjects.length > 1 && (
-                    <div className="ps-subj-chips">
-                      <button className={`ps-subj-chip ${!subjectFilter ? 'on' : ''}`} onClick={() => setSubjectFilter(null)}>
-                        {en ? 'All' : 'すべて'}
-                      </button>
-                      {subjects.map(s => (
-                        <button key={s} className={`ps-subj-chip ${subjectFilter === s ? 'on' : ''}`} onClick={() => setSubjectFilter(subjectFilter === s ? null : s)}>
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -1121,10 +1098,6 @@ function PracticeStyles() {
   .ps-search input { width: 100%; background: var(--background); border: 1px solid var(--border); border-radius: 12px; padding: 9px 32px 9px 34px; font-size: 0.85rem; color: var(--foreground); outline: none; font-family: inherit; }
   .ps-search input:focus { border-color: #8b5cf6; }
   .ps-search-clear { position: absolute; right: 8px; width: 22px; height: 22px; border-radius: 50%; border: none; background: var(--accent); color: var(--fg-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; }
-  .ps-subj-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-  .ps-subj-chips::-webkit-scrollbar { display: none; }
-  .ps-subj-chip { flex-shrink: 0; background: var(--background); border: 1px solid var(--border); color: var(--fg-muted); border-radius: 16px; padding: 4px 12px; font-size: 0.74rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; }
-  .ps-subj-chip.on { background: color-mix(in srgb, #8b5cf6 14%, transparent); border-color: #8b5cf6; color: #8b5cf6; }
   .ps-noresult { font-size: 0.82rem; color: var(--fg-muted); text-align: center; padding: 20px 0; margin: 0; }
   .ps-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 30px 0; text-align: center; color: var(--fg-muted); }
   .ps-empty-img { width: 96px; height: auto; opacity: .9; animation: ps-float 3s ease-in-out infinite; }
