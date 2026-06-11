@@ -11,16 +11,17 @@ import {
 import {
   ArrowLeft, Sparkles, Wand2, ImagePlus, FileText, X, Play, Trash2,
   Check, ChevronRight, RotateCcw, Trophy, Loader2, PencilLine,
-  Settings2, MessageCircle, ChevronDown, ChevronUp, Search,
+  Settings2, MessageCircle, ChevronDown, ChevronUp, Search, NotebookText,
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
-import type { ProblemSet, PracticeQuestion } from '@/lib/db';
+import type { ProblemSet, PracticeQuestion, Note, Folder } from '@/lib/db';
 import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
 import type { ChatAttachment } from '@/lib/gemini';
 import { renderRich } from '@/lib/richText';
+import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
 
 ChartJS.register(
@@ -156,12 +157,24 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     () => db.problemSets.orderBy('createdAt').reverse().filter(s => !s.deletedAt).toArray(), []
   ) ?? [];
 
+  // Existing in-app notes, usable as source material for problem generation.
+  // Handwriting notes are excluded — their content is stroke JSON, not text.
+  const allNotes = useLiveQuery<Note[]>(
+    () => db.notes.filter(n => !n.deletedAt && n.type !== 'handwriting').toArray(), []
+  ) ?? [];
+  const allFolders = useLiveQuery<Folder[]>(
+    () => db.folders.filter(f => !f.deletedAt).toArray(), []
+  ) ?? [];
+
   const [view, setView] = useState<View>('list');
 
   // ── Generation state ──
   const [genInput, setGenInput] = useState('');
   const [genImages, setGenImages] = useState<{ att: ChatAttachment; url: string }[]>([]);
   const [genMdFiles, setGenMdFiles] = useState<{ name: string; content: string }[]>([]);
+  const [genNotes, setGenNotes] = useState<{ id: number; title: string }[]>([]);
+  const [showNotePicker, setShowNotePicker] = useState(false);
+  const [notePickerSearch, setNotePickerSearch] = useState('');
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -259,9 +272,31 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   };
   const removeMdFile = (i: number) => setGenMdFiles(prev => prev.filter((_, j) => j !== i));
 
+  // ── In-app note picker ──
+  const folderName = useCallback((id?: number): string => {
+    if (id == null) return '';
+    return allFolders.find(f => f.id === id)?.name ?? '';
+  }, [allFolders]);
+
+  const toggleNote = (n: Note) => {
+    if (n.id == null) return;
+    const id = n.id;
+    setGenNotes(prev => prev.some(x => x.id === id)
+      ? prev.filter(x => x.id !== id)
+      : [...prev, { id, title: n.title || (en ? 'Untitled' : '無題') }]);
+  };
+  const removeNote = (id: number) => setGenNotes(prev => prev.filter(x => x.id !== id));
+
+  const pickerNotes = useMemo(() => {
+    const q = notePickerSearch.trim().toLowerCase();
+    return allNotes
+      .filter(n => !q || `${n.title} ${folderName(n.folderId)}`.toLowerCase().includes(q))
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  }, [allNotes, notePickerSearch, folderName]);
+
   const handleGenerate = async () => {
     if (genLoading) return;
-    if (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0) return;
+    if (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genNotes.length === 0) return;
     setGenLoading(true);
     setGenError('');
     try {
@@ -269,12 +304,25 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
         mimeType: 'text/plain',
         data: utf8ToBase64(f.content),
       }));
-      const result = await generateProblemSet(buildGeneratePrompt(), [...mdAtts, ...genImages.map(g => g.att)]);
+      // Pull the latest content of each selected note and feed it as plain text.
+      const noteRows = genNotes.length > 0 ? await db.notes.bulkGet(genNotes.map(n => n.id)) : [];
+      const noteAtts: ChatAttachment[] = noteRows
+        .filter((n): n is Note => !!n)
+        .map(n => {
+          const body = noteHtmlToText(n.content || '');
+          const header = en ? `# Note: ${n.title || 'Untitled'}` : `# メモ: ${n.title || '無題'}`;
+          return { mimeType: 'text/plain', data: utf8ToBase64(`${header}\n\n${body}`) };
+        });
+      const result = await generateProblemSet(
+        buildGeneratePrompt(),
+        [...mdAtts, ...noteAtts, ...genImages.map(g => g.att)],
+      );
       const id = await saveProblemSet(result);
       // Clean up the generation form
       genImages.forEach(g => URL.revokeObjectURL(g.url));
       setGenImages([]);
       setGenMdFiles([]);
+      setGenNotes([]);
       setGenInput('');
       // Jump straight into solving the freshly-made set
       const fresh = await db.problemSets.get(id);
@@ -617,6 +665,18 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             </div>
           )}
 
+          {genNotes.length > 0 && (
+            <div className="ps-gen-mds">
+              {genNotes.map(n => (
+                <div key={n.id} className="ps-gen-md-chip note">
+                  <NotebookText size={12} />
+                  <span>{n.title}</span>
+                  <button onClick={() => removeNote(n.id)}><X size={11} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {genImages.length > 0 && (
             <div className="ps-gen-imgs">
               {genImages.map((g, i) => (
@@ -718,9 +778,17 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <FileText size={16} />
             </button>
             <button
+              className={`ps-gen-attach ${genNotes.length > 0 ? 'on' : ''}`}
+              onClick={() => { setNotePickerSearch(''); setShowNotePicker(true); }}
+              disabled={genLoading}
+              title={en ? 'Use a note from the app' : 'アプリのメモから選ぶ'}
+            >
+              <NotebookText size={16} />
+            </button>
+            <button
               className="ps-gen-btn"
               onClick={() => void handleGenerate()}
-              disabled={genLoading || (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0)}
+              disabled={genLoading || (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genNotes.length === 0)}
             >
               {genLoading
                 ? <><Loader2 size={16} className="ps-spin" /> {en ? 'Creating…' : '作成中…'}</>
@@ -728,6 +796,56 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             </button>
           </div>
         </div>
+
+        {/* ── In-app note picker ── */}
+        {showNotePicker && typeof document !== 'undefined' && createPortal(
+          <div className="ps-notepick-back" onClick={() => setShowNotePicker(false)}>
+            <div className="ps-notepick" onClick={e => e.stopPropagation()}>
+              <div className="ps-notepick-head">
+                <NotebookText size={16} />
+                <span>{en ? 'Pick notes' : 'メモを選ぶ'}</span>
+                <button className="ps-notepick-close" onClick={() => setShowNotePicker(false)}><X size={16} /></button>
+              </div>
+              <div className="ps-notepick-search">
+                <Search size={14} />
+                <input
+                  autoFocus
+                  value={notePickerSearch}
+                  onChange={e => setNotePickerSearch(e.target.value)}
+                  placeholder={en ? 'Search notes…' : 'メモを検索…'}
+                />
+              </div>
+              <div className="ps-notepick-list">
+                {pickerNotes.length === 0 ? (
+                  <p className="ps-notepick-empty">{en ? 'No notes found.' : 'メモが見つからないよ'}</p>
+                ) : pickerNotes.map(n => {
+                  const sel = genNotes.some(x => x.id === n.id);
+                  const fname = folderName(n.folderId);
+                  return (
+                    <button key={n.id} className={`ps-notepick-item ${sel ? 'on' : ''}`} onClick={() => toggleNote(n)}>
+                      <span className="ps-notepick-check">{sel && <Check size={13} />}</span>
+                      <span className="ps-notepick-info">
+                        <span className="ps-notepick-title">{n.title || (en ? 'Untitled' : '無題')}</span>
+                        {fname && <span className="ps-notepick-folder">{fname}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="ps-notepick-foot">
+                <span className="ps-notepick-count">
+                  {genNotes.length > 0
+                    ? (en ? `${genNotes.length} selected` : `${genNotes.length}件 選択中`)
+                    : (en ? 'Tap to select' : 'タップで選択')}
+                </span>
+                <button className="ps-notepick-done" onClick={() => setShowNotePicker(false)}>
+                  {en ? 'Done' : '決定'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
         {/* ── Saved sets ── */}
         <div className="ps-list">
@@ -882,8 +1000,37 @@ function PracticeStyles() {
   .ps-gen-btn { flex: 1; height: 42px; border-radius: 12px; border: none; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; font-size: 0.9rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all .15s; }
   .ps-gen-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(139,92,246,.35); }
   .ps-gen-btn:disabled { opacity: .5; cursor: default; }
+  .ps-gen-attach.on { color: #0ea5e9; border-color: #0ea5e9; background: color-mix(in srgb, #0ea5e9 12%, var(--background)); }
   .ps-spin { animation: ps-spin 1s linear infinite; }
   @keyframes ps-spin { to { transform: rotate(360deg); } }
+
+  /* Note source chip (distinct sky hue from the purple md/file chips) */
+  .ps-gen-md-chip.note { background: color-mix(in srgb, #0ea5e9 14%, var(--background)); border-color: color-mix(in srgb, #0ea5e9 30%, transparent); color: #0ea5e9; }
+  .ps-gen-md-chip.note button { color: #0ea5e9; }
+
+  /* In-app note picker modal */
+  .ps-notepick-back { position: fixed; inset: 0; z-index: 10005; background: rgba(0,0,0,.45); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; animation: psgl-fade .18s ease; }
+  .ps-notepick { width: 100%; max-width: 440px; max-height: min(78vh, 620px); display: flex; flex-direction: column; background: var(--background); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .ps-notepick-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; font-size: .92rem; font-weight: 800; color: var(--foreground); border-bottom: 1px solid var(--border); }
+  .ps-notepick-head svg { color: #0ea5e9; }
+  .ps-notepick-close { margin-left: auto; display: flex; align-items: center; justify-content: center; border: none; background: none; color: var(--fg-muted); cursor: pointer; padding: 2px; border-radius: 8px; }
+  .ps-notepick-close:hover { color: var(--foreground); background: var(--border); }
+  .ps-notepick-search { display: flex; align-items: center; gap: 8px; margin: 12px 16px 8px; padding: 8px 12px; background: color-mix(in srgb, var(--fg-muted) 8%, var(--background)); border: 1px solid var(--border); border-radius: 12px; color: var(--fg-muted); }
+  .ps-notepick-search input { flex: 1; border: none; background: none; outline: none; font-size: .86rem; color: var(--foreground); font-family: inherit; }
+  .ps-notepick-list { flex: 1; overflow-y: auto; padding: 4px 10px; display: flex; flex-direction: column; gap: 2px; }
+  .ps-notepick-empty { text-align: center; color: var(--fg-muted); font-size: .82rem; padding: 28px 0; margin: 0; }
+  .ps-notepick-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 10px; border: none; background: none; border-radius: 10px; cursor: pointer; transition: background .12s; }
+  .ps-notepick-item:hover { background: color-mix(in srgb, #0ea5e9 8%, transparent); }
+  .ps-notepick-item.on { background: color-mix(in srgb, #0ea5e9 12%, transparent); }
+  .ps-notepick-check { flex-shrink: 0; width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; color: #fff; }
+  .ps-notepick-item.on .ps-notepick-check { background: #0ea5e9; border-color: #0ea5e9; }
+  .ps-notepick-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .ps-notepick-title { font-size: .86rem; font-weight: 600; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-notepick-folder { font-size: .7rem; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-notepick-foot { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); }
+  .ps-notepick-count { font-size: .78rem; font-weight: 700; color: var(--fg-muted); }
+  .ps-notepick-done { margin-left: auto; padding: 8px 20px; border: none; border-radius: 10px; background: #0ea5e9; color: #fff; font-size: .84rem; font-weight: 700; cursor: pointer; }
+  .ps-notepick-done:hover { background: #0284c7; }
 
   /* Generation loading overlay (portaled, covers everything incl. home bubble) */
   .ps-genload { position: fixed; inset: 0; z-index: 10001; background: color-mix(in srgb, var(--background) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; animation: psgl-fade .25s ease; }
