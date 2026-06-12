@@ -18,9 +18,8 @@ import {
   BarChart3, Binary,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2, Images,
+  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2,
 } from 'lucide-react';
-import { transcribeImagesToHTML, imageFileToAttachment } from '@/lib/photoNote';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
 
@@ -142,9 +141,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [showInsertMenu, setShowInsertMenu] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const scanRef = useRef<HTMLInputElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
   const isLoadingContentRef = useRef(true);
@@ -619,33 +616,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     input.click();
   };
 
-  const handleScan = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-      .filter(f => f.type.startsWith('image/'))
-      .slice(0, 6);
-    if (scanRef.current) scanRef.current.value = '';
-    if (files.length === 0 || !editor) return;
-    setScanning(true);
-    try {
-      const atts = await Promise.all(files.map(imageFileToAttachment));
-      const html = await transcribeImagesToHTML(atts);
-      const wasEditable = editor.isEditable;
-      if (!wasEditable) editor.setEditable(true);
-      const { to } = editor.state.selection;
-      editor.chain().insertContentAt(to, html).run();
-      if (!wasEditable) editor.setEditable(false);
-      // 挿入後は即座に保存
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null;
-      const content = editor.getHTML();
-      await db.notes.update(noteId, { content, updatedAt: Date.now() });
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setScanning(false);
-    }
-  }, [editor, noteId]);
-
   const insertMermaid = () => {
     insertWithoutFocus({
       type: 'mermaid',
@@ -722,17 +692,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
   return (
     <div className={`editor-container${embedded ? ' embedded' : ''}`} data-edit-mode={isEditMode}>
-      <input ref={scanRef} type="file" accept="image/*" multiple hidden onChange={e => void handleScan(e)} />
-      {scanning && typeof document !== 'undefined' && createPortal(
-        <div className="ne-scan-overlay">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="ne-scan-img" />
-          <Loader2 size={26} className="ne-scan-spin" />
-          <p className="ne-scan-title">{t('清書中…')}</p>
-          <p className="ne-scan-sub">{t('写真を読み取っているよ')}</p>
-        </div>,
-        document.body
-      )}
       <header className="editor-header" ref={headerRef}>
         <div className="header-bar">
           {/* 左固定: 戻る + 保存状態 */}
@@ -777,7 +736,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                         <button className="insert-sheet-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={22} /><span>{t('幾何')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={22} /><span>{t('表')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertHandwriting(); setShowInsertMenu(false); }}><Pencil size={22} /><span>{t('手書き')}</span></button>
-                        <button className="insert-sheet-item" onClick={() => { setShowInsertMenu(false); scanRef.current?.click(); }}><Images size={22} /><span>{t('ギャラリーから清書')}</span></button>
                       </div>
                     </div>
                   </div>,
@@ -1257,27 +1215,6 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           transition: background 0.14s;
         }
         .insert-sheet-item:hover, .insert-sheet-item:active { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: var(--primary); color: var(--primary); }
-
-        /* ===== 清書スキャン オーバーレイ ===== */
-        .ne-scan-overlay {
-          position: fixed; inset: 0; z-index: 10001;
-          display: flex; flex-direction: column; align-items: center; justify-content: center;
-          gap: 6px; padding: 24px;
-          background: color-mix(in srgb, #fdeef4 90%, transparent);
-          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-          animation: ne-scan-fade .25s ease;
-        }
-        @keyframes ne-scan-fade { from { opacity: 0; } to { opacity: 1; } }
-        .ne-scan-img {
-          width: 104px; height: auto;
-          animation: ne-scan-float 3s ease-in-out infinite;
-          filter: drop-shadow(0 8px 24px rgba(255,141,161,.4));
-        }
-        @keyframes ne-scan-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-        .ne-scan-spin { color: #ff8da1; margin-top: 8px; animation: ne-scan-rot 1s linear infinite; }
-        @keyframes ne-scan-rot { to { transform: rotate(360deg); } }
-        .ne-scan-title { font-size: 1.02rem; font-weight: 800; margin: 6px 0 0; color: #ff5c7a; }
-        .ne-scan-sub { font-size: .8rem; color: #b08a96; margin: 0; }
 
         /* ===== AI クイック操作メニュー ===== */
         .ai-menu-wrap { position: relative; }
