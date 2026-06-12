@@ -20,7 +20,7 @@ import {
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
   Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2, Images,
 } from 'lucide-react';
-import { transcribeImagesToNote, imageFileToAttachment } from '@/lib/photoNote';
+import { transcribeImagesToHTML, imageFileToAttachment } from '@/lib/photoNote';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
 
@@ -624,18 +624,27 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
       .filter(f => f.type.startsWith('image/'))
       .slice(0, 6);
     if (scanRef.current) scanRef.current.value = '';
-    if (files.length === 0) return;
+    if (files.length === 0 || !editor) return;
     setScanning(true);
     try {
       const atts = await Promise.all(files.map(imageFileToAttachment));
-      const id = await transcribeImagesToNote(atts);
-      onSelectNote?.(id);
+      const html = await transcribeImagesToHTML(atts);
+      const wasEditable = editor.isEditable;
+      if (!wasEditable) editor.setEditable(true);
+      const { to } = editor.state.selection;
+      editor.chain().insertContentAt(to, html).run();
+      if (!wasEditable) editor.setEditable(false);
+      // 挿入後は即座に保存
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+      const content = editor.getHTML();
+      await db.notes.update(noteId, { content, updatedAt: Date.now() });
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     } finally {
       setScanning(false);
     }
-  }, [onSelectNote]);
+  }, [editor, noteId]);
 
   const insertMermaid = () => {
     insertWithoutFocus({

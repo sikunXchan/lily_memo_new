@@ -24,7 +24,16 @@ const CLEANUP_SYSTEM_PROMPT = `あなたは「Lily」、学習アプリの清書
 - レイアウトの構造化のみOK: 見出し <h2>/<h3>、箇条書き <ul><li>、番号付き <ol><li>、段落 <p>、表 <table><thead><tbody>、強調 <strong>。
 - これらは「元のノートにある構造（箇条書き・見出し・表など）を、そのままHTMLの形にする」だけに使う。内容の追加や脚色はしない。
 - 数式は LaTeX を $...$（インライン）/ $$...$$（ブロック）で書く。
-- 図やイラストは描き起こせないので「[図: （見たままの簡単な説明）]」と一言だけ書く。
+
+# 図・グラフ・ダイアグラムの扱い（重要）
+図は「[図: ...]」で省略せず、以下の方法で**できる限り構造を再現する**こと。
+- **フローチャート・矢印図（A→B→C のような流れ）**: テキストで「A → B → C」または箇条書きで関係を表す。矢印の向き・ラベルをすべて拾う。
+- **ツリー図・階層図**: 字下げリスト（<ul><li>）で階層を再現する。
+- **座標系・グラフ**: 軸のラベル・目盛り・曲線の説明（「x軸: 時間、y軸: 速度、右上がりの直線」など）をテキストで記述。
+- **幾何図形**: 点・辺・角度・長さのラベルをすべて列挙し、図形の説明を文章で書く。
+- **板書の図（枠・矢印・囲み）**: 囲みの中のテキストをそのまま取り、矢印の向きと始点・終点を「X → Y（ラベル）」形式で書く。
+- **表・マトリクス**: 必ず <table> で再現する。
+- どうしても文字・構造で表せない純粋なイラストのみ「[図: （見たままの説明）]」とする。
 
 # 出力フォーマット（厳守）
 - 出力は **HTMLのみ**。前置き・説明・コードフェンス（\`\`\`）は一切書かない。
@@ -103,6 +112,45 @@ export async function transcribeImagesToNote(
     updatedAt: now,
   });
   return id as number;
+}
+
+// Transcribe photos and return the HTML body — without saving to DB.
+// Use this when you want to insert the result into an existing note.
+export async function transcribeImagesToHTML(
+  images: ChatAttachment[],
+): Promise<string> {
+  const en = getAppLang() === 'en';
+  if (images.length === 0) {
+    throw new Error(en ? 'Add at least one photo.' : '写真を1枚以上選んでね。');
+  }
+  const apiKey = getEffectiveApiKey();
+  if (!apiKey) {
+    throw new Error(en
+      ? 'Set your Gemini API key in Settings first.'
+      : '先に設定でGemini APIキーを入力してね。');
+  }
+
+  const userText = en
+    ? 'Transcribe and tidy up the notes in these photos into a clean HTML memo.'
+    : 'この写真のノートを読み取って、きれいなHTMLの清書メモにして。';
+  const history: ChatTurn[] = [{ role: 'user', text: userText, attachments: images }];
+
+  const reply = await callGeminiChat(history, CLEANUP_SYSTEM_PROMPT, apiKey, {
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+    temperature: 0,
+    maxOutputTokens: 65536,
+    thinkingBudget: 4096,
+  });
+
+  const html = stripFences(reply);
+  if (!html) {
+    throw new Error(en
+      ? "Couldn't read the photo. Try a clearer shot."
+      : '写真をうまく読み取れなかった…もう少しはっきり撮ってみてね。');
+  }
+
+  const { body } = splitTitle(html);
+  return body || html;
 }
 
 // Read picked image files into Gemini attachments (base64, no data: prefix).
