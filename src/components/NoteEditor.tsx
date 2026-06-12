@@ -18,8 +18,9 @@ import {
   BarChart3, Binary,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
-  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2
+  Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2, Images,
 } from 'lucide-react';
+import { transcribeImagesToNote, imageFileToAttachment } from '@/lib/photoNote';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
 
@@ -141,6 +142,8 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [showInsertMenu, setShowInsertMenu] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const scanRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
@@ -616,6 +619,22 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
     input.click();
   };
 
+  const handleScan = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    e.target.value = '';
+    setScanning(true);
+    try {
+      const atts = await Promise.all(files.map(f => imageFileToAttachment(f)));
+      const newId = await transcribeImagesToNote(atts, note?.folderId ?? undefined);
+      onSelectNote?.(newId);
+    } catch (err) {
+      console.error('Scan failed:', err);
+    } finally {
+      setScanning(false);
+    }
+  }, [note?.folderId, onSelectNote]);
+
   const insertMermaid = () => {
     insertWithoutFocus({
       type: 'mermaid',
@@ -692,6 +711,14 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
   return (
     <div className={`editor-container${embedded ? ' embedded' : ''}`} data-edit-mode={isEditMode}>
+      <input ref={scanRef} type="file" accept="image/*" multiple hidden onChange={e => void handleScan(e)} />
+      {scanning && typeof document !== 'undefined' && createPortal(
+        <div className="ne-scan-overlay">
+          <Loader2 size={36} className="animate-spin" />
+          <span>{t('清書を作成中…')}</span>
+        </div>,
+        document.body
+      )}
       <header className="editor-header" ref={headerRef}>
         <div className="header-bar">
           {/* 左固定: 戻る + 保存状態 */}
@@ -736,6 +763,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
                         <button className="insert-sheet-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={22} /><span>{t('幾何')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={22} /><span>{t('表')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertHandwriting(); setShowInsertMenu(false); }}><Pencil size={22} /><span>{t('手書き')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { setShowInsertMenu(false); scanRef.current?.click(); }}><Images size={22} /><span>{t('ギャラリーから清書')}</span></button>
                       </div>
                     </div>
                   </div>,
@@ -1215,6 +1243,22 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
           transition: background 0.14s;
         }
         .insert-sheet-item:hover, .insert-sheet-item:active { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: var(--primary); color: var(--primary); }
+
+        /* ===== 清書スキャン オーバーレイ ===== */
+        .ne-scan-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          background: rgba(0,0,0,0.55);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          color: #fff;
+          font-size: 1rem;
+          font-weight: 600;
+        }
 
         /* ===== AI クイック操作メニュー ===== */
         .ai-menu-wrap { position: relative; }
