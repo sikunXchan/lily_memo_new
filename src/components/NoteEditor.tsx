@@ -620,20 +620,22 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   };
 
   const handleScan = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
+    const files = Array.from(e.target.files ?? [])
+      .filter(f => f.type.startsWith('image/'))
+      .slice(0, 6);
+    if (scanRef.current) scanRef.current.value = '';
     if (files.length === 0) return;
-    e.target.value = '';
     setScanning(true);
     try {
-      const atts = await Promise.all(files.map(f => imageFileToAttachment(f)));
-      const newId = await transcribeImagesToNote(atts, note?.folderId ?? undefined);
-      onSelectNote?.(newId);
+      const atts = await Promise.all(files.map(imageFileToAttachment));
+      const id = await transcribeImagesToNote(atts);
+      onSelectNote?.(id);
     } catch (err) {
-      console.error('Scan failed:', err);
+      alert(err instanceof Error ? err.message : String(err));
     } finally {
       setScanning(false);
     }
-  }, [note?.folderId, onSelectNote]);
+  }, [onSelectNote]);
 
   const insertMermaid = () => {
     insertWithoutFocus({
@@ -714,8 +716,11 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
       <input ref={scanRef} type="file" accept="image/*" multiple hidden onChange={e => void handleScan(e)} />
       {scanning && typeof document !== 'undefined' && createPortal(
         <div className="ne-scan-overlay">
-          <Loader2 size={36} className="animate-spin" />
-          <span>{t('清書を作成中…')}</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="ne-scan-img" />
+          <Loader2 size={26} className="ne-scan-spin" />
+          <p className="ne-scan-title">{t('清書中…')}</p>
+          <p className="ne-scan-sub">{t('写真を読み取っているよ')}</p>
         </div>,
         document.body
       )}
@@ -1246,19 +1251,24 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
 
         /* ===== 清書スキャン オーバーレイ ===== */
         .ne-scan-overlay {
-          position: fixed;
-          inset: 0;
-          z-index: 9999;
-          background: rgba(0,0,0,0.55);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 16px;
-          color: #fff;
-          font-size: 1rem;
-          font-weight: 600;
+          position: fixed; inset: 0; z-index: 10001;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 6px; padding: 24px;
+          background: color-mix(in srgb, #fdeef4 90%, transparent);
+          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+          animation: ne-scan-fade .25s ease;
         }
+        @keyframes ne-scan-fade { from { opacity: 0; } to { opacity: 1; } }
+        .ne-scan-img {
+          width: 104px; height: auto;
+          animation: ne-scan-float 3s ease-in-out infinite;
+          filter: drop-shadow(0 8px 24px rgba(255,141,161,.4));
+        }
+        @keyframes ne-scan-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .ne-scan-spin { color: #ff8da1; margin-top: 8px; animation: ne-scan-rot 1s linear infinite; }
+        @keyframes ne-scan-rot { to { transform: rotate(360deg); } }
+        .ne-scan-title { font-size: 1.02rem; font-weight: 800; margin: 6px 0 0; color: #ff5c7a; }
+        .ne-scan-sub { font-size: .8rem; color: #b08a96; margin: 0; }
 
         /* ===== AI クイック操作メニュー ===== */
         .ai-menu-wrap { position: relative; }
