@@ -1,15 +1,12 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   ArrowLeft, Plus, Search, ChevronRight, Folder, FileText, FolderPlus, Check, X,
-  Images, Loader2,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Folder as FolderType, Note } from '@/lib/db';
-import { transcribeImagesToNote, imageFileToAttachment } from '@/lib/photoNote';
 import { useT, translate } from '@/lib/i18n';
 
 interface MemoTreeScreenProps {
@@ -44,28 +41,6 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
       folderId, type: 'text', createdAt: t, updatedAt: t,
     });
     onSelectNote(id as number);
-  }, [onSelectNote]);
-
-  // ── 写真から清書 (Photo → clean note) ──
-  const scanRef = useRef<HTMLInputElement>(null);
-  const [scanning, setScanning] = useState(false);
-
-  const handleScan = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-      .filter(f => f.type.startsWith('image/'))
-      .slice(0, 6);
-    if (scanRef.current) scanRef.current.value = '';
-    if (files.length === 0) return;
-    setScanning(true);
-    try {
-      const atts = await Promise.all(files.map(imageFileToAttachment));
-      const id = await transcribeImagesToNote(atts);
-      onSelectNote(id);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setScanning(false);
-    }
   }, [onSelectNote]);
 
   const createFolder = useCallback(async () => {
@@ -120,20 +95,9 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           <button className="mt-icon-btn" onClick={openNewFolder} title={t('フォルダを追加')}>
             <FolderPlus size={18} />
           </button>
-          <button className="mt-icon-btn" onClick={() => scanRef.current?.click()} title={t('ギャラリーから清書')}>
-            <Images size={18} />
-          </button>
           <button className="mt-icon-btn mt-add-btn" onClick={() => void createNote()}>
             <Plus size={18} />
           </button>
-          <input
-            ref={scanRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={e => void handleScan(e)}
-          />
         </div>
       </div>
 
@@ -210,17 +174,6 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           </div>
         )}
       </div>
-
-      {scanning && typeof document !== 'undefined' && createPortal(
-        <div className="mt-scan-overlay">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="mt-scan-img" />
-          <Loader2 size={26} className="mt-scan-spin" />
-          <p className="mt-scan-title">{t('清書中…')}</p>
-          <p className="mt-scan-sub">{t('写真を読み取っているよ')}</p>
-        </div>,
-        document.body,
-      )}
 
       <style jsx>{`
         .mt-root {
@@ -350,25 +303,6 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           padding: 10px 20px; font-size: .88rem; font-weight: 700;
           cursor: pointer; font-family: inherit;
         }
-        .mt-scan-overlay {
-          position: fixed; inset: 0; z-index: 10001;
-          display: flex; flex-direction: column; align-items: center; justify-content: center;
-          gap: 6px; padding: 24px;
-          background: color-mix(in srgb, #fdeef4 90%, transparent);
-          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-          animation: mt-scan-fade .25s ease;
-        }
-        @keyframes mt-scan-fade { from { opacity: 0; } to { opacity: 1; } }
-        .mt-scan-img {
-          width: 104px; height: auto;
-          animation: mt-scan-float 3s ease-in-out infinite;
-          filter: drop-shadow(0 8px 24px rgba(255,141,161,.4));
-        }
-        @keyframes mt-scan-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-        .mt-scan-spin { color: #ff8da1; margin-top: 8px; animation: mt-scan-rot 1s linear infinite; }
-        @keyframes mt-scan-rot { to { transform: rotate(360deg); } }
-        .mt-scan-title { font-size: 1.02rem; font-weight: 800; margin: 6px 0 0; color: #ff5c7a; }
-        .mt-scan-sub { font-size: .8rem; color: #b08a96; margin: 0; }
       `}</style>
     </div>
   );

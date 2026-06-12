@@ -2,9 +2,8 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId, softDeleteNotes, softDeleteFolder } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X, Images, Loader2 } from 'lucide-react';
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { transcribeImagesToNote, imageFileToAttachment } from '@/lib/photoNote';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import { useTheme } from './ThemeContext';
@@ -123,28 +122,6 @@ export default function Sidebar({
     setEditingFolderColor(null);
   };
 
-  const scanRef = useRef<HTMLInputElement>(null);
-  const [scanning, setScanning] = useState(false);
-
-  const handleScan = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-      .filter(f => f.type.startsWith('image/'))
-      .slice(0, 6);
-    if (scanRef.current) scanRef.current.value = '';
-    if (files.length === 0) return;
-    setScanning(true);
-    try {
-      const atts = await Promise.all(files.map(imageFileToAttachment));
-      const id = await transcribeImagesToNote(atts);
-      onSelectNote(id);
-      if (window.innerWidth <= 768) onToggleMobile();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setScanning(false);
-    }
-  }, [onSelectNote, onToggleMobile]);
-
   const addNote = async (folderId?: number) => {
     const now = Date.now();
     const id = await db.notes.add({
@@ -231,20 +208,10 @@ export default function Sidebar({
             <Plus size={17} />
             <span>{t('新しいメモ')}</span>
           </button>
-          <button className="btn-icon" onClick={() => scanRef.current?.click()} title={t('ギャラリーから清書')}>
-            {scanning ? <Loader2 size={17} className="sb-spin" /> : <Images size={17} />}
-          </button>
           <button className="btn-icon" onClick={addFolder} title={t('フォルダ作成')}>
             <FolderPlus size={17} />
           </button>
-          <input ref={scanRef} type="file" accept="image/*" multiple hidden onChange={e => void handleScan(e)} />
         </div>
-        {scanning && (
-          <div className="sb-scan-bar">
-            <Loader2 size={14} className="sb-spin" />
-            <span>{t('清書中…')}</span>
-          </div>
-        )}
 
         <div className="sidebar-content" style={{ minHeight: 0, overflowY: 'auto' }}>
           {(
@@ -529,10 +496,6 @@ export default function Sidebar({
           .btn-icon:hover {
             background: var(--border);
           }
-          .sb-spin { animation: sb-rot 1s linear infinite; }
-          @keyframes sb-rot { to { transform: rotate(360deg); } }
-          .sb-scan-bar { display: flex; align-items: center; gap: 6px; padding: 6px 16px; font-size: .75rem; font-weight: 700; color: var(--primary); background: var(--accent); }
-          .sb-scan-bar .sb-spin { color: var(--primary); }
           .view-toggle {
             display: flex;
             background: var(--accent);
