@@ -19,7 +19,7 @@ const KEY = 'lily-shortcuts-v1';
 const EVENT = 'lily-shortcuts-changed';
 
 // Shortcuts whose content is Japan-specific (日本語教材向け). Hidden in English mode.
-const JA_ONLY_IDS = new Set(['nichikore', 'vocab']);
+const JA_ONLY_IDS = new Set(['nichikore', 'vocab', 'continue', 'email', 'blog', 'detail']);
 
 const VOCAB_SHORTCUT: Shortcut = {
   id: 'vocab',
@@ -40,7 +40,7 @@ const VOCAB_SHORTCUT: Shortcut = {
 };
 
 const DEFAULTS: Shortcut[] = [
-  { id: 'nichikore', label: '📚 日これ', prompt: 'これらの資料から問題(qa)を作成して。単語を問う問題形式で全ての単語を網羅してください。また、時系列順に並べてください。\n答えには読み方をふってください。\n\n【絶対厳守】資料に含まれる全ての単語を1つも漏らさず必ず全て問題にすること。「など」「以下省略」「…」で途中で止めることは禁止。最後の単語まで出力すること。' },
+  { id: 'nichikore', label: '📚 日これ', prompt: 'これらの資料から問題(qa)を作成して。答えが資料の単語になるような問題形式で全ての単語を網羅してください。また、時系列順に並べてください。\n答えには読み方をふってください。\n\n【絶対厳守】資料に含まれる全ての単語を1つも漏らさず必ず全て問題にすること。「など」「以下省略」「…」で途中で止めることは禁止。最後の単語まで出力すること。' },
   { id: 'continue', label: '▶ 続きを書いて', prompt: '問題が途中で止まっています。続きの未出題の単語を全て、同じ形式・同じqaブロック内で続けて出力してください。重複は入れず、まだ出題されていない単語だけを残らず書いてください。' },
   VOCAB_SHORTCUT,
   { id: 'email', label: '📧 メール文面', prompt: 'このメモの内容を元に、そのまま送れる丁寧なメールの下書きを作って。件名も付けてね。' },
