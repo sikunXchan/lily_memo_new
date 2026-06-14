@@ -73,7 +73,10 @@ function monthCells(viewDate: Date): { iso: string; inMonth: boolean }[] {
 // message (not a one-liner). A complete, warm message lands like a letter you
 // received — it closes the loop, so it doesn't pull the user into a back-and-forth
 // chat and the diary stays a diary. Lily never ends with a question.
-function buildPostPrompt(lang: string, content: string): string {
+function buildPostPrompt(lang: string, content: string, studySec: number, mood: string): string {
+  const studyStr = studySec > 0 ? fmtDuration(studySec) : (lang === 'en' ? 'none' : 'なし');
+  const moodStr = mood || (lang === 'en' ? 'not set' : '未設定');
+
   if (lang === 'en') {
     return `You are "Lily", the user's closest, kindest friend. The user just posted today's diary on a private social feed, and you're leaving a comment on their post.
 
@@ -84,7 +87,10 @@ How to write your comment:
 - Write 4–6 warm, thoughtful sentences. Friendly but with enough substance to feel like a real message from a friend.
 - A few emojis are fine. Reply in English.
 
---- Diary post ---
+--- Today ---
+Mood: ${moodStr}
+Study time: ${studyStr}
+Diary post:
 ${content}`;
   }
 
@@ -97,7 +103,10 @@ ${content}`;
 ・4〜6文くらいの、温かく丁寧なメッセージ。フレンドリーだけど、親友からの本物のメッセージらしい読みごたえのある長さで。
 ・絵文字は少し添えてOK。日本語で返してください。
 
---- 日記の投稿 ---
+--- 今日 ---
+気分: ${moodStr}
+学習時間: ${studyStr}
+日記の投稿:
 ${content}`;
 }
 
@@ -224,7 +233,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
     setAiLoading(true);
     setAiError('');
     try {
-      const prompt = buildPostPrompt(lang, draft);
+      const prompt = buildPostPrompt(lang, draft, totalStudySec, mood);
       const reply = (await callGemini(prompt, apiKey)).trim();
       const entry = await db.diaries.where('date').equals(selDay).first();
       const now = Date.now();
