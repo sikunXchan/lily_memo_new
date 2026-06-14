@@ -269,7 +269,9 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const LilyAvatar = () => (
     avatarOk
       // eslint-disable-next-line @next/next/no-img-element
-      ? <img src="/lilygirls.PNG" alt="Lily" className="dy-ava" onError={() => setAvatarOk(false)} />
+      ? <img src="/lilygirls.PNG" alt="Lily" className="dy-ava"
+          style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid rgba(245,158,11,.35)' }}
+          onError={() => setAvatarOk(false)} />
       : <span className="dy-ava dy-ava-fallback">🐕</span>
   );
 
