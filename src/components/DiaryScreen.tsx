@@ -2,9 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, ChevronLeft, ChevronRight, Check, Clock, ListTodo, Sparkles, BarChart2, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Check, Clock, ListTodo, Heart, RefreshCw } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
-import type { Diary, StudySession, Todo } from '@/lib/db';
+import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
@@ -69,15 +69,17 @@ function monthCells(viewDate: Date): { iso: string; inMonth: boolean }[] {
   return cells.slice(0, cells[35].inMonth || cells.slice(35).some(c => c.inMonth) ? 42 : 35);
 }
 
-function buildTodayPrompt(
+// SNS-style comment prompt. The key design choice: Lily writes a FULL, heartfelt
+// message (not a one-liner). A complete, warm message lands like a letter you
+// received — it closes the loop, so it doesn't pull the user into a back-and-forth
+// chat and the diary stays a diary. Lily never ends with a question.
+function buildPostPrompt(
   lang: string,
-  iso: string,
   content: string,
   studySec: number,
   doneTodos: Todo[],
   mood: string,
 ): string {
-  const dateStr = iso;
   const studyStr = studySec > 0 ? fmtDuration(studySec) : (lang === 'en' ? 'none' : 'なし');
   const todosStr = doneTodos.length > 0
     ? doneTodos.map(t => `・${t.text}`).join('\n')
@@ -85,71 +87,42 @@ function buildTodayPrompt(
   const moodStr = mood || (lang === 'en' ? 'not set' : '未設定');
 
   if (lang === 'en') {
-    return `You are "Lily", a warm and encouraging AI companion in a study & diary app.
-Read the user's diary entry and the day's data, then give a brief, heartfelt reflection and words of encouragement.
-- Be specific: mention the study time or completed tasks if they exist.
-- Be empathetic: if the day was tough, acknowledge it and uplift gently.
-- Keep it concise: 2–4 sentences, warm tone.
-- Reply in English.
+    return `You are "Lily", the user's closest, kindest friend. The user just posted today's diary on a private social feed, and you're leaving a comment on their post.
 
---- Date: ${dateStr} ---
+How to write your comment:
+- The user will NOT reply to you. Your comment should let them close out the day feeling good — so make it complete and heartfelt, not a quick one-liner.
+- DO NOT end with a question. Don't invite a back-and-forth. Close with empathy, affirmation, and gentle encouragement instead.
+- If there was effort today (study time, completed tasks), mention it specifically and celebrate it.
+- If the day was hard, truly acknowledge it first, then gently nudge them forward.
+- Write 4–6 warm, thoughtful sentences. Friendly but with enough substance to feel like a real message from a friend.
+- A few emojis are fine. Reply in English.
+
+--- Today ---
 Mood: ${moodStr}
 Study time: ${studyStr}
 Completed tasks:
 ${todosStr}
-Diary entry:
-${content || '(No entry written)'}`;
+Diary post:
+${content}`;
   }
 
-  return `あなたは「Lily」という名前の、温かく寄り添うAIコンパニオンです。勉強・日記アプリに住んでいます。
-ユーザーの日記とその日のデータを見て、振り返りと励ましのメッセージを送ってください。
-・具体的に：学習時間や完了タスクがあれば触れる
-・共感的に：しんどい日も認めつつ、ポジティブに受け止める
-・コンパクトに：2〜4文で
-・日本語で返答してください
+  return `あなたは「Lily」という、ユーザーの一番の親友のような存在です。ユーザーが今日の日記を、自分だけのSNSに投稿しました。あなたはその投稿に親友としてコメントを返します。
 
---- 日付: ${dateStr} ---
+コメントの書き方：
+・ユーザーは返信しません。あなたのコメントで気持ちよく一日を締めくくれるように、短い一言ではなく、しっかりと心のこもったメッセージを届けてください。
+・質問で終えないでください。会話を続けさせない。問いかけではなく、共感・肯定・そっとした励ましで締めくくる。
+・今日の頑張り（学習時間や完了タスク）があれば具体的に触れて褒める。
+・しんどい日は、まずちゃんと受け止めてから、そっと背中を押す。
+・4〜6文くらいの、温かく丁寧なメッセージ。フレンドリーだけど、親友からの本物のメッセージらしい読みごたえのある長さで。
+・絵文字は少し添えてOK。日本語で返してください。
+
+--- 今日 ---
 気分: ${moodStr}
 学習時間: ${studyStr}
 完了したタスク:
 ${todosStr}
-日記の内容:
-${content || '（日記の記録なし）'}`;
-}
-
-function buildWeeklyPrompt(
-  lang: string,
-  entries: Array<{ date: string; diary?: Diary; studySec: number; doneTodos: Todo[] }>,
-): string {
-  const lines = entries.map(e => {
-    const studyStr = e.studySec > 0 ? fmtDuration(e.studySec) : (lang === 'en' ? '-' : 'なし');
-    const mood = e.diary?.mood ?? '';
-    const content = e.diary?.content ?? '';
-    const todos = e.doneTodos.map(t => t.text).join('、') || (lang === 'en' ? '-' : 'なし');
-    return `${e.date}: 気分${mood || '未記録'} 学習${studyStr} 完了Todo: ${todos}\n${content || '（記録なし）'}`;
-  }).join('\n\n');
-
-  if (lang === 'en') {
-    return `You are "Lily", a warm AI companion in a study & diary app.
-Below is the user's data for the past 7 days. Write a warm weekly reflection that:
-1. Highlights a particularly good day or effort
-2. Notes any patterns (e.g. mood trends, study consistency)
-3. Ends with an encouraging message for next week
-Keep it to 4–6 sentences. Reply in English.
-
---- Past 7 days ---
-${lines}`;
-  }
-
-  return `あなたは「Lily」という名前の、温かく寄り添うAIコンパニオンです。
-以下は過去7日間のユーザーのデータです。週次振り返りを書いてください：
-1. 特に頑張れた日・良かったこと
-2. 傾向や変化（気分の波、学習量の変化など）
-3. 来週へのひとことメッセージ
-4〜6文でまとめてください。日本語で返答。
-
---- 過去7日間 ---
-${lines}`;
+日記の投稿:
+${content}`;
 }
 
 interface DiaryScreenProps {
@@ -166,12 +139,10 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const [mood, setMood] = useState<string>('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // AI state
-  const [aiReply, setAiReply] = useState<string>('');
   const [aiLoading, setAiLoading] = useState(false);
-  const [weeklyReply, setWeeklyReply] = useState<string>('');
-  const [weeklyLoading, setWeeklyLoading] = useState(false);
-  const [showWeekly, setShowWeekly] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [avatarOk, setAvatarOk] = useState(true);
+  const [liked, setLiked] = useState(false);
 
   const diaries = useLiveQuery<Diary[]>(() =>
     db.diaries.filter(d => !d.deletedAt).toArray()
@@ -201,19 +172,19 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
     if (!ready) return;
     if (loadedDay.current === selDay) return;
     loadedDay.current = selDay;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(current?.content ?? '');
     setMood(current?.mood ?? '');
-    setAiReply('');
+    setAiError('');
+    setLiked(false);
   }, [ready, selDay, current]);
 
   const persist = useCallback(async (day: string, content: string, m: string) => {
-    if (day !== todayIso) return; // only persist today
+    if (day !== todayIso) return; // only today is editable
     const existing = await db.diaries.where('date').equals(day).first();
     const now = Date.now();
     const empty = !content.trim() && !m;
     if (existing) {
-      if (empty) {
+      if (empty && !existing.aiComment) {
         await db.diaries.update(existing.id!, { deletedAt: now, updatedAt: now });
       } else {
         await db.diaries.update(existing.id!, { content, mood: m || undefined, deletedAt: undefined, updatedAt: now });
@@ -242,7 +213,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   useEffect(() => () => flushSave(), [flushSave]);
 
   const selectDay = (iso: string) => {
-    if (iso > todayIso) return; // future days: no-op
+    if (iso > todayIso) return;
     if (iso === selDay) return;
     if (isToday) {
       flushSave();
@@ -264,53 +235,43 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
     return idx >= 0 ? MOOD_TINT[idx] : undefined;
   };
 
-  const runAiReflection = async () => {
+  // Post the entry to Lily: she reads it and leaves a comment, stored on the
+  // diary record (so it persists and syncs). No usage limit — re-post freely.
+  const postToLily = async () => {
     const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
-    if (!apiKey) { setAiReply(lang === 'en' ? 'Please set your Gemini API key in Settings.' : 'Gemini APIキーを設定画面で設定してください。'); return; }
+    if (!apiKey) {
+      setAiError(lang === 'en' ? 'Set your Gemini API key in Settings first.' : 'まず設定画面でGemini APIキーを設定してね。');
+      return;
+    }
+    flushSave();
+    await persist(selDay, draft, mood); // make sure today's entry exists
     setAiLoading(true);
-    setAiReply('');
+    setAiError('');
     try {
-      const prompt = buildTodayPrompt(lang, selDay, draft, totalStudySec, selDayDoneTodos ?? [], mood);
-      const reply = await callGemini(prompt, apiKey);
-      setAiReply(reply);
-    } catch (e) {
-      setAiReply(lang === 'en' ? 'Could not get a reply from Lily.' : 'Lilyからの返答を取得できませんでした。');
+      const prompt = buildPostPrompt(lang, draft, totalStudySec, selDayDoneTodos ?? [], mood);
+      const reply = (await callGemini(prompt, apiKey)).trim();
+      const entry = await db.diaries.where('date').equals(selDay).first();
+      const now = Date.now();
+      if (entry) {
+        await db.diaries.update(entry.id!, { aiComment: reply, aiAt: now, updatedAt: now });
+      }
+      setLiked(false);
+    } catch {
+      setAiError(lang === 'en' ? 'Lily could not reply right now.' : 'Lilyからのコメントを取得できなかった…');
     } finally {
       setAiLoading(false);
     }
   };
 
-  const runWeeklyReport = async () => {
-    const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
-    if (!apiKey) { setWeeklyReply(lang === 'en' ? 'Please set your Gemini API key in Settings.' : 'Gemini APIキーを設定画面で設定してください。'); setShowWeekly(true); return; }
-    setWeeklyLoading(true);
-    setWeeklyReply('');
-    setShowWeekly(true);
-    try {
-      // Gather last 7 days of data
-      const days: string[] = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        days.push(isoOf(d));
-      }
-      const allSessions = await db.studySessions.filter(s => days.includes(s.date) && !s.deletedAt).toArray();
-      const allTodos = await db.todos.filter(t => !!t.dueDate && days.includes(t.dueDate) && t.done && !t.deletedAt).toArray();
-      const entries = days.map(date => ({
-        date,
-        diary: byDate.get(date),
-        studySec: allSessions.filter(s => s.date === date).reduce((sum, s) => sum + (s.duration ?? 0), 0),
-        doneTodos: allTodos.filter(t => t.dueDate === date),
-      }));
-      const prompt = buildWeeklyPrompt(lang, entries);
-      const reply = await callGemini(prompt, apiKey);
-      setWeeklyReply(reply);
-    } catch {
-      setWeeklyReply(lang === 'en' ? 'Could not get a reply from Lily.' : 'Lilyからの返答を取得できませんでした。');
-    } finally {
-      setWeeklyLoading(false);
-    }
-  };
+  const canPost = isToday && draft.trim().length > 0 && !aiLoading;
+  const hasComment = !!current?.aiComment;
+
+  const LilyAvatar = () => (
+    avatarOk
+      // eslint-disable-next-line @next/next/no-img-element
+      ? <img src="/lily-avatar.png" alt="Lily" className="dy-ava" onError={() => setAvatarOk(false)} />
+      : <span className="dy-ava dy-ava-fallback">🐕</span>
+  );
 
   return (
     <div className="dy-root">
@@ -326,14 +287,6 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         <div className="dy-header-mid">
           <span className="dy-title">{t('日記')}</span>
         </div>
-        <button
-          className="dy-weekly-btn"
-          onClick={runWeeklyReport}
-          title={lang === 'en' ? 'Weekly report' : '今週のレポート'}
-          aria-label={lang === 'en' ? 'Weekly report' : '今週のレポート'}
-        >
-          <BarChart2 size={16} strokeWidth={2.5} />
-        </button>
       </div>
 
       <div className="dy-scroll">
@@ -456,7 +409,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
             </div>
           )}
 
-          {/* Textarea: editable today, read-only past */}
+          {/* The "post" — editable today, read-only past */}
           {isToday ? (
             <textarea
               className="dy-textarea"
@@ -473,50 +426,48 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
             </div>
           )}
 
-          {/* AI Reflection button (today only) */}
+          {/* Post button (today only) */}
           {isToday && (
             <button
-              className={`dy-ai-btn${aiLoading ? ' loading' : ''}`}
-              onClick={() => void runAiReflection()}
-              disabled={aiLoading}
+              className={`dy-post-btn${aiLoading ? ' loading' : ''}`}
+              onClick={() => void postToLily()}
+              disabled={!canPost}
             >
-              <Sparkles size={14} strokeWidth={2.5} />
               {aiLoading
-                ? (lang === 'en' ? 'Lily is thinking…' : 'Lilyが考え中…')
-                : (lang === 'en' ? 'Ask Lily to reflect' : 'Lilyに振り返ってもらう')}
+                ? (lang === 'en' ? 'Lily is reading…' : 'Lilyが読んでいる…')
+                : hasComment
+                  ? (<><RefreshCw size={14} strokeWidth={2.5} /> {lang === 'en' ? 'Ask Lily again' : 'もう一度Lilyに見せる'}</>)
+                  : (lang === 'en' ? 'Show Lily' : 'Lilyに見せる')}
             </button>
           )}
 
-          {/* AI reply card */}
-          {aiReply && (
-            <div className="dy-ai-reply">
-              <span className="dy-ai-reply-icon">🐻</span>
-              <p className="dy-ai-reply-text">{aiReply}</p>
+          {aiError && <div className="dy-ai-error">{aiError}</div>}
+
+          {/* Lily's comment (persisted on the entry; shows on past days too) */}
+          {current?.aiComment && (
+            <div className="dy-comment">
+              <LilyAvatar />
+              <div className="dy-comment-body">
+                <div className="dy-comment-head">
+                  <span className="dy-comment-name">Lily</span>
+                  <span className="dy-comment-handle">@lily</span>
+                </div>
+                <p className="dy-comment-text">{current.aiComment}</p>
+                {isToday && (
+                  <button
+                    className={`dy-like${liked ? ' on' : ''}`}
+                    onClick={() => setLiked(v => !v)}
+                    aria-label={lang === 'en' ? 'Like' : 'いいね'}
+                  >
+                    <Heart size={14} strokeWidth={2.5} fill={liked ? 'currentColor' : 'none'} />
+                    <span>{lang === 'en' ? 'Thanks' : 'ありがとう'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
       </div>
-
-      {/* Weekly report overlay */}
-      {showWeekly && (
-        <div className="dy-weekly-overlay">
-          <div className="dy-weekly-card">
-            <div className="dy-weekly-card-head">
-              <span className="dy-weekly-card-title">
-                {lang === 'en' ? '📊 Weekly Report' : '📊 今週のレポート'}
-              </span>
-              <button className="dy-weekly-close" onClick={() => setShowWeekly(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            {weeklyLoading ? (
-              <div className="dy-weekly-loading">{lang === 'en' ? 'Lily is writing your report…' : 'Lilyがレポートを作成中…'}</div>
-            ) : (
-              <p className="dy-weekly-text">{weeklyReply}</p>
-            )}
-          </div>
-        </div>
-      )}
 
       <style jsx>{`
         .dy-root {
@@ -543,13 +494,6 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
           background: linear-gradient(120deg, #f59e0b, #fb7185);
           -webkit-background-clip: text; background-clip: text; color: transparent;
         }
-        .dy-weekly-btn {
-          width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
-          border: 1px solid var(--border); background: var(--accent);
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; color: var(--fg-muted);
-        }
-        .dy-weekly-btn:active { opacity: .55; }
 
         .dy-scroll {
           flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
@@ -671,7 +615,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         .dy-moods-ro { padding: 0 0 10px; flex-shrink: 0; }
         .dy-mood-ro-emoji { font-size: 1.5rem; }
         .dy-textarea {
-          flex: 1; min-height: 140px; width: 100%; resize: none;
+          min-height: 150px; width: 100%; resize: none;
           background: var(--accent); border: 1.5px solid var(--border);
           border-radius: 14px; padding: 14px 16px;
           font-size: .92rem; line-height: 1.7; color: var(--foreground);
@@ -680,69 +624,72 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         .dy-textarea::placeholder { color: var(--fg-faint); }
         .dy-textarea:focus { border-color: #f59e0b; }
         .dy-textarea-ro {
-          flex: 1; min-height: 100px;
+          min-height: 100px;
           background: var(--accent); border: 1.5px solid var(--border);
           border-radius: 14px; padding: 14px 16px;
           font-size: .92rem; line-height: 1.7; color: var(--foreground);
-          margin-bottom: 8px;
         }
         .dy-textarea-ro p { margin: 0; white-space: pre-wrap; }
         .dy-textarea-ro-empty { color: var(--fg-faint); font-style: italic; }
 
-        /* ── AI reflection ── */
-        .dy-ai-btn {
+        /* ── Post button ── */
+        .dy-post-btn {
           display: flex; align-items: center; justify-content: center; gap: 6px;
-          margin-top: 10px; padding: 11px 18px; border-radius: 14px; flex-shrink: 0;
-          border: 1.5px solid #f59e0b;
-          background: linear-gradient(135deg, rgba(245,158,11,.12), rgba(251,113,133,.12));
-          color: #b45309; font-size: .84rem; font-weight: 700; cursor: pointer;
+          margin-top: 10px; padding: 12px 18px; border-radius: 14px; flex-shrink: 0;
+          border: none; width: 100%;
+          background: linear-gradient(135deg, #f59e0b, #fb7185);
+          color: #fff; font-size: .88rem; font-weight: 800; cursor: pointer;
           font-family: inherit; transition: opacity .15s, transform .1s;
-          width: 100%;
+          box-shadow: 0 4px 14px rgba(245,158,11,.3);
         }
-        .dy-ai-btn:hover { opacity: .85; }
-        .dy-ai-btn:active { transform: scale(.97); }
-        .dy-ai-btn.loading { opacity: .6; cursor: default; }
-        .dy-ai-reply {
-          margin-top: 12px; padding: 14px 16px;
-          background: linear-gradient(135deg, rgba(245,158,11,.1), rgba(251,113,133,.1));
-          border: 1.5px solid rgba(245,158,11,.35); border-radius: 16px;
-          display: flex; gap: 10px; align-items: flex-start; flex-shrink: 0;
+        .dy-post-btn:active { transform: scale(.97); }
+        .dy-post-btn:disabled {
+          background: var(--accent); color: var(--fg-faint);
+          box-shadow: none; cursor: default;
         }
-        .dy-ai-reply-icon { font-size: 1.5rem; flex-shrink: 0; line-height: 1.3; }
-        .dy-ai-reply-text {
-          margin: 0; font-size: .88rem; line-height: 1.7; color: var(--foreground);
-          white-space: pre-wrap;
+        .dy-post-btn.loading { opacity: .85; cursor: default; }
+        .dy-ai-error {
+          margin-top: 10px; font-size: .78rem; color: #ef4444;
+          text-align: center; font-weight: 600;
         }
 
-        /* ── Weekly overlay ── */
-        .dy-weekly-overlay {
-          position: absolute; inset: 0; background: rgba(0,0,0,.35);
-          display: flex; align-items: flex-end; padding-bottom: 0;
-          z-index: 50;
+        /* ── Lily's SNS comment ── */
+        .dy-comment {
+          margin-top: 14px; display: flex; gap: 10px; align-items: flex-start;
+          flex-shrink: 0; animation: dy-pop .3s ease;
         }
-        .dy-weekly-card {
-          width: 100%; background: var(--background);
-          border-radius: 24px 24px 0 0; padding: 20px 20px 48px;
-          max-height: 70vh; overflow-y: auto;
+        @keyframes dy-pop {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        .dy-weekly-card-head {
-          display: flex; align-items: center; justify-content: space-between;
-          margin-bottom: 14px;
-        }
-        .dy-weekly-card-title { font-size: 1rem; font-weight: 800; color: var(--foreground); }
-        .dy-weekly-close {
-          width: 32px; height: 32px; border-radius: 50%;
-          border: 1px solid var(--border); background: var(--accent);
+        .dy-ava {
+          width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+          object-fit: cover; border: 2px solid rgba(245,158,11,.35);
+          background: var(--accent);
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer; color: var(--fg-muted);
         }
-        .dy-weekly-loading {
-          font-size: .88rem; color: var(--fg-muted); text-align: center; padding: 24px 0;
+        .dy-ava-fallback { font-size: 1.3rem; }
+        .dy-comment-body {
+          flex: 1; min-width: 0;
+          background: var(--accent); border: 1px solid var(--border);
+          border-radius: 4px 16px 16px 16px; padding: 11px 14px;
         }
-        .dy-weekly-text {
-          margin: 0; font-size: .92rem; line-height: 1.8; color: var(--foreground);
+        .dy-comment-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+        .dy-comment-name { font-size: .82rem; font-weight: 800; color: var(--foreground); }
+        .dy-comment-handle { font-size: .7rem; color: var(--fg-faint); }
+        .dy-comment-text {
+          margin: 0; font-size: .88rem; line-height: 1.75; color: var(--foreground);
           white-space: pre-wrap;
         }
+        .dy-like {
+          margin-top: 9px; display: inline-flex; align-items: center; gap: 5px;
+          padding: 5px 12px; border-radius: 20px; cursor: pointer;
+          border: 1px solid var(--border); background: var(--background);
+          color: var(--fg-muted); font-size: .74rem; font-weight: 700;
+          font-family: inherit; transition: color .15s, border-color .15s, transform .1s;
+        }
+        .dy-like:active { transform: scale(.92); }
+        .dy-like.on { color: #fb7185; border-color: rgba(251,113,133,.5); background: rgba(251,113,133,.08); }
       `}</style>
     </div>
   );
