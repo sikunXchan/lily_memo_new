@@ -73,36 +73,18 @@ function monthCells(viewDate: Date): { iso: string; inMonth: boolean }[] {
 // message (not a one-liner). A complete, warm message lands like a letter you
 // received — it closes the loop, so it doesn't pull the user into a back-and-forth
 // chat and the diary stays a diary. Lily never ends with a question.
-function buildPostPrompt(
-  lang: string,
-  content: string,
-  studySec: number,
-  doneTodos: Todo[],
-  mood: string,
-): string {
-  const studyStr = studySec > 0 ? fmtDuration(studySec) : (lang === 'en' ? 'none' : 'なし');
-  const todosStr = doneTodos.length > 0
-    ? doneTodos.map(t => `・${t.text}`).join('\n')
-    : (lang === 'en' ? 'none' : 'なし');
-  const moodStr = mood || (lang === 'en' ? 'not set' : '未設定');
-
+function buildPostPrompt(lang: string, content: string): string {
   if (lang === 'en') {
     return `You are "Lily", the user's closest, kindest friend. The user just posted today's diary on a private social feed, and you're leaving a comment on their post.
 
 How to write your comment:
 - The user will NOT reply to you. Your comment should let them close out the day feeling good — so make it complete and heartfelt, not a quick one-liner.
 - DO NOT end with a question. Don't invite a back-and-forth. Close with empathy, affirmation, and gentle encouragement instead.
-- If there was effort today (study time, completed tasks), mention it specifically and celebrate it.
 - If the day was hard, truly acknowledge it first, then gently nudge them forward.
 - Write 4–6 warm, thoughtful sentences. Friendly but with enough substance to feel like a real message from a friend.
 - A few emojis are fine. Reply in English.
 
---- Today ---
-Mood: ${moodStr}
-Study time: ${studyStr}
-Completed tasks:
-${todosStr}
-Diary post:
+--- Diary post ---
 ${content}`;
   }
 
@@ -111,17 +93,11 @@ ${content}`;
 コメントの書き方：
 ・ユーザーは返信しません。あなたのコメントで気持ちよく一日を締めくくれるように、短い一言ではなく、しっかりと心のこもったメッセージを届けてください。
 ・質問で終えないでください。会話を続けさせない。問いかけではなく、共感・肯定・そっとした励ましで締めくくる。
-・今日の頑張り（学習時間や完了タスク）があれば具体的に触れて褒める。
 ・しんどい日は、まずちゃんと受け止めてから、そっと背中を押す。
 ・4〜6文くらいの、温かく丁寧なメッセージ。フレンドリーだけど、親友からの本物のメッセージらしい読みごたえのある長さで。
 ・絵文字は少し添えてOK。日本語で返してください。
 
---- 今日 ---
-気分: ${moodStr}
-学習時間: ${studyStr}
-完了したタスク:
-${todosStr}
-日記の投稿:
+--- 日記の投稿 ---
 ${content}`;
 }
 
@@ -248,7 +224,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
     setAiLoading(true);
     setAiError('');
     try {
-      const prompt = buildPostPrompt(lang, draft, totalStudySec, selDayDoneTodos ?? [], mood);
+      const prompt = buildPostPrompt(lang, draft);
       const reply = (await callGemini(prompt, apiKey)).trim();
       const entry = await db.diaries.where('date').equals(selDay).first();
       const now = Date.now();
