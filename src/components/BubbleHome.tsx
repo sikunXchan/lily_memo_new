@@ -226,7 +226,7 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
 
       {/* Bubble cluster */}
       <div className="bh-cluster">
-        {(getAppLang() === 'en' ? BUBBLES.filter(b => b.key !== 'diary') : BUBBLES).map(b => (
+        {BUBBLES.map(b => (
           <div key={b.key} style={{ ...b.pos, position: 'absolute' }}>
             <button
               className="bh-bubble"
