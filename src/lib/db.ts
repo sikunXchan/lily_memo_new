@@ -153,6 +153,11 @@ export interface Diary {
   date: string;        // 'YYYY-MM-DD' — one entry per day
   content: string;
   mood?: string;       // optional mood emoji shown on the calendar
+  // Lily's SNS-style comment on the entry (a friend leaving a comment). These
+  // are non-indexed fields, so no schema-version bump is needed; they ride
+  // along on sync/backup automatically since those copy the whole record.
+  aiComment?: string;  // Lily's warm, encouraging message
+  aiAt?: number;       // when Lily commented
   createdAt: number;
   updatedAt: number;   // version clock — bumped on every mutation incl. soft-delete
   deletedAt?: number;  // tombstone for sync — UI filters these out
