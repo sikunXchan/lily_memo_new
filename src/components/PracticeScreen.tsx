@@ -21,6 +21,8 @@ import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
 import type { ChatAttachment } from '@/lib/gemini';
+import { callGemini } from '@/lib/gemini';
+import { getEffectiveApiKey } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
@@ -234,6 +236,32 @@ function buildResultContext(
 }
 
 type View = 'list' | 'solve' | 'result';
+type ScreenMode = 'practice' | 'lesson';
+
+function buildLessonPrompt(topic: string, en: boolean): string {
+  if (en) {
+    return `You are "Lily", an excellent tutor. Please teach the following topic clearly and thoroughly.
+
+Lesson format (required):
+- Divide into 3–5 chapters, each starting with "## Chapter Title"
+- Use concrete examples and analogies to make concepts clear
+- End each chapter with a comprehension check in blockquote format: "> 📝 Check: [question]?"
+- End the lesson with "## Summary" listing the key points as bullet points
+
+Topic: ${topic}`;
+  }
+  return `あなたは優秀な家庭教師「Lily」です。以下のトピックについて、丁寧で分かりやすい授業をしてください。
+
+授業の形式（必ず守ること）：
+- 全体を3〜5つの章に分ける
+- 各章は「## 章タイトル」で始める
+- 具体例・比喩を使って分かりやすく説明する
+- 難しい用語には読み方を（ふりがな）で付ける
+- 各章の最後に「> 📝 確認問題：○○○？」の形で確認問題を1問出す（答えは書かない）
+- 最後に「## まとめ」で重要ポイントを箇条書きにする
+
+トピック：${topic}`;
+}
 
 export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenProps) {
   const en = getAppLang() === 'en';
@@ -252,6 +280,31 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   ) ?? [];
 
   const [view, setView] = useState<View>('list');
+  const [screenMode, setScreenMode] = useState<ScreenMode>('practice');
+
+  // ── Lesson state ──
+  const [lessonTopic, setLessonTopic] = useState('');
+  const [lessonContent, setLessonContent] = useState('');
+  const [lessonLoading, setLessonLoading] = useState(false);
+  const [lessonError, setLessonError] = useState('');
+
+  async function startLesson() {
+    const topic = lessonTopic.trim();
+    if (!topic || lessonLoading) return;
+    const apiKey = getEffectiveApiKey();
+    if (!apiKey) { setLessonError(en ? 'Set your API key in Settings.' : 'APIキーを設定してください。'); return; }
+    setLessonLoading(true);
+    setLessonError('');
+    setLessonContent('');
+    try {
+      const result = await callGemini(buildLessonPrompt(topic, en), apiKey);
+      setLessonContent(result.trim());
+    } catch {
+      setLessonError(en ? 'Failed to generate lesson.' : '授業の生成に失敗しました。');
+    } finally {
+      setLessonLoading(false);
+    }
+  }
 
   // ── Generation state ──
   const [genInput, setGenInput] = useState('');
@@ -767,8 +820,64 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       </div>
 
       <div className="ps-body">
-        {/* ── Generation panel ── */}
-        <div className="ps-gen">
+        {/* ── Mode toggle ── */}
+        <div className="ps-mode-toggle">
+          <button
+            className={`ps-mode-btn${screenMode === 'practice' ? ' on' : ''}`}
+            onClick={() => setScreenMode('practice')}
+          >
+            <PencilLine size={13} />
+            {en ? 'Practice' : '演習'}
+          </button>
+          <button
+            className={`ps-mode-btn${screenMode === 'lesson' ? ' on' : ''}`}
+            onClick={() => setScreenMode('lesson')}
+          >
+            <GraduationCap size={13} />
+            {en ? 'Lesson' : '授業'}
+          </button>
+        </div>
+
+        {/* ── Lesson panel ── */}
+        {screenMode === 'lesson' && (
+          <div className="ps-lesson">
+            <div className="ps-lesson-desc">
+              {en
+                ? 'Type a topic and Lily will give you a structured lesson — chapter by chapter, with comprehension checks.'
+                : 'トピックを入力すると、Lilyが章立てで授業をしてくれるよ。各章の最後に確認問題も出るよ。'}
+            </div>
+            <div className="ps-lesson-row">
+              <input
+                className="ps-lesson-input"
+                value={lessonTopic}
+                onChange={e => setLessonTopic(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') void startLesson(); }}
+                placeholder={en ? 'e.g. Photosynthesis, World War II…' : '例：光合成、江戸時代、二次関数…'}
+                disabled={lessonLoading}
+              />
+              <button
+                className="ps-lesson-btn"
+                onClick={() => void startLesson()}
+                disabled={!lessonTopic.trim() || lessonLoading}
+              >
+                {lessonLoading
+                  ? <Loader2 size={15} className="ps-spin" />
+                  : <Sparkles size={15} />}
+                {en ? 'Start' : '授業を始める'}
+              </button>
+            </div>
+            {lessonError && <p className="ps-lesson-err">{lessonError}</p>}
+            {lessonContent && (
+              <div
+                className="ps-lesson-content rich-content"
+                dangerouslySetInnerHTML={{ __html: renderRich(lessonContent) }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* ── Generation panel (practice mode only) ── */}
+        {screenMode === 'practice' && <div className="ps-gen">
           <div className="ps-gen-head">
             <Sparkles size={15} className="ps-gen-spark" />
             <span>{en ? 'Make a problem set with Lily' : 'Lilyに問題を作ってもらう'}</span>
@@ -945,10 +1054,10 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 : <><Wand2 size={16} /> {en ? 'Generate' : '作成する'}</>}
             </button>
           </div>
-        </div>
+        </div>}
 
-        {/* ── In-app note picker ── */}
-        {showNotePicker && typeof document !== 'undefined' && createPortal(
+        {/* ── In-app note picker (practice only) ── */}
+        {screenMode === 'practice' && showNotePicker && typeof document !== 'undefined' && createPortal(
           <div className="ps-notepick-back" onClick={() => setShowNotePicker(false)}>
             <div className="ps-notepick" onClick={e => e.stopPropagation()}>
               <div className="ps-notepick-head">
@@ -996,8 +1105,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           document.body,
         )}
 
-        {/* ── Saved sets ── */}
-        <div className="ps-list">
+        {/* ── Saved sets (practice only) ── */}
+        {screenMode === 'practice' && <div className="ps-list">
           <div className="ps-list-head">
             <p className="ps-list-title">{en ? 'Your problem sets' : '作った問題セット'}</p>
             {sets.length > 0 && <span className="ps-list-count">{sets.length}</span>}
@@ -1060,7 +1169,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               )}
             </>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Full-screen overlay during generation — blocks all other taps */}
@@ -1319,6 +1428,20 @@ function PracticeStyles() {
   .psr-btn.primary { background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; }
   .psr-btn.lily { background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); color: #8b5cf6; border-color: color-mix(in srgb, #8b5cf6 35%, var(--border)); }
   .psr-btn.ghost { background: transparent; color: var(--fg-muted); border: none; }
+  /* ── Mode toggle ── */
+  .ps-mode-toggle { display: flex; gap: 4px; padding: 10px 14px 0; }
+  .ps-mode-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; height: 36px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--accent); color: var(--fg-muted); font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all .15s; }
+  .ps-mode-btn.on { background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border-color: transparent; }
+  /* ── Lesson panel ── */
+  .ps-lesson { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .ps-lesson-desc { font-size: 0.8rem; color: var(--fg-muted); line-height: 1.6; }
+  .ps-lesson-row { display: flex; gap: 8px; }
+  .ps-lesson-input { flex: 1; height: 42px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 12px; font-size: 0.88rem; color: var(--foreground); outline: none; }
+  .ps-lesson-input:focus { border-color: var(--primary); }
+  .ps-lesson-btn { display: flex; align-items: center; gap: 5px; height: 42px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.83rem; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .ps-lesson-btn:disabled { opacity: 0.5; cursor: default; }
+  .ps-lesson-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
+  .ps-lesson-content { background: var(--accent); border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px; }
     `}</style>
   );
 }
