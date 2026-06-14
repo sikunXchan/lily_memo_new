@@ -56,12 +56,33 @@ function highlightCode(lang: string, code: string): string {
 }
 
 // ── Math renderer ────────────────────────────────────────────────────────────
+// LaTeX environments that KaTeX only accepts in display mode. If the AI emits
+// one of these inside inline `$...$`, force display so it renders instead of
+// throwing a parse error ("can be used only in display mode").
+const DISPLAY_ONLY_ENV =
+  /\\begin\{(?:align|alignat|gather|equation|multline|eqnarray|split)\*?\}/;
+
+// A few macros KaTeX doesn't define by default but the AI reaches for.
+const KATEX_MACROS: Record<string, string> = {
+  '\\R': '\\mathbb{R}',
+  '\\N': '\\mathbb{N}',
+  '\\Z': '\\mathbb{Z}',
+  '\\Q': '\\mathbb{Q}',
+  '\\C': '\\mathbb{C}',
+};
+
 function renderMath(tex: string, display: boolean): string {
+  const displayMode = display || DISPLAY_ONLY_ENV.test(tex);
   try {
     return katex.renderToString(tex, {
-      displayMode: display,
+      displayMode,
       throwOnError: false,
       output: 'html',
+      // `false` (not the default 'warn') stops Unicode math chars like ×, ≤, √
+      // and stray characters from being flagged — they just render.
+      strict: false,
+      trust: false,
+      macros: KATEX_MACROS,
     });
   } catch {
     return `<code>${tex.replace(/</g, '&lt;')}</code>`;
@@ -193,6 +214,14 @@ export function renderRich(src: string): string {
   // 5. Inline math: \(...\) and $...$
   s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, t: string) => stashInline(renderMath(t.trim(), false)));
   s = s.replace(/\$(?!\s)([^\n$]+?)(?<!\s)\$/g, (_m, t: string) => stashInline(renderMath(t.trim(), false)));
+
+  // 5b. Bare LaTeX environments the AI emits without $$ / \[ \] delimiters
+  // (e.g. a raw `\begin{align}…\end{align}` block). Render as display math so
+  // `marked` doesn't mangle the `\\` line breaks and `&` alignment markers.
+  s = s.replace(
+    /\\begin\{(align\*?|alignat\*?|aligned|gather\*?|equation\*?|multline\*?|cases|split|[bBpvV]?matrix|smallmatrix|array)\}[\s\S]*?\\end\{\1\}/g,
+    (m: string) => stashBlock(renderMath(m.trim(), true)),
+  );
 
   // 6. Graceful trailing open math
   const openBlock = s.match(/\$\$([\s\S]+)$/);
