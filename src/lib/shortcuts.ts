@@ -19,7 +19,7 @@ const KEY = 'lily-shortcuts-v1';
 const EVENT = 'lily-shortcuts-changed';
 
 // Shortcuts whose content is Japan-specific (日本語教材向け). Hidden in English mode.
-const JA_ONLY_IDS = new Set(['nichikore', 'vocab']);
+const JA_ONLY_IDS = new Set(['nichikore', 'vocab', 'continue', 'email', 'blog', 'detail']);
 
 const VOCAB_SHORTCUT: Shortcut = {
   id: 'vocab',
