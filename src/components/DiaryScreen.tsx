@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ArrowLeft, ChevronLeft, ChevronRight, Check, Clock, ListTodo } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
@@ -13,13 +13,14 @@ const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const MOODS = ['😄', '🙂', '😐', '😟', '😣'];
-// Index 0 = best (bright amber) → index 4 = worst (dark slate)
-const MOOD_HEAT: string[] = ['#fbbf24', '#a3e635', '#94a3b8', '#6b7280', '#1e293b'];
-const HEATMAP_WEEKS = 17;
-
-// Weekday label rows shown in the heatmap (show alt rows like GitHub)
-const HEAT_WD_JA = ['日', '', '火', '', '木', '', '土'];
-const HEAT_WD_EN = ['S', '', 'T', '', 'T', '', 'S'];
+// Index 0 = best (bright amber) → index 4 = worst (dark slate). Used as cell tint on calendar.
+const MOOD_TINT: string[] = [
+  'rgba(251,191,36,.35)',   // 😄 amber
+  'rgba(163,230,53,.30)',   // 🙂 lime
+  'rgba(148,163,184,.20)',  // 😐 slate
+  'rgba(107,114,128,.28)',  // 😟 gray
+  'rgba(30,41,59,.38)',     // 😣 dark
+];
 
 function weekdayLabels(): string[] {
   return getAppLang() === 'en' ? WEEKDAYS_EN : WEEKDAYS_JA;
@@ -66,27 +67,6 @@ function monthCells(viewDate: Date): { iso: string; inMonth: boolean }[] {
     cells.push({ iso: isoOf(d), inMonth: d.getMonth() === month });
   }
   return cells.slice(0, cells[35].inMonth || cells.slice(35).some(c => c.inMonth) ? 42 : 35);
-}
-
-// Heatmap cells: HEATMAP_WEEKS columns (weeks), each with 7 cells (Sun→Sat).
-// The last column ends at the Saturday of the week containing todayIso.
-function heatmapCells(todayIso: string): { iso: string; future: boolean }[][] {
-  const today = parseIso(todayIso);
-  // Saturday of today's week
-  const endDay = new Date(today);
-  endDay.setDate(today.getDate() + (6 - today.getDay()));
-  const weeks: { iso: string; future: boolean }[][] = [];
-  for (let w = HEATMAP_WEEKS - 1; w >= 0; w--) {
-    const week: { iso: string; future: boolean }[] = [];
-    for (let day = 0; day < 7; day++) {
-      const cell = new Date(endDay);
-      cell.setDate(endDay.getDate() - w * 7 - (6 - day));
-      const iso = isoOf(cell);
-      week.push({ iso, future: iso > todayIso });
-    }
-    weeks.push(week);
-  }
-  return weeks;
 }
 
 interface DiaryScreenProps {
@@ -186,15 +166,12 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
 
   const cells = monthCells(viewDate);
   const monthTouchX = useRef(0);
-  const heatCells = useMemo(() => heatmapCells(todayIso), [todayIso]);
 
-  const moodColor = (m?: string): string | undefined => {
+  const moodTint = (m?: string): string | undefined => {
     if (!m) return undefined;
     const idx = MOODS.indexOf(m);
-    return idx >= 0 ? MOOD_HEAT[idx] : undefined;
+    return idx >= 0 ? MOOD_TINT[idx] : undefined;
   };
-
-  const heatWdLabels = lang === 'en' ? HEAT_WD_EN : HEAT_WD_JA;
 
   return (
     <div className="dy-root">
@@ -213,50 +190,6 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
       </div>
 
       <div className="dy-scroll">
-        {/* Mood Heatmap */}
-        <div className="dy-heat-wrap">
-          <div className="dy-heat-section-label">
-            {lang === 'en' ? 'Mood History' : '気分の記録'}
-          </div>
-          <div className="dy-heat-body">
-            {/* Weekday row labels */}
-            <div className="dy-heat-wd">
-              {heatWdLabels.map((w, i) => (
-                <span key={i} className="dy-heat-wd-label">{w}</span>
-              ))}
-            </div>
-            {/* Week columns */}
-            <div className="dy-heat-grid">
-              {heatCells.map((week, wi) => (
-                <div key={wi} className="dy-heat-col">
-                  {week.map(({ iso, future }) => {
-                    const entry = byDate.get(iso);
-                    const bg = future ? undefined : moodColor(entry?.mood);
-                    return (
-                      <button
-                        key={iso}
-                        className={`dy-heat-cell${!bg ? ' empty' : ''}${iso === selDay ? ' sel' : ''}${iso === todayIso ? ' today' : ''}`}
-                        style={bg ? { background: bg } : undefined}
-                        onClick={() => !future && selectDay(iso)}
-                        aria-label={iso}
-                        title={entry?.mood ? `${iso} ${entry.mood}` : iso}
-                      />
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Legend */}
-          <div className="dy-heat-legend">
-            <span className="dy-heat-leg-lbl">{lang === 'en' ? 'Worst' : '最悪'}</span>
-            {[...MOOD_HEAT].reverse().map(c => (
-              <span key={c} className="dy-heat-leg-swatch" style={{ background: c }} />
-            ))}
-            <span className="dy-heat-leg-lbl">{lang === 'en' ? 'Best' : '最高'}</span>
-          </div>
-        </div>
-
         {/* Month nav */}
         <div className="dy-cal-head">
           <button className="dy-cal-nav" onClick={prevMonth} aria-label={t('前の月')}><ChevronLeft size={18} /></button>
@@ -284,10 +217,12 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
           {cells.map(({ iso, inMonth }) => {
             const entry = byDate.get(iso);
             const d = parseIso(iso);
+            const tint = inMonth ? moodTint(entry?.mood) : undefined;
             return (
               <button
                 key={iso}
                 className={`dy-cell${inMonth ? '' : ' off'}${iso === selDay ? ' sel' : ''}${iso === todayIso ? ' today' : ''}`}
+                style={tint ? { background: tint } : undefined}
                 onClick={() => selectDay(iso)}
               >
                 <span className="dy-cell-num">{d.getDate()}</span>
@@ -398,48 +333,6 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         .dy-scroll {
           flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
           display: flex; flex-direction: column;
-        }
-
-        /* ── Heatmap ─────────────────────────────────────────── */
-        .dy-heat-wrap { padding: 10px 14px 4px; flex-shrink: 0; }
-        .dy-heat-section-label {
-          font-size: .62rem; font-weight: 800; color: var(--fg-muted);
-          text-transform: uppercase; letter-spacing: .07em; margin-bottom: 5px;
-        }
-        .dy-heat-body { display: flex; gap: 5px; }
-        .dy-heat-wd {
-          display: flex; flex-direction: column; gap: 2px; flex-shrink: 0;
-          padding-top: 1px;
-        }
-        .dy-heat-wd-label {
-          font-size: .52rem; color: var(--fg-faint); height: 12px;
-          display: flex; align-items: center; line-height: 1;
-        }
-        .dy-heat-grid { flex: 1; display: flex; gap: 2px; }
-        .dy-heat-col { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-        .dy-heat-cell {
-          flex: 0 0 12px; width: 100%; border-radius: 3px;
-          border: 1px solid rgba(128,128,128,.15);
-          cursor: pointer; padding: 0;
-          transition: opacity .1s, transform .08s;
-        }
-        .dy-heat-cell.empty { background: var(--accent); }
-        .dy-heat-cell:active { opacity: .6; transform: scale(.8); }
-        .dy-heat-cell.sel {
-          outline: 2px solid #f59e0b; outline-offset: 1px;
-        }
-        .dy-heat-cell.today {
-          outline: 2px solid rgba(245,158,11,.45); outline-offset: 1px;
-        }
-        .dy-heat-cell.sel.today { outline-color: #f59e0b; }
-        .dy-heat-legend {
-          display: flex; align-items: center; gap: 3px;
-          margin-top: 6px; justify-content: flex-end;
-        }
-        .dy-heat-leg-lbl { font-size: .58rem; color: var(--fg-muted); }
-        .dy-heat-leg-swatch {
-          width: 10px; height: 10px; border-radius: 2px;
-          border: 1px solid rgba(128,128,128,.12);
         }
 
         /* ── Month calendar ────────────────────────────────────── */
