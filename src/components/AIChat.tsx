@@ -249,12 +249,22 @@ function parseQAKind(code: string): QAKind {
 }
 
 const QA_KIND_LABEL: Record<QAKind, string> = {
-  qa: 'Q&A',
+  qa: '一問一答',
   fill: '穴埋め問題',
   order: '並べ替え問題',
   choice: '選択問題',
   truefalse: '○×問題',
   flash: '単語カード',
+};
+
+// Maps slash command id → QAKind + human-readable format name for the directive.
+const FORMAT_CMD: Record<string, { kind: string; label: string }> = {
+  qa:     { kind: 'qa',        label: '一問一答（Q&A）' },
+  fill:   { kind: 'fill',      label: '穴埋め問題' },
+  choice: { kind: 'choice',    label: '選択問題（4択）' },
+  tf:     { kind: 'truefalse', label: '○×問題' },
+  flash:  { kind: 'flash',     label: '単語カード' },
+  order:  { kind: 'order',     label: '並べ替え問題' },
 };
 
 interface QAPairParsed { q: string; a: string; opts?: string[] }
@@ -2031,6 +2041,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             : t('これまでの会話に対する私の理解を批判的にチェックして、誤りや理解が浅い点があれば遠慮なく指摘して。'));
           return;
         }
+        const fk = FORMAT_CMD[sc.id];
+        if (fk) {
+          const base = arg || '選択中のメモ・ここまでの会話の内容から問題を作成して';
+          await sendMessage(`${base}\n\n【出力形式指定】必ず${fk.label}形式で出力し、\`\`\`qa ブロックの1行目に @@kind:${fk.kind} を付けてください。`);
+          return;
+        }
       }
     }
 
@@ -2607,6 +2623,24 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         </div>
       )}
 
+      {/* Notebook bar: NotebookLM-style generation actions when notes are selected */}
+      {(lilyAllNotes || lilyNoteIds.length > 0) && (
+        <div className="quick-actions nb-bar">
+          <span className="nb-bar-label">📓</span>
+          {([
+            { id: 'summary',  label: '要点まとめ', prompt: '選択したメモの内容を、見出しと箇条書きを使って要点でまとめてください。' },
+            { id: 'qa',       label: 'Q&A問題',   prompt: '選択したメモから一問一答（Q&A）の練習問題を作成してください。重要な概念・用語・事実をカバーすること。' },
+            { id: 'timeline', label: '年表',       prompt: '選択したメモに出てくる出来事・トピックを時系列に並べた年表を作成してください。' },
+            { id: 'keywords', label: 'キーワード', prompt: '選択したメモに出てくる重要なキーワード・用語を全て抽出し、それぞれの意味・重要性を簡潔に説明してください。' },
+            { id: 'briefing', label: 'ブリーフィング', prompt: '選択したメモをもとに、第三者に内容を伝えるためのブリーフィングドキュメントを作成してください。背景・要点・重要事項を含めてください。' },
+          ] as const).map(a => (
+            <button key={a.id} className="nb-btn" onClick={() => { void sendMessage(a.prompt); }} disabled={isLoading}>
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Shortcuts: one-tap canned prompts (user-editable). Hidden in EN mode or when none added. */}
       {getAppLang() !== 'en' && shortcuts.length > 0 && (
         <div className="quick-actions">
@@ -2892,6 +2926,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .skill-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
         .qa-toolbox-btn { flex-shrink: 0; display: flex; align-items: center; gap: 4px; background: var(--background); border: 1px solid var(--primary); border-radius: 16px; padding: 5px 10px; font-size: 0.72rem; font-weight: 700; color: var(--primary); cursor: pointer; white-space: nowrap; }
         .qa-toolbox-btn:hover { background: var(--primary); color: #fff; }
+        .nb-bar { border-top: 1.5px solid color-mix(in srgb, var(--primary) 25%, var(--border)); background: color-mix(in srgb, var(--primary) 5%, var(--accent)); }
+        .nb-bar-label { flex-shrink: 0; font-size: 0.75rem; font-weight: 700; color: var(--fg-muted); }
+        .nb-btn { flex-shrink: 0; background: var(--background); border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border)); border-radius: 16px; padding: 5px 11px; font-size: 0.73rem; font-weight: 600; color: var(--primary); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+        .nb-btn:hover:not(:disabled) { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .nb-btn:disabled { opacity: 0.4; cursor: default; }
         .slash-suggestions { display: flex; flex-direction: column; gap: 2px; padding: 6px 14px; border-top: 1px solid var(--border); background: var(--accent); flex-shrink: 0; max-height: 160px; overflow-y: auto; }
         .slash-suggestion { display: flex; align-items: baseline; gap: 8px; background: var(--background); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 0.78rem; cursor: pointer; text-align: left; color: var(--foreground); transition: border-color 0.15s; }
         .slash-suggestion:hover { border-color: var(--primary); }
