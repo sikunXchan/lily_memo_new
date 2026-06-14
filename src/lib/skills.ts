@@ -7,13 +7,11 @@
 // not just the text in the input box.
 
 import { db, type Skill, type SkillReference } from './db';
+import { getAppLang } from './appLang';
 
 export type { Skill, SkillReference };
 
-// Seeded sample skills so the feature isn't empty on first run. These are real
-// editable rows (the user can tweak or delete them) — they just ship by default
-// so people can see what a good skill looks like.
-const BUILTIN_SKILLS: Omit<Skill, 'id' | 'createdAt' | 'updatedAt'>[] = [
+const BUILTIN_SKILLS_JA: Omit<Skill, 'id' | 'createdAt' | 'updatedAt'>[] = [
   {
     builtinKey: 'tutor',
     emoji: '🎓',
@@ -50,6 +48,43 @@ const BUILTIN_SKILLS: Omit<Skill, 'id' | 'createdAt' | 'updatedAt'>[] = [
   },
 ];
 
+const BUILTIN_SKILLS_EN: Omit<Skill, 'id' | 'createdAt' | 'updatedAt'>[] = [
+  {
+    builtinKey: 'tutor',
+    emoji: '🎓',
+    name: 'Tutor',
+    instructions: `You are a patient and thorough personal tutor. Follow these rules:
+- Explain concepts step by step, using clear and simple language
+- Start with a concise summary, then go deeper
+- Use concrete examples whenever possible
+- Check for understanding as you go
+- Point out mistakes gently and guide toward the correct thinking`,
+    references: [],
+  },
+  {
+    builtinKey: 'flashcard',
+    emoji: '🃏',
+    name: 'Memorization Coach',
+    instructions: `You are a memorization specialist.
+- Convert content into Q&A, fill-in-the-blank, and multiple-choice formats to reinforce memory
+- Organize key points and prioritize what to study first
+- Suggest memory techniques (mnemonics, storytelling, associations)
+- Actively quiz the user when they ask to be tested`,
+    references: [],
+  },
+  {
+    builtinKey: 'english-coach',
+    emoji: '🗣️',
+    name: 'English Coach',
+    instructions: `You are a professional English coach.
+- Give specific, actionable feedback on writing and conversation
+- Always provide corrected examples and explain why the phrasing is natural
+- When asked in another language, also show the English equivalent
+- Prioritize natural, native-sounding expressions`,
+    references: [],
+  },
+];
+
 let seedPromise: Promise<void> | null = null;
 
 // Idempotently insert any built-in skills that aren't already present. Runs
@@ -58,6 +93,7 @@ export function ensureSkillsSeeded(): Promise<void> {
   if (seedPromise) return seedPromise;
   seedPromise = (async () => {
     try {
+      const BUILTIN_SKILLS = getAppLang() === 'en' ? BUILTIN_SKILLS_EN : BUILTIN_SKILLS_JA;
       const all = await db.skills.toArray();
       const byKey = new Map(all.filter(s => s.builtinKey).map(s => [s.builtinKey, s]));
       const now = Date.now();
@@ -67,8 +103,8 @@ export function ensureSkillsSeeded(): Promise<void> {
       }
       for (const builtin of BUILTIN_SKILLS) {
         const existing = byKey.get(builtin.builtinKey);
-        if (existing?.id != null && existing.instructions !== builtin.instructions) {
-          await db.skills.update(existing.id, { instructions: builtin.instructions, updatedAt: now });
+        if (existing?.id != null && (existing.name !== builtin.name || existing.instructions !== builtin.instructions)) {
+          await db.skills.update(existing.id, { name: builtin.name, instructions: builtin.instructions, updatedAt: now });
         }
       }
     } catch (e) {

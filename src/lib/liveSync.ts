@@ -1,6 +1,6 @@
 import { liveQuery } from 'dexie';
 import { db, newSyncId } from './db';
-import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet } from './db';
+import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary } from './db';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
 const POLL_INTERVAL_MS  = 30_000;
@@ -29,6 +29,7 @@ interface LiveSnapshot {
   todos:            Todo[];
   earnedBadges:     EarnedBadge[];
   problemSets:      ProblemSet[];
+  diaries:          Diary[];
   ts: number;
 }
 
@@ -45,7 +46,7 @@ let _listenersOn  = false;
 
 // ── Build local snapshot ─────────────────────────────────────────
 async function buildSnapshot(): Promise<LiveSnapshot> {
-  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets] = await Promise.all([
+  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries] = await Promise.all([
     db.notes.toArray(),
     db.folders.toArray(),
     db.studySessions.toArray(),
@@ -56,6 +57,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     db.todos.toArray(),
     db.earnedBadges.toArray(),
     db.problemSets.toArray(),
+    db.diaries.toArray(),
   ]);
   // Enrich cross-table references with stable syncIds (see SyncNote above).
   const folderSyncById = new Map(folders.filter(f => f.id != null && f.syncId).map(f => [f.id!, f.syncId]));
@@ -74,7 +76,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
   }));
   return {
     notes: outNotes, folders: outFolders, studySessions: outSessions,
-    studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets,
+    studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries,
     ts: Date.now(),
   };
 }
@@ -363,6 +365,26 @@ async function mergeSnapshot(remote: LiveSnapshot) {
         }
       }
     }
+
+    // ── Diaries: per-record last-write-wins keyed by `date` (one entry per day,
+    // stable across devices). updatedAt is the version clock incl. soft-delete.
+    if (remote.diaries !== undefined) {
+      const localDiaries = await db.diaries.toArray(); // includes tombstones
+      const diaryMap = new Map(localDiaries.map(d => [d.date, d]));
+      for (const r of remote.diaries) {
+        const rUpdated = r.updatedAt ?? r.createdAt;
+        const local = diaryMap.get(r.date);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = r;
+        if (!local) {
+          if (!r.deletedAt) {
+            await db.diaries.add({ ...rest, updatedAt: rUpdated } as Diary);
+          }
+        } else if (rUpdated > (local.updatedAt ?? local.createdAt)) {
+          await db.diaries.update(local.id!, { ...rest, updatedAt: rUpdated });
+        }
+      }
+    }
   } finally {
     _isMerging = false;
     _suppressUntil = Date.now() + MERGE_SUPPRESS_MS;
@@ -427,6 +449,7 @@ export function initLiveSync(key: string) {
     db.todos.orderBy('updatedAt').last().then(t => t?.updatedAt ?? 0),
     db.problemSets.orderBy('updatedAt').last().then(p => p?.updatedAt ?? 0),
     db.problemSets.count(),
+    db.diaries.orderBy('updatedAt').last().then(d => d?.updatedAt ?? 0),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());
 

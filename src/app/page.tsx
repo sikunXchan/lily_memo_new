@@ -21,12 +21,12 @@ const StudyTracker = dynamic(() => import('@/components/StudyTracker'), { ssr: f
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
 const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false });
 const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ssr: false });
-const NewsScreen = dynamic(() => import('@/components/NewsScreen'), { ssr: false });
+const DiaryScreen = dynamic(() => import('@/components/DiaryScreen'), { ssr: false });
 const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
 const TrophyRoom = dynamic(() => import('@/components/TrophyRoom'), { ssr: false });
 const PracticeScreen = dynamic(() => import('@/components/PracticeScreen'), { ssr: false });
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
-type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'news' | 'todo' | 'practice' | 'sketch';
+type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'diary' | 'todo' | 'practice' | 'sketch';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -155,7 +155,7 @@ export default function Home() {
   // Hidden on practice/memos/todo — those screens have their own back affordance.
   const onBubbleHome = isMobile && activeTab === 'memos' && !activeNoteId && mobilePage === 'bubbles';
   const showBackBubble = isMobile && !showFocusMode
-    && !['ai', 'practice', 'memos', 'todo'].includes(activeTab)
+    && !['ai', 'practice', 'memos', 'todo', 'diary'].includes(activeTab)
     && !onBubbleHome;
 
   return (
@@ -207,9 +207,9 @@ export default function Home() {
                     onNavigate={handleMobileNavigate}
                   />
                 )}
-                {/* News screen */}
-                {isMobile && activeTab === 'news' && (
-                  <NewsScreen onGoBack={goHome} />
+                {/* Diary screen */}
+                {isMobile && activeTab === 'diary' && (
+                  <DiaryScreen onGoBack={goHome} />
                 )}
                 {/* ToDo screen */}
                 {isMobile && activeTab === 'todo' && (

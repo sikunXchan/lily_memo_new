@@ -3,6 +3,16 @@
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useState } from 'react';
 import { useT } from '@/lib/i18n';
+import { renderRich } from '@/lib/richText';
+
+// Render a string with KaTeX math. For inline use (inside flex/inline containers),
+// pass strip=true to remove the outer <p> wrapper that marked adds.
+function R({ src, strip }: { src: string; strip?: boolean }) {
+  let html = renderRich(src);
+  if (strip) html = html.replace(/^\s*<p>([\s\S]*?)<\/p>\s*$/, '$1');
+  // eslint-disable-next-line react/no-danger
+  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+}
 
 interface QAPair {
   q: string;
@@ -120,7 +130,7 @@ function QACard({
       />
       <span className="qa-num">{index + 1}</span>
       <span className="qa-question-text">
-        {kind === 'choice' ? parseChoice(pair.q).stem : pair.q}
+        <R src={kind === 'choice' ? parseChoice(pair.q).stem : pair.q} strip />
       </span>
     </div>
   );
@@ -166,7 +176,7 @@ function QACard({
                   disabled={pickedIdx >= 0 || revealAll}
                   onClick={() => setPicked(String(oi))}
                 >
-                  <b>{LBL[oi]}.</b> {o}
+                  <b>{LBL[oi]}.</b> <R src={o} strip />
                 </button>
               );
             })}
@@ -177,7 +187,7 @@ function QACard({
                 ? <span className="ok">{t('正解！🎉')}</span>
                 : <span className="ng">{t('不正解…')}</span>)}
               <span className="qa-ans">
-                {t('答え:')} {correctIdx >= 0 ? `${LBL[correctIdx]}. ${options[correctIdx]}` : pair.a}
+                {t('答え:')} <R src={correctIdx >= 0 ? `${LBL[correctIdx]}. ${options[correctIdx]}` : pair.a} strip />
               </span>
             </div>
           )}
@@ -216,7 +226,7 @@ function QACard({
             {tf != null && (tf === truth
               ? <span className="ok">{t('正解！🎉')}</span>
               : <span className="ng">{t('不正解…')}</span>)}
-            <span className="qa-ans">{t('答え:')} {pair.a}</span>
+            <span className="qa-ans">{t('答え:')} <R src={pair.a} strip /></span>
           </div>
         )}
         <CardStyles />
@@ -241,7 +251,7 @@ function QACard({
             <span className="qa-question-text qa-fill-line">
               {parts.map((p, i) => (
                 <span key={i}>
-                  {p}
+                  <R src={p} strip />
                   {i < blanks && (
                     <input
                       className={`qa-fill-input ${submitted ? (ok(i) ? 'correct' : 'wrong') : ''}`}
@@ -262,7 +272,7 @@ function QACard({
             {!submitted && !revealAll && (
               <button className="qa-mini-btn" onClick={check}>{t('答え合わせ')}</button>
             )}
-            {(submitted || show) && <span className="qa-ans">{t('答え:')} {pair.a}</span>}
+            {(submitted || show) && <span className="qa-ans">{t('答え:')} <R src={pair.a} strip /></span>}
           </div>
           <CardStyles />
         </div>
@@ -328,7 +338,7 @@ function QACard({
                 : <span className="ng">{t('不正解…')}</span>
             )}
             {(revealAll || built.length === items.length || revealed) && (
-              <span className="qa-ans">{t('答え:')} {pair.a}</span>
+              <span className="qa-ans">{t('答え:')} <R src={pair.a} strip /></span>
             )}
             {!revealAll && built.length !== items.length && (
               <button className="qa-mini-btn ghost" onClick={() => setRevealed(true)}>{t('答えを見る')}</button>
@@ -354,7 +364,7 @@ function QACard({
           onClick={() => setFlipped(f => !f)}
           disabled={revealAll}
         >
-          <span className="qa-flash-face">{open ? pair.a : pair.q}</span>
+          <span className="qa-flash-face"><R src={open ? pair.a : pair.q} /></span>
           <span className="qa-flash-tag">{open ? t('答え（タップで戻る）') : t('タップで答え')}</span>
         </button>
         <CardStyles />
@@ -368,7 +378,7 @@ function QACard({
       {header}
       {show ? (
         <div className="qa-answer-reveal">
-          <span className="qa-ans-body">{pair.a}</span>
+          <span className="qa-ans-body"><R src={pair.a} /></span>
           {!revealAll && (
             <button className="qa-hide-btn" onClick={() => setRevealed(false)}>
               {t('隠す')}
