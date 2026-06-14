@@ -1,4 +1,4 @@
-import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, newSyncId } from './db';
+import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, type Diary, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -31,6 +31,7 @@ export interface BackupPayload {
   // saves it and "復元ファイルをアップロード" restores it.
   studyCategories?: StudyCategory[];
   studySessions?: StudySession[];
+  diaries?: Diary[];
   timestamp: number;
   version?: number;
 }
@@ -106,6 +107,7 @@ export async function buildBackupJson(): Promise<string> {
   const savedChats = await db.savedChats.toArray();
   const studyCategories = await db.studyCategories.toArray();
   const studySessions = await db.studySessions.toArray();
+  const diaries = await db.diaries.toArray();
 
   const allImages: Record<string, string> = {};
   const compactNotes = notes.map(note => {
@@ -123,6 +125,7 @@ export async function buildBackupJson(): Promise<string> {
     savedChats,
     studyCategories,
     studySessions,
+    diaries,
     timestamp: Date.now(),
     version: 1,
   };
@@ -176,6 +179,31 @@ export async function restoreBackupFromJson(jsonText: string): Promise<void> {
   // we never clear here — so restoring a backup never wipes existing study data
   // or todos, and re-importing the same file is idempotent.
   await mergeStudyData(data.studyCategories ?? [], data.studySessions ?? [], now);
+
+  // Diaries: additive MERGE by date (one entry per day), newest updatedAt wins.
+  await mergeDiaries(data.diaries ?? [], now);
+}
+
+// Merge diary entries by `date` without clearing — newest write (updatedAt) wins,
+// so re-importing is idempotent and never drops a day already written here.
+async function mergeDiaries(incoming: Diary[], now: number): Promise<void> {
+  if (!incoming.length) return;
+  await db.transaction('rw', db.diaries, async () => {
+    const existing = await db.diaries.toArray();
+    const byDate = new Map(existing.map(d => [d.date, d]));
+    for (const raw of incoming) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = raw;
+      rest.syncId = rest.syncId || newSyncId();
+      rest.updatedAt = rest.updatedAt ?? rest.createdAt ?? now;
+      const local = byDate.get(rest.date);
+      if (!local) {
+        if (!rest.deletedAt) await db.diaries.add(rest as Diary);
+      } else if ((rest.updatedAt ?? 0) > (local.updatedAt ?? local.createdAt)) {
+        await db.diaries.update(local.id!, rest);
+      }
+    }
+  });
 }
 
 // Merge study categories + sessions into the DB without removing anything.

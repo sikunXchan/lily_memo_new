@@ -116,7 +116,9 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
     arr.push(td);
     dueByDay.set(td.dueDate, arr);
   }
-  const selDayTodos = todos.filter(td => td.dueDate === selDay);
+  const selDayTodos = todos
+    .filter(td => td.dueDate === selDay)
+    .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
   const weekDays: string[] = [];
   for (let i = 0; i < 7; i++) weekDays.push(addDaysIso(weekStart, i));
   const weekMid = parseIso(addDaysIso(weekStart, 3)); // for the month/year label
@@ -224,12 +226,13 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
             {selDayTodos.length === 0 ? (
               <p className="td-cal-empty">{t('この日の予定はまだないよ')}</p>
             ) : selDayTodos.map(todo => (
-              <div key={todo.id} className="td-card cal">
+              <div key={todo.id} className={`td-card cal${todo.done ? ' done' : ''}`}>
                 <button
-                  className="td-check"
-                  onClick={() => void deleteTodo(todo.id!)}
-                  aria-label={t('完了にする')}
+                  className={`td-check${todo.done ? ' checked' : ''}`}
+                  onClick={() => void toggleDone(todo)}
+                  aria-label={t(todo.done ? '未完了に戻す' : '完了にする')}
                 >
+                  {todo.done && <Check size={11} strokeWidth={3.5} />}
                 </button>
                 <span className="td-text">{todo.text}</span>
                 <button className="td-cal-del" onClick={() => void deleteTodo(todo.id!)} aria-label={t('削除')}>

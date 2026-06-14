@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useRef, useState } from 'react';
 import {
   Book, FileText, Sparkles, GraduationCap, Settings,
-  Plus, ListTodo, Camera, X, PencilLine, Pen,
+  Plus, ListTodo, Camera, X, PencilLine, Pen, NotebookPen,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Todo, AlbumPhoto } from '@/lib/db';
@@ -54,7 +54,7 @@ const BUBBLES: BubbleItem[] = [
   { key: 'study',    label: '学習',      tint: '#86efac', size: 94,  pos: { left: '24%',  top: 112 }, floatDelay: 0.6, windAnim: 0, windDur: 6.5 },
   { key: 'practice', label: '演習',      tint: '#e9d5ff', size: 98,  pos: { right: '5%',  top: 150 }, floatDelay: 1.5, windAnim: 2, windDur: 6.3, isNew: true },
   { key: 'pdf',      label: 'PDF',       tint: '#c4b5fd', size: 80,  pos: { left: '2%',   top: 228 }, floatDelay: 1.6, windAnim: 1, windDur: 5.5 },
-  { key: 'news',     label: 'できること', tint: '#fde68a', size: 66,  pos: { left: '44%',  top: 232 }, floatDelay: 1.3, windAnim: 1, windDur: 6.1 },
+  { key: 'diary',    label: '日記',       tint: '#fde68a', size: 66,  pos: { left: '44%',  top: 232 }, floatDelay: 1.3, windAnim: 1, windDur: 6.1 },
   { key: 'todo',     label: 'ToDo',      tint: '#bbf7d0', size: 72,  pos: { right: '16%', top: 298 }, floatDelay: 0.9, windAnim: 2, windDur: 6.4 },
   { key: 'new',      label: '新規',      tint: '#fecdd3', size: 62,  pos: { left: '10%',  top: 350 }, floatDelay: 1.8, windAnim: 1, windDur: 5.9, isNew: true },
   { key: 'settings', label: '設定',      tint: '#e2e8f0', size: 66,  pos: { right: '6%',  top: 350 }, floatDelay: 0.3, windAnim: 0, windDur: 7.2 },
@@ -69,7 +69,7 @@ function BubbleIcon({ navKey, size }: { navKey: string; size: number }) {
     case 'ai':       return <Sparkles {...p} />;
     case 'study':    return <GraduationCap {...p} />;
     case 'practice': return <PencilLine {...p} />;
-    case 'news':     return <Sparkles {...p} />;
+    case 'diary':    return <NotebookPen {...p} />;
     case 'pdf':      return <FileText {...p} />;
     case 'todo':     return <ListTodo {...p} />;
     case 'settings': return <Settings {...p} />;
@@ -226,7 +226,7 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
 
       {/* Bubble cluster */}
       <div className="bh-cluster">
-        {(getAppLang() === 'en' ? BUBBLES.filter(b => b.key !== 'news') : BUBBLES).map(b => (
+        {(getAppLang() === 'en' ? BUBBLES.filter(b => b.key !== 'diary') : BUBBLES).map(b => (
           <div key={b.key} style={{ ...b.pos, position: 'absolute' }}>
             <button
               className="bh-bubble"

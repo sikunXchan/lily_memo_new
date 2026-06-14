@@ -145,6 +145,19 @@ export interface Todo {
   startTime?: string;  // optional 'HH:MM' time-of-day for the scheduled date
 }
 
+// One diary entry per calendar day. `date` ('YYYY-MM-DD') is the natural key
+// used both as the merge key for sync and to look up "today's" entry.
+export interface Diary {
+  id?: number;
+  syncId: string;
+  date: string;        // 'YYYY-MM-DD' — one entry per day
+  content: string;
+  mood?: string;       // optional mood emoji shown on the calendar
+  createdAt: number;
+  updatedAt: number;   // version clock — bumped on every mutation incl. soft-delete
+  deletedAt?: number;  // tombstone for sync — UI filters these out
+}
+
 export interface AlbumPhoto {
   id?: number;
   blob: Blob;
@@ -224,6 +237,7 @@ export class LilyDatabase extends Dexie {
   earnedBadges!: Table<EarnedBadge, string>;
   skills!: Table<Skill>;
   problemSets!: Table<ProblemSet>;
+  diaries!: Table<Diary>;
 
   constructor() {
     super('LilyDatabase');
@@ -337,6 +351,10 @@ export class LilyDatabase extends Dexie {
       await tx.table('problemSets').toCollection().modify((p: any) => {
         if (!p.updatedAt) p.updatedAt = p.createdAt ?? now;
       });
+    });
+    // v20: diary entries (one per day), with sync clock + tombstone.
+    this.version(20).stores({
+      diaries: '++id, syncId, date, createdAt, updatedAt, deletedAt',
     });
   }
 }

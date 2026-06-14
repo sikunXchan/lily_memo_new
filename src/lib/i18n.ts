@@ -49,6 +49,11 @@ const EN: Record<string, string> = {
   'OK': 'OK',
   'すべて': 'All',
   '今日': 'Today',
+  '日記': 'Diary',
+  '前の月': 'Previous month',
+  '次の月': 'Next month',
+  '保存済み': 'Saved',
+  '今日はどんな一日だった？': 'How was your day?',
   '合計': 'Total',
   '無題のメモ': 'Untitled note',
 
