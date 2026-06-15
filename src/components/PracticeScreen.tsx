@@ -237,6 +237,7 @@ function buildResultContext(
 
 type View = 'list' | 'solve' | 'result';
 type ScreenMode = 'practice' | 'lesson';
+type LessonStyle = 'overview' | 'standard' | 'detailed';
 
 // Preset turns that advance the lesson rather than ask a question. Cards built
 // from these are shown without a "your question" chip.
@@ -249,7 +250,7 @@ const LESSON_NEXT = {
   ja: '次へ進んで。続きを教えて。',
 };
 
-function buildLessonSystemPrompt(topic: string, en: boolean): string {
+function buildLessonSystemPrompt(topic: string, en: boolean, style: LessonStyle = 'standard'): string {
   const topicLine = topic
     ? (en ? `\nMain topic: ${topic}` : `\nメインのトピック：${topic}`)
     : '';
@@ -259,30 +260,45 @@ function buildLessonSystemPrompt(topic: string, en: boolean): string {
         ? `\nYour student's name is ${name} — address them by name naturally.`
         : `\n生徒の名前は「${name}」です。自然に名前で呼びかけてください。`)
     : '';
+
+  const styleLineEn =
+    style === 'overview'
+      ? '\nLesson style: OVERVIEW — Cover the whole topic in 4–6 cards total. Group related items (e.g. Q&A pairs, vocabulary, steps) together into one card rather than one per item. Prioritise breadth over depth; give a bird\'s-eye view.'
+      : style === 'detailed'
+      ? '\nLesson style: DETAILED — One small concept per card. Go deep; explain the "why", give multiple examples, and do not skip nuances.'
+      : '\nLesson style: STANDARD — Aim for 7–10 cards total. Balance breadth and depth; group closely related items but break up long sections.';
+
+  const styleLineJa =
+    style === 'overview'
+      ? '\n授業スタイル：概要モード — 全体を4〜6枚のカードに収める。Q&A・単語・手順など関連する項目はまとめて1枚のカードにする（1項目＝1カードにしない）。深さより広さを優先し、全体像を俯瞰させる。'
+      : style === 'detailed'
+      ? '\n授業スタイル：詳細モード — 1カードに1つの小概念のみ。「なぜそうなるか」まで掘り下げ、具体例を複数挙げ、細部も丁寧に説明する。'
+      : '\n授業スタイル：標準モード — 全体を7〜10枚程度に収める。関連する項目はまとめるが、長い内容は適切に分割してバランスよく教える。';
+
   if (en) {
     return `You are "Lily", an excellent and warm 1-on-1 private tutor. You teach the student through an interactive back-and-forth conversation — NOT by dumping the whole lesson at once.
 
 How to run the lesson (strict):
-- Teach only ONE small chunk (one concept / one step) per message. Keep each message short and digestible.
+- Follow the lesson style instruction below exactly.
 - Use concrete examples and analogies. Be encouraging and friendly; a few emojis are fine.
 - Use rich Markdown formatting to make explanations clear: **bold** key terms, bullet/numbered lists, Markdown tables (| col | col |), and LaTeX math ($formula$, $$block$$). When a visual layout helps comprehension — a comparison table, a step-by-step list, a formula — use it.
 - At the end of each message, ask one short comprehension question to check understanding.
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
 - When you have covered everything, write "## Summary" with the key points as bullets and tell them the lesson is complete.
-- If materials are attached, base the lesson on their content.${nameLine}${topicLine}`;
+- If materials are attached, base the lesson on their content.${styleLineEn}${nameLine}${topicLine}`;
   }
-  return `あなたは優秀で温かいマンツーマンの家庭教師「Lily」です。生徒と対話のキャッチボールをしながら授業を進めます。一度に全部を教えるのではなく、会話形式で少しずつ教えてください。
+  return `あなたは優秀で温かいマンツーマンの家庭教師「Lily」です。生徒と対話のキャッチボールをしながら授業を進めます。
 
 進め方（厳守）：
-- 1回の発言では「1つの小さなまとまり（1つの概念／1ステップ）」だけを教える。1回の発言は短く、消化しやすい量にする。
+- 以下の授業スタイル指示に必ず従う。
 - 具体例や比喩を使う。難しい用語には（ふりがな）を付ける。親しみやすく励ましながら。絵文字も少し使ってOK。
 - Markdownの書式を積極的に使って、視覚的に分かりやすく説明する。**太字**でキーワードを強調、箇条書き・番号リスト、Markdownの表（| 列 | 列 |）、数式（$数式$・$$ブロック$$）を活用する。比較表・手順リスト・公式など、図解が理解を助ける場面では積極的に使うこと。
 - 発言の最後に、理解度を確認する短い問いかけを1つ入れる。
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
 - すべての内容を教え終えたら、「## まとめ」で要点を箇条書きにして、授業の終わりを伝える。
-- 資料が添付されている場合は、その内容に沿って授業を組み立てる。${nameLine}${topicLine}`;
+- 資料が添付されている場合は、その内容に沿って授業を組み立てる。${styleLineJa}${nameLine}${topicLine}`;
 }
 
 export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenProps) {
@@ -306,6 +322,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
   // ── Lesson state (conversational 1-on-1) ──
   const [lessonTopic, setLessonTopic] = useState('');
+  const [lessonStyle, setLessonStyle] = useState<LessonStyle>('standard');
   const [lessonStarted, setLessonStarted] = useState(false);
   const [lessonTurns, setLessonTurns] = useState<ChatTurn[]>([]); // full API history; [0] is hidden kickoff
   const [lessonInput, setLessonInput] = useState('');
@@ -377,7 +394,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       });
     const attachments = [...mdAtts, ...noteAtts, ...genImages.map(g => g.att)];
 
-    lessonSysRef.current = buildLessonSystemPrompt(topic, en);
+    lessonSysRef.current = buildLessonSystemPrompt(topic, en, lessonStyle);
     const kickoff: ChatTurn = {
       role: 'user',
       text: en ? LESSON_KICKOFF.en : LESSON_KICKOFF.ja,
@@ -974,6 +991,21 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 ))}
               </div>
             )}
+
+            <div className="ps-lesson-style-row">
+              {(['overview', 'standard', 'detailed'] as LessonStyle[]).map(s => (
+                <button
+                  key={s}
+                  className={`ps-lesson-style-btn${lessonStyle === s ? ' on' : ''}`}
+                  onClick={() => setLessonStyle(s)}
+                  disabled={lessonLoading}
+                >
+                  {s === 'overview'  && (en ? '🗺 Overview'  : '🗺 概要')}
+                  {s === 'standard'  && (en ? '📖 Standard'  : '📖 標準')}
+                  {s === 'detailed'  && (en ? '🔬 Detailed'  : '🔬 詳細')}
+                </button>
+              ))}
+            </div>
 
             <input
               className="ps-lesson-input"
@@ -1689,6 +1721,10 @@ function PracticeStyles() {
   .ps-lesson-att:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
   .ps-lesson-att.on { color: #8b5cf6; border-color: #8b5cf6; }
   .ps-lesson-att:disabled { opacity: 0.4; cursor: default; }
+  .ps-lesson-style-row { display: flex; gap: 6px; }
+  .ps-lesson-style-btn { flex: 1; height: 38px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 10px; font-size: 0.8rem; font-weight: 600; color: var(--fg-muted); cursor: pointer; transition: color .15s, border-color .15s, background .15s; white-space: nowrap; }
+  .ps-lesson-style-btn.on { background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); border-color: #8b5cf6; color: #8b5cf6; font-weight: 800; }
+  .ps-lesson-style-btn:disabled { opacity: 0.4; cursor: default; }
   .ps-lesson-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.86rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
   .ps-lesson-btn:disabled { opacity: 0.5; cursor: default; }
   .ps-lesson-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
