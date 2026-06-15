@@ -37,7 +37,7 @@ import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
-import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
+import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
@@ -590,8 +590,16 @@ async function createNoteWithBlock(block: InsertableBlock, title: string): Promi
   return id as number;
 }
 
+function nameAddon(): string {
+  const name = getUserName();
+  if (!name) return '';
+  return getAppLang() === 'en'
+    ? `\n\nThe user's name is ${name}. Address them by name naturally when it feels right.`
+    : `\n\nユーザーの名前は「${name}」です。自然なタイミングで名前で呼びかけてください。`;
+}
+
 function buildSystemPrompt(contextNotes: Note[], activeSkill?: Skill | null): string {
-  const skillAddon = activeSkill ? skillPromptAddon(activeSkill) : '';
+  const skillAddon = (activeSkill ? skillPromptAddon(activeSkill) : '') + nameAddon();
   if (contextNotes.length === 0) return LILY_CHAT_SYSTEM_PROMPT + skillAddon;
   // Adaptive per-note cap: when the user is focused on just a few notes, send
   // (almost) the whole thing so Lily doesn't miss content that's actually

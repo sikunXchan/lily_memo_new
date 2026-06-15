@@ -1,11 +1,11 @@
 'use client';
 
-import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff, Share2, Copy, Check, Wifi, Globe } from 'lucide-react';
+import { Download, Upload, Type, Palette, Sparkles, Eye, EyeOff, Share2, Copy, Check, Wifi, Globe, User } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
 import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
-import { getAppLang, setAppLang, type AppLang } from '@/lib/appLang';
+import { getAppLang, setAppLang, getUserName, setUserName, type AppLang } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
 
 function randCode(): string {
@@ -27,6 +27,8 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   const [keySaved, setKeySaved] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [sikunTone, setSikunTone] = useState('tame');
+  const [userName, setUserNameState] = useState('');
+  const [nameSaved, setNameSaved] = useState(false);
 
   // Live sync state
   const [liveKey, setLiveKey]         = useState('');
@@ -46,6 +48,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
       navigator.storage.persisted().then(setIsPersisted);
     }
     setGeminiKey(localStorage.getItem('lily_gemini_api_key') || '');
+    setUserNameState(getUserName());
     setLang(getAppLang());
     setLiveKey(localStorage.getItem('lily_livesync_key') || '');
     setLiveEnabled(localStorage.getItem('lily_livesync_enabled') === '1');
@@ -92,6 +95,13 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
     localStorage.setItem('lily_gemini_api_key', geminiKey.trim());
     setKeySaved(true);
     setTimeout(() => setKeySaved(false), 2000);
+  };
+
+  const saveUserName = () => {
+    setUserName(userName);
+    setUserNameState(userName.trim());
+    setNameSaved(true);
+    setTimeout(() => setNameSaved(false), 2000);
   };
 
   const doExport = useCallback(async () => {
@@ -201,6 +211,30 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
                 onClick={() => { setLang('en'); setAppLang('en'); }}
               >🇬🇧 English</button>
             </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <User size={20} />
+            <h3>{t('あなたの名前')}</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">{t('名前を設定すると、Lilyがチャット・日記・授業であなたの名前で呼びかけてくれます。')}</p>
+            <div className="api-key-wrap">
+              <input
+                type="text"
+                className="api-key-input"
+                placeholder={t('例：さくら')}
+                value={userName}
+                maxLength={20}
+                onChange={e => setUserNameState(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveUserName(); }}
+              />
+            </div>
+            <button className={`btn-action ${nameSaved ? 'saved' : ''}`} onClick={saveUserName}>
+              {nameSaved ? t('✓ 保存しました') : t('保存する')}
+            </button>
           </div>
         </section>
 

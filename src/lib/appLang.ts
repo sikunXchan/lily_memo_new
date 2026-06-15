@@ -36,3 +36,20 @@ export function getEffectiveApiKey(): string {
   if (getAppLang() === 'en') return PROXY_KEY;
   return localStorage.getItem('lily_gemini_api_key') || '';
 }
+
+// The user's display name, used to personalise Lily across chat, diary and
+// lessons. Empty string when unset — callers fall back to a neutral label.
+const USER_NAME_KEY = 'lily_user_name';
+
+export function getUserName(): string {
+  if (typeof window === 'undefined') return '';
+  return (localStorage.getItem(USER_NAME_KEY) || '').trim();
+}
+
+export function setUserName(name: string): void {
+  if (typeof window === 'undefined') return;
+  const trimmed = name.trim();
+  if (trimmed) localStorage.setItem(USER_NAME_KEY, trimmed);
+  else localStorage.removeItem(USER_NAME_KEY);
+  window.dispatchEvent(new Event('lily-username-changed'));
+}

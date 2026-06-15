@@ -22,7 +22,7 @@ import {
 } from '@/lib/practice';
 import type { ChatAttachment, ChatTurn } from '@/lib/gemini';
 import { callGeminiChat } from '@/lib/gemini';
-import { getEffectiveApiKey } from '@/lib/appLang';
+import { getEffectiveApiKey, getUserName } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
@@ -242,6 +242,12 @@ function buildLessonSystemPrompt(topic: string, en: boolean): string {
   const topicLine = topic
     ? (en ? `\nMain topic: ${topic}` : `\nメインのトピック：${topic}`)
     : '';
+  const name = getUserName();
+  const nameLine = name
+    ? (en
+        ? `\nYour student's name is ${name} — address them by name naturally.`
+        : `\n生徒の名前は「${name}」です。自然に名前で呼びかけてください。`)
+    : '';
   if (en) {
     return `You are "Lily", an excellent and warm 1-on-1 private tutor. You teach the student through an interactive back-and-forth conversation — NOT by dumping the whole lesson at once.
 
@@ -252,7 +258,7 @@ How to run the lesson (strict):
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
 - When you have covered everything, write "## Summary" with the key points as bullets and tell them the lesson is complete.
-- If materials are attached, base the lesson on their content.${topicLine}`;
+- If materials are attached, base the lesson on their content.${nameLine}${topicLine}`;
   }
   return `あなたは優秀で温かいマンツーマンの家庭教師「Lily」です。生徒と対話のキャッチボールをしながら授業を進めます。一度に全部を教えるのではなく、会話形式で少しずつ教えてください。
 
@@ -263,7 +269,7 @@ How to run the lesson (strict):
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
 - すべての内容を教え終えたら、「## まとめ」で要点を箇条書きにして、授業の終わりを伝える。
-- 資料が添付されている場合は、その内容に沿って授業を組み立てる。${topicLine}`;
+- 資料が添付されている場合は、その内容に沿って授業を組み立てる。${nameLine}${topicLine}`;
 }
 
 export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenProps) {
