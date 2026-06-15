@@ -355,7 +355,14 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     return out;
   }, [lessonTurns]);
 
+  // Lesson is complete when any card contains Lily's summary heading.
+  const isLessonComplete = useMemo(
+    () => lessonCards.some(c => /^##\s+(Summary|まとめ)/m.test(c.text)),
+    [lessonCards],
+  );
+
   const [cardIdx, setCardIdx] = useState(0);
+  const [genTestLoading, setGenTestLoading] = useState(false);
   // Whenever a new card arrives, slide to it.
   useEffect(() => {
     if (lessonCards.length > 0) setCardIdx(lessonCards.length - 1);
@@ -471,6 +478,28 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   async function deleteLesson(id: number, e: React.MouseEvent) {
     e.stopPropagation();
     await db.lessonSessions.delete(id);
+  }
+
+  async function startQuiz() {
+    if (lessonCards.length === 0 || genTestLoading) return;
+    setGenTestLoading(true);
+    try {
+      const content = lessonCards.map((c, i) => `## Part ${i + 1}\n${c.text}`).join('\n\n---\n\n');
+      const prompt = en
+        ? `Based on the following lesson content, create a varied quiz (mix of multiple-choice, fill-in-the-blank, and true/false) to test understanding:\n\n${content}`
+        : `以下の授業内容をもとに、理解度を確認する確認テストを作成してください（選択・穴埋め・○×などの形式をバランスよく使ってください）：\n\n${content}`;
+      const result = await generateProblemSet(prompt, []);
+      const id = await saveProblemSet(result, {});
+      const fresh = await db.problemSets.get(id);
+      if (fresh) {
+        exitLesson();
+        startSolving(fresh);
+      }
+    } catch {
+      setLessonError(en ? 'Failed to create quiz.' : 'テスト作成に失敗しました。');
+    } finally {
+      setGenTestLoading(false);
+    }
   }
 
   async function saveLesson() {
@@ -1219,22 +1248,37 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <button
                 className="ps-slide-prev"
                 onClick={() => setCardIdx(i => Math.max(0, i - 1))}
-                disabled={cardIdx === 0 || lessonLoading}
+                disabled={cardIdx === 0 || lessonLoading || genTestLoading}
               >
                 <ChevronLeft size={17} /> {en ? 'Back' : '前へ'}
               </button>
-              <button
-                className="ps-slide-next"
-                onClick={() => {
-                  if (cardIdx < lessonCards.length - 1) setCardIdx(i => i + 1);
-                  else void sendLessonMessage(en ? LESSON_NEXT.en : LESSON_NEXT.ja);
-                }}
-                disabled={lessonLoading}
-              >
-                {cardIdx < lessonCards.length - 1
-                  ? <>{en ? 'Forward' : '進む'} <ChevronRight size={17} /></>
-                  : <>{en ? 'Next part' : '次へ'} <ChevronRight size={17} /></>}
-              </button>
+              {cardIdx < lessonCards.length - 1 ? (
+                <button
+                  className="ps-slide-next"
+                  onClick={() => setCardIdx(i => i + 1)}
+                  disabled={lessonLoading || genTestLoading}
+                >
+                  {en ? 'Forward' : '進む'} <ChevronRight size={17} />
+                </button>
+              ) : isLessonComplete ? (
+                <button
+                  className="ps-slide-next quiz"
+                  onClick={() => void startQuiz()}
+                  disabled={genTestLoading || lessonLoading}
+                >
+                  {genTestLoading
+                    ? <><Loader2 size={15} className="ps-spin" /> {en ? 'Creating…' : '作成中…'}</>
+                    : <><Trophy size={15} /> {en ? 'Take a quiz' : '確認テストを受ける'}</>}
+                </button>
+              ) : (
+                <button
+                  className="ps-slide-next"
+                  onClick={() => void sendLessonMessage(en ? LESSON_NEXT.en : LESSON_NEXT.ja)}
+                  disabled={lessonLoading || genTestLoading}
+                >
+                  {en ? 'Next part' : '次へ'} <ChevronRight size={17} />
+                </button>
+              )}
             </div>
 
             {/* Ask the teacher */}
@@ -1908,6 +1952,7 @@ function PracticeStyles() {
   .ps-slide-prev, .ps-slide-next { display: flex; align-items: center; justify-content: center; gap: 4px; height: 42px; border-radius: 12px; font-size: 0.86rem; font-weight: 800; cursor: pointer; }
   .ps-slide-prev { flex: 0 0 auto; padding: 0 16px; background: var(--accent); border: 1.5px solid var(--border); color: var(--fg-muted); }
   .ps-slide-next { flex: 1; padding: 0 16px; background: linear-gradient(120deg, #8b5cf6, #ec4899); border: none; color: #fff; }
+  .ps-slide-next.quiz { background: linear-gradient(120deg, #f59e0b, #ef4444); }
   .ps-slide-prev:disabled, .ps-slide-next:disabled { opacity: 0.45; cursor: default; }
 
   /* Ask the teacher */
