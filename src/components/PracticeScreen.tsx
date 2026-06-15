@@ -9,8 +9,8 @@ import {
   LineElement, ArcElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js';
 import {
-  ArrowLeft, Sparkles, Wand2, ImagePlus, FileText, X, Play, Trash2,
-  Check, ChevronRight, ChevronLeft, RotateCcw, Trophy, Loader2, PencilLine,
+  ArrowLeft, Sparkles, Wand2, Paperclip, X, Play, Trash2,
+  Check, ChevronRight, ChevronLeft, FileText, RotateCcw, Trophy, Loader2, PencilLine,
   Settings2, MessageCircle, ChevronDown, ChevronUp, Search, NotebookText,
   Clock, GraduationCap, BookOpen,
 } from 'lucide-react';
@@ -432,9 +432,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [notePickerSearch, setNotePickerSearch] = useState('');
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
-  const mdRef = useRef<HTMLInputElement>(null);
-  const pdfRef = useRef<HTMLInputElement>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
 
   // ── Generation settings ──
   const [showGenOpts, setShowGenOpts] = useState(false);
@@ -497,15 +495,23 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     return base ? `${base}\n\n${tag} ${settings.join(en ? ', ' : '、')}` : `${tag} ${settings.join(en ? ', ' : '、')}`;
   }, [genInput, genTypes, genCount, genDiff, genDaimon, genExam, genExamMin, en]);
 
-  const pickImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const pickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    const added: { att: ChatAttachment; url: string }[] = [];
-    for (const f of files.slice(0, 4)) {
-      if (!f.type.startsWith('image/')) continue;
-      added.push({ att: await fileToAttachment(f), url: URL.createObjectURL(f) });
+    for (const f of files) {
+      if (f.type.startsWith('image/')) {
+        const att = await fileToAttachment(f);
+        const url = URL.createObjectURL(f);
+        setGenImages(prev => prev.length >= 4 ? prev : [...prev, { att, url }]);
+      } else if (f.type === 'application/pdf' || f.name.endsWith('.pdf')) {
+        const att = await fileToAttachment(f);
+        att.mimeType = 'application/pdf';
+        setGenPdfs(prev => prev.length >= 3 ? prev : [...prev, { name: f.name, att }]);
+      } else {
+        const content = await f.text();
+        setGenMdFiles(prev => prev.length >= 3 ? prev : [...prev, { name: f.name, content }]);
+      }
     }
-    setGenImages(prev => [...prev, ...added].slice(0, 4));
-    if (fileRef.current) fileRef.current.value = '';
+    if (attachRef.current) attachRef.current.value = '';
   };
 
   const removeImage = (i: number) => {
@@ -514,27 +520,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       return prev.filter((_, j) => j !== i);
     });
   };
-
-  const pickMdFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    for (const f of files.slice(0, 3)) {
-      const content = await f.text();
-      setGenMdFiles(prev => [...prev, { name: f.name, content }].slice(0, 3));
-    }
-    if (mdRef.current) mdRef.current.value = '';
-  };
   const removeMdFile = (i: number) => setGenMdFiles(prev => prev.filter((_, j) => j !== i));
-
-  const pickPdfs = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    for (const f of files.slice(0, 3)) {
-      if (f.type !== 'application/pdf') continue;
-      const att = await fileToAttachment(f);
-      att.mimeType = 'application/pdf';
-      setGenPdfs(prev => [...prev, { name: f.name, att }].slice(0, 3));
-    }
-    if (pdfRef.current) pdfRef.current.value = '';
-  };
   const removePdf = (i: number) => setGenPdfs(prev => prev.filter((_, j) => j !== i));
 
   // ── In-app note picker ──
@@ -978,10 +964,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 : 'トピックを入力するか資料を添付すると、Lilyがマンツーマンの先生になって一歩ずつ教えてくれるよ。途中でいつでも質問できるよ。'}
             </div>
 
-            {/* Hidden file inputs for the lesson setup */}
-            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pickImages} />
-            <input ref={mdRef} type="file" accept=".md,.txt,text/plain,text/markdown" multiple hidden onChange={e => void pickMdFiles(e)} />
-            <input ref={pdfRef} type="file" accept="application/pdf,.pdf" multiple hidden onChange={e => void pickPdfs(e)} />
+            {/* Hidden file input for the lesson setup */}
+            <input ref={attachRef} type="file" accept="image/*,.md,.txt,.pdf,application/pdf,text/plain,text/markdown" multiple hidden onChange={e => void pickFiles(e)} />
 
             {/* Attached materials preview */}
             {(genMdFiles.length > 0 || genPdfs.length > 0 || genNotes.length > 0 || genImages.length > 0) && (
@@ -1039,14 +1023,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             />
 
             <div className="ps-lesson-setup-row">
-              <button className="ps-lesson-att" title={en ? 'Attach image' : '画像を添付'} onClick={() => fileRef.current?.click()} disabled={lessonLoading}>
-                <ImagePlus size={16} />
-              </button>
-              <button className="ps-lesson-att" title={en ? 'Attach text/md' : 'テキスト・mdを添付'} onClick={() => mdRef.current?.click()} disabled={lessonLoading}>
-                <FileText size={16} />
-              </button>
-              <button className="ps-lesson-att" title={en ? 'Attach PDF' : 'PDFを添付'} onClick={() => pdfRef.current?.click()} disabled={lessonLoading}>
-                <BookOpen size={16} />
+              <button className="ps-lesson-att" title={en ? 'Attach files' : 'ファイルを添付'} onClick={() => attachRef.current?.click()} disabled={lessonLoading}>
+                <Paperclip size={16} />
               </button>
               <button className={`ps-lesson-att${genNotes.length > 0 ? ' on' : ''}`} title={en ? 'Pick notes' : 'メモを選ぶ'} onClick={() => setShowNotePicker(true)} disabled={lessonLoading}>
                 <NotebookText size={16} />
@@ -1334,17 +1312,9 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           {genError && <p className="ps-gen-err">{genError}</p>}
 
           <div className="ps-gen-actions">
-            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pickImages} />
-            <input ref={mdRef} type="file" accept=".md,.txt,text/plain,text/markdown" multiple hidden onChange={e => void pickMdFiles(e)} />
-            <input ref={pdfRef} type="file" accept="application/pdf,.pdf" multiple hidden onChange={e => void pickPdfs(e)} />
-            <button className="ps-gen-attach" onClick={() => fileRef.current?.click()} disabled={genLoading} title={en ? 'Attach image' : '画像を添付'}>
-              <ImagePlus size={16} />
-            </button>
-            <button className="ps-gen-attach" onClick={() => mdRef.current?.click()} disabled={genLoading} title={en ? 'Attach text/markdown' : 'テキスト・mdを添付'}>
-              <FileText size={16} />
-            </button>
-            <button className="ps-gen-attach" onClick={() => pdfRef.current?.click()} disabled={genLoading} title={en ? 'Attach PDF' : 'PDFを添付'}>
-              <BookOpen size={16} />
+            <input ref={attachRef} type="file" accept="image/*,.md,.txt,.pdf,application/pdf,text/plain,text/markdown" multiple hidden onChange={e => void pickFiles(e)} />
+            <button className="ps-gen-attach" onClick={() => attachRef.current?.click()} disabled={genLoading} title={en ? 'Attach files' : 'ファイルを添付'}>
+              <Paperclip size={16} />
             </button>
             <button
               className={`ps-gen-attach ${genNotes.length > 0 ? 'on' : ''}`}
