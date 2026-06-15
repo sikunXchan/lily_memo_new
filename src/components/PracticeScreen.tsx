@@ -265,6 +265,7 @@ function buildLessonSystemPrompt(topic: string, en: boolean): string {
 How to run the lesson (strict):
 - Teach only ONE small chunk (one concept / one step) per message. Keep each message short and digestible.
 - Use concrete examples and analogies. Be encouraging and friendly; a few emojis are fine.
+- Use rich Markdown formatting to make explanations clear: **bold** key terms, bullet/numbered lists, Markdown tables (| col | col |), and LaTeX math ($formula$, $$block$$). When a visual layout helps comprehension — a comparison table, a step-by-step list, a formula — use it.
 - At the end of each message, ask one short comprehension question, then say: "Ask me anything if something's unclear — otherwise tap Next ▶ to continue."
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
@@ -276,6 +277,7 @@ How to run the lesson (strict):
 進め方（厳守）：
 - 1回の発言では「1つの小さなまとまり（1つの概念／1ステップ）」だけを教える。1回の発言は短く、消化しやすい量にする。
 - 具体例や比喩を使う。難しい用語には（ふりがな）を付ける。親しみやすく励ましながら。絵文字も少し使ってOK。
+- Markdownの書式を積極的に使って、視覚的に分かりやすく説明する。**太字**でキーワードを強調、箇条書き・番号リスト、Markdownの表（| 列 | 列 |）、数式（$数式$・$$ブロック$$）を活用する。比較表・手順リスト・公式など、図解が理解を助ける場面では積極的に使うこと。
 - 発言の最後に、理解度を確認する短い問いかけを1つ入れる。そして「分からないところがあれば何でも聞いてね。大丈夫なら『次へ ▶』を押してね」と伝えて終える。
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
@@ -1717,6 +1719,17 @@ function PracticeStyles() {
   .ps-slide-num { font-size: 0.72rem; font-weight: 800; letter-spacing: .04em; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); padding: 3px 11px; border-radius: 999px; }
   .ps-slide-qchip { font-size: 0.78rem; color: var(--fg-muted); background: var(--accent); border-left: 3px solid #ec4899; border-radius: 6px; padding: 7px 10px; margin-bottom: 13px; line-height: 1.55; word-break: break-word; }
   .ps-slide-body { font-size: 0.92rem; line-height: 1.75; color: var(--foreground); word-break: break-word; }
+  .ps-slide-body table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 0.87rem; }
+  .ps-slide-body th, .ps-slide-body td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
+  .ps-slide-body th { background: color-mix(in srgb, #8b5cf6 10%, var(--accent)); font-weight: 700; color: var(--foreground); }
+  .ps-slide-body tr:nth-child(even) td { background: var(--accent); }
+  .ps-slide-body h2, .ps-slide-body h3 { margin: 14px 0 6px; font-size: 1rem; font-weight: 800; color: #8b5cf6; }
+  .ps-slide-body h2 { font-size: 1.05rem; }
+  .ps-slide-body ul, .ps-slide-body ol { padding-left: 1.4em; margin: 6px 0; }
+  .ps-slide-body li { margin: 3px 0; }
+  .ps-slide-body code { background: var(--accent); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-size: 0.82em; }
+  .ps-slide-body pre { background: var(--accent); border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; margin: 10px 0; }
+  .ps-slide-body pre code { background: none; border: none; padding: 0; font-size: 0.85rem; }
   .ps-slide-thinking-txt { font-size: 0.82rem; color: var(--fg-muted); margin: 0; }
   .ps-class-err-txt { font-size: 0.85rem; color: #ef4444; text-align: center; margin: 0 0 10px; }
   .ps-slide-retry { display: block; margin: 0 auto; background: transparent; border: 1px solid #ef4444; border-radius: 8px; padding: 5px 14px; color: #ef4444; font-weight: 700; cursor: pointer; }
