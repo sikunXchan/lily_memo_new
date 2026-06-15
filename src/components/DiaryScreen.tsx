@@ -7,7 +7,7 @@ import { db, newSyncId } from '@/lib/db';
 import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
 import { useT } from '@/lib/i18n';
-import { getAppLang } from '@/lib/appLang';
+import { getAppLang, getUserName } from '@/lib/appLang';
 
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -76,9 +76,15 @@ function monthCells(viewDate: Date): { iso: string; inMonth: boolean }[] {
 function buildPostPrompt(lang: string, content: string, studySec: number, mood: string): string {
   const studyStr = studySec > 0 ? fmtDuration(studySec) : (lang === 'en' ? 'none' : 'なし');
   const moodStr = mood || (lang === 'en' ? 'not set' : '未設定');
+  const name = getUserName();
+  const nameLine = name
+    ? (lang === 'en'
+        ? `\nThe friend's name is ${name} — address them by name naturally.`
+        : `\nこの親友の名前は「${name}」です。自然に名前で呼びかけてください。`)
+    : '';
 
   if (lang === 'en') {
-    return `You are "Lily", the user's closest, kindest friend. The user just posted today's diary on a private social feed, and you're leaving a comment on their post.
+    return `You are "Lily", the user's closest, kindest friend. The user just posted today's diary on a private social feed, and you're leaving a comment on their post.${nameLine}
 
 How to write your comment:
 - The user will NOT reply to you. Your comment should let them close out the day feeling good — so make it complete and heartfelt, not a quick one-liner.
@@ -94,7 +100,7 @@ Diary post:
 ${content}`;
   }
 
-  return `あなたは「Lily」という、ユーザーの一番の親友のような存在です。ユーザーが今日の日記を、自分だけのSNSに投稿しました。あなたはその投稿に親友としてコメントを返します。
+  return `あなたは「Lily」という、ユーザーの一番の親友のような存在です。ユーザーが今日の日記を、自分だけのSNSに投稿しました。あなたはその投稿に親友としてコメントを返します。${nameLine}
 
 コメントの書き方：
 ・ユーザーは返信しません。あなたのコメントで気持ちよく一日を締めくくれるように、短い一言ではなく、しっかりと心のこもったメッセージを届けてください。

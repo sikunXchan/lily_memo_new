@@ -20,9 +20,9 @@ import type { ProblemSet, PracticeQuestion, Note, Folder } from '@/lib/db';
 import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
-import type { ChatAttachment } from '@/lib/gemini';
-import { callGemini, callGeminiChat } from '@/lib/gemini';
-import { getEffectiveApiKey } from '@/lib/appLang';
+import type { ChatAttachment, ChatTurn } from '@/lib/gemini';
+import { callGeminiChat } from '@/lib/gemini';
+import { getEffectiveApiKey, getUserName } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
@@ -238,29 +238,38 @@ function buildResultContext(
 type View = 'list' | 'solve' | 'result';
 type ScreenMode = 'practice' | 'lesson';
 
-function buildLessonPrompt(topic: string, en: boolean): string {
+function buildLessonSystemPrompt(topic: string, en: boolean): string {
+  const topicLine = topic
+    ? (en ? `\nMain topic: ${topic}` : `\nメインのトピック：${topic}`)
+    : '';
+  const name = getUserName();
+  const nameLine = name
+    ? (en
+        ? `\nYour student's name is ${name} — address them by name naturally.`
+        : `\n生徒の名前は「${name}」です。自然に名前で呼びかけてください。`)
+    : '';
   if (en) {
-    return `You are "Lily", an excellent tutor. Please teach the following topic clearly and thoroughly.
+    return `You are "Lily", an excellent and warm 1-on-1 private tutor. You teach the student through an interactive back-and-forth conversation — NOT by dumping the whole lesson at once.
 
-Lesson format (required):
-- Divide into 3–5 chapters, each starting with "## Chapter Title"
-- Use concrete examples and analogies to make concepts clear
-- End each chapter with a comprehension check in blockquote format: "> 📝 Check: [question]?"
-- End the lesson with "## Summary" listing the key points as bullet points
-
-Topic: ${topic}`;
+How to run the lesson (strict):
+- Teach only ONE small chunk (one concept / one step) per message. Keep each message short and digestible.
+- Use concrete examples and analogies. Be encouraging and friendly; a few emojis are fine.
+- At the end of each message, ask one short comprehension question, then say: "Ask me anything if something's unclear — otherwise tap Next ▶ to continue."
+- If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
+- When the student says "next", teach the next chunk that follows on from the previous one.
+- When you have covered everything, write "## Summary" with the key points as bullets and tell them the lesson is complete.
+- If materials are attached, base the lesson on their content.${nameLine}${topicLine}`;
   }
-  return `あなたは優秀な家庭教師「Lily」です。以下のトピックについて、丁寧で分かりやすい授業をしてください。
+  return `あなたは優秀で温かいマンツーマンの家庭教師「Lily」です。生徒と対話のキャッチボールをしながら授業を進めます。一度に全部を教えるのではなく、会話形式で少しずつ教えてください。
 
-授業の形式（必ず守ること）：
-- 全体を3〜5つの章に分ける
-- 各章は「## 章タイトル」で始める
-- 具体例・比喩を使って分かりやすく説明する
-- 難しい用語には読み方を（ふりがな）で付ける
-- 各章の最後に「> 📝 確認問題：○○○？」の形で確認問題を1問出す（答えは書かない）
-- 最後に「## まとめ」で重要ポイントを箇条書きにする
-
-トピック：${topic}`;
+進め方（厳守）：
+- 1回の発言では「1つの小さなまとまり（1つの概念／1ステップ）」だけを教える。1回の発言は短く、消化しやすい量にする。
+- 具体例や比喩を使う。難しい用語には（ふりがな）を付ける。親しみやすく励ましながら。絵文字も少し使ってOK。
+- 発言の最後に、理解度を確認する短い問いかけを1つ入れる。そして「分からないところがあれば何でも聞いてね。大丈夫なら『次へ ▶』を押してね」と伝えて終える。
+- 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
+- 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
+- すべての内容を教え終えたら、「## まとめ」で要点を箇条書きにして、授業の終わりを伝える。
+- 資料が添付されている場合は、その内容に沿って授業を組み立てる。${nameLine}${topicLine}`;
 }
 
 export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenProps) {
@@ -282,11 +291,38 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [view, setView] = useState<View>('list');
   const [screenMode, setScreenMode] = useState<ScreenMode>('practice');
 
-  // ── Lesson state ──
+  // ── Lesson state (conversational 1-on-1) ──
   const [lessonTopic, setLessonTopic] = useState('');
-  const [lessonContent, setLessonContent] = useState('');
+  const [lessonStarted, setLessonStarted] = useState(false);
+  const [lessonTurns, setLessonTurns] = useState<ChatTurn[]>([]); // full API history; [0] is hidden kickoff
+  const [lessonInput, setLessonInput] = useState('');
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonError, setLessonError] = useState('');
+  const lessonSysRef = useRef('');
+  const lessonEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    lessonEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [lessonTurns, lessonLoading]);
+
+  // Send the current history to Lily and append her reply.
+  async function runLessonTurn(history: ChatTurn[]) {
+    const apiKey = getEffectiveApiKey();
+    if (!apiKey) { setLessonError(en ? 'Set your API key in Settings.' : 'APIキーを設定してください。'); return; }
+    setLessonLoading(true);
+    setLessonError('');
+    try {
+      const reply = await callGeminiChat(history, lessonSysRef.current, apiKey, {
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+      });
+      setLessonTurns([...history, { role: 'model', text: reply.trim() }]);
+    } catch {
+      setLessonError(en ? 'Something went wrong. Tap retry.' : 'うまくいかなかった…もう一度試してね。');
+    } finally {
+      setLessonLoading(false);
+    }
+  }
 
   async function startLesson() {
     const topic = lessonTopic.trim();
@@ -295,38 +331,48 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     if (lessonLoading) return;
     const apiKey = getEffectiveApiKey();
     if (!apiKey) { setLessonError(en ? 'Set your API key in Settings.' : 'APIキーを設定してください。'); return; }
-    setLessonLoading(true);
+
+    // Gather attachments once for the kickoff turn.
+    const mdAtts: ChatAttachment[] = genMdFiles.map(f => ({
+      mimeType: 'text/plain', data: utf8ToBase64(f.content),
+    }));
+    const noteRows = genNotes.length > 0 ? await db.notes.bulkGet(genNotes.map(n => n.id)) : [];
+    const noteAtts: ChatAttachment[] = noteRows
+      .filter((n): n is Note => !!n)
+      .map(n => {
+        const body = noteHtmlToText(n.content || '');
+        const header = en ? `# Note: ${n.title || 'Untitled'}` : `# メモ: ${n.title || '無題'}`;
+        return { mimeType: 'text/plain', data: utf8ToBase64(`${header}\n\n${body}`) };
+      });
+    const attachments = [...mdAtts, ...noteAtts, ...genImages.map(g => g.att)];
+
+    lessonSysRef.current = buildLessonSystemPrompt(topic, en);
+    const kickoff: ChatTurn = {
+      role: 'user',
+      text: en
+        ? 'Please start the lesson from the very first chunk. Teach me step by step.'
+        : '最初のまとまりから授業を始めてね。少しずつ教えて。',
+      attachments: attachments.length > 0 ? attachments : undefined,
+    };
+    setLessonStarted(true);
+    setLessonTurns([kickoff]);
+    await runLessonTurn([kickoff]);
+  }
+
+  async function sendLessonMessage(text: string) {
+    const msg = text.trim();
+    if (!msg || lessonLoading) return;
+    setLessonInput('');
+    const next: ChatTurn[] = [...lessonTurns, { role: 'user', text: msg }];
+    setLessonTurns(next);
+    await runLessonTurn(next);
+  }
+
+  function exitLesson() {
+    setLessonStarted(false);
+    setLessonTurns([]);
+    setLessonInput('');
     setLessonError('');
-    setLessonContent('');
-    try {
-      const mdAtts: ChatAttachment[] = genMdFiles.map(f => ({
-        mimeType: 'text/plain', data: utf8ToBase64(f.content),
-      }));
-      const noteRows = genNotes.length > 0 ? await db.notes.bulkGet(genNotes.map(n => n.id)) : [];
-      const noteAtts: ChatAttachment[] = noteRows
-        .filter((n): n is Note => !!n)
-        .map(n => {
-          const body = noteHtmlToText(n.content || '');
-          const header = en ? `# Note: ${n.title || 'Untitled'}` : `# メモ: ${n.title || '無題'}`;
-          return { mimeType: 'text/plain', data: utf8ToBase64(`${header}\n\n${body}`) };
-        });
-      const attachments = [...mdAtts, ...noteAtts, ...genImages.map(g => g.att)];
-      let result: string;
-      if (attachments.length > 0) {
-        result = await callGeminiChat(
-          [{ role: 'user', text: buildLessonPrompt(topic || (en ? '(see attached materials)' : '（添付資料を参照）'), en), attachments }],
-          '',
-          apiKey,
-        );
-      } else {
-        result = await callGemini(buildLessonPrompt(topic, en), apiKey);
-      }
-      setLessonContent(result.trim());
-    } catch {
-      setLessonError(en ? 'Failed to generate lesson.' : '授業の生成に失敗しました。');
-    } finally {
-      setLessonLoading(false);
-    }
   }
 
   // ── Generation state ──
@@ -861,14 +907,18 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           </button>
         </div>
 
-        {/* ── Lesson panel ── */}
-        {screenMode === 'lesson' && (
+        {/* ── Lesson: setup view ── */}
+        {screenMode === 'lesson' && !lessonStarted && (
           <div className="ps-lesson">
             <div className="ps-lesson-desc">
               {en
-                ? 'Type a topic or attach materials — Lily will give you a structured lesson with chapters and comprehension checks.'
-                : 'トピックを入力するか資料を添付すると、Lilyが章立てで授業をしてくれるよ。各章の最後に確認問題も出るよ。'}
+                ? 'Type a topic or attach materials — Lily becomes your private 1-on-1 tutor and teaches you step by step. Ask her anything during the lesson.'
+                : 'トピックを入力するか資料を添付すると、Lilyがマンツーマンの先生になって一歩ずつ教えてくれるよ。途中でいつでも質問できるよ。'}
             </div>
+
+            {/* Hidden file inputs for the lesson setup */}
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pickImages} />
+            <input ref={mdRef} type="file" accept=".md,.txt,text/plain,text/markdown" multiple hidden onChange={e => void pickMdFiles(e)} />
 
             {/* Attached materials preview */}
             {(genMdFiles.length > 0 || genNotes.length > 0 || genImages.length > 0) && (
@@ -895,43 +945,108 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               </div>
             )}
 
-            <div className="ps-lesson-row">
-              <input
-                className="ps-lesson-input"
-                value={lessonTopic}
-                onChange={e => setLessonTopic(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') void startLesson(); }}
-                placeholder={en ? 'Topic (or leave blank to use materials)' : 'トピック（資料だけでもOK）'}
-                disabled={lessonLoading}
-              />
-              {/* Attachment buttons */}
+            <input
+              className="ps-lesson-input"
+              value={lessonTopic}
+              onChange={e => setLessonTopic(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') void startLesson(); }}
+              placeholder={en ? 'Topic (or leave blank to use materials)' : 'トピック（資料だけでもOK）'}
+              disabled={lessonLoading}
+            />
+
+            <div className="ps-lesson-setup-row">
               <button className="ps-lesson-att" title={en ? 'Attach image' : '画像を添付'} onClick={() => fileRef.current?.click()} disabled={lessonLoading}>
-                <ImagePlus size={15} />
+                <ImagePlus size={16} />
               </button>
               <button className="ps-lesson-att" title={en ? 'Attach file' : 'ファイルを添付'} onClick={() => mdRef.current?.click()} disabled={lessonLoading}>
-                <FileText size={15} />
+                <FileText size={16} />
               </button>
-              <button className="ps-lesson-att" title={en ? 'Pick notes' : 'メモを選ぶ'} onClick={() => setShowNotePicker(true)} disabled={lessonLoading}>
-                <NotebookText size={15} />
+              <button className={`ps-lesson-att${genNotes.length > 0 ? ' on' : ''}`} title={en ? 'Pick notes' : 'メモを選ぶ'} onClick={() => setShowNotePicker(true)} disabled={lessonLoading}>
+                <NotebookText size={16} />
               </button>
               <button
                 className="ps-lesson-btn"
                 onClick={() => void startLesson()}
                 disabled={(!lessonTopic.trim() && genImages.length === 0 && genMdFiles.length === 0 && genNotes.length === 0) || lessonLoading}
               >
-                {lessonLoading
-                  ? <Loader2 size={15} className="ps-spin" />
-                  : <Sparkles size={15} />}
-                {en ? 'Start' : '始める'}
+                {lessonLoading ? <Loader2 size={15} className="ps-spin" /> : <GraduationCap size={15} />}
+                {en ? 'Start lesson' : '授業を始める'}
               </button>
             </div>
             {lessonError && <p className="ps-lesson-err">{lessonError}</p>}
-            {lessonContent && (
-              <div
-                className="ps-lesson-content rich-content"
-                dangerouslySetInnerHTML={{ __html: renderRich(lessonContent) }}
+          </div>
+        )}
+
+        {/* ── Lesson: conversation view ── */}
+        {screenMode === 'lesson' && lessonStarted && (
+          <div className="ps-class">
+            <div className="ps-class-head">
+              <div className="ps-class-head-l">
+                <GraduationCap size={15} className="ps-class-head-ic" />
+                <span>{lessonTopic.trim() || (en ? 'Lesson with Lily' : 'Lilyの授業')}</span>
+              </div>
+              <button className="ps-class-exit" onClick={exitLesson}>{en ? 'End' : '終了'}</button>
+            </div>
+
+            <div className="ps-class-msgs">
+              {lessonTurns.slice(1).map((turn, i) => (
+                turn.role === 'model' ? (
+                  <div key={i} className="ps-class-row lily">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/lilygirls.PNG" alt="Lily" className="ps-class-ava" />
+                    <div
+                      className="ps-class-bubble lily rich"
+                      dangerouslySetInnerHTML={{ __html: renderRich(turn.text) }}
+                    />
+                  </div>
+                ) : (
+                  <div key={i} className="ps-class-row me">
+                    <div className="ps-class-bubble me">{turn.text}</div>
+                  </div>
+                )
+              ))}
+              {lessonLoading && (
+                <div className="ps-class-row lily">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/lilygirls.PNG" alt="Lily" className="ps-class-ava" />
+                  <div className="ps-class-bubble lily ps-class-typing">
+                    <span /><span /><span />
+                  </div>
+                </div>
+              )}
+              {lessonError && (
+                <div className="ps-class-err-row">
+                  <span>{lessonError}</span>
+                  <button onClick={() => void runLessonTurn(lessonTurns)}>{en ? 'Retry' : '再試行'}</button>
+                </div>
+              )}
+              <div ref={lessonEndRef} />
+            </div>
+
+            <div className="ps-class-bar">
+              <button
+                className="ps-class-next"
+                onClick={() => void sendLessonMessage(en ? 'Next, please continue.' : '次へ進んで。続きを教えて。')}
+                disabled={lessonLoading}
+              >
+                {en ? 'Next ▶' : '次へ ▶'}
+              </button>
+              <input
+                className="ps-class-input"
+                value={lessonInput}
+                onChange={e => setLessonInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') void sendLessonMessage(lessonInput); }}
+                placeholder={en ? 'Ask the teacher…' : '先生に質問する…'}
+                disabled={lessonLoading}
               />
-            )}
+              <button
+                className="ps-class-send"
+                onClick={() => void sendLessonMessage(lessonInput)}
+                disabled={lessonLoading || !lessonInput.trim()}
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
           </div>
         )}
 
@@ -1259,6 +1374,11 @@ function PracticeStyles() {
   .rich { font-size: 0.9rem; line-height: 1.7; color: var(--foreground); word-break: break-word; }
   .rich p { margin: 0 0 8px; }
   .rich p:last-child { margin-bottom: 0; }
+  .rich h2 { font-size: 1.02rem; font-weight: 800; margin: 4px 0 8px; color: #8b5cf6; }
+  .rich h3 { font-size: 0.94rem; font-weight: 700; margin: 8px 0 6px; }
+  .rich h2:first-child, .rich h3:first-child { margin-top: 0; }
+  .rich blockquote { margin: 8px 0; padding: 8px 12px; border-left: 3px solid #ec4899; background: color-mix(in srgb, #ec4899 8%, transparent); border-radius: 6px; }
+  .rich blockquote p { margin: 0; }
   .rich ul, .rich ol { padding-left: 20px; margin: 6px 0; }
   .rich strong { font-weight: 700; }
   .rich code.rt-code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
@@ -1491,19 +1611,48 @@ function PracticeStyles() {
   .ps-mode-toggle { display: flex; gap: 4px; padding: 10px 14px 0; }
   .ps-mode-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; height: 36px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--accent); color: var(--fg-muted); font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all .15s; }
   .ps-mode-btn.on { background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border-color: transparent; }
-  /* ── Lesson panel ── */
+  /* ── Lesson: setup ── */
   .ps-lesson { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   .ps-lesson-desc { font-size: 0.8rem; color: var(--fg-muted); line-height: 1.6; }
-  .ps-lesson-row { display: flex; gap: 8px; }
-  .ps-lesson-input { flex: 1; height: 42px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 12px; font-size: 0.88rem; color: var(--foreground); outline: none; }
+  .ps-lesson-input { width: 100%; height: 44px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 12px; font-size: 0.9rem; color: var(--foreground); outline: none; box-sizing: border-box; }
   .ps-lesson-input:focus { border-color: var(--primary); }
-  .ps-lesson-att { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; color: var(--fg-muted); cursor: pointer; flex-shrink: 0; transition: color .15s, border-color .15s; }
+  .ps-lesson-setup-row { display: flex; gap: 8px; align-items: center; }
+  .ps-lesson-att { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; color: var(--fg-muted); cursor: pointer; flex-shrink: 0; transition: color .15s, border-color .15s; }
   .ps-lesson-att:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
+  .ps-lesson-att.on { color: #8b5cf6; border-color: #8b5cf6; }
   .ps-lesson-att:disabled { opacity: 0.4; cursor: default; }
-  .ps-lesson-btn { display: flex; align-items: center; gap: 5px; height: 42px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.83rem; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .ps-lesson-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.86rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
   .ps-lesson-btn:disabled { opacity: 0.5; cursor: default; }
   .ps-lesson-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
-  .ps-lesson-content { background: var(--accent); border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px; }
+  /* ── Lesson: 1-on-1 conversation ── */
+  .ps-class { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 -16px -16px; }
+  .ps-class-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--accent); flex-shrink: 0; }
+  .ps-class-head-l { display: flex; align-items: center; gap: 6px; font-size: 0.86rem; font-weight: 700; color: var(--foreground); min-width: 0; }
+  .ps-class-head-l span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-class-head-ic { color: #8b5cf6; flex-shrink: 0; }
+  .ps-class-exit { flex-shrink: 0; background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; font-size: 0.76rem; font-weight: 700; color: var(--fg-muted); cursor: pointer; }
+  .ps-class-msgs { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .ps-class-row { display: flex; gap: 8px; max-width: 100%; }
+  .ps-class-row.lily { align-items: flex-start; }
+  .ps-class-row.me { justify-content: flex-end; }
+  .ps-class-ava { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1.5px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); }
+  .ps-class-bubble { border-radius: 14px; padding: 11px 13px; font-size: 0.88rem; line-height: 1.65; word-break: break-word; max-width: 80%; }
+  .ps-class-bubble.lily { background: var(--accent); border: 1px solid var(--border); border-top-left-radius: 4px; color: var(--foreground); }
+  .ps-class-bubble.me { background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border-top-right-radius: 4px; white-space: pre-wrap; }
+  .ps-class-typing { display: flex; gap: 4px; align-items: center; }
+  .ps-class-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-muted); opacity: 0.5; animation: ps-typing 1s infinite; }
+  .ps-class-typing span:nth-child(2) { animation-delay: 0.2s; }
+  .ps-class-typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes ps-typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+  .ps-class-err-row { display: flex; align-items: center; gap: 10px; justify-content: center; font-size: 0.8rem; color: #ef4444; }
+  .ps-class-err-row button { background: transparent; border: 1px solid #ef4444; border-radius: 8px; padding: 3px 10px; color: #ef4444; font-weight: 700; cursor: pointer; }
+  .ps-class-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--background); flex-shrink: 0; }
+  .ps-class-next { flex-shrink: 0; height: 40px; padding: 0 13px; background: color-mix(in srgb, #8b5cf6 14%, var(--accent)); color: #8b5cf6; border: 1.5px solid color-mix(in srgb, #8b5cf6 35%, var(--border)); border-radius: 12px; font-size: 0.83rem; font-weight: 800; cursor: pointer; white-space: nowrap; }
+  .ps-class-next:disabled { opacity: 0.45; cursor: default; }
+  .ps-class-input { flex: 1; min-width: 0; height: 40px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 12px; font-size: 0.88rem; color: var(--foreground); outline: none; }
+  .ps-class-input:focus { border-color: var(--primary); }
+  .ps-class-send { flex-shrink: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; cursor: pointer; }
+  .ps-class-send:disabled { opacity: 0.4; cursor: default; }
     `}</style>
   );
 }
