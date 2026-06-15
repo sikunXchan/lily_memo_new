@@ -9,10 +9,10 @@ import {
   LineElement, ArcElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js';
 import {
-  ArrowLeft, Sparkles, Wand2, ImagePlus, FileText, X, Play, Trash2,
-  Check, ChevronRight, ChevronLeft, RotateCcw, Trophy, Loader2, PencilLine,
+  ArrowLeft, Sparkles, Wand2, Paperclip, X, Play, Trash2,
+  Check, ChevronRight, ChevronLeft, FileText, RotateCcw, Trophy, Loader2, PencilLine,
   Settings2, MessageCircle, ChevronDown, ChevronUp, Search, NotebookText,
-  Clock, GraduationCap,
+  Clock, GraduationCap, BookOpen,
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
@@ -374,7 +374,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
   async function startLesson() {
     const topic = lessonTopic.trim();
-    const hasAtts = genImages.length > 0 || genMdFiles.length > 0 || genNotes.length > 0;
+    const hasAtts = genImages.length > 0 || genMdFiles.length > 0 || genPdfs.length > 0 || genNotes.length > 0;
     if (!topic && !hasAtts) return;
     if (lessonLoading) return;
     const apiKey = getEffectiveApiKey();
@@ -392,7 +392,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
         const header = en ? `# Note: ${n.title || 'Untitled'}` : `# メモ: ${n.title || '無題'}`;
         return { mimeType: 'text/plain', data: utf8ToBase64(`${header}\n\n${body}`) };
       });
-    const attachments = [...mdAtts, ...noteAtts, ...genImages.map(g => g.att)];
+    const attachments = [...mdAtts, ...noteAtts, ...genPdfs.map(p => p.att), ...genImages.map(g => g.att)];
 
     lessonSysRef.current = buildLessonSystemPrompt(topic, en, lessonStyle);
     const kickoff: ChatTurn = {
@@ -426,13 +426,13 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [genInput, setGenInput] = useState('');
   const [genImages, setGenImages] = useState<{ att: ChatAttachment; url: string }[]>([]);
   const [genMdFiles, setGenMdFiles] = useState<{ name: string; content: string }[]>([]);
+  const [genPdfs, setGenPdfs] = useState<{ name: string; att: ChatAttachment }[]>([]);
   const [genNotes, setGenNotes] = useState<{ id: number; title: string }[]>([]);
   const [showNotePicker, setShowNotePicker] = useState(false);
   const [notePickerSearch, setNotePickerSearch] = useState('');
   const [genLoading, setGenLoading] = useState(false);
   const [genError, setGenError] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
-  const mdRef = useRef<HTMLInputElement>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
 
   // ── Generation settings ──
   const [showGenOpts, setShowGenOpts] = useState(false);
@@ -495,15 +495,23 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     return base ? `${base}\n\n${tag} ${settings.join(en ? ', ' : '、')}` : `${tag} ${settings.join(en ? ', ' : '、')}`;
   }, [genInput, genTypes, genCount, genDiff, genDaimon, genExam, genExamMin, en]);
 
-  const pickImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const pickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    const added: { att: ChatAttachment; url: string }[] = [];
-    for (const f of files.slice(0, 4)) {
-      if (!f.type.startsWith('image/')) continue;
-      added.push({ att: await fileToAttachment(f), url: URL.createObjectURL(f) });
+    for (const f of files) {
+      if (f.type.startsWith('image/')) {
+        const att = await fileToAttachment(f);
+        const url = URL.createObjectURL(f);
+        setGenImages(prev => prev.length >= 4 ? prev : [...prev, { att, url }]);
+      } else if (f.type === 'application/pdf' || f.name.endsWith('.pdf')) {
+        const att = await fileToAttachment(f);
+        att.mimeType = 'application/pdf';
+        setGenPdfs(prev => prev.length >= 3 ? prev : [...prev, { name: f.name, att }]);
+      } else {
+        const content = await f.text();
+        setGenMdFiles(prev => prev.length >= 3 ? prev : [...prev, { name: f.name, content }]);
+      }
     }
-    setGenImages(prev => [...prev, ...added].slice(0, 4));
-    if (fileRef.current) fileRef.current.value = '';
+    if (attachRef.current) attachRef.current.value = '';
   };
 
   const removeImage = (i: number) => {
@@ -512,16 +520,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       return prev.filter((_, j) => j !== i);
     });
   };
-
-  const pickMdFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    for (const f of files.slice(0, 3)) {
-      const content = await f.text();
-      setGenMdFiles(prev => [...prev, { name: f.name, content }].slice(0, 3));
-    }
-    if (mdRef.current) mdRef.current.value = '';
-  };
   const removeMdFile = (i: number) => setGenMdFiles(prev => prev.filter((_, j) => j !== i));
+  const removePdf = (i: number) => setGenPdfs(prev => prev.filter((_, j) => j !== i));
 
   // ── In-app note picker ──
   const folderName = useCallback((id?: number): string => {
@@ -547,7 +547,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
   const handleGenerate = async () => {
     if (genLoading) return;
-    if (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genNotes.length === 0) return;
+    if (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genPdfs.length === 0 && genNotes.length === 0) return;
     setGenLoading(true);
     setGenError('');
     try {
@@ -566,7 +566,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
         });
       const result = await generateProblemSet(
         buildGeneratePrompt(),
-        [...mdAtts, ...noteAtts, ...genImages.map(g => g.att)],
+        [...mdAtts, ...noteAtts, ...genPdfs.map(p => p.att), ...genImages.map(g => g.att)],
       );
       const id = await saveProblemSet(result, {
         examMode: genExam,
@@ -576,6 +576,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       genImages.forEach(g => URL.revokeObjectURL(g.url));
       setGenImages([]);
       setGenMdFiles([]);
+      setGenPdfs([]);
       setGenNotes([]);
       setGenInput('');
       // Jump straight into solving the freshly-made set
@@ -963,17 +964,22 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 : 'トピックを入力するか資料を添付すると、Lilyがマンツーマンの先生になって一歩ずつ教えてくれるよ。途中でいつでも質問できるよ。'}
             </div>
 
-            {/* Hidden file inputs for the lesson setup */}
-            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pickImages} />
-            <input ref={mdRef} type="file" accept=".md,.txt,text/plain,text/markdown" multiple hidden onChange={e => void pickMdFiles(e)} />
+            {/* Hidden file input for the lesson setup */}
+            <input ref={attachRef} type="file" accept="image/*,.md,.txt,.pdf,application/pdf,text/plain,text/markdown" multiple hidden onChange={e => void pickFiles(e)} />
 
             {/* Attached materials preview */}
-            {(genMdFiles.length > 0 || genNotes.length > 0 || genImages.length > 0) && (
+            {(genMdFiles.length > 0 || genPdfs.length > 0 || genNotes.length > 0 || genImages.length > 0) && (
               <div className="ps-gen-mds">
                 {genMdFiles.map((f, i) => (
                   <div key={i} className="ps-gen-md-chip">
                     <FileText size={12} /><span>{f.name}</span>
                     <button onClick={() => removeMdFile(i)}><X size={11} /></button>
+                  </div>
+                ))}
+                {genPdfs.map((p, i) => (
+                  <div key={i} className="ps-gen-md-chip pdf">
+                    <BookOpen size={12} /><span>{p.name}</span>
+                    <button onClick={() => removePdf(i)}><X size={11} /></button>
                   </div>
                 ))}
                 {genNotes.map(n => (
@@ -1017,11 +1023,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             />
 
             <div className="ps-lesson-setup-row">
-              <button className="ps-lesson-att" title={en ? 'Attach image' : '画像を添付'} onClick={() => fileRef.current?.click()} disabled={lessonLoading}>
-                <ImagePlus size={16} />
-              </button>
-              <button className="ps-lesson-att" title={en ? 'Attach file' : 'ファイルを添付'} onClick={() => mdRef.current?.click()} disabled={lessonLoading}>
-                <FileText size={16} />
+              <button className="ps-lesson-att" title={en ? 'Attach files' : 'ファイルを添付'} onClick={() => attachRef.current?.click()} disabled={lessonLoading}>
+                <Paperclip size={16} />
               </button>
               <button className={`ps-lesson-att${genNotes.length > 0 ? ' on' : ''}`} title={en ? 'Pick notes' : 'メモを選ぶ'} onClick={() => setShowNotePicker(true)} disabled={lessonLoading}>
                 <NotebookText size={16} />
@@ -1029,7 +1032,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <button
                 className="ps-lesson-btn"
                 onClick={() => void startLesson()}
-                disabled={(!lessonTopic.trim() && genImages.length === 0 && genMdFiles.length === 0 && genNotes.length === 0) || lessonLoading}
+                disabled={(!lessonTopic.trim() && genImages.length === 0 && genMdFiles.length === 0 && genPdfs.length === 0 && genNotes.length === 0) || lessonLoading}
               >
                 {lessonLoading ? <Loader2 size={15} className="ps-spin" /> : <GraduationCap size={15} />}
                 {en ? 'Start lesson' : '授業を始める'}
@@ -1157,13 +1160,20 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             <span>{en ? 'Make a problem set with Lily' : 'Lilyに問題を作ってもらう'}</span>
           </div>
 
-          {genMdFiles.length > 0 && (
+          {(genMdFiles.length > 0 || genPdfs.length > 0) && (
             <div className="ps-gen-mds">
               {genMdFiles.map((f, i) => (
                 <div key={i} className="ps-gen-md-chip">
                   <FileText size={12} />
                   <span>{f.name}</span>
                   <button onClick={() => removeMdFile(i)}><X size={11} /></button>
+                </div>
+              ))}
+              {genPdfs.map((p, i) => (
+                <div key={i} className="ps-gen-md-chip pdf">
+                  <BookOpen size={12} />
+                  <span>{p.name}</span>
+                  <button onClick={() => removePdf(i)}><X size={11} /></button>
                 </div>
               ))}
             </div>
@@ -1302,13 +1312,9 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           {genError && <p className="ps-gen-err">{genError}</p>}
 
           <div className="ps-gen-actions">
-            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={pickImages} />
-            <input ref={mdRef} type="file" accept=".md,.txt,text/plain,text/markdown" multiple hidden onChange={e => void pickMdFiles(e)} />
-            <button className="ps-gen-attach" onClick={() => fileRef.current?.click()} disabled={genLoading} title={en ? 'Attach image' : '画像を添付'}>
-              <ImagePlus size={16} />
-            </button>
-            <button className="ps-gen-attach" onClick={() => mdRef.current?.click()} disabled={genLoading} title={en ? 'Attach text/markdown' : 'テキスト・mdを添付'}>
-              <FileText size={16} />
+            <input ref={attachRef} type="file" accept="image/*,.md,.txt,.pdf,application/pdf,text/plain,text/markdown" multiple hidden onChange={e => void pickFiles(e)} />
+            <button className="ps-gen-attach" onClick={() => attachRef.current?.click()} disabled={genLoading} title={en ? 'Attach files' : 'ファイルを添付'}>
+              <Paperclip size={16} />
             </button>
             <button
               className={`ps-gen-attach ${genNotes.length > 0 ? 'on' : ''}`}
@@ -1321,7 +1327,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             <button
               className="ps-gen-btn"
               onClick={() => void handleGenerate()}
-              disabled={genLoading || (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genNotes.length === 0)}
+              disabled={genLoading || (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genPdfs.length === 0 && genNotes.length === 0)}
             >
               {genLoading
                 ? <><Loader2 size={16} className="ps-spin" /> {en ? 'Creating…' : '作成中…'}</>
@@ -1543,6 +1549,8 @@ function PracticeStyles() {
   /* Note source chip (distinct sky hue from the purple md/file chips) */
   .ps-gen-md-chip.note { background: color-mix(in srgb, #0ea5e9 14%, var(--background)); border-color: color-mix(in srgb, #0ea5e9 30%, transparent); color: #0ea5e9; }
   .ps-gen-md-chip.note button { color: #0ea5e9; }
+  .ps-gen-md-chip.pdf { background: color-mix(in srgb, #f97316 14%, var(--background)); border-color: color-mix(in srgb, #f97316 30%, transparent); color: #f97316; }
+  .ps-gen-md-chip.pdf button { color: #f97316; }
 
   /* In-app note picker modal */
   .ps-notepick-back { position: fixed; inset: 0; z-index: 10005; background: rgba(0,0,0,.45); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; animation: psgl-fade .18s ease; }
