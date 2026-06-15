@@ -10,7 +10,7 @@ import {
 } from 'chart.js';
 import {
   ArrowLeft, Sparkles, Wand2, ImagePlus, FileText, X, Play, Trash2,
-  Check, ChevronRight, RotateCcw, Trophy, Loader2, PencilLine,
+  Check, ChevronRight, ChevronLeft, RotateCcw, Trophy, Loader2, PencilLine,
   Settings2, MessageCircle, ChevronDown, ChevronUp, Search, NotebookText,
   Clock, GraduationCap,
 } from 'lucide-react';
@@ -238,6 +238,17 @@ function buildResultContext(
 type View = 'list' | 'solve' | 'result';
 type ScreenMode = 'practice' | 'lesson';
 
+// Preset turns that advance the lesson rather than ask a question. Cards built
+// from these are shown without a "your question" chip.
+const LESSON_KICKOFF = {
+  en: 'Please start the lesson from the very first chunk. Teach me step by step.',
+  ja: '最初のまとまりから授業を始めてね。少しずつ教えて。',
+};
+const LESSON_NEXT = {
+  en: 'Next, please continue.',
+  ja: '次へ進んで。続きを教えて。',
+};
+
 function buildLessonSystemPrompt(topic: string, en: boolean): string {
   const topicLine = topic
     ? (en ? `\nMain topic: ${topic}` : `\nメインのトピック：${topic}`)
@@ -299,11 +310,29 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonError, setLessonError] = useState('');
   const lessonSysRef = useRef('');
-  const lessonEndRef = useRef<HTMLDivElement>(null);
 
+  // The lesson is presented as a deck of "slides": one card per Lily message.
+  // A card that answers a real question carries that question; cards produced by
+  // the kickoff / "next" presets are plain lesson parts.
+  const lessonCards = useMemo(() => {
+    const out: { text: string; userQ?: string }[] = [];
+    for (let i = 0; i < lessonTurns.length; i++) {
+      const t = lessonTurns[i];
+      if (t.role !== 'model') continue;
+      const prev = lessonTurns[i - 1];
+      const q = prev && prev.role === 'user' ? prev.text : '';
+      const isProgress = q === LESSON_KICKOFF.en || q === LESSON_KICKOFF.ja
+        || q === LESSON_NEXT.en || q === LESSON_NEXT.ja;
+      out.push({ text: t.text, userQ: isProgress ? undefined : q });
+    }
+    return out;
+  }, [lessonTurns]);
+
+  const [cardIdx, setCardIdx] = useState(0);
+  // Whenever a new card arrives, slide to it.
   useEffect(() => {
-    lessonEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lessonTurns, lessonLoading]);
+    if (lessonCards.length > 0) setCardIdx(lessonCards.length - 1);
+  }, [lessonCards.length]);
 
   // Send the current history to Lily and append her reply.
   async function runLessonTurn(history: ChatTurn[]) {
@@ -349,9 +378,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     lessonSysRef.current = buildLessonSystemPrompt(topic, en);
     const kickoff: ChatTurn = {
       role: 'user',
-      text: en
-        ? 'Please start the lesson from the very first chunk. Teach me step by step.'
-        : '最初のまとまりから授業を始めてね。少しずつ教えて。',
+      text: en ? LESSON_KICKOFF.en : LESSON_KICKOFF.ja,
       attachments: attachments.length > 0 ? attachments : undefined,
     };
     setLessonStarted(true);
@@ -373,6 +400,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setLessonTurns([]);
     setLessonInput('');
     setLessonError('');
+    setCardIdx(0);
   }
 
   // ── Generation state ──
@@ -977,7 +1005,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           </div>
         )}
 
-        {/* ── Lesson: conversation view ── */}
+        {/* ── Lesson: slide-deck view ── */}
         {screenMode === 'lesson' && lessonStarted && (
           <div className="ps-class">
             <div className="ps-class-head">
@@ -988,49 +1016,87 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <button className="ps-class-exit" onClick={exitLesson}>{en ? 'End' : '終了'}</button>
             </div>
 
-            <div className="ps-class-msgs">
-              {lessonTurns.slice(1).map((turn, i) => (
-                turn.role === 'model' ? (
-                  <div key={i} className="ps-class-row lily">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src="/lilygirls.PNG" alt="Lily" className="ps-class-ava" />
-                    <div
-                      className="ps-class-bubble lily rich"
-                      dangerouslySetInnerHTML={{ __html: renderRich(turn.text) }}
-                    />
-                  </div>
-                ) : (
-                  <div key={i} className="ps-class-row me">
-                    <div className="ps-class-bubble me">{turn.text}</div>
-                  </div>
-                )
+            {/* Slide progress */}
+            <div className="ps-slide-progress">
+              {lessonCards.map((_, i) => (
+                <button
+                  key={i}
+                  className={`ps-slide-dot${i === cardIdx ? ' on' : ''}${i < cardIdx ? ' done' : ''}`}
+                  onClick={() => setCardIdx(i)}
+                  disabled={lessonLoading}
+                  aria-label={`Part ${i + 1}`}
+                />
               ))}
-              {lessonLoading && (
-                <div className="ps-class-row lily">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/lilygirls.PNG" alt="Lily" className="ps-class-ava" />
-                  <div className="ps-class-bubble lily ps-class-typing">
-                    <span /><span /><span />
-                  </div>
-                </div>
-              )}
-              {lessonError && (
-                <div className="ps-class-err-row">
-                  <span>{lessonError}</span>
-                  <button onClick={() => void runLessonTurn(lessonTurns)}>{en ? 'Retry' : '再試行'}</button>
-                </div>
-              )}
-              <div ref={lessonEndRef} />
+              {lessonLoading && <span className="ps-slide-dot loading" />}
             </div>
 
-            <div className="ps-class-bar">
+            {/* The current slide */}
+            <div className="ps-slide-stage">
+              {lessonLoading ? (
+                <div className="ps-slide-card thinking">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/lilygirls.PNG" alt="Lily" className="ps-slide-ava" />
+                  <div className="ps-class-typing"><span /><span /><span /></div>
+                  <p className="ps-slide-thinking-txt">
+                    {en ? 'Lily is preparing the next part…' : 'Lilyが次の内容を準備中…'}
+                  </p>
+                </div>
+              ) : lessonError ? (
+                <div className="ps-slide-card">
+                  <p className="ps-class-err-txt">{lessonError}</p>
+                  <button className="ps-slide-retry" onClick={() => void runLessonTurn(lessonTurns)}>
+                    {en ? 'Retry' : '再試行'}
+                  </button>
+                </div>
+              ) : lessonCards[cardIdx] ? (
+                <div className="ps-slide-card" key={cardIdx}>
+                  <div className="ps-slide-card-head">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/lilygirls.PNG" alt="Lily" className="ps-slide-ava" />
+                    <span className="ps-slide-num">
+                      {lessonCards[cardIdx]!.userQ
+                        ? (en ? 'Answer' : '回答')
+                        : (en ? `Part ${cardIdx + 1}` : `その${cardIdx + 1}`)}
+                    </span>
+                  </div>
+                  {lessonCards[cardIdx]!.userQ && (
+                    <div className="ps-slide-qchip">
+                      {(en ? 'Q: ' : '質問：') + lessonCards[cardIdx]!.userQ}
+                    </div>
+                  )}
+                  <div
+                    className="ps-slide-body rich"
+                    dangerouslySetInnerHTML={{ __html: renderRich(lessonCards[cardIdx]!.text) }}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            {/* Slide navigation */}
+            <div className="ps-slide-nav">
               <button
-                className="ps-class-next"
-                onClick={() => void sendLessonMessage(en ? 'Next, please continue.' : '次へ進んで。続きを教えて。')}
+                className="ps-slide-prev"
+                onClick={() => setCardIdx(i => Math.max(0, i - 1))}
+                disabled={cardIdx === 0 || lessonLoading}
+              >
+                <ChevronLeft size={17} /> {en ? 'Back' : '前へ'}
+              </button>
+              <button
+                className="ps-slide-next"
+                onClick={() => {
+                  if (cardIdx < lessonCards.length - 1) setCardIdx(i => i + 1);
+                  else void sendLessonMessage(en ? LESSON_NEXT.en : LESSON_NEXT.ja);
+                }}
                 disabled={lessonLoading}
               >
-                {en ? 'Next ▶' : '次へ ▶'}
+                {cardIdx < lessonCards.length - 1
+                  ? <>{en ? 'Forward' : '進む'} <ChevronRight size={17} /></>
+                  : <>{en ? 'Next part' : '次へ'} <ChevronRight size={17} /></>}
               </button>
+            </div>
+
+            {/* Ask the teacher */}
+            <div className="ps-class-bar">
               <input
                 className="ps-class-input"
                 value={lessonInput}
@@ -1624,31 +1690,52 @@ function PracticeStyles() {
   .ps-lesson-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.86rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
   .ps-lesson-btn:disabled { opacity: 0.5; cursor: default; }
   .ps-lesson-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
-  /* ── Lesson: 1-on-1 conversation ── */
+  /* ── Lesson: slide deck ── */
   .ps-class { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 -16px -16px; }
   .ps-class-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--accent); flex-shrink: 0; }
   .ps-class-head-l { display: flex; align-items: center; gap: 6px; font-size: 0.86rem; font-weight: 700; color: var(--foreground); min-width: 0; }
   .ps-class-head-l span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ps-class-head-ic { color: #8b5cf6; flex-shrink: 0; }
   .ps-class-exit { flex-shrink: 0; background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; font-size: 0.76rem; font-weight: 700; color: var(--fg-muted); cursor: pointer; }
-  .ps-class-msgs { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-  .ps-class-row { display: flex; gap: 8px; max-width: 100%; }
-  .ps-class-row.lily { align-items: flex-start; }
-  .ps-class-row.me { justify-content: flex-end; }
-  .ps-class-ava { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1.5px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); }
-  .ps-class-bubble { border-radius: 14px; padding: 11px 13px; font-size: 0.88rem; line-height: 1.65; word-break: break-word; max-width: 80%; }
-  .ps-class-bubble.lily { background: var(--accent); border: 1px solid var(--border); border-top-left-radius: 4px; color: var(--foreground); }
-  .ps-class-bubble.me { background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border-top-right-radius: 4px; white-space: pre-wrap; }
+
+  /* Progress dots */
+  .ps-slide-progress { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 11px 14px 5px; flex-shrink: 0; }
+  .ps-slide-dot { width: 8px; height: 8px; padding: 0; border: none; border-radius: 50%; background: var(--border); cursor: pointer; transition: width .2s, background .2s; }
+  .ps-slide-dot:disabled { cursor: default; }
+  .ps-slide-dot.done { background: color-mix(in srgb, #8b5cf6 45%, var(--border)); }
+  .ps-slide-dot.on { width: 22px; border-radius: 5px; background: linear-gradient(120deg, #8b5cf6, #ec4899); }
+  .ps-slide-dot.loading { background: #ec4899; animation: ps-pulse .9s infinite; cursor: default; }
+  @keyframes ps-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+  /* Slide stage + card */
+  .ps-slide-stage { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px 14px; display: flex; }
+  .ps-slide-card { width: 100%; align-self: flex-start; background: var(--background); border: 1.5px solid var(--border); border-radius: 18px; padding: 18px 16px; box-shadow: 0 6px 22px rgba(139, 92, 246, 0.09); animation: ps-slide-in .28s ease; }
+  @keyframes ps-slide-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .ps-slide-card.thinking { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 36px 16px; }
+  .ps-slide-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; }
+  .ps-slide-ava { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1.5px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); }
+  .ps-slide-num { font-size: 0.72rem; font-weight: 800; letter-spacing: .04em; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); padding: 3px 11px; border-radius: 999px; }
+  .ps-slide-qchip { font-size: 0.78rem; color: var(--fg-muted); background: var(--accent); border-left: 3px solid #ec4899; border-radius: 6px; padding: 7px 10px; margin-bottom: 13px; line-height: 1.55; word-break: break-word; }
+  .ps-slide-body { font-size: 0.92rem; line-height: 1.75; color: var(--foreground); word-break: break-word; }
+  .ps-slide-thinking-txt { font-size: 0.82rem; color: var(--fg-muted); margin: 0; }
+  .ps-class-err-txt { font-size: 0.85rem; color: #ef4444; text-align: center; margin: 0 0 10px; }
+  .ps-slide-retry { display: block; margin: 0 auto; background: transparent; border: 1px solid #ef4444; border-radius: 8px; padding: 5px 14px; color: #ef4444; font-weight: 700; cursor: pointer; }
+
   .ps-class-typing { display: flex; gap: 4px; align-items: center; }
-  .ps-class-typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-muted); opacity: 0.5; animation: ps-typing 1s infinite; }
+  .ps-class-typing span { width: 8px; height: 8px; border-radius: 50%; background: #8b5cf6; opacity: 0.5; animation: ps-typing 1s infinite; }
   .ps-class-typing span:nth-child(2) { animation-delay: 0.2s; }
   .ps-class-typing span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes ps-typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
-  .ps-class-err-row { display: flex; align-items: center; gap: 10px; justify-content: center; font-size: 0.8rem; color: #ef4444; }
-  .ps-class-err-row button { background: transparent; border: 1px solid #ef4444; border-radius: 8px; padding: 3px 10px; color: #ef4444; font-weight: 700; cursor: pointer; }
-  .ps-class-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--background); flex-shrink: 0; }
-  .ps-class-next { flex-shrink: 0; height: 40px; padding: 0 13px; background: color-mix(in srgb, #8b5cf6 14%, var(--accent)); color: #8b5cf6; border: 1.5px solid color-mix(in srgb, #8b5cf6 35%, var(--border)); border-radius: 12px; font-size: 0.83rem; font-weight: 800; cursor: pointer; white-space: nowrap; }
-  .ps-class-next:disabled { opacity: 0.45; cursor: default; }
+
+  /* Slide navigation */
+  .ps-slide-nav { display: flex; gap: 8px; padding: 6px 14px 4px; flex-shrink: 0; }
+  .ps-slide-prev, .ps-slide-next { display: flex; align-items: center; justify-content: center; gap: 4px; height: 42px; border-radius: 12px; font-size: 0.86rem; font-weight: 800; cursor: pointer; }
+  .ps-slide-prev { flex: 0 0 auto; padding: 0 16px; background: var(--accent); border: 1.5px solid var(--border); color: var(--fg-muted); }
+  .ps-slide-next { flex: 1; padding: 0 16px; background: linear-gradient(120deg, #8b5cf6, #ec4899); border: none; color: #fff; }
+  .ps-slide-prev:disabled, .ps-slide-next:disabled { opacity: 0.45; cursor: default; }
+
+  /* Ask the teacher */
+  .ps-class-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); background: var(--background); flex-shrink: 0; }
   .ps-class-input { flex: 1; min-width: 0; height: 40px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 12px; font-size: 0.88rem; color: var(--foreground); outline: none; }
   .ps-class-input:focus { border-color: var(--primary); }
   .ps-class-send { flex-shrink: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; cursor: pointer; }
