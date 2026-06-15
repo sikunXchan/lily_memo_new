@@ -17,6 +17,7 @@ import {
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
 import type { ProblemSet, PracticeQuestion, Note, Folder } from '@/lib/db';
+import { newSyncId } from '@/lib/db';
 import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
@@ -328,6 +329,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [lessonInput, setLessonInput] = useState('');
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonError, setLessonError] = useState('');
+  const [lessonSaved, setLessonSaved] = useState(false);
   const lessonSysRef = useRef('');
 
   // The lesson is presented as a deck of "slides": one card per Lily message.
@@ -419,7 +421,25 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setLessonTurns([]);
     setLessonInput('');
     setLessonError('');
+    setLessonSaved(false);
     setCardIdx(0);
+  }
+
+  async function saveLesson() {
+    if (lessonCards.length === 0) return;
+    const title = lessonTopic.trim()
+      || (en ? `Lesson — ${new Date().toLocaleDateString()}` : `Lilyの授業 — ${new Date().toLocaleDateString('ja-JP')}`);
+    const parts = lessonCards.map((card, i) => {
+      const heading = card.userQ
+        ? `<h3>${en ? 'Q: ' : '質問：'}${card.userQ}</h3>`
+        : `<h3>${en ? `Part ${i + 1}` : `その${i + 1}`}</h3>`;
+      return `${heading}${renderRich(card.text)}`;
+    });
+    const content = parts.join('<hr>');
+    const now = Date.now();
+    await db.notes.add({ syncId: newSyncId(), title, content, createdAt: now, updatedAt: now });
+    setLessonSaved(true);
+    setTimeout(() => setLessonSaved(false), 2500);
   }
 
   // ── Generation state ──
@@ -1050,7 +1070,18 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 <GraduationCap size={15} className="ps-class-head-ic" />
                 <span>{lessonTopic.trim() || (en ? 'Lesson with Lily' : 'Lilyの授業')}</span>
               </div>
-              <button className="ps-class-exit" onClick={exitLesson}>{en ? 'End' : '終了'}</button>
+              <div className="ps-class-head-r">
+                {lessonCards.length > 0 && (
+                  <button
+                    className={`ps-class-save${lessonSaved ? ' saved' : ''}`}
+                    onClick={() => void saveLesson()}
+                    disabled={lessonSaved}
+                  >
+                    {lessonSaved ? (en ? '✓ Saved' : '✓ 保存済み') : (en ? 'Save' : '保存')}
+                  </button>
+                )}
+                <button className="ps-class-exit" onClick={exitLesson}>{en ? 'End' : '終了'}</button>
+              </div>
             </div>
 
             {/* Slide progress */}
@@ -1742,6 +1773,9 @@ function PracticeStyles() {
   .ps-class-head-l { display: flex; align-items: center; gap: 6px; font-size: 0.86rem; font-weight: 700; color: var(--foreground); min-width: 0; }
   .ps-class-head-l span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ps-class-head-ic { color: #8b5cf6; flex-shrink: 0; }
+  .ps-class-head-r { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .ps-class-save { background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); border: 1.5px solid color-mix(in srgb, #8b5cf6 35%, var(--border)); border-radius: 8px; padding: 4px 12px; font-size: 0.76rem; font-weight: 700; color: #8b5cf6; cursor: pointer; transition: background .15s; }
+  .ps-class-save.saved { background: color-mix(in srgb, #22c55e 15%, var(--accent)); border-color: #22c55e; color: #22c55e; cursor: default; }
   .ps-class-exit { flex-shrink: 0; background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; font-size: 0.76rem; font-weight: 700; color: var(--fg-muted); cursor: pointer; }
 
   /* Progress dots */
