@@ -558,6 +558,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   // current question working state
   const [selected, setSelected] = useState<number | null>(null);
   const [textAns, setTextAns] = useState('');
+  const [textAnsArray, setTextAnsArray] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   // Exam countdown — null when not a timed exam attempt.
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
@@ -694,6 +695,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setResults({});
     setSelected(null);
     setTextAns('');
+    setTextAnsArray([]);
     setRevealed(false);
     // Run the countdown only for a full timed-exam attempt (not a wrong-only review).
     const timed = !only && !!set.examMode && !!set.timeLimitSec;
@@ -737,6 +739,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       setIndex(i => i + 1);
       setSelected(null);
       setTextAns('');
+      setTextAnsArray([]);
       setRevealed(false);
     } else {
       await finishAttempt();
@@ -849,10 +852,16 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   // ═══════════════════════════════════════════════════════════════════════════
   if (view === 'solve' && current) {
     const isCorrect = results[current.id];
+    // Count blanks: ［　］ (JA) or [ ___ ] (EN)
+    const blankCount = current.type === 'fill'
+      ? (current.prompt.match(/\[　\]|［　］|\[ ___ \]|\[_+\]/g) ?? []).length || 1
+      : 1;
+    // Ensure textAnsArray is long enough (don't mutate during render; handled via key reset)
+    const safeArray = Array.from({ length: blankCount }, (_, i) => textAnsArray[i] ?? '');
     const canReveal = current.type === 'written'
       ? true
       : current.type === 'fill'
-        ? textAns.trim() !== ''
+        ? (blankCount > 1 ? safeArray.every(a => a.trim() !== '') : textAns.trim() !== '')
         : selected !== null;
 
     const overlay = (
@@ -931,7 +940,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               </div>
             )}
 
-            {current.type === 'fill' && (
+            {current.type === 'fill' && blankCount <= 1 && (
               <input
                 className={`psv-input ${revealed ? (isCorrect ? 'ok' : 'ng') : ''}`}
                 value={textAns}
@@ -940,6 +949,28 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 disabled={revealed}
                 onKeyDown={e => { if (e.key === 'Enter' && canReveal && !revealed) reveal(); }}
               />
+            )}
+            {current.type === 'fill' && blankCount > 1 && (
+              <div className="psv-multi-fill">
+                {safeArray.map((val, i) => (
+                  <div key={i} className="psv-multi-fill-row">
+                    <span className="psv-fill-label">空欄{en ? ` ${i + 1}` : `${['①','②','③','④','⑤'][i] ?? i + 1}`}</span>
+                    <input
+                      className={`psv-input ${revealed ? (isCorrect ? 'ok' : 'ng') : ''}`}
+                      value={val}
+                      onChange={e => {
+                        const next = [...safeArray];
+                        next[i] = e.target.value;
+                        setTextAnsArray(next);
+                        setTextAns(next.join('、'));
+                      }}
+                      placeholder={en ? `Blank ${i + 1}…` : `${['①','②','③','④','⑤'][i] ?? i + 1}を入力…`}
+                      disabled={revealed}
+                      onKeyDown={e => { if (e.key === 'Enter' && canReveal && !revealed) reveal(); }}
+                    />
+                  </div>
+                ))}
+              </div>
             )}
 
             {current.type === 'written' && (
@@ -965,7 +996,22 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 {(current.type === 'fill' || current.type === 'written') && current.answer && (
                   <div className="psv-answer">
                     <span className="psv-answer-label">{en ? 'Model answer' : '模範解答'}</span>
-                    <Rich src={current.answer} className="rich" />
+                    {blankCount > 1
+                      ? (() => {
+                          const parts = (current.answer ?? '').split(/[、,，]\s*/);
+                          return (
+                            <div className="psv-answer-parts">
+                              {Array.from({ length: blankCount }, (_, i) => (
+                                <div key={i} className="psv-answer-part">
+                                  <span className="psv-fill-label">{en ? `Blank ${i + 1}` : ['①','②','③','④','⑤'][i] ?? `${i + 1}`}</span>
+                                  <Rich src={parts[i] ?? ''} className="rich" />
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()
+                      : <Rich src={current.answer} className="rich" />
+                    }
                   </div>
                 )}
                 {current.explanation && (
@@ -1810,6 +1856,11 @@ function PracticeStyles() {
   .psv-input:focus { border-color: #8b5cf6; }
   .psv-input.ok { border-color: #10b981; }
   .psv-input.ng { border-color: #ef4444; }
+  .psv-multi-fill { display: flex; flex-direction: column; gap: 10px; }
+  .psv-multi-fill-row { display: flex; align-items: center; gap: 10px; }
+  .psv-fill-label { flex-shrink: 0; font-size: 0.82rem; font-weight: 800; color: #8b5cf6; min-width: 28px; }
+  .psv-answer-parts { display: flex; flex-direction: column; gap: 6px; }
+  .psv-answer-part { display: flex; align-items: baseline; gap: 8px; }
   .psv-textarea { width: 100%; background: var(--accent); border: 2px solid var(--border); border-radius: 12px; padding: 13px 14px; font-size: 0.95rem; color: var(--foreground); outline: none; font-family: inherit; resize: vertical; line-height: 1.6; }
   .psv-textarea:focus { border-color: #8b5cf6; }
 
