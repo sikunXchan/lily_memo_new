@@ -21,7 +21,7 @@ import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
 import type { ChatAttachment } from '@/lib/gemini';
-import { callGemini } from '@/lib/gemini';
+import { callGemini, callGeminiChat } from '@/lib/gemini';
 import { getEffectiveApiKey } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -290,14 +290,37 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
   async function startLesson() {
     const topic = lessonTopic.trim();
-    if (!topic || lessonLoading) return;
+    const hasAtts = genImages.length > 0 || genMdFiles.length > 0 || genNotes.length > 0;
+    if (!topic && !hasAtts) return;
+    if (lessonLoading) return;
     const apiKey = getEffectiveApiKey();
     if (!apiKey) { setLessonError(en ? 'Set your API key in Settings.' : 'APIキーを設定してください。'); return; }
     setLessonLoading(true);
     setLessonError('');
     setLessonContent('');
     try {
-      const result = await callGemini(buildLessonPrompt(topic, en), apiKey);
+      const mdAtts: ChatAttachment[] = genMdFiles.map(f => ({
+        mimeType: 'text/plain', data: utf8ToBase64(f.content),
+      }));
+      const noteRows = genNotes.length > 0 ? await db.notes.bulkGet(genNotes.map(n => n.id)) : [];
+      const noteAtts: ChatAttachment[] = noteRows
+        .filter((n): n is Note => !!n)
+        .map(n => {
+          const body = noteHtmlToText(n.content || '');
+          const header = en ? `# Note: ${n.title || 'Untitled'}` : `# メモ: ${n.title || '無題'}`;
+          return { mimeType: 'text/plain', data: utf8ToBase64(`${header}\n\n${body}`) };
+        });
+      const attachments = [...mdAtts, ...noteAtts, ...genImages.map(g => g.att)];
+      let result: string;
+      if (attachments.length > 0) {
+        result = await callGeminiChat(
+          [{ role: 'user', text: buildLessonPrompt(topic || (en ? '(see attached materials)' : '（添付資料を参照）'), en), attachments }],
+          '',
+          apiKey,
+        );
+      } else {
+        result = await callGemini(buildLessonPrompt(topic, en), apiKey);
+      }
       setLessonContent(result.trim());
     } catch {
       setLessonError(en ? 'Failed to generate lesson.' : '授業の生成に失敗しました。');
@@ -843,27 +866,63 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           <div className="ps-lesson">
             <div className="ps-lesson-desc">
               {en
-                ? 'Type a topic and Lily will give you a structured lesson — chapter by chapter, with comprehension checks.'
-                : 'トピックを入力すると、Lilyが章立てで授業をしてくれるよ。各章の最後に確認問題も出るよ。'}
+                ? 'Type a topic or attach materials — Lily will give you a structured lesson with chapters and comprehension checks.'
+                : 'トピックを入力するか資料を添付すると、Lilyが章立てで授業をしてくれるよ。各章の最後に確認問題も出るよ。'}
             </div>
+
+            {/* Attached materials preview */}
+            {(genMdFiles.length > 0 || genNotes.length > 0 || genImages.length > 0) && (
+              <div className="ps-gen-mds">
+                {genMdFiles.map((f, i) => (
+                  <div key={i} className="ps-gen-md-chip">
+                    <FileText size={12} /><span>{f.name}</span>
+                    <button onClick={() => removeMdFile(i)}><X size={11} /></button>
+                  </div>
+                ))}
+                {genNotes.map(n => (
+                  <div key={n.id} className="ps-gen-md-chip note">
+                    <NotebookText size={12} /><span>{n.title}</span>
+                    <button onClick={() => removeNote(n.id)}><X size={11} /></button>
+                  </div>
+                ))}
+                {genImages.map((g, i) => (
+                  <div key={i} className="ps-gen-img" style={{ width: 48, height: 48 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={g.url} alt="" />
+                    <button onClick={() => removeImage(i)}><X size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="ps-lesson-row">
               <input
                 className="ps-lesson-input"
                 value={lessonTopic}
                 onChange={e => setLessonTopic(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') void startLesson(); }}
-                placeholder={en ? 'e.g. Photosynthesis, World War II…' : '例：光合成、江戸時代、二次関数…'}
+                placeholder={en ? 'Topic (or leave blank to use materials)' : 'トピック（資料だけでもOK）'}
                 disabled={lessonLoading}
               />
+              {/* Attachment buttons */}
+              <button className="ps-lesson-att" title={en ? 'Attach image' : '画像を添付'} onClick={() => fileRef.current?.click()} disabled={lessonLoading}>
+                <ImagePlus size={15} />
+              </button>
+              <button className="ps-lesson-att" title={en ? 'Attach file' : 'ファイルを添付'} onClick={() => mdRef.current?.click()} disabled={lessonLoading}>
+                <FileText size={15} />
+              </button>
+              <button className="ps-lesson-att" title={en ? 'Pick notes' : 'メモを選ぶ'} onClick={() => setShowNotePicker(true)} disabled={lessonLoading}>
+                <NotebookText size={15} />
+              </button>
               <button
                 className="ps-lesson-btn"
                 onClick={() => void startLesson()}
-                disabled={!lessonTopic.trim() || lessonLoading}
+                disabled={(!lessonTopic.trim() && genImages.length === 0 && genMdFiles.length === 0 && genNotes.length === 0) || lessonLoading}
               >
                 {lessonLoading
                   ? <Loader2 size={15} className="ps-spin" />
                   : <Sparkles size={15} />}
-                {en ? 'Start' : '授業を始める'}
+                {en ? 'Start' : '始める'}
               </button>
             </div>
             {lessonError && <p className="ps-lesson-err">{lessonError}</p>}
@@ -1056,8 +1115,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           </div>
         </div>}
 
-        {/* ── In-app note picker (practice only) ── */}
-        {screenMode === 'practice' && showNotePicker && typeof document !== 'undefined' && createPortal(
+        {/* ── In-app note picker (shared between modes) ── */}
+        {showNotePicker && typeof document !== 'undefined' && createPortal(
           <div className="ps-notepick-back" onClick={() => setShowNotePicker(false)}>
             <div className="ps-notepick" onClick={e => e.stopPropagation()}>
               <div className="ps-notepick-head">
@@ -1438,6 +1497,9 @@ function PracticeStyles() {
   .ps-lesson-row { display: flex; gap: 8px; }
   .ps-lesson-input { flex: 1; height: 42px; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 12px; font-size: 0.88rem; color: var(--foreground); outline: none; }
   .ps-lesson-input:focus { border-color: var(--primary); }
+  .ps-lesson-att { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; background: var(--accent); border: 1.5px solid var(--border); border-radius: 12px; color: var(--fg-muted); cursor: pointer; flex-shrink: 0; transition: color .15s, border-color .15s; }
+  .ps-lesson-att:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
+  .ps-lesson-att:disabled { opacity: 0.4; cursor: default; }
   .ps-lesson-btn { display: flex; align-items: center; gap: 5px; height: 42px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.83rem; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
   .ps-lesson-btn:disabled { opacity: 0.5; cursor: default; }
   .ps-lesson-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
