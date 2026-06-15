@@ -16,7 +16,8 @@ import {
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
-import type { ProblemSet, PracticeQuestion, Note, Folder } from '@/lib/db';
+import type { ProblemSet, PracticeQuestion, Note, Folder, LessonSession } from '@/lib/db';
+import { newSyncId } from '@/lib/db';
 import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
@@ -320,14 +321,21 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [view, setView] = useState<View>('list');
   const [screenMode, setScreenMode] = useState<ScreenMode>('practice');
 
+  // ── Saved lesson sessions (for history / resume) ──
+  const pastLessons = useLiveQuery<LessonSession[]>(
+    () => db.lessonSessions.orderBy('updatedAt').reverse().limit(20).toArray(), []
+  ) ?? [];
+
   // ── Lesson state (conversational 1-on-1) ──
   const [lessonTopic, setLessonTopic] = useState('');
   const [lessonStyle, setLessonStyle] = useState<LessonStyle>('standard');
   const [lessonStarted, setLessonStarted] = useState(false);
+  const [lessonSessionId, setLessonSessionId] = useState<number | null>(null);
   const [lessonTurns, setLessonTurns] = useState<ChatTurn[]>([]); // full API history; [0] is hidden kickoff
   const [lessonInput, setLessonInput] = useState('');
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonError, setLessonError] = useState('');
+  const [lessonSaved, setLessonSaved] = useState(false);
   const lessonSysRef = useRef('');
 
   // The lesson is presented as a deck of "slides": one card per Lily message.
@@ -347,7 +355,14 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     return out;
   }, [lessonTurns]);
 
+  // Lesson is complete when any card contains Lily's summary heading.
+  const isLessonComplete = useMemo(
+    () => lessonCards.some(c => /^##\s+(Summary|まとめ)/m.test(c.text)),
+    [lessonCards],
+  );
+
   const [cardIdx, setCardIdx] = useState(0);
+  const [genTestLoading, setGenTestLoading] = useState(false);
   // Whenever a new card arrives, slide to it.
   useEffect(() => {
     if (lessonCards.length > 0) setCardIdx(lessonCards.length - 1);
@@ -364,7 +379,30 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
         temperature: 0.7,
         maxOutputTokens: 8192,
       });
-      setLessonTurns([...history, { role: 'model', text: reply.trim() }]);
+      const next: ChatTurn[] = [...history, { role: 'model', text: reply.trim() }];
+      setLessonTurns(next);
+      // Auto-save: strip attachment blobs (can be MBs) before persisting.
+      const stripped = next.map(t => ({ role: t.role, text: t.text }));
+      const cardCount = stripped.filter(t => t.role === 'model').length;
+      const now = Date.now();
+      setLessonSessionId(prev => {
+        if (prev == null) {
+          void db.lessonSessions.add({
+            topic: lessonTopic.trim() || (en ? 'Lesson' : 'Lilyの授業'),
+            style: lessonSysRef.current.includes('OVERVIEW') || lessonSysRef.current.includes('概要モード') ? 'overview'
+              : lessonSysRef.current.includes('DETAILED') || lessonSysRef.current.includes('詳細モード') ? 'detailed'
+              : 'standard',
+            sysPrompt: lessonSysRef.current,
+            turns: stripped,
+            cardCount,
+            createdAt: now,
+            updatedAt: now,
+          }).then(id => setLessonSessionId(id as number));
+          return prev;
+        }
+        void db.lessonSessions.update(prev, { turns: stripped, cardCount, updatedAt: now });
+        return prev;
+      });
     } catch {
       setLessonError(en ? 'Something went wrong. Tap retry.' : 'うまくいかなかった…もう一度試してね。');
     } finally {
@@ -400,6 +438,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       text: en ? LESSON_KICKOFF.en : LESSON_KICKOFF.ja,
       attachments: attachments.length > 0 ? attachments : undefined,
     };
+    setLessonSessionId(null);
     setLessonStarted(true);
     setLessonTurns([kickoff]);
     await runLessonTurn([kickoff]);
@@ -419,7 +458,65 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setLessonTurns([]);
     setLessonInput('');
     setLessonError('');
+    setLessonSaved(false);
+    setLessonSessionId(null);
     setCardIdx(0);
+  }
+
+  function resumeLesson(session: LessonSession) {
+    setLessonTopic(session.topic);
+    setLessonStyle(session.style);
+    lessonSysRef.current = session.sysPrompt;
+    // Restore turns (text only — attachments were stripped on save).
+    const turns: ChatTurn[] = session.turns.map(t => ({ role: t.role as 'user' | 'model', text: t.text }));
+    setLessonTurns(turns);
+    setLessonSessionId(session.id ?? null);
+    setLessonStarted(true);
+    setCardIdx(Math.max(0, session.cardCount - 1));
+  }
+
+  async function deleteLesson(id: number, e: React.MouseEvent) {
+    e.stopPropagation();
+    await db.lessonSessions.delete(id);
+  }
+
+  async function startQuiz() {
+    if (lessonCards.length === 0 || genTestLoading) return;
+    setGenTestLoading(true);
+    try {
+      const content = lessonCards.map((c, i) => `## Part ${i + 1}\n${c.text}`).join('\n\n---\n\n');
+      const prompt = en
+        ? `Based on the following lesson content, create a varied quiz (mix of multiple-choice, fill-in-the-blank, and true/false) to test understanding:\n\n${content}`
+        : `以下の授業内容をもとに、理解度を確認する確認テストを作成してください（選択・穴埋め・○×などの形式をバランスよく使ってください）：\n\n${content}`;
+      const result = await generateProblemSet(prompt, []);
+      const id = await saveProblemSet(result, {});
+      const fresh = await db.problemSets.get(id);
+      if (fresh) {
+        exitLesson();
+        startSolving(fresh);
+      }
+    } catch {
+      setLessonError(en ? 'Failed to create quiz.' : 'テスト作成に失敗しました。');
+    } finally {
+      setGenTestLoading(false);
+    }
+  }
+
+  async function saveLesson() {
+    if (lessonCards.length === 0) return;
+    const title = lessonTopic.trim()
+      || (en ? `Lesson — ${new Date().toLocaleDateString()}` : `Lilyの授業 — ${new Date().toLocaleDateString('ja-JP')}`);
+    const parts = lessonCards.map((card, i) => {
+      const heading = card.userQ
+        ? `<h3>${en ? 'Q: ' : '質問：'}${card.userQ}</h3>`
+        : `<h3>${en ? `Part ${i + 1}` : `その${i + 1}`}</h3>`;
+      return `${heading}${renderRich(card.text)}`;
+    });
+    const content = parts.join('<hr>');
+    const now = Date.now();
+    await db.notes.add({ syncId: newSyncId(), title, content, createdAt: now, updatedAt: now });
+    setLessonSaved(true);
+    setTimeout(() => setLessonSaved(false), 2500);
   }
 
   // ── Generation state ──
@@ -461,6 +558,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   // current question working state
   const [selected, setSelected] = useState<number | null>(null);
   const [textAns, setTextAns] = useState('');
+  const [textAnsArray, setTextAnsArray] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
   // Exam countdown — null when not a timed exam attempt.
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
@@ -597,6 +695,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setResults({});
     setSelected(null);
     setTextAns('');
+    setTextAnsArray([]);
     setRevealed(false);
     // Run the countdown only for a full timed-exam attempt (not a wrong-only review).
     const timed = !only && !!set.examMode && !!set.timeLimitSec;
@@ -640,6 +739,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       setIndex(i => i + 1);
       setSelected(null);
       setTextAns('');
+      setTextAnsArray([]);
       setRevealed(false);
     } else {
       await finishAttempt();
@@ -752,10 +852,16 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   // ═══════════════════════════════════════════════════════════════════════════
   if (view === 'solve' && current) {
     const isCorrect = results[current.id];
+    // Count blanks: ［　］ (JA) or [ ___ ] (EN)
+    const blankCount = current.type === 'fill'
+      ? (current.prompt.match(/\[　\]|［　］|\[ ___ \]|\[_+\]/g) ?? []).length || 1
+      : 1;
+    // Ensure textAnsArray is long enough (don't mutate during render; handled via key reset)
+    const safeArray = Array.from({ length: blankCount }, (_, i) => textAnsArray[i] ?? '');
     const canReveal = current.type === 'written'
       ? true
       : current.type === 'fill'
-        ? textAns.trim() !== ''
+        ? (blankCount > 1 ? safeArray.every(a => a.trim() !== '') : textAns.trim() !== '')
         : selected !== null;
 
     const overlay = (
@@ -834,7 +940,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               </div>
             )}
 
-            {current.type === 'fill' && (
+            {current.type === 'fill' && blankCount <= 1 && (
               <input
                 className={`psv-input ${revealed ? (isCorrect ? 'ok' : 'ng') : ''}`}
                 value={textAns}
@@ -843,6 +949,28 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 disabled={revealed}
                 onKeyDown={e => { if (e.key === 'Enter' && canReveal && !revealed) reveal(); }}
               />
+            )}
+            {current.type === 'fill' && blankCount > 1 && (
+              <div className="psv-multi-fill">
+                {safeArray.map((val, i) => (
+                  <div key={i} className="psv-multi-fill-row">
+                    <span className="psv-fill-label">空欄{en ? ` ${i + 1}` : `${['①','②','③','④','⑤'][i] ?? i + 1}`}</span>
+                    <input
+                      className={`psv-input ${revealed ? (isCorrect ? 'ok' : 'ng') : ''}`}
+                      value={val}
+                      onChange={e => {
+                        const next = [...safeArray];
+                        next[i] = e.target.value;
+                        setTextAnsArray(next);
+                        setTextAns(next.join('、'));
+                      }}
+                      placeholder={en ? `Blank ${i + 1}…` : `${['①','②','③','④','⑤'][i] ?? i + 1}を入力…`}
+                      disabled={revealed}
+                      onKeyDown={e => { if (e.key === 'Enter' && canReveal && !revealed) reveal(); }}
+                    />
+                  </div>
+                ))}
+              </div>
             )}
 
             {current.type === 'written' && (
@@ -868,7 +996,22 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 {(current.type === 'fill' || current.type === 'written') && current.answer && (
                   <div className="psv-answer">
                     <span className="psv-answer-label">{en ? 'Model answer' : '模範解答'}</span>
-                    <Rich src={current.answer} className="rich" />
+                    {blankCount > 1
+                      ? (() => {
+                          const parts = (current.answer ?? '').split(/[、,，]\s*/);
+                          return (
+                            <div className="psv-answer-parts">
+                              {Array.from({ length: blankCount }, (_, i) => (
+                                <div key={i} className="psv-answer-part">
+                                  <span className="psv-fill-label">{en ? `Blank ${i + 1}` : ['①','②','③','④','⑤'][i] ?? `${i + 1}`}</span>
+                                  <Rich src={parts[i] ?? ''} className="rich" />
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()
+                      : <Rich src={current.answer} className="rich" />
+                    }
                   </div>
                 )}
                 {current.explanation && (
@@ -1039,6 +1182,32 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               </button>
             </div>
             {lessonError && <p className="ps-lesson-err">{lessonError}</p>}
+
+            {/* ── Past lessons ── */}
+            {pastLessons.length > 0 && (
+              <div className="ps-past-lessons">
+                <p className="ps-past-label">{en ? 'Continue a lesson' : '続きから再開'}</p>
+                {pastLessons.map(s => (
+                  <button key={s.id} className="ps-past-row" onClick={() => resumeLesson(s)}>
+                    <div className="ps-past-info">
+                      <span className="ps-past-topic">{s.topic}</span>
+                      <span className="ps-past-meta">
+                        {en
+                          ? `${s.cardCount} parts · ${new Date(s.updatedAt).toLocaleDateString()}`
+                          : `${s.cardCount}枚 · ${new Date(s.updatedAt).toLocaleDateString('ja-JP')}`}
+                      </span>
+                    </div>
+                    <button
+                      className="ps-past-del"
+                      onClick={(e) => void deleteLesson(s.id!, e)}
+                      title={en ? 'Delete' : '削除'}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1050,7 +1219,18 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 <GraduationCap size={15} className="ps-class-head-ic" />
                 <span>{lessonTopic.trim() || (en ? 'Lesson with Lily' : 'Lilyの授業')}</span>
               </div>
-              <button className="ps-class-exit" onClick={exitLesson}>{en ? 'End' : '終了'}</button>
+              <div className="ps-class-head-r">
+                {lessonCards.length > 0 && (
+                  <button
+                    className={`ps-class-save${lessonSaved ? ' saved' : ''}`}
+                    onClick={() => void saveLesson()}
+                    disabled={lessonSaved}
+                  >
+                    {lessonSaved ? (en ? '✓ Saved' : '✓ 保存済み') : (en ? 'Save' : '保存')}
+                  </button>
+                )}
+                <button className="ps-class-exit" onClick={exitLesson}>{en ? 'End' : '終了'}</button>
+              </div>
             </div>
 
             {/* Slide progress */}
@@ -1114,22 +1294,37 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <button
                 className="ps-slide-prev"
                 onClick={() => setCardIdx(i => Math.max(0, i - 1))}
-                disabled={cardIdx === 0 || lessonLoading}
+                disabled={cardIdx === 0 || lessonLoading || genTestLoading}
               >
                 <ChevronLeft size={17} /> {en ? 'Back' : '前へ'}
               </button>
-              <button
-                className="ps-slide-next"
-                onClick={() => {
-                  if (cardIdx < lessonCards.length - 1) setCardIdx(i => i + 1);
-                  else void sendLessonMessage(en ? LESSON_NEXT.en : LESSON_NEXT.ja);
-                }}
-                disabled={lessonLoading}
-              >
-                {cardIdx < lessonCards.length - 1
-                  ? <>{en ? 'Forward' : '進む'} <ChevronRight size={17} /></>
-                  : <>{en ? 'Next part' : '次へ'} <ChevronRight size={17} /></>}
-              </button>
+              {cardIdx < lessonCards.length - 1 ? (
+                <button
+                  className="ps-slide-next"
+                  onClick={() => setCardIdx(i => i + 1)}
+                  disabled={lessonLoading || genTestLoading}
+                >
+                  {en ? 'Forward' : '進む'} <ChevronRight size={17} />
+                </button>
+              ) : isLessonComplete ? (
+                <button
+                  className="ps-slide-next quiz"
+                  onClick={() => void startQuiz()}
+                  disabled={genTestLoading || lessonLoading}
+                >
+                  {genTestLoading
+                    ? <><Loader2 size={15} className="ps-spin" /> {en ? 'Creating…' : '作成中…'}</>
+                    : <><Trophy size={15} /> {en ? 'Take a quiz' : '確認テストを受ける'}</>}
+                </button>
+              ) : (
+                <button
+                  className="ps-slide-next"
+                  onClick={() => void sendLessonMessage(en ? LESSON_NEXT.en : LESSON_NEXT.ja)}
+                  disabled={lessonLoading || genTestLoading}
+                >
+                  {en ? 'Next part' : '次へ'} <ChevronRight size={17} />
+                </button>
+              )}
             </div>
 
             {/* Ask the teacher */}
@@ -1661,6 +1856,11 @@ function PracticeStyles() {
   .psv-input:focus { border-color: #8b5cf6; }
   .psv-input.ok { border-color: #10b981; }
   .psv-input.ng { border-color: #ef4444; }
+  .psv-multi-fill { display: flex; flex-direction: column; gap: 10px; }
+  .psv-multi-fill-row { display: flex; align-items: center; gap: 10px; }
+  .psv-fill-label { flex-shrink: 0; font-size: 0.82rem; font-weight: 800; color: #8b5cf6; min-width: 28px; }
+  .psv-answer-parts { display: flex; flex-direction: column; gap: 6px; }
+  .psv-answer-part { display: flex; align-items: baseline; gap: 8px; }
   .psv-textarea { width: 100%; background: var(--accent); border: 2px solid var(--border); border-radius: 12px; padding: 13px 14px; font-size: 0.95rem; color: var(--foreground); outline: none; font-family: inherit; resize: vertical; line-height: 1.6; }
   .psv-textarea:focus { border-color: #8b5cf6; }
 
@@ -1736,12 +1936,25 @@ function PracticeStyles() {
   .ps-lesson-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.86rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
   .ps-lesson-btn:disabled { opacity: 0.5; cursor: default; }
   .ps-lesson-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
+  /* Past lesson history */
+  .ps-past-lessons { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .ps-past-label { font-size: 0.72rem; font-weight: 800; letter-spacing: .05em; color: var(--fg-muted); margin: 0 0 4px; text-transform: uppercase; }
+  .ps-past-row { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--accent); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; cursor: pointer; text-align: left; transition: border-color .15s; }
+  .ps-past-row:hover { border-color: #8b5cf6; }
+  .ps-past-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .ps-past-topic { font-size: 0.88rem; font-weight: 700; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-past-meta { font-size: 0.72rem; color: var(--fg-muted); }
+  .ps-past-del { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 6px; }
+  .ps-past-del:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
   /* ── Lesson: slide deck ── */
   .ps-class { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 -16px -16px; }
   .ps-class-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--accent); flex-shrink: 0; }
   .ps-class-head-l { display: flex; align-items: center; gap: 6px; font-size: 0.86rem; font-weight: 700; color: var(--foreground); min-width: 0; }
   .ps-class-head-l span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ps-class-head-ic { color: #8b5cf6; flex-shrink: 0; }
+  .ps-class-head-r { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .ps-class-save { background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); border: 1.5px solid color-mix(in srgb, #8b5cf6 35%, var(--border)); border-radius: 8px; padding: 4px 12px; font-size: 0.76rem; font-weight: 700; color: #8b5cf6; cursor: pointer; transition: background .15s; }
+  .ps-class-save.saved { background: color-mix(in srgb, #22c55e 15%, var(--accent)); border-color: #22c55e; color: #22c55e; cursor: default; }
   .ps-class-exit { flex-shrink: 0; background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; font-size: 0.76rem; font-weight: 700; color: var(--fg-muted); cursor: pointer; }
 
   /* Progress dots */
@@ -1790,6 +2003,7 @@ function PracticeStyles() {
   .ps-slide-prev, .ps-slide-next { display: flex; align-items: center; justify-content: center; gap: 4px; height: 42px; border-radius: 12px; font-size: 0.86rem; font-weight: 800; cursor: pointer; }
   .ps-slide-prev { flex: 0 0 auto; padding: 0 16px; background: var(--accent); border: 1.5px solid var(--border); color: var(--fg-muted); }
   .ps-slide-next { flex: 1; padding: 0 16px; background: linear-gradient(120deg, #8b5cf6, #ec4899); border: none; color: #fff; }
+  .ps-slide-next.quiz { background: linear-gradient(120deg, #f59e0b, #ef4444); }
   .ps-slide-prev:disabled, .ps-slide-next:disabled { opacity: 0.45; cursor: default; }
 
   /* Ask the teacher */
