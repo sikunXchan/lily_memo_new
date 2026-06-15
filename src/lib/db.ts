@@ -228,6 +228,20 @@ export interface ProblemSet {
   deletedAt?: number;    // tombstone for sync; UI filters these out
 }
 
+// A saved 1-on-1 lesson session with Lily.
+// Attachment blobs are stripped before saving (images/PDFs can be MBs);
+// only the text of each turn is persisted so the conversation can resume.
+export interface LessonSession {
+  id?: number;
+  topic: string;
+  style: 'overview' | 'standard' | 'detailed';
+  sysPrompt: string;
+  turns: { role: 'user' | 'model'; text: string }[];
+  cardCount: number;  // number of model turns = number of slide cards
+  createdAt: number;
+  updatedAt: number;
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
@@ -243,6 +257,7 @@ export class LilyDatabase extends Dexie {
   skills!: Table<Skill>;
   problemSets!: Table<ProblemSet>;
   diaries!: Table<Diary>;
+  lessonSessions!: Table<LessonSession>;
 
   constructor() {
     super('LilyDatabase');
@@ -360,6 +375,10 @@ export class LilyDatabase extends Dexie {
     // v20: diary entries (one per day), with sync clock + tombstone.
     this.version(20).stores({
       diaries: '++id, syncId, date, createdAt, updatedAt, deletedAt',
+    });
+    // v21: lesson sessions for review / resume.
+    this.version(21).stores({
+      lessonSessions: '++id, topic, createdAt, updatedAt',
     });
   }
 }

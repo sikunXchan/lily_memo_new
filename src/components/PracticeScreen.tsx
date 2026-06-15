@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
-import type { ProblemSet, PracticeQuestion, Note, Folder } from '@/lib/db';
+import type { ProblemSet, PracticeQuestion, Note, Folder, LessonSession } from '@/lib/db';
 import { newSyncId } from '@/lib/db';
 import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
@@ -321,10 +321,16 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [view, setView] = useState<View>('list');
   const [screenMode, setScreenMode] = useState<ScreenMode>('practice');
 
+  // ── Saved lesson sessions (for history / resume) ──
+  const pastLessons = useLiveQuery<LessonSession[]>(
+    () => db.lessonSessions.orderBy('updatedAt').reverse().limit(20).toArray(), []
+  ) ?? [];
+
   // ── Lesson state (conversational 1-on-1) ──
   const [lessonTopic, setLessonTopic] = useState('');
   const [lessonStyle, setLessonStyle] = useState<LessonStyle>('standard');
   const [lessonStarted, setLessonStarted] = useState(false);
+  const [lessonSessionId, setLessonSessionId] = useState<number | null>(null);
   const [lessonTurns, setLessonTurns] = useState<ChatTurn[]>([]); // full API history; [0] is hidden kickoff
   const [lessonInput, setLessonInput] = useState('');
   const [lessonLoading, setLessonLoading] = useState(false);
@@ -366,7 +372,30 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
         temperature: 0.7,
         maxOutputTokens: 8192,
       });
-      setLessonTurns([...history, { role: 'model', text: reply.trim() }]);
+      const next: ChatTurn[] = [...history, { role: 'model', text: reply.trim() }];
+      setLessonTurns(next);
+      // Auto-save: strip attachment blobs (can be MBs) before persisting.
+      const stripped = next.map(t => ({ role: t.role, text: t.text }));
+      const cardCount = stripped.filter(t => t.role === 'model').length;
+      const now = Date.now();
+      setLessonSessionId(prev => {
+        if (prev == null) {
+          void db.lessonSessions.add({
+            topic: lessonTopic.trim() || (en ? 'Lesson' : 'Lilyの授業'),
+            style: lessonSysRef.current.includes('OVERVIEW') || lessonSysRef.current.includes('概要モード') ? 'overview'
+              : lessonSysRef.current.includes('DETAILED') || lessonSysRef.current.includes('詳細モード') ? 'detailed'
+              : 'standard',
+            sysPrompt: lessonSysRef.current,
+            turns: stripped,
+            cardCount,
+            createdAt: now,
+            updatedAt: now,
+          }).then(id => setLessonSessionId(id as number));
+          return prev;
+        }
+        void db.lessonSessions.update(prev, { turns: stripped, cardCount, updatedAt: now });
+        return prev;
+      });
     } catch {
       setLessonError(en ? 'Something went wrong. Tap retry.' : 'うまくいかなかった…もう一度試してね。');
     } finally {
@@ -402,6 +431,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       text: en ? LESSON_KICKOFF.en : LESSON_KICKOFF.ja,
       attachments: attachments.length > 0 ? attachments : undefined,
     };
+    setLessonSessionId(null);
     setLessonStarted(true);
     setLessonTurns([kickoff]);
     await runLessonTurn([kickoff]);
@@ -422,7 +452,25 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setLessonInput('');
     setLessonError('');
     setLessonSaved(false);
+    setLessonSessionId(null);
     setCardIdx(0);
+  }
+
+  function resumeLesson(session: LessonSession) {
+    setLessonTopic(session.topic);
+    setLessonStyle(session.style);
+    lessonSysRef.current = session.sysPrompt;
+    // Restore turns (text only — attachments were stripped on save).
+    const turns: ChatTurn[] = session.turns.map(t => ({ role: t.role as 'user' | 'model', text: t.text }));
+    setLessonTurns(turns);
+    setLessonSessionId(session.id ?? null);
+    setLessonStarted(true);
+    setCardIdx(Math.max(0, session.cardCount - 1));
+  }
+
+  async function deleteLesson(id: number, e: React.MouseEvent) {
+    e.stopPropagation();
+    await db.lessonSessions.delete(id);
   }
 
   async function saveLesson() {
@@ -1059,6 +1107,32 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               </button>
             </div>
             {lessonError && <p className="ps-lesson-err">{lessonError}</p>}
+
+            {/* ── Past lessons ── */}
+            {pastLessons.length > 0 && (
+              <div className="ps-past-lessons">
+                <p className="ps-past-label">{en ? 'Continue a lesson' : '続きから再開'}</p>
+                {pastLessons.map(s => (
+                  <button key={s.id} className="ps-past-row" onClick={() => resumeLesson(s)}>
+                    <div className="ps-past-info">
+                      <span className="ps-past-topic">{s.topic}</span>
+                      <span className="ps-past-meta">
+                        {en
+                          ? `${s.cardCount} parts · ${new Date(s.updatedAt).toLocaleDateString()}`
+                          : `${s.cardCount}枚 · ${new Date(s.updatedAt).toLocaleDateString('ja-JP')}`}
+                      </span>
+                    </div>
+                    <button
+                      className="ps-past-del"
+                      onClick={(e) => void deleteLesson(s.id!, e)}
+                      title={en ? 'Delete' : '削除'}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1767,6 +1841,16 @@ function PracticeStyles() {
   .ps-lesson-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.86rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
   .ps-lesson-btn:disabled { opacity: 0.5; cursor: default; }
   .ps-lesson-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
+  /* Past lesson history */
+  .ps-past-lessons { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .ps-past-label { font-size: 0.72rem; font-weight: 800; letter-spacing: .05em; color: var(--fg-muted); margin: 0 0 4px; text-transform: uppercase; }
+  .ps-past-row { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--accent); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; cursor: pointer; text-align: left; transition: border-color .15s; }
+  .ps-past-row:hover { border-color: #8b5cf6; }
+  .ps-past-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .ps-past-topic { font-size: 0.88rem; font-weight: 700; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-past-meta { font-size: 0.72rem; color: var(--fg-muted); }
+  .ps-past-del { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 6px; }
+  .ps-past-del:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
   /* ── Lesson: slide deck ── */
   .ps-class { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 -16px -16px; }
   .ps-class-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--accent); flex-shrink: 0; }
