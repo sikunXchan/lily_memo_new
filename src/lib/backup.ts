@@ -1,4 +1,4 @@
-import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, type Diary, newSyncId } from './db';
+import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, type Diary, type LessonSession, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -32,6 +32,7 @@ export interface BackupPayload {
   studyCategories?: StudyCategory[];
   studySessions?: StudySession[];
   diaries?: Diary[];
+  lessonSessions?: LessonSession[];
   timestamp: number;
   version?: number;
 }
@@ -108,6 +109,7 @@ export async function buildBackupJson(): Promise<string> {
   const studyCategories = await db.studyCategories.toArray();
   const studySessions = await db.studySessions.toArray();
   const diaries = await db.diaries.toArray();
+  const lessonSessions = await db.lessonSessions.toArray();
 
   const allImages: Record<string, string> = {};
   const compactNotes = notes.map(note => {
@@ -126,6 +128,7 @@ export async function buildBackupJson(): Promise<string> {
     studyCategories,
     studySessions,
     diaries,
+    lessonSessions,
     timestamp: Date.now(),
     version: 1,
   };
@@ -182,6 +185,11 @@ export async function restoreBackupFromJson(jsonText: string): Promise<void> {
 
   // Diaries: additive MERGE by date (one entry per day), newest updatedAt wins.
   await mergeDiaries(data.diaries ?? [], now);
+
+  // Lesson sessions: additive MERGE by createdAt (natural key — two sessions
+  // created at the exact same time on different devices are the same session).
+  // Newest updatedAt wins so continued sessions propagate.
+  await mergeLessonSessions(data.lessonSessions ?? [], now);
 }
 
 // Merge diary entries by `date` without clearing — newest write (updatedAt) wins,
@@ -201,6 +209,25 @@ async function mergeDiaries(incoming: Diary[], now: number): Promise<void> {
         if (!rest.deletedAt) await db.diaries.add(rest as Diary);
       } else if ((rest.updatedAt ?? 0) > (local.updatedAt ?? local.createdAt)) {
         await db.diaries.update(local.id!, rest);
+      }
+    }
+  });
+}
+
+async function mergeLessonSessions(incoming: LessonSession[], now: number): Promise<void> {
+  if (!incoming.length) return;
+  await db.transaction('rw', db.lessonSessions, async () => {
+    const existing = await db.lessonSessions.toArray();
+    const byCreatedAt = new Map(existing.map(s => [s.createdAt, s]));
+    for (const raw of incoming) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = raw;
+      rest.updatedAt = rest.updatedAt ?? rest.createdAt ?? now;
+      const local = byCreatedAt.get(rest.createdAt);
+      if (!local) {
+        await db.lessonSessions.add(rest as LessonSession);
+      } else if (rest.updatedAt > (local.updatedAt ?? local.createdAt)) {
+        await db.lessonSessions.update(local.id!, rest);
       }
     }
   });
