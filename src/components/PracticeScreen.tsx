@@ -266,7 +266,7 @@ How to run the lesson (strict):
 - Teach only ONE small chunk (one concept / one step) per message. Keep each message short and digestible.
 - Use concrete examples and analogies. Be encouraging and friendly; a few emojis are fine.
 - Use rich Markdown formatting to make explanations clear: **bold** key terms, bullet/numbered lists, Markdown tables (| col | col |), and LaTeX math ($formula$, $$block$$). When a visual layout helps comprehension — a comparison table, a step-by-step list, a formula — use it.
-- At the end of each message, ask one short comprehension question, then say: "Ask me anything if something's unclear — otherwise tap Next ▶ to continue."
+- At the end of each message, ask one short comprehension question to check understanding.
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
 - When you have covered everything, write "## Summary" with the key points as bullets and tell them the lesson is complete.
@@ -278,7 +278,7 @@ How to run the lesson (strict):
 - 1回の発言では「1つの小さなまとまり（1つの概念／1ステップ）」だけを教える。1回の発言は短く、消化しやすい量にする。
 - 具体例や比喩を使う。難しい用語には（ふりがな）を付ける。親しみやすく励ましながら。絵文字も少し使ってOK。
 - Markdownの書式を積極的に使って、視覚的に分かりやすく説明する。**太字**でキーワードを強調、箇条書き・番号リスト、Markdownの表（| 列 | 列 |）、数式（$数式$・$$ブロック$$）を活用する。比較表・手順リスト・公式など、図解が理解を助ける場面では積極的に使うこと。
-- 発言の最後に、理解度を確認する短い問いかけを1つ入れる。そして「分からないところがあれば何でも聞いてね。大丈夫なら『次へ ▶』を押してね」と伝えて終える。
+- 発言の最後に、理解度を確認する短い問いかけを1つ入れる。
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
 - すべての内容を教え終えたら、「## まとめ」で要点を箇条書きにして、授業の終わりを伝える。
@@ -1719,6 +1719,7 @@ function PracticeStyles() {
   .ps-slide-num { font-size: 0.72rem; font-weight: 800; letter-spacing: .04em; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); padding: 3px 11px; border-radius: 999px; }
   .ps-slide-qchip { font-size: 0.78rem; color: var(--fg-muted); background: var(--accent); border-left: 3px solid #ec4899; border-radius: 6px; padding: 7px 10px; margin-bottom: 13px; line-height: 1.55; word-break: break-word; }
   .ps-slide-body { font-size: 0.92rem; line-height: 1.75; color: var(--foreground); word-break: break-word; }
+  .ps-slide-body .section-copy-btn, .ps-slide-body .code-copy-btn { display: none; }
   .ps-slide-body table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 0.87rem; }
   .ps-slide-body th, .ps-slide-body td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
   .ps-slide-body th { background: color-mix(in srgb, #8b5cf6 10%, var(--accent)); font-weight: 700; color: var(--foreground); }
