@@ -240,6 +240,7 @@ export interface LessonSession {
   cardCount: number;  // number of model turns = number of slide cards
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number; // soft-delete tombstone so deletions propagate via sync
 }
 
 export class LilyDatabase extends Dexie {
@@ -379,6 +380,11 @@ export class LilyDatabase extends Dexie {
     // v21: lesson sessions for review / resume.
     this.version(21).stores({
       lessonSessions: '++id, topic, createdAt, updatedAt',
+    });
+    // v22: lesson sessions gain a tombstone so deletions sync (live-sync was
+    // add-only before, which resurrected deleted lessons from other devices).
+    this.version(22).stores({
+      lessonSessions: '++id, topic, createdAt, updatedAt, deletedAt',
     });
   }
 }

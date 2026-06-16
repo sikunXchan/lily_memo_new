@@ -238,7 +238,7 @@ async function mergeLessonSessions(incoming: LessonSession[], now: number): Prom
       rest.updatedAt = rest.updatedAt ?? rest.createdAt ?? now;
       const local = byCreatedAt.get(rest.createdAt);
       if (!local) {
-        await db.lessonSessions.add(rest as LessonSession);
+        if (!rest.deletedAt) await db.lessonSessions.add(rest as LessonSession);
       } else if (rest.updatedAt > (local.updatedAt ?? local.createdAt)) {
         await db.lessonSessions.update(local.id!, rest);
       }

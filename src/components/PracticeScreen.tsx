@@ -378,7 +378,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
   // ── Saved lesson sessions (for history / resume) ──
   const pastLessons = useLiveQuery<LessonSession[]>(
-    () => db.lessonSessions.orderBy('updatedAt').reverse().limit(20).toArray(), []
+    () => db.lessonSessions.orderBy('updatedAt').reverse().filter(s => !s.deletedAt).limit(20).toArray(), []
   ) ?? [];
 
   // ── Lesson state (conversational 1-on-1) ──
@@ -532,7 +532,9 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
 
   async function deleteLesson(id: number, e: React.MouseEvent) {
     e.stopPropagation();
-    await db.lessonSessions.delete(id);
+    // Soft-delete (tombstone + bumped clock) so the deletion propagates via
+    // live-sync instead of the lesson resurrecting from another device.
+    await db.lessonSessions.update(id, { deletedAt: Date.now(), updatedAt: Date.now() });
   }
 
   async function startQuiz() {
