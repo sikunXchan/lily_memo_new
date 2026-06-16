@@ -43,26 +43,66 @@ PAD = 14
 def make_alpha(rgb):
     """Return an RGBA image with the white background removed.
 
-    Only near-white pixels that are *connected to the border* are treated as
-    background, so bright highlights inside a trophy stay opaque. Edges are
-    feathered slightly so the cut-out doesn't show a hard white fringe.
+    Strategy:
+    1. Tight flood-fill from the border using a strict near-white mask —
+       captures the main background without touching genuine white highlights.
+    2. Multi-pass loose-threshold dilation: repeatedly expand the background
+       mask using a more permissive near-white mask.  Each pass lets the fill
+       "jump" across 1–2-pixel dark outlines (gold trim, ink outlines, vine
+       borders) that would otherwise trap enclosed background pockets.
+    3. Feather the alpha for smooth edges.
+    4. Defringe: correct semi-transparent edge pixels to remove the white
+       background contribution baked in by anti-aliasing.
     """
     arr = np.asarray(rgb).astype(np.float32)
-    # "Whiteness": close to white AND not very saturated (catches faint shadows
-    # without eating colored/metallic highlights).
     brightness = arr.min(axis=2)
     sat = arr.max(axis=2) - arr.min(axis=2)
-    nearwhite = (brightness > 232) & (sat < 22)
 
-    # Background = near-white region reachable from the image border.
-    labels, n = ndimage.label(nearwhite)
-    border = set(labels[0, :]) | set(labels[-1, :]) | set(labels[:, 0]) | set(labels[:, -1])
+    tight = (brightness > 230) & (sat < 25)
+    loose = (brightness > 210) & (sat < 50)
+
+    # 1. Border flood-fill with the tight mask — catches the main outer background.
+    labels, _ = ndimage.label(tight)
+    border = (
+        set(labels[0, :]) | set(labels[-1, :]) |
+        set(labels[:, 0]) | set(labels[:, -1])
+    )
     border.discard(0)
     bg = np.isin(labels, list(border))
 
+    # 2. Find enclosed background pockets using the TIGHT mask.  Near-pure-white
+    # regions (brightness > 230, sat < 25) that have no border path are definitely
+    # trapped background — not crystal highlights (which are off-white/slightly tinted).
+    l2, _ = ndimage.label(tight)
+    border2 = (
+        set(l2[0, :]) | set(l2[-1, :]) |
+        set(l2[:, 0]) | set(l2[:, -1])
+    )
+    border2.discard(0)
+    enclosed = (l2 > 0) & ~np.isin(l2, list(border2))
+    bg |= enclosed
+
+    # 3. Loose multi-pass dilation to pick up any remaining near-white slivers
+    # between decorative trim elements that aren't fully enclosed.
+    struct = ndimage.generate_binary_structure(2, 2)
+    for _ in range(10):
+        prev = bg.copy()
+        bg = (ndimage.binary_dilation(bg, structure=struct, iterations=2) & loose) | prev
+        if np.array_equal(bg, prev):
+            break
+
+    # 4. Feather.
     alpha = np.where(bg, 0.0, 255.0).astype(np.float32)
-    # Feather the boundary a touch for clean edges at display size.
-    alpha = ndimage.gaussian_filter(alpha, sigma=0.8)
+    alpha = ndimage.gaussian_filter(alpha, sigma=0.7)
+
+    # 5. Defringe: correct semi-transparent edge pixel colours to remove the
+    # white background contribution that anti-aliasing bakes in.
+    a = alpha / 255.0
+    edge = (a > 0.05) & (a < 0.97)
+    for c in range(3):
+        ch = arr[:, :, c]
+        corrected = (ch - 255.0 * (1.0 - a)) / np.maximum(a, 0.05)
+        arr[edge, c] = np.clip(corrected[edge], 0, 255)
 
     out = np.dstack([arr, alpha]).astype(np.uint8)
     return Image.fromarray(out, 'RGBA')
