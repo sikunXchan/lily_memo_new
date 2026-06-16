@@ -90,6 +90,19 @@ export async function restoreSyncFromJson(jsonText: string): Promise<void> {
     }
   });
 
+  // Lesson sessions: full replace on sync (unlike backup restore which is additive).
+  // This guarantees the target device mirrors the source exactly.
+  await db.transaction('rw', db.lessonSessions, async () => {
+    await db.lessonSessions.clear();
+    if (data.lessonSessions?.length) {
+      for (const s of data.lessonSessions) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = s;
+        await db.lessonSessions.add(rest as LessonSession);
+      }
+    }
+  });
+
   // Earned badges: additive merge (never remove a badge already unlocked here;
   // keep the earliest earnedAt when both sides have it).
   if (data.earnedBadges?.length) {

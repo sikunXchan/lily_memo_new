@@ -335,8 +335,8 @@ function buildLessonSystemPrompt(topic: string, en: boolean, style: LessonStyle 
 How to run the lesson (strict):
 - Follow the lesson style instruction below exactly.
 - Use concrete examples and analogies. Be encouraging and friendly; a few emojis are fine.
-- Use rich Markdown formatting to make explanations clear: **bold** key terms, bullet/numbered lists, Markdown tables (| col | col |), and LaTeX math ($formula$, $$block$$). When a visual layout helps comprehension — a comparison table, a step-by-step list, a formula — use it.
-- For flow diagrams, mind maps, sequences, or relationship diagrams, use Mermaid fenced code blocks (\`\`\`mermaid … \`\`\`) — they are fully rendered in the lesson view.
+- Use rich Markdown formatting: **bold** key terms, bullet/numbered lists, Markdown tables (| col | col |), and LaTeX math ($formula$, $$block$$). Lean heavily on visual layouts — when in doubt, add a table or list.
+- For any concept involving flow, process, relationships, hierarchy, or sequence, draw a Mermaid diagram (\`\`\`mermaid … \`\`\`) — they render natively in the lesson view. Prefer diagrams over prose whenever a picture is clearer.
 - At the end of each message, ask one short comprehension question to check understanding.
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
@@ -348,8 +348,8 @@ How to run the lesson (strict):
 進め方（厳守）：
 - 以下の授業スタイル指示に必ず従う。
 - 具体例や比喩を使う。難しい用語には（ふりがな）を付ける。親しみやすく励ましながら。絵文字も少し使ってOK。
-- Markdownの書式を積極的に使って、視覚的に分かりやすく説明する。**太字**でキーワードを強調、箇条書き・番号リスト、Markdownの表（| 列 | 列 |）、数式（$数式$・$$ブロック$$）を活用する。比較表・手順リスト・公式など、図解が理解を助ける場面では積極的に使うこと。
-- フロー図・マインドマップ・シーケンス図・関係図などはMermaidのフェンスコードブロック（\`\`\`mermaid … \`\`\`）を使うこと。授業画面で正しく描画される。
+- Markdownを積極活用する。**太字**でキーワード強調、箇条書き・番号リスト、Markdownの表（| 列 | 列 |）、数式（$数式$・$$ブロック$$）を使う。迷ったら表やリストで整理する。
+- フロー・プロセス・関係・階層・シーケンスなど図で説明できる概念は必ずMermaidのフェンスコードブロック（\`\`\`mermaid … \`\`\`）で描くこと。授業画面でそのまま描画される。文章よりも図の方が伝わる場面では積極的に図を優先する。
 - 発言の最後に、理解度を確認する短い問いかけを1つ入れる。
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
