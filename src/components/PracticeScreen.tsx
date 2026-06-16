@@ -27,6 +27,10 @@ import { getEffectiveApiKey, getUserName } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
+import mermaid from 'mermaid';
+import { initMermaid } from '@/lib/mermaidConfig';
+
+initMermaid();
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, PointElement, LineElement,
@@ -74,6 +78,55 @@ function fileToAttachment(file: File): Promise<ChatAttachment> {
 function Rich({ src, className }: { src: string; className?: string }) {
   const html = useMemo(() => renderRich(src), [src]);
   return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+// ── Inline Mermaid renderer for lesson slide cards ────────────────────────────
+function LessonMermaid({ code }: { code: string }) {
+  const [svg, setSvg] = useState('');
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const id = `lm-${Math.random().toString(36).slice(2, 9)}`;
+        const { svg: rendered } = await mermaid.render(id, code.trim());
+        if (!cancelled) { setSvg(rendered); setErr(false); }
+      } catch {
+        if (!cancelled) setErr(true);
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [code]);
+  if (err) return <pre className="ps-mermaid-err"><code>{code}</code></pre>;
+  if (!svg) return <div className="ps-mermaid-loading" />;
+  return <div className="ps-mermaid-render" dangerouslySetInnerHTML={{ __html: svg }} />;
+}
+
+// Splits card text into alternating text/mermaid segments.
+function LessonCardBody({ text, className }: { text: string; className?: string }) {
+  const segments = useMemo(() => {
+    const parts: { type: 'text' | 'mermaid'; content: string }[] = [];
+    const fence = /^```mermaid\r?\n([\s\S]*?)^```/gm;
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = fence.exec(text)) !== null) {
+      if (m.index > last) parts.push({ type: 'text', content: text.slice(last, m.index) });
+      parts.push({ type: 'mermaid', content: m[1]! });
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) parts.push({ type: 'text', content: text.slice(last) });
+    return parts;
+  }, [text]);
+  return (
+    <div className={className}>
+      {segments.map((seg, i) =>
+        seg.type === 'mermaid'
+          ? <LessonMermaid key={i} code={seg.content} />
+          : <div key={i} className="rich" dangerouslySetInnerHTML={{ __html: renderRich(seg.content) }} />
+      )}
+    </div>
+  );
 }
 
 // ── Chart helpers ─────────────────────────────────────────────────────────────
@@ -283,7 +336,7 @@ How to run the lesson (strict):
 - Follow the lesson style instruction below exactly.
 - Use concrete examples and analogies. Be encouraging and friendly; a few emojis are fine.
 - Use rich Markdown formatting to make explanations clear: **bold** key terms, bullet/numbered lists, Markdown tables (| col | col |), and LaTeX math ($formula$, $$block$$). When a visual layout helps comprehension — a comparison table, a step-by-step list, a formula — use it.
-- IMPORTANT: do NOT use Mermaid, graphviz, code-block diagrams, or ASCII art — the lesson view cannot render them and they will look broken. Express any "diagram" as a Markdown table, a structured list, or LaTeX math instead.
+- For flow diagrams, mind maps, sequences, or relationship diagrams, use Mermaid fenced code blocks (\`\`\`mermaid … \`\`\`) — they are fully rendered in the lesson view.
 - At the end of each message, ask one short comprehension question to check understanding.
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
@@ -296,7 +349,7 @@ How to run the lesson (strict):
 - 以下の授業スタイル指示に必ず従う。
 - 具体例や比喩を使う。難しい用語には（ふりがな）を付ける。親しみやすく励ましながら。絵文字も少し使ってOK。
 - Markdownの書式を積極的に使って、視覚的に分かりやすく説明する。**太字**でキーワードを強調、箇条書き・番号リスト、Markdownの表（| 列 | 列 |）、数式（$数式$・$$ブロック$$）を活用する。比較表・手順リスト・公式など、図解が理解を助ける場面では積極的に使うこと。
-- 重要：Mermaid・graphviz・コードブロックの図・アスキーアートは使わないこと（授業画面では描画されず崩れて見える）。「図解」したいときは、Markdownの表・構造化したリスト・LaTeX数式で表現する。
+- フロー図・マインドマップ・シーケンス図・関係図などはMermaidのフェンスコードブロック（\`\`\`mermaid … \`\`\`）を使うこと。授業画面で正しく描画される。
 - 発言の最後に、理解度を確認する短い問いかけを1つ入れる。
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
@@ -1283,9 +1336,9 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                       {(en ? 'Q: ' : '質問：') + lessonCards[cardIdx]!.userQ}
                     </div>
                   )}
-                  <div
-                    className="ps-slide-body rich"
-                    dangerouslySetInnerHTML={{ __html: renderRich(lessonCards[cardIdx]!.text) }}
+                  <LessonCardBody
+                    text={lessonCards[cardIdx]!.text}
+                    className="ps-slide-body"
                   />
                 </div>
               ) : null}
@@ -1990,6 +2043,10 @@ function PracticeStyles() {
   .ps-slide-body code { background: var(--accent); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-size: 0.82em; }
   .ps-slide-body pre { background: var(--accent); border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; margin: 10px 0; }
   .ps-slide-body pre code { background: none; border: none; padding: 0; font-size: 0.85rem; }
+  .ps-mermaid-render { display: flex; justify-content: center; padding: 16px 0; overflow-x: auto; }
+  .ps-mermaid-render :global(svg) { max-width: 100%; height: auto; }
+  .ps-mermaid-loading { height: 80px; }
+  .ps-mermaid-err { background: var(--accent); border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; margin: 10px 0; font-size: 0.82rem; }
   .ps-slide-thinking-txt { font-size: 0.82rem; color: var(--fg-muted); margin: 0; }
   .ps-class-err-txt { font-size: 0.85rem; color: #ef4444; text-align: center; margin: 0 0 10px; }
   .ps-slide-retry { display: block; margin: 0 auto; background: transparent; border: 1px solid #ef4444; border-radius: 8px; padding: 5px 14px; color: #ef4444; font-weight: 700; cursor: pointer; }
