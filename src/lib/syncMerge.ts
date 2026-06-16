@@ -29,6 +29,7 @@ export interface SyncSnapshot {
   earnedBadges?: Rec[];
   problemSets?: Rec[];
   diaries?: Rec[];
+  lessonSessions?: Rec[];
   ts?: number;
   [k: string]: unknown;
 }
@@ -120,6 +121,14 @@ export function mergeSnapshots(base: SyncSnapshot, incoming: SyncSnapshot): Sync
     diaries: mergeLWW(
       b.diaries ?? [], i.diaries ?? [],
       r => str(r.date),
+      r => num(r.updatedAt) || num(r.createdAt),
+    ),
+    // Lesson sessions: keyed by `createdAt` (stable across devices — two lessons
+    // started at the same ms on different devices are treated as the same one).
+    // updatedAt is the version clock incl. soft-delete, matching the client.
+    lessonSessions: mergeLWW(
+      b.lessonSessions ?? [], i.lessonSessions ?? [],
+      r => (r.createdAt != null ? String(r.createdAt) : null),
       r => num(r.updatedAt) || num(r.createdAt),
     ),
     exams: mergeUnion(b.exams ?? [], i.exams ?? [], r => `${str(r.name) ?? ''}|${str(r.examDate) ?? ''}`),

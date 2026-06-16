@@ -1,6 +1,6 @@
 import { liveQuery } from 'dexie';
 import { db, newSyncId } from './db';
-import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary } from './db';
+import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession } from './db';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
 const POLL_INTERVAL_MS  = 30_000;
@@ -30,6 +30,7 @@ interface LiveSnapshot {
   earnedBadges:     EarnedBadge[];
   problemSets:      ProblemSet[];
   diaries:          Diary[];
+  lessonSessions:   LessonSession[];
   ts: number;
 }
 
@@ -46,7 +47,7 @@ let _listenersOn  = false;
 
 // ── Build local snapshot ─────────────────────────────────────────
 async function buildSnapshot(): Promise<LiveSnapshot> {
-  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries] = await Promise.all([
+  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries, lessonSessions] = await Promise.all([
     db.notes.toArray(),
     db.folders.toArray(),
     db.studySessions.toArray(),
@@ -58,6 +59,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     db.earnedBadges.toArray(),
     db.problemSets.toArray(),
     db.diaries.toArray(),
+    db.lessonSessions.toArray(),
   ]);
   // Enrich cross-table references with stable syncIds (see SyncNote above).
   const folderSyncById = new Map(folders.filter(f => f.id != null && f.syncId).map(f => [f.id!, f.syncId]));
@@ -76,7 +78,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
   }));
   return {
     notes: outNotes, folders: outFolders, studySessions: outSessions,
-    studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries,
+    studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries, lessonSessions,
     ts: Date.now(),
   };
 }
@@ -385,6 +387,28 @@ async function mergeSnapshot(remote: LiveSnapshot) {
         }
       }
     }
+
+    // ── Lesson sessions: per-record last-write-wins keyed by `createdAt`
+    // (stable across devices). updatedAt is the version clock incl. soft-delete,
+    // so a continued lesson propagates and a deletion wins over an older copy —
+    // this is what lets you resume a lesson started on another device.
+    if (remote.lessonSessions !== undefined) {
+      const localLessons = await db.lessonSessions.toArray(); // includes tombstones
+      const lessonMap = new Map(localLessons.map(l => [l.createdAt, l]));
+      for (const r of remote.lessonSessions) {
+        const rUpdated = r.updatedAt ?? r.createdAt;
+        const local = lessonMap.get(r.createdAt);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = r;
+        if (!local) {
+          if (!r.deletedAt) {
+            await db.lessonSessions.add({ ...rest, updatedAt: rUpdated } as LessonSession);
+          }
+        } else if (rUpdated > (local.updatedAt ?? local.createdAt)) {
+          await db.lessonSessions.update(local.id!, { ...rest, updatedAt: rUpdated });
+        }
+      }
+    }
   } finally {
     _isMerging = false;
     _suppressUntil = Date.now() + MERGE_SUPPRESS_MS;
@@ -450,6 +474,8 @@ export function initLiveSync(key: string) {
     db.problemSets.orderBy('updatedAt').last().then(p => p?.updatedAt ?? 0),
     db.problemSets.count(),
     db.diaries.orderBy('updatedAt').last().then(d => d?.updatedAt ?? 0),
+    db.lessonSessions.orderBy('updatedAt').last().then(l => l?.updatedAt ?? 0),
+    db.lessonSessions.count(),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());
 
