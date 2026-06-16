@@ -1,172 +1,75 @@
 #!/usr/bin/env python3
 """Slice the level-icon source sheets in public/level_icon/ into individual
-transparent tier{1..15}.png files in public/level/.
+tier{1..15}.png files in public/level/.
 
-The source sheets are drawn on a WHITE background (no alpha), each holding a
-row of 1–3 trophies:
+The source sheets are already RGBA (background-removed by hand), each holding
+a row of 1–3 trophies on a transparent background:
 
-  Tier1-2.PNG   -> tier1, tier2          (bronze)
-  Tier3-5.PNG   -> tier3, tier4, tier5   (silver)
-  Tier6-8.PNG   -> tier6, tier7, tier8   (gold)
-  Tier9-10.PNG  -> tier9, tier10         (crystal / ice)
-  Tier11-12.PNG -> tier11, tier12        (emerald)
-  Tier13-14.PNG -> tier13, tier14        (angelic / platinum)
-  Tier15.PNG    -> tier15                (rainbow, the eternal top)
-
-For each sheet we (1) knock the white background out to transparency with a
-border flood-fill (so white highlights *inside* a trophy are kept), (2) split
-the row into individual trophies at the empty gaps between them, and (3) crop
-each trophy to a centered square PNG.
+  Tier1-2.PNG   -> tier1, tier2
+  Tier3-5.PNG   -> tier3, tier4, tier5
+  Tier6-8.PNG   -> tier6, tier7, tier8
+  Tier9-10.PNG  -> tier9, tier10
+  Tier11-12.PNG -> tier11, tier12
+  Tier13-14.PNG -> tier13, tier14
+  Tier15.PNG    -> tier15
 """
 from PIL import Image
 import numpy as np
-from scipy import ndimage
 
 SRC = 'public/level_icon'
 OUT = 'public/level'
 
-# (filename, number of trophies in the sheet)
 SHEETS = [
-    ('Tier1-2.PNG', 2),
-    ('Tier3-5.PNG', 3),
-    ('Tier6-8.PNG', 3),
-    ('Tier9-10.PNG', 2),
+    ('Tier1-2.PNG',   2),
+    ('Tier3-5.PNG',   3),
+    ('Tier6-8.PNG',   3),
+    ('Tier9-10.PNG',  2),
     ('Tier11-12.PNG', 2),
     ('Tier13-14.PNG', 2),
-    ('Tier15.PNG', 1),
+    ('Tier15.PNG',    1),
 ]
 
 OUT_SIZE = 256
-PAD = 14
-
-
-def make_alpha(rgb):
-    """Return an RGBA image with the white background removed.
-
-    Strategy:
-    1. Tight flood-fill from the border using a strict near-white mask —
-       captures the main background without touching genuine white highlights.
-    2. Multi-pass loose-threshold dilation: repeatedly expand the background
-       mask using a more permissive near-white mask.  Each pass lets the fill
-       "jump" across 1–2-pixel dark outlines (gold trim, ink outlines, vine
-       borders) that would otherwise trap enclosed background pockets.
-    3. Feather the alpha for smooth edges.
-    4. Defringe: correct semi-transparent edge pixels to remove the white
-       background contribution baked in by anti-aliasing.
-    """
-    arr = np.asarray(rgb).astype(np.float32)
-    brightness = arr.min(axis=2)
-    sat = arr.max(axis=2) - arr.min(axis=2)
-
-    tight = (brightness > 230) & (sat < 25)
-    loose = (brightness > 210) & (sat < 50)
-
-    # 1. Border flood-fill with the tight mask — catches the main outer background.
-    labels, _ = ndimage.label(tight)
-    border = (
-        set(labels[0, :]) | set(labels[-1, :]) |
-        set(labels[:, 0]) | set(labels[:, -1])
-    )
-    border.discard(0)
-    bg = np.isin(labels, list(border))
-
-    # 2. Find enclosed background pockets using the TIGHT mask.  Near-pure-white
-    # regions (brightness > 230, sat < 25) that have no border path are definitely
-    # trapped background — not crystal highlights (which are off-white/slightly tinted).
-    l2, _ = ndimage.label(tight)
-    border2 = (
-        set(l2[0, :]) | set(l2[-1, :]) |
-        set(l2[:, 0]) | set(l2[:, -1])
-    )
-    border2.discard(0)
-    enclosed = (l2 > 0) & ~np.isin(l2, list(border2))
-    bg |= enclosed
-
-    # 3. Loose multi-pass dilation to pick up any remaining near-white slivers
-    # between decorative trim elements that aren't fully enclosed.
-    struct = ndimage.generate_binary_structure(2, 2)
-    for _ in range(10):
-        prev = bg.copy()
-        bg = (ndimage.binary_dilation(bg, structure=struct, iterations=2) & loose) | prev
-        if np.array_equal(bg, prev):
-            break
-
-    # 4. Feather.
-    alpha = np.where(bg, 0.0, 255.0).astype(np.float32)
-    alpha = ndimage.gaussian_filter(alpha, sigma=0.7)
-
-    # 5. Defringe: correct semi-transparent edge pixel colours to remove the
-    # white background contribution that anti-aliasing bakes in.
-    a = alpha / 255.0
-    edge = (a > 0.05) & (a < 0.97)
-    for c in range(3):
-        ch = arr[:, :, c]
-        corrected = (ch - 255.0 * (1.0 - a)) / np.maximum(a, 0.05)
-        arr[edge, c] = np.clip(corrected[edge], 0, 255)
-
-    out = np.dstack([arr, alpha]).astype(np.uint8)
-    return Image.fromarray(out, 'RGBA')
+PAD = 16   # padding around each trophy before resizing
 
 
 def column_ink(rgba):
-    """Per-column count of opaque pixels (used to find gaps between trophies)."""
-    a = np.asarray(rgba)[:, :, 3]
-    return (a > 24).sum(axis=0).astype(np.float64)
+    """Per-column sum of alpha values — used to find gaps between trophies."""
+    return np.array(rgba)[:, :, 3].astype(np.float64).sum(axis=0)
 
 
 def split_columns(ink, n):
-    """Split the width into n trophy spans at the empty gaps between them."""
+    """Split the sheet width into n trophy spans at the lowest-ink valleys."""
     if n == 1:
-        xs = np.where(ink > ink.max() * 0.02)[0]
+        xs = np.where(ink > ink.max() * 0.01)[0]
         return [(int(xs.min()), int(xs.max()) + 1)]
 
-    occupied = ink > max(2.0, ink.max() * 0.02)
-    # Contiguous runs of occupied columns = individual trophies.
-    runs = []
-    start = None
-    for x, on in enumerate(occupied):
-        if on and start is None:
-            start = x
-        elif not on and start is not None:
-            runs.append([start, x])
-            start = None
-    if start is not None:
-        runs.append([start, len(occupied)])
-
-    # Drop dust; merge runs separated by only a hairline gap.
-    runs = [r for r in runs if (r[1] - r[0]) > ink.size * 0.01]
-    merged = []
-    for r in runs:
-        if merged and r[0] - merged[-1][1] < ink.size * 0.015:
-            merged[-1][1] = r[1]
-        else:
-            merged.append(r)
-
-    if len(merged) == n:
-        return [(a, b) for a, b in merged]
-
-    # Fallback: cut at the n-1 deepest valleys of a smoothed profile.
-    k = max(5, ink.size // 120)
+    # Smooth the profile and find the n-1 deepest valleys between trophies.
+    k = max(5, ink.size // 80)
     sm = np.convolve(ink, np.ones(k) / k, mode='same')
-    xs = np.where(ink > ink.max() * 0.02)[0]
+    xs = np.where(ink > ink.max() * 0.01)[0]
     lo, hi = int(xs.min()), int(xs.max())
+    span = (hi - lo) // n
     cuts = []
     for i in range(1, n):
-        c = lo + (hi - lo) * i // n
-        w = (hi - lo) // (2 * n)
-        cuts.append(c - w + int(np.argmin(sm[c - w:c + w])))
+        c = lo + span * i
+        w = span // 3
+        cuts.append(c - w + int(np.argmin(sm[c - w: c + w])))
     edges = [lo] + cuts + [hi + 1]
     return [(edges[i], edges[i + 1]) for i in range(n)]
 
 
 def square_crop(rgba, x0, x1):
+    """Crop one trophy column, pad, and resize to OUT_SIZE × OUT_SIZE."""
     band = rgba.crop((x0, 0, x1, rgba.height))
-    a = np.asarray(band)[:, :, 3]
-    ys, xs = np.where(a > 24)
+    a = np.array(band)[:, :, 3]
+    ys, xs = np.where(a > 16)
     if len(xs) == 0:
         return None
-    l = max(0, xs.min() - PAD); r = min(band.width, xs.max() + PAD)
-    t = max(0, ys.min() - PAD); b = min(band.height, ys.max() + PAD)
+    l = max(0, xs.min() - PAD)
+    r = min(band.width,  xs.max() + PAD)
+    t = max(0, ys.min() - PAD)
+    b = min(band.height, ys.max() + PAD)
     crop = band.crop((l, t, r, b))
     w, h = crop.size
     s = max(w, h)
@@ -178,13 +81,13 @@ def square_crop(rgba, x0, x1):
 def main():
     tier = 1
     for fname, count in SHEETS:
-        rgb = Image.open(f'{SRC}/{fname}').convert('RGB')
-        rgba = make_alpha(rgb)
-        for x0, x1 in split_columns(column_ink(rgba), count):
-            img = square_crop(rgba, x0, x1)
-            img.save(f'{OUT}/tier{tier}.png')
+        im = Image.open(f'{SRC}/{fname}').convert('RGBA')
+        for x0, x1 in split_columns(column_ink(im), count):
+            img = square_crop(im, x0, x1)
+            if img:
+                img.save(f'{OUT}/tier{tier}.png')
             tier += 1
-    print(f'sliced tier1..tier{tier - 1} -> {OUT}/')
+    print(f'sliced tier1..{tier - 1} -> {OUT}/')
 
 
 if __name__ == '__main__':
