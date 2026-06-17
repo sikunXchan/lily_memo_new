@@ -340,7 +340,7 @@ How to run the lesson (strict):
 - At the end of each message, ask one short comprehension question to check understanding.
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
-- When you have covered everything, write "## Summary" with the key points as bullets and tell them the lesson is complete.
+- When you have covered everything, finish with a heading "## Summary" listing the key points as bullets and clearly tell them the lesson is complete. Once you have written this summary, do NOT teach any further "next" parts — the student will move on to a confirmation quiz.
 - If materials are attached, base the lesson on their content.${styleLineEn}${nameLine}${topicLine}`;
   }
   return `あなたは優秀で温かいマンツーマンの家庭教師「Lily」です。生徒と対話のキャッチボールをしながら授業を進めます。
@@ -353,7 +353,7 @@ How to run the lesson (strict):
 - 発言の最後に、理解度を確認する短い問いかけを1つ入れる。
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
-- すべての内容を教え終えたら、「## まとめ」で要点を箇条書きにして、授業の終わりを伝える。
+- すべての内容を教え終えたら、最後に必ず見出し「## まとめ」を付けて要点を箇条書きにし、授業の終わりをはっきり伝える。まとめを出したあとは、もう「次へ」の続きは教えない（生徒には確認テストに進んでもらう）。
 - 資料が添付されている場合は、その内容に沿って授業を組み立てる。${styleLineJa}${nameLine}${topicLine}`;
 }
 
@@ -410,9 +410,12 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     return out;
   }, [lessonTurns]);
 
-  // Lesson is complete when any card contains Lily's summary heading.
+  // Lesson is complete once Lily writes her wrap-up. We accept any Markdown
+  // heading that contains "まとめ"/"Summary" (e.g. "## まとめ", "## 本日のまとめ",
+  // "### Lesson Summary") so a slightly differently-worded heading still ends
+  // the lesson instead of leaving the "次へ" button pressable forever.
   const isLessonComplete = useMemo(
-    () => lessonCards.some(c => /^##\s+(Summary|まとめ)/m.test(c.text)),
+    () => lessonCards.some(c => /^#{1,6}\s*.*(?:まとめ|Summary)/im.test(c.text)),
     [lessonCards],
   );
 
@@ -1346,6 +1349,16 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               ) : null}
             </div>
 
+            {/* Lesson wrap-up: once Lily has written her summary and we are on the
+                final card, the only way onward is the confirmation quiz. */}
+            {isLessonComplete && cardIdx === lessonCards.length - 1 && (
+              <div className="ps-lesson-done">
+                🎉 {en
+                  ? 'Lesson complete! Finish with a quick quiz to check what you learned.'
+                  : '授業はここまで！最後に確認テストで理解度をチェックしよう。'}
+              </div>
+            )}
+
             {/* Slide navigation */}
             <div className="ps-slide-nav">
               <button
@@ -2058,6 +2071,9 @@ function PracticeStyles() {
   .ps-class-typing span:nth-child(2) { animation-delay: 0.2s; }
   .ps-class-typing span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes ps-typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+
+  /* Lesson wrap-up banner */
+  .ps-lesson-done { margin: 0 14px; padding: 9px 14px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; text-align: center; color: var(--foreground); background: linear-gradient(120deg, rgba(245,158,11,0.16), rgba(239,68,68,0.16)); border: 1.5px solid rgba(245,158,11,0.4); }
 
   /* Slide navigation */
   .ps-slide-nav { display: flex; gap: 8px; padding: 6px 14px 4px; flex-shrink: 0; }
