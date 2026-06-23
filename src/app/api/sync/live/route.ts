@@ -3,7 +3,11 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { mergeSnapshots, type SyncSnapshot } from '@/lib/syncMerge';
 
-const redis = Redis.fromEnv();
+let _redis: Redis | null = null;
+function getRedis(): Redis {
+  if (!_redis) _redis = Redis.fromEnv();
+  return _redis;
+}
 const TTL_S    = 30 * 24 * 3600; // 30 days
 const MAX_SIZE = 8 * 1024 * 1024; // 8 MB
 
@@ -17,10 +21,10 @@ function sanitizeKey(k: string): string {
 // first device had just contributed. With CAS the loser retries the merge on
 // top of the winner's data instead.
 const CAS_SCRIPT = `
-local cur = redis.call('GET', KEYS[2])
+local cur = getRedis().call('GET', KEYS[2])
 if (cur or '') ~= ARGV[2] then return 0 end
-redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[3]))
-redis.call('SET', KEYS[2], ARGV[4], 'EX', tonumber(ARGV[3]))
+getRedis().call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[3]))
+getRedis().call('SET', KEYS[2], ARGV[4], 'EX', tonumber(ARGV[3]))
 return 1
 `;
 
@@ -53,8 +57,8 @@ export async function POST(req: NextRequest) {
     let curTs: number | null = null;
     try {
       const [raw, storedTs] = await Promise.all([
-        redis.get<string>(dataKey),
-        redis.get<number>(tsKey),
+        getRedis().get<string>(dataKey),
+        getRedis().get<number>(tsKey),
       ]);
       if (raw) base = (typeof raw === 'string' ? JSON.parse(raw) : raw) as SyncSnapshot;
       curTs = storedTs ?? null;
@@ -64,7 +68,7 @@ export async function POST(req: NextRequest) {
     const ts = Date.now();
     const payload = JSON.stringify({ ...merged, ts });
 
-    const ok = await redis.eval(
+    const ok = await getRedis().eval(
       CAS_SCRIPT,
       [dataKey, tsKey],
       [payload, curTs == null ? '' : String(curTs), String(TTL_S), String(ts)],
@@ -83,10 +87,10 @@ export async function GET(req: NextRequest) {
 
   if (!key) return NextResponse.json({ error: 'invalid key' }, { status: 400 });
 
-  const ts = await redis.get<number>(`lily:live:${key}:ts`);
+  const ts = await getRedis().get<number>(`lily:live:${key}:ts`);
   if (!ts || ts <= since) return NextResponse.json({ changed: false });
 
-  const raw = await redis.get<string>(`lily:live:${key}:data`);
+  const raw = await getRedis().get<string>(`lily:live:${key}:data`);
   if (!raw) return NextResponse.json({ changed: false });
 
   const snapshot = typeof raw === 'string' ? JSON.parse(raw) : raw;
