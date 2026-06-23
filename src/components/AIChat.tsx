@@ -2010,7 +2010,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         }],
         'あなたは会話ログの要約者です。指示された通りに要約だけを出力してください。',
         apiKey,
-        { models: ['gemini-2.5-flash-lite'] },
+        { models: ['gemini-3.1-flash-lite'] },
       );
       setMessages([{
         id: crypto.randomUUID(),
@@ -2176,7 +2176,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          ['gemini-2.5-pro'],
+          ['gemini-3.1-pro'],
           webSearch || opts?.forceSearch,
           65536,
           0.6,
@@ -2203,8 +2203,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             },
           },
           lilyThinking
-            ? ['gemini-2.5-flash']
-            : ['gemini-2.5-flash'],
+            ? ['gemini-3.5-flash']
+            : ['gemini-3.5-flash'],
           webSearch || opts?.forceSearch,
           65536,
           accuracy ? 0.35 : 0.6,
@@ -2215,7 +2215,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch: webSearch || opts?.forceSearch,
-          models: economy ? ['gemini-2.5-flash-lite'] : ['gemini-2.5-flash'],
+          models: economy ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
           maxOutputTokens: economy ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
@@ -2321,7 +2321,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          ['gemini-2.5-pro'],
+          ['gemini-3.1-pro'],
           webSearch,
           65536,
           0.6,
@@ -2349,8 +2349,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             },
           },
           lilyThinking
-            ? ['gemini-2.5-flash']
-            : ['gemini-2.5-flash'],
+            ? ['gemini-3.5-flash']
+            : ['gemini-3.5-flash'],
           webSearch,
           65536,
           accuracy ? 0.35 : 0.6,
@@ -2362,7 +2362,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
-          models: economy ? ['gemini-2.5-flash-lite'] : ['gemini-2.5-flash'],
+          models: economy ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
           maxOutputTokens: economy ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });

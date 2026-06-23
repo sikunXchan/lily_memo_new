@@ -12,7 +12,7 @@ import type { NextRequest } from 'next/server';
 
 const GEMINI_HOST = 'https://generativelanguage.googleapis.com';
 // Only forward the Gemini surfaces the app actually uses.
-const ALLOWED_PREFIX = /^(v1beta|v1alpha|upload\/v1beta)\//;
+const ALLOWED_PREFIX = /^(v1|v1beta|v1alpha|upload\/v1beta)\//;
 
 function jsonError(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: { message } }), {
