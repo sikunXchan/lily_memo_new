@@ -2176,7 +2176,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          ['gemini-3.5-pro', 'gemini-3.5-flash'],
+          ['gemini-3.1-pro-preview', 'gemini-3.5-flash'],
           webSearch || opts?.forceSearch,
           65536,
           0.6,
@@ -2321,7 +2321,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          ['gemini-3.5-pro', 'gemini-3.5-flash'],
+          ['gemini-3.1-pro-preview', 'gemini-3.5-flash'],
           webSearch,
           65536,
           0.6,
