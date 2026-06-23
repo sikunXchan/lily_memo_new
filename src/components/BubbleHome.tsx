@@ -89,7 +89,7 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
   const t = useT();
 
   const pinnedTodos = useLiveQuery<Todo[]>(() =>
-    db.todos.filter(t => t.pinned && !t.done).toArray()
+    db.todos.filter(t => t.pinned && !t.done && !t.deletedAt).toArray()
   ) ?? [];
 
   const albumPhotos = useLiveQuery<AlbumPhoto[]>(() =>
