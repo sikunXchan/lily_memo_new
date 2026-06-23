@@ -143,6 +143,19 @@ function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
 }
 
+function canUseUltraToday(): boolean {
+  if (typeof window === 'undefined') return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return parseInt(localStorage.getItem(`lily_ultra_${today}`) || '0') < 1;
+}
+
+function markUltraUsed(): void {
+  if (typeof window === 'undefined') return;
+  const today = new Date().toISOString().slice(0, 10);
+  const key = `lily_ultra_${today}`;
+  localStorage.setItem(key, String(parseInt(localStorage.getItem(key) || '0') + 1));
+}
+
 const QUOTES_JA: { text: string; author: string }[] = [
   { text: '天才とは、1%のひらめきと99%の努力だ。', author: 'トーマス・エジソン' },
   { text: '千里の道も一歩から。', author: '老子' },
@@ -1752,6 +1765,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const [lilyAllNotes, setLilyAllNotes] = useState(false);
   const [lilyNoteIds, setLilyNoteIds] = useState<number[]>([]);
   const [lilyThinking, setLilyThinking] = useState(false);
+  const [lilyUltraThinking, setLilyUltraThinking] = useState(false);
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [contextSearch, setContextSearch] = useState('');
   const [apiKey, setApiKey] = useState<string>('');
@@ -2145,14 +2159,37 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       // + a low temperature so the model doesn't rush and drop answers.
       const accuracy = isAccuracyTask(userMsg.text);
       let aiText: string;
-      if ((lilyThinking || accuracy) && !economy) {
+      if (lilyUltraThinking && !economy) {
+        setSikunLiveThinking('');
+        let thinkingAccum = '';
+        setSikunProgress(t('⚡ Ultra思考中... 深く考えています'));
+        markUltraUsed();
+        aiText = await streamSikunlilyChat(
+          history,
+          systemPrompt,
+          apiKey,
+          16384,
+          {
+            onThinkingDelta: (delta) => {
+              thinkingAccum += delta;
+              setSikunLiveThinking(thinkingAccum);
+            },
+            onResponseDelta: () => {
+              setSikunProgress(t('✍️ 回答を生成中...'));
+            },
+          },
+          ['gemini-3.1-pro'],
+          webSearch || opts?.forceSearch,
+          65536,
+          0.6,
+        );
+        setSikunProgress('');
+        setSikunLiveThinking('');
+        pendingThinkingRef.current = thinkingAccum;
+      } else if ((lilyThinking || accuracy) && !economy) {
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(accuracy && !lilyThinking ? t('🧠 じっくり考えてるよ…') : t('🧠 思考中...'));
-        // Explicit thinking mode buys the strongest reasoning available:
-        // gemini-2.5-pro first (falls back to flash on quota) and a large
-        // thinking budget. Auto-engaged accuracy tasks stay on flash for
-        // speed but still get a meaningful budget.
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
@@ -2168,8 +2205,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             },
           },
           lilyThinking
-            ? ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
-            : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+            ? ['gemini-3.5-flash']
+            : ['gemini-3.5-flash'],
           webSearch || opts?.forceSearch,
           65536,
           accuracy ? 0.35 : 0.6,
@@ -2180,7 +2217,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       } else {
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch: webSearch || opts?.forceSearch,
-          models: economy ? ['gemini-2.5-flash-lite'] : undefined,
+          models: economy ? ['gemini-3.1-flash-lite'] : ['gemini-3.0-flash'],
           maxOutputTokens: economy ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
@@ -2215,7 +2252,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, allNotes, webSearch, activeMode, economy, activeSkill, compactHistory, t]);
+  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, allNotes, webSearch, activeMode, economy, activeSkill, compactHistory, t]);
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
@@ -2266,7 +2303,35 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       const lastUserText = [...history].reverse().find(t => t.role === 'user')?.text ?? '';
       const accuracy = isAccuracyTask(lastUserText);
       let aiText: string;
-      if ((lilyThinking || accuracy) && !economy) {
+      if (lilyUltraThinking && !economy) {
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        setSikunLiveThinking('');
+        let thinkingAccum = '';
+        setSikunProgress(t('⚡ Ultra思考中... 深く考えています'));
+        markUltraUsed();
+        aiText = await streamSikunlilyChat(
+          history,
+          systemPrompt,
+          apiKey,
+          16384,
+          {
+            onThinkingDelta: (delta) => {
+              thinkingAccum += delta;
+              setSikunLiveThinking(thinkingAccum);
+            },
+            onResponseDelta: () => {
+              setSikunProgress(t('✍️ 回答を生成中...'));
+            },
+          },
+          ['gemini-3.1-pro'],
+          webSearch,
+          65536,
+          0.6,
+        );
+        setSikunProgress('');
+        setSikunLiveThinking('');
+        pendingThinkingRef.current = thinkingAccum;
+      } else if ((lilyThinking || accuracy) && !economy) {
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         setSikunLiveThinking('');
         let thinkingAccum = '';
@@ -2286,8 +2351,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             },
           },
           lilyThinking
-            ? ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
-            : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+            ? ['gemini-3.5-flash']
+            : ['gemini-3.5-flash'],
           webSearch,
           65536,
           accuracy ? 0.35 : 0.6,
@@ -2299,7 +2364,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
-          models: economy ? ['gemini-2.5-flash-lite'] : undefined,
+          models: economy ? ['gemini-3.1-flash-lite'] : ['gemini-3.0-flash'],
           maxOutputTokens: economy ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
@@ -2330,7 +2395,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, activeMode, economy, apiKey, webSearch, activeSkill]);
+  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, activeMode, economy, apiKey, webSearch, activeSkill]);
 
   const lilyDefaultNoteId = lilyNoteIds[0];
 
@@ -2393,7 +2458,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             </span>
           </button>
           <div className="header-menu-wrap">
-            <button className={`clear-btn${webSearch || lilyThinking || economy ? ' has-active' : ''}`} onClick={() => setShowHeaderMenu(v => !v)} title={t('メニュー')}>
+            <button className={`clear-btn${webSearch || lilyThinking || lilyUltraThinking || economy ? ' has-active' : ''}`} onClick={() => setShowHeaderMenu(v => !v)} title={t('メニュー')}>
               <MoreVertical size={17} />
             </button>
             {showHeaderMenu && typeof document !== 'undefined' && createPortal(
@@ -2404,8 +2469,22 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                   <button className={`header-menu-item toggle${webSearch ? ' on' : ''}`} onClick={() => setWebSearch(p => !p)}>
                     <Search size={15} /><span className="hmi-label">{t('ネット検索')}</span><span className="hmi-state">{webSearch ? 'ON' : 'OFF'}</span>
                   </button>
-                  <button className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`} onClick={() => setLilyThinking(p => !p)} disabled={economy}>
+                  <button className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`} onClick={() => { setLilyThinking(p => !p); setLilyUltraThinking(false); }} disabled={economy}>
                     <span className="hmi-emoji">🧠</span><span className="hmi-label">{t('思考モード')}</span><span className="hmi-state">{lilyThinking ? 'ON' : 'OFF'}</span>
+                  </button>
+                  <button
+                    className={`header-menu-item toggle${lilyUltraThinking ? ' on ultra' : ''}`}
+                    onClick={() => {
+                      if (!lilyUltraThinking && !canUseUltraToday()) {
+                        alert(t('Ultra思考モードは1日1回までです。明日また使えます。'));
+                        return;
+                      }
+                      setLilyUltraThinking(p => !p);
+                      setLilyThinking(false);
+                    }}
+                    disabled={economy}
+                  >
+                    <span className="hmi-emoji">⚡</span><span className="hmi-label">{t('Ultra思考')}</span><span className="hmi-state">{lilyUltraThinking ? 'ON' : 'OFF'}</span>
                   </button>
                   <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy}>
                     <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
@@ -2579,7 +2658,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           <>
             <TypingIndicator />
             <BoxingOverlay />
-            {sikunProgress && <div className="siku-progress">{sikunProgress}</div>}
+            {sikunProgress && <div className={`siku-progress${lilyUltraThinking ? ' ultra' : ''}`}>{sikunProgress}</div>}
             {sikunLiveThinking && (
               <div className="siku-thinking-live">
                 <div className="siku-thinking-live-header">
@@ -2810,6 +2889,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .web-toggle.on .web-state { background: var(--primary); color: white; }
         @media (max-width: 380px) { .web-toggle .web-label { display: none; } }
         .siku-progress { font-size: 0.78rem; color: var(--fg-muted); padding-left: 52px; margin-top: -8px; font-style: italic; }
+        .siku-progress.ultra { color: transparent; background: linear-gradient(90deg, #f59e0b, #ec4899, #8b5cf6, #f59e0b); background-size: 200% auto; background-clip: text; -webkit-background-clip: text; animation: ultra-progress-shine 2s linear infinite; font-weight: 700; font-style: normal; }
+        @keyframes ultra-progress-shine { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
+        .header-menu-item.toggle.on.ultra { background: linear-gradient(120deg, rgba(245,158,11,0.15), rgba(139,92,246,0.15)); border-color: #f59e0b; color: #f59e0b; }
         .chat-saved-toast { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 6000; background: var(--foreground); color: var(--background); font-size: 0.84rem; font-weight: 700; padding: 10px 18px; border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); animation: toastIn 0.2s ease; pointer-events: none; }
         @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
         .siku-thinking-live {
