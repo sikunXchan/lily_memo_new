@@ -92,6 +92,7 @@ const GEMINI_MODELS = [
   'gemini-3.1-pro',
   'gemini-3.5-flash',
   'gemini-3.0-flash',
+  'gemini-2.5-flash',
 ];
 
 // Status codes that are transient — retry with the next model.

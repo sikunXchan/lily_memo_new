@@ -436,7 +436,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       const reply = await callGeminiChat(history, lessonSysRef.current, apiKey, {
         temperature: 0.7,
         maxOutputTokens: 8192,
-        models: ['gemini-3.0-flash'],
+        models: ['gemini-3.5-flash', 'gemini-3.0-flash', 'gemini-2.5-flash'],
       });
       const next: ChatTurn[] = [...history, { role: 'model', text: reply.trim() }];
       setLessonTurns(next);
@@ -549,7 +549,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       const prompt = en
         ? `Based on the following lesson content, create a varied quiz (mix of multiple-choice, fill-in-the-blank, and true/false) to test understanding:\n\n${content}`
         : `以下の授業内容をもとに、理解度を確認する確認テストを作成してください（選択・穴埋め・○×などの形式をバランスよく使ってください）：\n\n${content}`;
-      const result = await generateProblemSet(prompt, [], ['gemini-3.0-flash']);
+      const result = await generateProblemSet(prompt, [], ['gemini-3.5-flash', 'gemini-3.0-flash', 'gemini-2.5-flash']);
       const id = await saveProblemSet(result, {});
       const fresh = await db.problemSets.get(id);
       if (fresh) {
