@@ -38,7 +38,7 @@ import {
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
-import { canAfford, deductPoints, getRemainingPoints, PT } from '@/lib/points';
+import { canAfford, deductPoints, getRemainingPoints, getPlan, PT, PLAN_DAILY_POINTS, PLAN_LABEL } from '@/lib/points';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
@@ -1598,6 +1598,7 @@ function LilyBubble({
 
 function UserBubble({ message }: { message: ChatMessage }) {
   const atts = message.attachments ?? [];
+  const [redSheet, setRedSheet] = useState<Record<number, boolean>>({});
   return (
     <div className="user-bubble-row">
       <CopyButton text={message.text} light />
@@ -1606,8 +1607,16 @@ function UserBubble({ message }: { message: ChatMessage }) {
           <div className="att-preview">
             {atts.map((att, i) =>
               att.isImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={i} src={`data:${att.mimeType};base64,${att.data}`} alt={att.name} className="att-img" />
+                <div key={i} className="att-img-wrap">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`data:${att.mimeType};base64,${att.data}`} alt={att.name} className="att-img" />
+                  {redSheet[i] && <div className="red-sheet-overlay" />}
+                  <button
+                    className={`red-sheet-btn${redSheet[i] ? ' active' : ''}`}
+                    onClick={() => setRedSheet(p => ({ ...p, [i]: !p[i] }))}
+                    title={redSheet[i] ? 'シートを外す' : '赤シートをかける'}
+                  >🔴</button>
+                </div>
               ) : (
                 <span key={i} className="att-file">📎 {att.name}</span>
               )
@@ -1623,7 +1632,13 @@ function UserBubble({ message }: { message: ChatMessage }) {
         .user-bubble-row:hover :global(.copy-btn) { opacity: 1; }
         .user-bubble { background: var(--primary); color: white; border-radius: 16px 4px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; word-break: break-word; }
         .att-preview { margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+        .att-img-wrap { position: relative; display: inline-block; }
         .att-img { max-width: 140px; max-height: 140px; border-radius: 10px; display: block; }
+        .red-sheet-overlay { position: absolute; inset: 0; border-radius: 10px; background: rgba(190,0,30,0.72); pointer-events: none; animation: rsIn 0.18s ease; }
+        @keyframes rsIn { from { opacity: 0; } to { opacity: 1; } }
+        .red-sheet-btn { position: absolute; bottom: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: none; background: rgba(0,0,0,0.55); font-size: 12px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity 0.15s, transform 0.15s; z-index: 2; }
+        .att-img-wrap:hover .red-sheet-btn { opacity: 1; }
+        .red-sheet-btn.active { opacity: 1; transform: scale(1.1); }
         .att-file { display: inline-block; background: rgba(255,255,255,0.25); border-radius: 8px; padding: 4px 10px; font-size: 0.82rem; }
       `}</style>
     </div>
@@ -2626,20 +2641,50 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
 
       <div className="messages-list">
         {messages.length === 0 && (
-          <div className="welcome-lily-wrap">
-            <div className="welcome-lily-stage">
-              <span className="welcome-halo" />
+          <div className=”welcome-lily-wrap”>
+            <div className=”welcome-lily-stage”>
+              <span className=”welcome-halo” />
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="welcome-lily" />
+              <img src=”/9D507C9A-09F0-4B05-9F41-612FBD120675.png” alt=”Lily” className=”welcome-lily” />
             </div>
+            {(() => {
+              const wPlan = getPlan();
+              const wDaily = PLAN_DAILY_POINTS[wPlan];
+              const wRemaining = getRemainingPoints();
+              const wPct = Math.max(0, Math.min(100, (wRemaining / wDaily) * 100));
+              const R = 36;
+              const circ = 2 * Math.PI * R;
+              const dash = circ * (wPct / 100);
+              const color = wPct > 50 ? 'var(--primary,#f06292)' : wPct > 20 ? '#f59e0b' : '#ef4444';
+              return (
+                <div className=”pt-gauge-wrap”>
+                  <svg className=”pt-gauge-svg” viewBox=”0 0 88 88” width=”88” height=”88”>
+                    <circle cx=”44” cy=”44” r={R} fill=”none” stroke=”var(--border,#eee)” strokeWidth=”7” />
+                    <circle
+                      cx=”44” cy=”44” r={R} fill=”none”
+                      stroke={color} strokeWidth=”7”
+                      strokeLinecap=”round”
+                      strokeDasharray={`${dash} ${circ}`}
+                      transform=”rotate(-90 44 44)”
+                      style={{ transition: 'stroke-dasharray 0.6s ease, stroke 0.4s ease' }}
+                    />
+                  </svg>
+                  <div className=”pt-gauge-inner”>
+                    <span className=”pt-gauge-num”>{wRemaining >= 1000 ? `${(wRemaining/1000).toFixed(1)}k` : wRemaining}</span>
+                    <span className=”pt-gauge-label”>pt</span>
+                  </div>
+                  <div className=”pt-gauge-plan”>{PLAN_LABEL[wPlan]}</div>
+                </div>
+              );
+            })()}
             {(() => {
               const q = getDailyQuote(getAppLang());
               return (
-                <div className="welcome-quote">
-                  <span className="welcome-quote-mark">“</span>
-                  <span className="welcome-quote-label">{t('今日の一言')}</span>
-                  <p className="welcome-quote-text">{q.text}</p>
-                  <p className="welcome-quote-author">— {q.author}</p>
+                <div className=”welcome-quote”>
+                  <span className=”welcome-quote-mark”>”</span>
+                  <span className=”welcome-quote-label”>{t('今日の一言')}</span>
+                  <p className=”welcome-quote-text”>{q.text}</p>
+                  <p className=”welcome-quote-author”>— {q.author}</p>
                 </div>
               );
             })()}
@@ -2668,10 +2713,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             <BoxingOverlay />
             {sikunProgress && <div className={`siku-progress${lilyUltraThinking ? ' ultra' : ''}`}>{sikunProgress}</div>}
             {sikunLiveThinking && (
-              <div className="siku-thinking-live">
+              <div className={`siku-thinking-live${lilyUltraThinking ? ' ultra' : ''}`}>
                 <div className="siku-thinking-live-header">
                   <span className="siku-thinking-pulse" />
-                  {t('思考ログ（リアルタイム）')}
+                  {lilyUltraThinking ? t('⚡ Ultra思考ログ') : t('思考ログ（リアルタイム）')}
                 </div>
                 <div className="siku-thinking-live-body">{sikunLiveThinking}</div>
               </div>
@@ -2904,20 +2949,52 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
         .siku-thinking-live {
           margin: 4px 0 4px 52px;
-          border: 1px solid #334155; border-radius: 10px;
+          border: 1.5px solid #334155; border-radius: 10px;
           background: #0f172a; overflow: hidden;
+          position: relative;
+          box-shadow: 0 0 0 0 rgba(99,102,241,0);
+          animation: thinkGlow 2.4s ease-in-out infinite;
+        }
+        @keyframes thinkGlow {
+          0%,100% { box-shadow: 0 0 8px 0 rgba(99,102,241,0.18), inset 0 0 20px rgba(99,102,241,0.04); border-color: #334155; }
+          50% { box-shadow: 0 0 18px 2px rgba(99,102,241,0.38), inset 0 0 28px rgba(99,102,241,0.10); border-color: #6366f1; }
+        }
+        .siku-thinking-live.ultra {
+          animation: ultraGlow 1.6s ease-in-out infinite;
+          border-color: #f59e0b;
+        }
+        @keyframes ultraGlow {
+          0% { box-shadow: 0 0 12px 2px rgba(245,158,11,0.35), inset 0 0 24px rgba(245,158,11,0.08); border-color: #f59e0b; }
+          25% { box-shadow: 0 0 20px 4px rgba(236,72,153,0.45), inset 0 0 32px rgba(236,72,153,0.12); border-color: #ec4899; }
+          50% { box-shadow: 0 0 24px 5px rgba(139,92,246,0.50), inset 0 0 36px rgba(139,92,246,0.14); border-color: #8b5cf6; }
+          75% { box-shadow: 0 0 20px 4px rgba(236,72,153,0.45), inset 0 0 32px rgba(236,72,153,0.12); border-color: #ec4899; }
+          100% { box-shadow: 0 0 12px 2px rgba(245,158,11,0.35), inset 0 0 24px rgba(245,158,11,0.08); border-color: #f59e0b; }
         }
         .siku-thinking-live-header {
           display: flex; align-items: center; gap: 7px;
           padding: 6px 12px; font-size: 0.72rem; font-weight: 600;
           color: #64748b; border-bottom: 1px solid #1e293b;
         }
+        .siku-thinking-live.ultra .siku-thinking-live-header {
+          color: transparent;
+          background: linear-gradient(90deg, #f59e0b, #ec4899, #8b5cf6, #f59e0b);
+          background-size: 200% auto;
+          background-clip: text; -webkit-background-clip: text;
+          animation: ultraTextShine 2s linear infinite;
+        }
+        @keyframes ultraTextShine { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
         .siku-thinking-pulse {
-          width: 7px; height: 7px; border-radius: 50%; background: #3b82f6;
+          width: 7px; height: 7px; border-radius: 50%; background: #6366f1;
           animation: thinkPulse 1.2s ease-in-out infinite;
-          flex-shrink: 0;
+          flex-shrink: 0; flex-shrink: 0;
+        }
+        .siku-thinking-live.ultra .siku-thinking-pulse {
+          background: linear-gradient(135deg, #f59e0b, #ec4899);
+          animation: ultraPulse 0.8s ease-in-out infinite;
+          box-shadow: 0 0 6px 2px rgba(245,158,11,0.6);
         }
         @keyframes thinkPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.7)} }
+        @keyframes ultraPulse { 0%,100%{opacity:1;transform:scale(1.1);box-shadow:0 0 8px 3px rgba(245,158,11,0.7)} 50%{opacity:0.6;transform:scale(0.85);box-shadow:0 0 4px 1px rgba(139,92,246,0.5)} }
         .siku-thinking-live-body {
           padding: 8px 12px; max-height: 180px; overflow-y: auto;
           font-size: 0.7rem; line-height: 1.55; color: #64748b;
@@ -2972,8 +3049,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .ctx-done { margin-left: auto; padding: 7px 20px; border: none; border-radius: 10px; background: var(--primary); color: #fff; font-size: .84rem; font-weight: 700; cursor: pointer; }
         .ctx-done:hover { filter: brightness(1.1); }
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
-        .welcome-lily-wrap { display: flex; flex-direction: column; align-items: center; padding: 32px 0 10px; gap: 26px; animation: welcome-in 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+        .welcome-lily-wrap { display: flex; flex-direction: column; align-items: center; padding: 32px 0 10px; gap: 20px; animation: welcome-in 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
         @keyframes welcome-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        .pt-gauge-wrap { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .pt-gauge-svg { display: block; filter: drop-shadow(0 2px 8px color-mix(in srgb, var(--primary) 30%, transparent)); }
+        .pt-gauge-inner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -52%); display: flex; flex-direction: column; align-items: center; line-height: 1; }
+        .pt-gauge-num { font-size: 1.15rem; font-weight: 800; color: var(--text,#333); }
+        .pt-gauge-label { font-size: 0.6rem; font-weight: 700; color: var(--text-muted,#888); letter-spacing: 0.05em; }
+        .pt-gauge-plan { font-size: 0.65rem; font-weight: 700; color: var(--primary); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.85; }
         .welcome-lily-stage { position: relative; display: flex; justify-content: center; align-items: center; }
         .welcome-halo {
           position: absolute; width: 180px; height: 180px; border-radius: 50%;
