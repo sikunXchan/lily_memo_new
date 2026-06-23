@@ -15,7 +15,7 @@ const SearchModal = dynamic(() => import('@/components/SearchModal'), { ssr: fal
 const PDFViewer = dynamic(() => import('@/components/PDFViewer'), { ssr: false });
 const HomeHero = dynamic(() => import('@/components/HomeHero'), { ssr: false });
 const BubbleHome = dynamic(() => import('@/components/BubbleHome'), { ssr: false });
-const BackBubble = dynamic(() => import('@/components/BackBubble'), { ssr: false });
+
 const AIChat = dynamic(() => import('@/components/AIChat'), { ssr: false });
 const StudyTracker = dynamic(() => import('@/components/StudyTracker'), { ssr: false });
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
@@ -151,12 +151,6 @@ export default function Home() {
     setActiveNoteId(undefined);
   };
 
-  // BackBubble: shown on mobile when not on bubble home.
-  // Hidden on practice/memos/todo — those screens have their own back affordance.
-  const onBubbleHome = isMobile && activeTab === 'memos' && !activeNoteId && mobilePage === 'bubbles';
-  const showBackBubble = isMobile && !showFocusMode
-    && !['ai', 'practice', 'memos', 'todo', 'diary'].includes(activeTab)
-    && !onBubbleHome;
 
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''}`}>
@@ -279,8 +273,6 @@ export default function Home() {
           isPdfTab={activeTab === 'pdf' && !activeNoteId}
         />
       )}
-
-      {showBackBubble && <BackBubble onGoHome={goHome} />}
 
       <style jsx>{`
         .app-container {

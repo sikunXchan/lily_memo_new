@@ -2,6 +2,7 @@
 
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useEffect, useRef, useState } from 'react';
+import { Trash2, GripVertical } from 'lucide-react';
 import mermaid from 'mermaid';
 import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
 import { initMermaid } from '@/lib/mermaidConfig';
@@ -9,7 +10,7 @@ import { useT } from '@/lib/i18n';
 
 initMermaid();
 
-export default function MermaidComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
+export default function MermaidComponent({ node: { attrs }, updateAttributes, deleteNode }: ReactNodeViewProps) {
   const t = useT();
   const [svg, setSvg] = useState('');
   const [editing, setEditing] = useState(false);
@@ -71,13 +72,19 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
   return (
     <NodeViewWrapper
        className="mermaid-wrapper"
+       data-drag-handle
        style={{
          width: widthNum <= 100 ? attrs.width : '100%',
          paddingBottom: extraSpace > 0 ? `${extraSpace}px` : undefined,
        }}
     >
       <div className="mermaid-header" contentEditable={false}>
-          <span className="mermaid-label">{t('Mermaid 図')}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span className="mermaid-drag" draggable data-drag-handle title={t('ドラッグして移動')}>
+              <GripVertical size={14} />
+            </span>
+            <span className="mermaid-label">{t('Mermaid 図')}</span>
+          </div>
           <div className="mermaid-header-actions">
             <select
               value={attrs.width || '100%'}
@@ -96,6 +103,9 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
             </select>
             <button className="btn-edit" onClick={() => { setError(''); setEditing(!editing); }}>
               {editing ? t('プレビュー表示') : t('コードを編集')}
+            </button>
+            <button className="btn-delete" onClick={() => deleteNode()} title={t('削除')}>
+              <Trash2 size={13} />
             </button>
           </div>
       </div>
@@ -153,6 +163,27 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes }: 
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
+        .mermaid-drag {
+          display: inline-flex;
+          align-items: center;
+          cursor: grab;
+          opacity: 0.4;
+          color: var(--foreground);
+        }
+        .mermaid-drag:active { cursor: grabbing; }
+        .btn-delete {
+          display: inline-flex;
+          align-items: center;
+          background: transparent;
+          border: none;
+          padding: 3px 6px;
+          border-radius: 5px;
+          cursor: pointer;
+          color: #ef4444;
+          opacity: 0.7;
+          transition: opacity 0.2s;
+        }
+        .btn-delete:hover { opacity: 1; background: rgba(239,68,68,.08); }
         .mermaid-header-actions {
           display: flex;
           align-items: center;

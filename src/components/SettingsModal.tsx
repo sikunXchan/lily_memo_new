@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Upload, Type, Sparkles, Eye, EyeOff, Wifi, User } from 'lucide-react';
+import { Download, Upload, Type, Sparkles, Eye, EyeOff, Wifi, User, Home } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
@@ -18,8 +18,7 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-export default function SettingsModal({ onClose: _onClose }: SettingsModalProps) {
-  void _onClose;
+export default function SettingsModal({ onClose }: SettingsModalProps) {
   const t = useT();
   const [isPersisted, setIsPersisted] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
@@ -196,6 +195,10 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
     <div className="settings-view">
       <header className="settings-header">
         <h2>{t('設定')}</h2>
+        <button className="settings-home-btn" onClick={onClose} title={t('ホームに戻る')}>
+          <Home size={16} />
+          <span>{t('ホーム')}</span>
+        </button>
       </header>
 
       <div className="settings-sections">
@@ -416,7 +419,20 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         .settings-header {
           max-width: 600px;
           margin: 0 auto 40px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
         }
+        .settings-home-btn {
+          display: flex; align-items: center; gap: 6px;
+          padding: 8px 14px; border-radius: 20px;
+          border: 1.5px solid var(--border);
+          background: var(--accent); color: var(--foreground);
+          font-size: 0.85rem; font-weight: 700; cursor: pointer;
+          transition: background 0.15s;
+          flex-shrink: 0;
+        }
+        .settings-home-btn:hover { background: var(--border); }
         .settings-header h2 {
           font-size: 1.8rem;
           color: var(--primary);

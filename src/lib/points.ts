@@ -1,26 +1,29 @@
-export type Plan = 'free' | 'plus' | 'pro' | 'developer';
+export type Plan = 'free' | 'plus' | 'pro' | 'max' | 'ultimate';
 
-export const PLAN_ORDER: Plan[] = ['free', 'plus', 'pro', 'developer'];
+export const PLAN_ORDER: Plan[] = ['free', 'plus', 'pro', 'max', 'ultimate'];
 
 export const PLAN_DAILY_POINTS: Record<Plan, number> = {
   free: 500,
   plus: 1000,
   pro: 1500,
-  developer: 10000,
+  max: 2000,
+  ultimate: 3000,
 };
 
 export const PLAN_PRICE_YEN: Record<Plan, number> = {
   free: 0,
   plus: 30,
   pro: 100,
-  developer: 750,
+  max: 300,
+  ultimate: 500,
 };
 
 export const PLAN_LABEL: Record<Plan, string> = {
   free: 'Free',
   plus: 'Plus',
   pro: 'Pro',
-  developer: 'Developer',
+  max: 'Max',
+  ultimate: 'Ultimate',
 };
 
 // Point costs per call type
@@ -28,7 +31,7 @@ export const PT = {
   lite: 20,      // gemini-3.1-flash-lite
   flash: 50,     // gemini-3.5-flash
   thinking: 70,  // flash + thinkingBudget
-  ultra: 200,    // gemini-3.1-pro-preview
+  ultra: 500,    // gemini-3.1-pro-preview
 } as const;
 
 const UNLOCK_PASSWORD = '4934';

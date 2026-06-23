@@ -316,6 +316,15 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
                       >
                         <Pin size={14} strokeWidth={2.4} fill={todo.pinned ? 'currentColor' : 'none'} />
                       </button>
+                      {todo.pinned && (
+                        <button
+                          className="td-pin-del"
+                          onClick={e => { e.stopPropagation(); void deleteTodo(todo.id!); }}
+                          aria-label={t('削除')}
+                        >
+                          <Trash2 size={14} strokeWidth={2} />
+                        </button>
+                      )}
                     </div>
 
                     <button className="td-del" onClick={() => void deleteTodo(todo.id!)} aria-label={t('削除')}>
@@ -596,6 +605,13 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         }
         .td-pin:active { transform: scale(.78); }
         .td-pin.on { color: #f59e0b; background: rgba(245,158,11,.12); }
+        .td-pin-del {
+          width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          background: transparent; color: #ef4444;
+          transition: background .15s, transform .15s;
+        }
+        .td-pin-del:active { transform: scale(.78); background: rgba(239,68,68,.1); }
 
         /* Delete panel */
         .td-del {

@@ -2,6 +2,7 @@
 
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useState } from 'react';
+import { Trash2, GripVertical } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 import { renderRich } from '@/lib/richText';
 
@@ -458,7 +459,7 @@ function CardStyles() {
   );
 }
 
-export default function QAComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
+export default function QAComponent({ node: { attrs }, updateAttributes, deleteNode }: ReactNodeViewProps) {
   const t = useT();
   const pairs: QAPair[] = attrs.pairs || [];
   const kind: string = attrs.kind || 'qa';
@@ -637,9 +638,12 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
   }
 
   return (
-    <NodeViewWrapper className="qa-wrapper">
+    <NodeViewWrapper className="qa-wrapper" data-drag-handle>
       <div className="qa-block" contentEditable={false}>
         <div className="qa-block-header">
+          <span className="qa-block-drag" draggable data-drag-handle title="ドラッグして移動">
+            <GripVertical size={14} />
+          </span>
           <span className="qa-block-title">
             {t(kindLabel)} <span className="qa-count">{t('{n}問', { n: pairs.length })}</span>
             {checkedCount > 0 && (
@@ -651,6 +655,9 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
           <div className="qa-block-header-actions">
             <button className="qa-action-btn" onClick={toggleRevealAll}>
               {revealAll ? t('答えを隠す') : t('答え合わせ')}
+            </button>
+            <button className="qa-action-btn qa-delete-btn" onClick={() => deleteNode()} title={t('削除')}>
+              <Trash2 size={13} />
             </button>
             <button
               className="qa-action-btn"
@@ -751,6 +758,17 @@ export default function QAComponent({ node: { attrs }, updateAttributes }: React
           background: var(--accent);
           transform: translateY(-1px);
         }
+        .qa-delete-btn {
+          padding: 6px 10px;
+          color: #ef4444;
+          border-color: rgba(239,68,68,.3);
+        }
+        .qa-delete-btn:hover { background: rgba(239,68,68,.08); }
+        .qa-block-drag {
+          display: flex; align-items: center; padding: 4px 2px;
+          color: #aaa; cursor: grab; flex-shrink: 0;
+        }
+        .qa-block-drag:active { cursor: grabbing; }
         .qa-cards {
           padding: 14px;
           display: flex;

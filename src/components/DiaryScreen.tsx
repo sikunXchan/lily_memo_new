@@ -300,12 +300,6 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         {/* Month grid */}
         <div
           className="dy-grid"
-          onTouchStart={e => { monthTouchX.current = e.touches[0].clientX; }}
-          onTouchEnd={e => {
-            const dx = monthTouchX.current - e.changedTouches[0].clientX;
-            if (dx > 45) nextMonth();
-            else if (dx < -45) prevMonth();
-          }}
         >
           {cells.map(({ iso, inMonth }) => {
             const entry = byDate.get(iso);

@@ -18,7 +18,7 @@ import {
 } from 'chart.js';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
-import { Upload, Edit3, Save, Download, Play, FileSpreadsheet } from 'lucide-react';
+import { Upload, Edit3, Save, Download, Play, FileSpreadsheet, Trash2, GripVertical } from 'lucide-react';
 import { triggerDownload } from '@/lib/fileGen';
 import { useT } from '@/lib/i18n';
 import katex from 'katex';
@@ -79,7 +79,7 @@ return {
   }
 };`;
 
-export default function ChartComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
+export default function ChartComponent({ node: { attrs }, updateAttributes, deleteNode }: ReactNodeViewProps) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const chartRef = useRef<ChartJS>(null);
@@ -195,6 +195,7 @@ return {
   return (
     <NodeViewWrapper
        className="chart-wrapper"
+       data-drag-handle
        style={{
          width: widthNum <= 100 ? attrs.width : '100%',
          paddingBottom: extraSpace > 0 ? `${extraSpace}px` : undefined,
@@ -202,6 +203,9 @@ return {
     >
       <div className="chart-header" contentEditable={false}>
           <div className="header-info">
+            <span className="chart-drag" draggable data-drag-handle title={t('ドラッグして移動')}>
+              <GripVertical size={14} />
+            </span>
              <span className="title-text">📊 JS Chart</span>
              {fileName && <span className="file-badge"><FileSpreadsheet size={12}/> {fileName}</span>}
           </div>
@@ -236,6 +240,9 @@ return {
             }}>
               {editing ? <Save size={16} /> : <Edit3 size={16} />}
               {editing ? t('完了') : t('コード編集')}
+            </button>
+            <button className="btn-delete" onClick={() => deleteNode()} title={t('削除')}>
+              <Trash2 size={13} />
             </button>
           </div>
       </div>
@@ -342,6 +349,27 @@ return {
           justify-content: space-between;
           align-items: center;
         }
+        .chart-drag {
+          display: inline-flex;
+          align-items: center;
+          cursor: grab;
+          opacity: 0.4;
+          color: var(--foreground);
+        }
+        .chart-drag:active { cursor: grabbing; }
+        .btn-delete {
+          display: inline-flex;
+          align-items: center;
+          background: transparent;
+          border: none;
+          padding: 3px 6px;
+          border-radius: 5px;
+          cursor: pointer;
+          color: #ef4444;
+          opacity: 0.7;
+          transition: opacity 0.2s;
+        }
+        .btn-delete:hover { opacity: 1; background: rgba(239,68,68,.08); }
         .header-info {
           display: flex;
           align-items: center;
