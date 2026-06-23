@@ -2467,7 +2467,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                   <button className={`header-menu-item toggle${webSearch ? ' on' : ''}`} onClick={() => setWebSearch(p => !p)}>
                     <Search size={15} /><span className="hmi-label">{t('ネット検索')}</span><span className="hmi-state">{webSearch ? 'ON' : 'OFF'}</span>
                   </button>
-                  <button className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`} onClick={() => { setLilyThinking(p => !p); setLilyUltraThinking(false); }} disabled={economy}>
+                  <button className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`} onClick={() => setLilyThinking(p => !p)} disabled={economy || lilyUltraThinking}>
                     <span className="hmi-emoji">🧠</span><span className="hmi-label">{t('思考モード')}</span><span className="hmi-state">{lilyThinking ? 'ON' : 'OFF'}</span>
                   </button>
                   <button
@@ -2478,13 +2478,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                         return;
                       }
                       setLilyUltraThinking(p => !p);
-                      setLilyThinking(false);
                     }}
-                    disabled={economy}
+                    disabled={economy || lilyThinking}
                   >
                     <span className="hmi-emoji">⚡</span><span className="hmi-label">{t('Ultra思考')}</span><span className="hmi-state">{lilyUltraThinking ? 'ON' : 'OFF'}</span>
                   </button>
-                  <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy}>
+                  <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy} disabled={lilyThinking || lilyUltraThinking}>
                     <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
                   </button>
                   <div className="header-menu-divider" />
