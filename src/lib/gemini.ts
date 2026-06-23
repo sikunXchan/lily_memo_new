@@ -182,7 +182,7 @@ export async function streamSikunlilyChat(
         })
       : body;
 
-    const url = geminiUrl(`v1/models/${model}:streamGenerateContent`, apiKey, { alt: 'sse' });
+    const url = geminiUrl(`v1beta/models/${model}:streamGenerateContent`, apiKey, { alt: 'sse' });
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -305,7 +305,7 @@ export async function callGeminiChat(
       useSearch ? { ...baseBody, tools: [{ google_search: {} }] } : baseBody
     );
 
-    const url = geminiUrl(`v1/models/${model}:generateContent`, apiKey);
+    const url = geminiUrl(`v1beta/models/${model}:generateContent`, apiKey);
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // Exponential backoff: 0s, 2s, 4s within a model; 1s between models.
@@ -738,7 +738,7 @@ export async function callGemini(prompt: string, apiKey: string): Promise<string
   const MAX_ATTEMPTS = 3;
   for (let i = 0; i < GEMINI_MODELS.length; i++) {
     const model = GEMINI_MODELS[i];
-    const url = geminiUrl(`v1/models/${model}:generateContent`, apiKey);
+    const url = geminiUrl(`v1beta/models/${model}:generateContent`, apiKey);
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
       else if (i > 0) await new Promise(r => setTimeout(r, 1000));
