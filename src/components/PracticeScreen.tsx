@@ -726,7 +726,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       const result = await generateProblemSet(
         buildGeneratePrompt(),
         [...mdAtts, ...noteAtts, ...genPdfs.map(p => p.att), ...genImages.map(g => g.att)],
-        genDiff === 'oni' ? ['gemini-3.1-pro'] : ['gemini-3.5-flash'],
+        genDiff === 'oni' ? ['gemini-3.1-pro-preview', 'gemini-3.5-flash'] : ['gemini-3.5-flash'],
       );
       const id = await saveProblemSet(result, {
         examMode: genExam,
