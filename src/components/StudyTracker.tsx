@@ -185,6 +185,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const [elapsed, setElapsed] = useState(0);
   const startTsRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hiddenAtRef = useRef<number | null>(null);
+  const [showFocusPrompt, setShowFocusPrompt] = useState(false);
 
   // Category
   const [selectedCatId, setSelectedCatId] = useState<number | null>(null);
@@ -228,11 +230,19 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // iOS background re-sync
+  // iOS background re-sync + focus check
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === 'visible' && startTsRef.current) {
-        setElapsed(Math.floor((Date.now() - startTsRef.current) / 1000));
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now();
+      } else if (document.visibilityState === 'visible') {
+        if (startTsRef.current) {
+          setElapsed(Math.floor((Date.now() - startTsRef.current) / 1000));
+          // Prompt if away ≥ 3 minutes while timer was running
+          const away = hiddenAtRef.current ? Date.now() - hiddenAtRef.current : 0;
+          if (away >= 3 * 60 * 1000) setShowFocusPrompt(true);
+        }
+        hiddenAtRef.current = null;
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -368,6 +378,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const lastDate  = buckets.length > 0 ? buckets[buckets.length - 1].end : today;
   const periodSessions = sessions.filter(s => s.date >= firstDate && s.date <= lastDate);
   const periodTotal    = periodSessions.reduce((sum, s) => sum + s.duration, 0);
+  const periodActiveDays = new Set(periodSessions.map(s => s.date)).size;
+  const periodAvgPerDay  = periodActiveDays > 0 ? Math.round(periodTotal / periodActiveDays) : 0;
   const catMap = new Map<string, { name: string; color: string; secs: number }>();
   for (const s of periodSessions) {
     const key = s.categoryName ?? 'none';
@@ -395,6 +407,24 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="st-container">
+      {/* Focus re-engage prompt */}
+      {showFocusPrompt && isRunning && (
+        <div className="focus-prompt-overlay">
+          <div className="focus-prompt">
+            <span className="focus-prompt-icon">🎯</span>
+            <p className="focus-prompt-msg">{t('しばらく離れてたね。まだ勉強中？')}</p>
+            <div className="focus-prompt-btns">
+              <button className="focus-prompt-yes" onClick={() => setShowFocusPrompt(false)}>
+                {t('続ける！')}
+              </button>
+              <button className="focus-prompt-no" onClick={() => { setShowFocusPrompt(false); void stopTimer(); }}>
+                {t('止める')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="st-header">
         {onSwitchTab && (
@@ -687,6 +717,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
               <span className="summary-val">{fmtDur(periodTotal)}</span>
               <span className="summary-lbl">{t('{label}合計', { label: periodLabel })}</span>
             </div>
+            {periodActiveDays > 0 && (
+              <div className="summary-card">
+                <span className="summary-val">{fmtDur(periodAvgPerDay)}</span>
+                <span className="summary-lbl">{t('1日平均（学習日）')}</span>
+              </div>
+            )}
           </div>
 
           {sessions.length > 0 ? (
@@ -840,7 +876,14 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {showProfile && <StudyProfileModal onClose={() => setShowProfile(false)} />}
 
       <style jsx>{`
-        .st-container { display:flex; flex-direction:column; height:100%; background:var(--background); overflow:hidden; }
+        .focus-prompt-overlay { position:absolute; inset:0; z-index:200; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.45); padding:16px; }
+        .focus-prompt { background:var(--background); border-radius:20px; padding:28px 24px; max-width:320px; width:100%; display:flex; flex-direction:column; align-items:center; gap:14px; box-shadow:0 8px 40px rgba(0,0,0,.25); text-align:center; }
+        .focus-prompt-icon { font-size:2.4rem; }
+        .focus-prompt-msg { font-size:0.95rem; font-weight:600; color:var(--foreground); margin:0; line-height:1.5; }
+        .focus-prompt-btns { display:flex; gap:10px; width:100%; }
+        .focus-prompt-yes { flex:1; padding:12px; background:var(--primary); color:#fff; font-weight:700; border-radius:12px; border:none; cursor:pointer; font-size:0.9rem; }
+        .focus-prompt-no { flex:1; padding:12px; background:var(--accent); color:var(--foreground); font-weight:700; border-radius:12px; border:1.5px solid var(--border); cursor:pointer; font-size:0.9rem; }
+        .st-container { position:relative; display:flex; flex-direction:column; height:100%; background:var(--background); overflow:hidden; }
         .st-header { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--glass-tint,rgba(255,255,255,0.9)); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); flex-shrink:0; }
         .st-back { width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--accent); border:1px solid var(--border); color:var(--foreground); cursor:pointer; flex-shrink:0; }
         .st-back:hover { opacity:.75; }

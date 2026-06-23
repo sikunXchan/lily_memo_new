@@ -2,6 +2,7 @@
 
 import { NodeViewContent, NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import React, { useState, useEffect, CSSProperties } from 'react';
+import { Trash2, GripVertical } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 
 // TipTap v3 uses NoInfer<T> in NodeViewContentProps which prevents TypeScript from
@@ -14,7 +15,7 @@ const LANGUAGES = [
   'bash', 'powershell', 'html', 'css', 'json', 'yaml', 'markdown'
 ];
 
-export default function CodeBlockComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
+export default function CodeBlockComponent({ node: { attrs }, updateAttributes, deleteNode }: ReactNodeViewProps) {
   const t = useT();
   // インラインスタイルで管理: styled-jsxはTiptap NodeViewRenderer内で正しく動作しないため
   const [theme, setTheme] = useState<'dark' | 'light'>(attrs.theme || 'dark');
@@ -94,10 +95,35 @@ export default function CodeBlockComponent({ node: { attrs }, updateAttributes }
     background: 'transparent',
   };
 
+  const dragHandleStyle: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '0 4px',
+    cursor: 'grab',
+    opacity: 0.4,
+    color: isDark ? '#ccc' : '#666',
+  };
+
+  const deleteBtnStyle: CSSProperties = {
+    background: 'transparent',
+    border: 'none',
+    padding: '2px 6px',
+    cursor: 'pointer',
+    opacity: 0.6,
+    color: '#ef4444',
+    display: 'inline-flex',
+    alignItems: 'center',
+    borderRadius: '4px',
+    transition: 'opacity 0.2s',
+  };
+
   return (
-    <NodeViewWrapper style={wrapperStyle}>
+    <NodeViewWrapper style={wrapperStyle} data-drag-handle>
       <div style={headerStyle} contentEditable={false}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={dragHandleStyle} draggable data-drag-handle title={t('ドラッグして移動')}>
+            <GripVertical size={14} />
+          </span>
           <select
             value={attrs.language || 'auto'}
             onChange={e => updateAttributes({ language: e.target.value })}
@@ -112,7 +138,12 @@ export default function CodeBlockComponent({ node: { attrs }, updateAttributes }
             {isDark ? '☀️' : '🌙'}
           </button>
         </div>
-        <span style={langLabelStyle}>{attrs.language || 'code'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={langLabelStyle}>{attrs.language || 'code'}</span>
+          <button style={deleteBtnStyle} onClick={() => deleteNode()} title={t('削除')}>
+            <Trash2 size={13} />
+          </button>
+        </div>
       </div>
       <pre style={preStyle}>
         <NodeViewContentCode as="code" />
