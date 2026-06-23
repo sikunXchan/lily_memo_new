@@ -45,8 +45,13 @@ type TextAnn = {
   id: string; type: 'text';
   x: number; y: number; text: string; color: string;
 };
-type AnnotationItem = HighlightAnn | PenAnn | LineAnn | TextAnn;
-type AnnMode = 'none' | 'highlight' | 'pen' | 'line' | 'text';
+type MaskAnn = {
+  id: string; type: 'mask';
+  x: number; y: number; w: number; h: number;
+  revealed: boolean;
+};
+type AnnotationItem = HighlightAnn | PenAnn | LineAnn | TextAnn | MaskAnn;
+type AnnMode = 'none' | 'highlight' | 'pen' | 'line' | 'text' | 'mask';
 
 // ---- PDF builder from JPEG images ----
 function buildPDFBlob(pages: Array<{ jpegBytes: Uint8Array; w: number; h: number }>): Blob {
@@ -273,7 +278,11 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     setCurrentPage(1);
     setTotalPages(0);
     setOpenUrl(originalUrl);
-    setAnnotations({});
+    // Load persisted annotations (includes masks) for this URL
+    try {
+      const saved = localStorage.getItem(`lily-pdf-ann-${originalUrl}`);
+      setAnnotations(saved ? JSON.parse(saved) : {});
+    } catch { setAnnotations({}); }
     if (renderTaskRef.current) { renderTaskRef.current.cancel(); renderTaskRef.current = null; }
     try {
       const doc = await pdfjs.getDocument(url).promise;
@@ -408,7 +417,18 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     const anns = annotationsRef.current[page] || [];
 
     for (const ann of anns) {
-      if (ann.type === 'highlight') {
+      if (ann.type === 'mask') {
+        if (ann.revealed) {
+          ctx.fillStyle = 'rgba(200,0,0,0.12)';
+          ctx.fillRect(ann.x * sc, ann.y * sc, ann.w * sc, ann.h * sc);
+          ctx.strokeStyle = 'rgba(200,0,0,0.55)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(ann.x * sc + 1, ann.y * sc + 1, ann.w * sc - 2, ann.h * sc - 2);
+        } else {
+          ctx.fillStyle = 'rgba(175,0,0,0.9)';
+          ctx.fillRect(ann.x * sc, ann.y * sc, ann.w * sc, ann.h * sc);
+        }
+      } else if (ann.type === 'highlight') {
         ctx.fillStyle = ann.color;
         ctx.fillRect(ann.x * sc, ann.y * sc, ann.w * sc, ann.h * sc);
       } else if (ann.type === 'pen') {
@@ -620,6 +640,14 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [hasPDF, totalPages]);
 
+  // Persist annotations (includes masks) to localStorage when they change
+  useEffect(() => {
+    if (!openUrl) return;
+    try {
+      localStorage.setItem(`lily-pdf-ann-${openUrl}`, JSON.stringify(annotations));
+    } catch { /* ignore quota errors */ }
+  }, [annotations, openUrl]);
+
   // Cleanup blob URLs
   useEffect(() => () => {
     if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
@@ -689,6 +717,32 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
       return;
     }
 
+    if (mode === 'mask') {
+      const pos = getOverlayPos(e.clientX, e.clientY);
+      const sc = scaleRef.current;
+      const px = pos.x / sc, py = pos.y / sc;
+      const pg = currentPageRef.current;
+      // Check if tapping an existing mask → toggle revealed (search from top/last)
+      const pageMasks = annotationsRef.current[pg] || [];
+      const maskList = pageMasks.filter(
+        a => a.type === 'mask' && px >= (a as MaskAnn).x && px <= (a as MaskAnn).x + (a as MaskAnn).w
+          && py >= (a as MaskAnn).y && py <= (a as MaskAnn).y + (a as MaskAnn).h
+      );
+      const hit = maskList.length > 0 ? maskList[maskList.length - 1] as MaskAnn : undefined;
+      if (hit) {
+        setAnnotations(prev => ({
+          ...prev,
+          [pg]: (prev[pg] || []).map(a => a.id === hit.id ? { ...a, revealed: !(a as MaskAnn).revealed } : a),
+        }));
+        setOverlayVersion(v => v + 1);
+        return;
+      }
+      // Otherwise start drawing a new mask
+      (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
+      drawingRef.current = pos;
+      return;
+    }
+
     (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
     const pos = getOverlayPos(e.clientX, e.clientY);
     drawingRef.current = pos;
@@ -700,11 +754,19 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const mode = annotationModeRef.current;
-    if (!drawingRef.current || (mode !== 'highlight' && mode !== 'pen' && mode !== 'line')) return;
+    if (!drawingRef.current || (mode !== 'highlight' && mode !== 'pen' && mode !== 'line' && mode !== 'mask')) return;
     const pos = getOverlayPos(e.clientX, e.clientY);
     const overlay = overlayCanvasRef.current!;
     const ctx = overlay.getContext('2d')!;
     const sc = scaleRef.current;
+
+    if (mode === 'mask') {
+      drawOverlay();
+      const { x: sx, y: sy } = drawingRef.current;
+      ctx.fillStyle = 'rgba(175,0,0,0.85)';
+      ctx.fillRect(sx, sy, pos.x - sx, pos.y - sy);
+      return;
+    }
 
     if (mode === 'highlight') {
       drawOverlay();
@@ -737,10 +799,23 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const mode = annotationModeRef.current;
-    if (!drawingRef.current || (mode !== 'highlight' && mode !== 'pen' && mode !== 'line')) return;
+    if (!drawingRef.current || (mode !== 'highlight' && mode !== 'pen' && mode !== 'line' && mode !== 'mask')) return;
     const pos = getOverlayPos(e.clientX, e.clientY);
     const sc = scaleRef.current;
     const pg = currentPageRef.current;
+
+    if (mode === 'mask') {
+      const { x: sx, y: sy } = drawingRef.current;
+      drawingRef.current = null;
+      const x = Math.min(sx, pos.x), y = Math.min(sy, pos.y);
+      const w = Math.abs(pos.x - sx), h = Math.abs(pos.y - sy);
+      if (w >= 10 && h >= 10) {
+        const ann: MaskAnn = { id: Date.now().toString(), type: 'mask',
+          x: x/sc, y: y/sc, w: w/sc, h: h/sc, revealed: false };
+        setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
+      } else { drawOverlay(); }
+      return;
+    }
 
     if (mode === 'highlight') {
       const { x: sx, y: sy } = drawingRef.current;
@@ -886,6 +961,9 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             <button className={`pdf-icon-btn${annotationMode === 'pen' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'pen' ? 'none' : 'pen')} title={t('ペン手書き')}>
               <Pencil size={18} />
             </button>
+            <button className={`pdf-icon-btn mask-btn${annotationMode === 'mask' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'mask' ? 'none' : 'mask')} title={t('赤シート（隠す/見せる）')}>
+              <span className="mask-icon-inner" />
+            </button>
             <button className={`pdf-icon-btn${mdState === 'working' ? ' active' : ''}`} onClick={() => void handlePdfToMarkdown()} disabled={!hasPDF || mdState === 'working'} title={t('PDFをMarkdown化')}>
               <FileDown size={18} />
             </button>
@@ -955,6 +1033,11 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
                 <MessageSquare size={14} />
                 <span>{t('メモ')}</span>
               </button>
+              <button className={`ann-tool-btn${annotationMode === 'mask' ? ' active mask' : ''}`}
+                onClick={() => setAnnotationMode('mask')} title={t('赤シート')}>
+                <span className="ann-mask-icon" />
+                <span>{t('赤シート')}</span>
+              </button>
             </div>
 
             {/* Color swatches (HL mode) */}
@@ -992,6 +1075,10 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
             {/* Text mode hint */}
             {annotationMode === 'text' && (
               <span className="ann-hint">📍 {t('PDFをタップしてメモを追加')}</span>
+            )}
+            {/* Mask mode hint */}
+            {annotationMode === 'mask' && (
+              <span className="ann-hint mask-hint">🟥 {t('ドラッグで隠す・タップで見せる')}</span>
             )}
 
             {/* Comments toggle */}
@@ -1242,6 +1329,15 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           .pdf-icon-btn:hover { background:var(--accent); }
           .pdf-icon-btn:disabled { opacity:0.3; cursor:default; }
           .pdf-icon-btn.active { background:var(--primary); color:white; }
+          .pdf-icon-btn.mask-btn.active { background:#b91c1c; color:white; }
+          .mask-icon-inner {
+            display:inline-block; width:16px; height:16px;
+            background:#dc2626; border-radius:2px;
+            box-shadow:0 0 0 2px rgba(220,38,38,0.3);
+          }
+          .pdf-icon-btn.mask-btn.active .mask-icon-inner {
+            background:#fff; box-shadow:none;
+          }
           .pdf-nav-group, .pdf-zoom-group { display:flex; align-items:center; gap:2px; }
           .pdf-page-label, .pdf-zoom-label {
             font-size:0.8rem; font-weight:600; color:var(--foreground);
@@ -1292,6 +1388,13 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
           .ann-tool-btn.active.hl { background:#fef9c3; color:#854d0e; box-shadow:0 1px 4px rgba(0,0,0,.1); }
           .ann-tool-btn.active.pen { background:var(--background); color:var(--primary); box-shadow:0 1px 4px rgba(0,0,0,.1); }
           .ann-tool-btn.active.text { background:#eff6ff; color:#1d4ed8; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+          .ann-tool-btn.active.mask { background:#fef2f2; color:#b91c1c; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+          .ann-mask-icon {
+            display:inline-block; width:12px; height:12px;
+            background:#dc2626; border-radius:1px; flex-shrink:0;
+          }
+          .ann-tool-btn.active.mask .ann-mask-icon { background:#b91c1c; }
+          .ann-hint.mask-hint { color:#b91c1c; }
           .color-swatches { display:flex; gap:5px; }
           .color-swatch {
             width:20px; height:20px; border-radius:50%;
