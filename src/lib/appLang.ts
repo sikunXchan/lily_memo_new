@@ -1,12 +1,12 @@
 import { setGeminiMode } from './gemini';
 
-export type AppLang = 'ja';
+export type AppLang = 'ja' | 'en';
 
 const LS_KEY = 'lily_app_lang';
 // Kept for backward compatibility only — no longer used.
 export const PROXY_KEY = '__proxy__';
 
-export function getAppLang(): string {
+export function getAppLang(): AppLang {
   return 'ja';
 }
 
