@@ -89,7 +89,6 @@ export interface ChatTurn {
 }
 
 const GEMINI_MODELS = [
-  'gemini-3.1-pro',
   'gemini-3.5-flash',
   'gemini-3.1-flash-lite',
 ];
@@ -134,23 +133,23 @@ export async function streamSikunlilyChat(
   apiKey: string,
   thinkingBudget: number,
   callbacks: ThinkingCallbacks = {},
-  modelList: string[] = ['gemini-3.1-pro', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'],
+  modelList: string[] = ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
   useSearch = false,
   maxOutputTokens = 32768,
   temperature = 0.6,
 ): Promise<string> {
   const genConfig: Record<string, unknown> = {
     temperature,
-    top_k: 40,
-    top_p: 0.95,
-    max_output_tokens: maxOutputTokens,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens,
   };
   if (thinkingBudget !== 0) {
-    genConfig.thinking_config = { thinking_budget: thinkingBudget };
+    genConfig.thinkingConfig = { thinkingBudget };
   }
 
   const basePayload: Record<string, unknown> = {
-    system_instruction: { parts: [{ text: withLang(systemPrompt) }] },
+    systemInstruction: { parts: [{ text: withLang(systemPrompt) }] },
     contents: history.map(t => ({
       role: t.role,
       parts: [
@@ -158,7 +157,7 @@ export async function streamSikunlilyChat(
         ...attachmentToParts(t.attachments ?? []),
       ],
     })),
-    generation_config: genConfig,
+    generationConfig: genConfig,
   };
   if (useSearch) basePayload.tools = [{ google_search: {} }];
   const body = JSON.stringify(basePayload);
@@ -168,21 +167,21 @@ export async function streamSikunlilyChat(
     const model = modelList[i];
     if (i > 0) await new Promise(r => setTimeout(r, 500));
 
-    // flash-lite doesn't reliably support thinking — skip thinking_config for it
+    // flash-lite doesn't reliably support thinking — skip thinkingConfig for it
     const isLite = model.includes('lite');
     const effectiveBody = (isLite && thinkingBudget !== 0)
       ? JSON.stringify({
           ...(useSearch ? { tools: [{ google_search: {} }] } : {}),
-          system_instruction: { parts: [{ text: withLang(systemPrompt) }] },
+          systemInstruction: { parts: [{ text: withLang(systemPrompt) }] },
           contents: history.map(t => ({
             role: t.role,
             parts: [{ text: t.text } as GeminiPart, ...attachmentToParts(t.attachments ?? [])],
           })),
-          generation_config: { temperature, top_k: 40, top_p: 0.95, max_output_tokens: 8192 },
+          generationConfig: { temperature, topK: 40, topP: 0.95, maxOutputTokens: 8192 },
         })
       : body;
 
-    const url = geminiUrl(`v1/models/${model}:streamGenerateContent`, apiKey, { alt: 'sse' });
+    const url = geminiUrl(`v1beta/models/${model}:streamGenerateContent`, apiKey, { alt: 'sse' });
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -271,15 +270,15 @@ export async function callGeminiChat(
 ): Promise<string> {
   const genConfig: Record<string, unknown> = {
     temperature: options.temperature ?? 0.6,
-    top_k: 40,
-    top_p: 0.95,
-    max_output_tokens: options.maxOutputTokens ?? 32768,
+    topK: 40,
+    topP: 0.95,
+    maxOutputTokens: options.maxOutputTokens ?? 32768,
   };
   if (options.thinkingBudget && options.thinkingBudget > 0) {
-    genConfig.thinking_config = { thinking_budget: options.thinkingBudget };
+    genConfig.thinkingConfig = { thinkingBudget: options.thinkingBudget };
   }
   const baseBody = {
-    system_instruction: { parts: [{ text: withLang(systemPrompt) }] },
+    systemInstruction: { parts: [{ text: withLang(systemPrompt) }] },
     contents: history.map(t => ({
       role: t.role,
       parts: [
@@ -287,7 +286,7 @@ export async function callGeminiChat(
         ...attachmentToParts(t.attachments ?? []),
       ],
     })),
-    generation_config: genConfig,
+    generationConfig: genConfig,
   };
 
   let lastError = 'AI request failed';
@@ -302,10 +301,9 @@ export async function callGeminiChat(
       useSearch ? { ...baseBody, tools: [{ google_search: {} }] } : baseBody
     );
 
-    const url = geminiUrl(`v1/models/${model}:generateContent`, apiKey);
+    const url = geminiUrl(`v1beta/models/${model}:generateContent`, apiKey);
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      // Exponential backoff: 0s, 2s, 4s within a model; 500ms between models.
       if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
       else if (i > 0) await new Promise(r => setTimeout(r, 500));
 
@@ -729,13 +727,13 @@ Q: どんな内容のグラフにする？
 export async function callGemini(prompt: string, apiKey: string): Promise<string> {
   const baseBody = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generation_config: { temperature: 0.7, top_k: 40, top_p: 0.95, max_output_tokens: 2048 },
+    generationConfig: { temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 2048 },
   };
   let lastError = 'AI request failed';
   const MAX_ATTEMPTS = 3;
   for (let i = 0; i < GEMINI_MODELS.length; i++) {
     const model = GEMINI_MODELS[i];
-    const url = geminiUrl(`v1/models/${model}:generateContent`, apiKey);
+    const url = geminiUrl(`v1beta/models/${model}:generateContent`, apiKey);
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
       else if (i > 0) await new Promise(r => setTimeout(r, 500));
