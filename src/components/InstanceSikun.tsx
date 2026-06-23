@@ -11,6 +11,7 @@ import {
   type SikunMessage,
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
+import { canAfford, deductPoints, getRemainingPoints, PT } from '@/lib/points';
 import { renderRich } from '@/lib/richText';
 import 'katex/dist/katex.min.css';
 
@@ -548,6 +549,11 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       setBubbleVisible(true);
       return;
     }
+    if (!canAfford(PT.lite)) {
+      setLastReply(en ? `Not enough points (${getRemainingPoints()}pt remaining).` : `ポイントが足りません（残り${getRemainingPoints()}pt）。明日リセットされます。`);
+      setBubbleVisible(true);
+      return;
+    }
     setLoading(true);
     setBubbleVisible(false);
     setLastReply('');
@@ -567,6 +573,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           ? 'Create exactly one question from this whole note. Output in the format "Q: question\nA: answer", in English.'
           : 'このメモ全体の内容から1問だけ出して。「Q: 問題\nA: 答え」の形式で出力してね。',
       }];
+      deductPoints(PT.lite);
       const reply = await streamSikunlilyChat(
         turns, systemPrompt, apiKey, 0, {},
         ['gemini-3.1-flash-lite'],
@@ -671,6 +678,11 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       setMode('closed');
       return;
     }
+    if (!canAfford(PT.lite)) {
+      setLastReply(en ? `Not enough points (${getRemainingPoints()}pt remaining).` : `ポイントが足りません（残り${getRemainingPoints()}pt）。明日リセットされます。`);
+      setBubbleVisible(true);
+      return;
+    }
     closeInput();
     setLoading(true);
     setBubbleVisible(false);
@@ -753,6 +765,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       const baseSystem = en ? INSTANCE_SIKUN_SYSTEM_EN : INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt());
       const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote + annotateNote;
       const modelList = ['gemini-3.1-flash-lite'];
+      deductPoints(PT.lite);
       // Pass 1: no search (free). sikun answers from its own knowledge, or
       // emits `[SEARCH: query]` when it hits something it doesn't know.
       let reply = await streamSikunlilyChat(

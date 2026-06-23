@@ -7,6 +7,8 @@ import { useTheme } from './ThemeContext';
 import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
 import { getUserName, setUserName } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
+import PlanModal from '@/components/PlanModal';
+import { getPlan, getRemainingPoints, PLAN_LABEL, PLAN_DAILY_POINTS } from '@/lib/points';
 
 function randCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -20,6 +22,10 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   void _onClose;
   const t = useT();
   const [isPersisted, setIsPersisted] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [planLabel, setPlanLabel] = useState('');
+  const [planRemaining, setPlanRemaining] = useState(0);
+  const [planDaily, setPlanDaily] = useState(0);
   const { fontId, setFontId, themeId, setThemeId } = useTheme();
   const [geminiKey, setGeminiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -51,6 +57,10 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
     setLiveKey(localStorage.getItem('lily_livesync_key') || '');
     setLiveEnabled(localStorage.getItem('lily_livesync_enabled') === '1');
     setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
+    const plan = getPlan();
+    setPlanLabel(PLAN_LABEL[plan]);
+    setPlanRemaining(getRemainingPoints());
+    setPlanDaily(PLAN_DAILY_POINTS[plan]);
     // 武士モードは廃止。旧設定が残っていればタメ口に移行する。
     const savedTone = localStorage.getItem('lily_sikun_tone');
     if (savedTone && savedTone !== 'bushi') {
@@ -182,6 +192,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
   };
 
   return (
+    <>
     <div className="settings-view">
       <header className="settings-header">
         <h2>{t('設定')}</h2>
@@ -351,6 +362,19 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
             </p>
             <button className={`btn-action ${liveSaved ? 'saved' : ''}`} onClick={saveLiveSync}>
               {liveSaved ? t('✓ 保存しました') : t('保存する')}
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Sparkles size={20} />
+            <h3>{t('プラン・ポイント')}</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">{t('現在のプラン：')}<strong>{planLabel}</strong>　{t('残り：')}<strong>{planRemaining.toLocaleString()} / {planDaily.toLocaleString()} pt</strong></p>
+            <button className="btn-action" onClick={() => setShowPlanModal(true)}>
+              {t('プランを変更・確認')}
             </button>
           </div>
         </section>
@@ -727,5 +751,7 @@ export default function SettingsModal({ onClose: _onClose }: SettingsModalProps)
         }
       `}</style>
     </div>
+    {showPlanModal && <PlanModal onClose={() => { setShowPlanModal(false); const p = getPlan(); setPlanLabel(PLAN_LABEL[p]); setPlanRemaining(getRemainingPoints()); setPlanDaily(PLAN_DAILY_POINTS[p]); }} />}
+  </>
   );
 }
