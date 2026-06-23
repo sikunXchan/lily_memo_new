@@ -2641,11 +2641,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
 
       <div className="messages-list">
         {messages.length === 0 && (
-          <div className=”welcome-lily-wrap”>
-            <div className=”welcome-lily-stage”>
-              <span className=”welcome-halo” />
+          <div className="welcome-lily-wrap">
+            <div className="welcome-lily-stage">
+              <span className="welcome-halo" />
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src=”/9D507C9A-09F0-4B05-9F41-612FBD120675.png” alt=”Lily” className=”welcome-lily” />
+              <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="welcome-lily" />
             </div>
             {(() => {
               const wPlan = getPlan();
@@ -2657,34 +2657,34 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               const dash = circ * (wPct / 100);
               const color = wPct > 50 ? 'var(--primary,#f06292)' : wPct > 20 ? '#f59e0b' : '#ef4444';
               return (
-                <div className=”pt-gauge-wrap”>
-                  <svg className=”pt-gauge-svg” viewBox=”0 0 88 88” width=”88” height=”88”>
-                    <circle cx=”44” cy=”44” r={R} fill=”none” stroke=”var(--border,#eee)” strokeWidth=”7” />
+                <div className="pt-gauge-wrap">
+                  <svg className="pt-gauge-svg" viewBox="0 0 88 88" width="88" height="88">
+                    <circle cx="44" cy="44" r={R} fill="none" stroke="var(--border,#eee)" strokeWidth="7" />
                     <circle
-                      cx=”44” cy=”44” r={R} fill=”none”
-                      stroke={color} strokeWidth=”7”
-                      strokeLinecap=”round”
+                      cx="44" cy="44" r={R} fill="none"
+                      stroke={color} strokeWidth="7"
+                      strokeLinecap="round"
                       strokeDasharray={`${dash} ${circ}`}
-                      transform=”rotate(-90 44 44)”
+                      transform="rotate(-90 44 44)"
                       style={{ transition: 'stroke-dasharray 0.6s ease, stroke 0.4s ease' }}
                     />
                   </svg>
-                  <div className=”pt-gauge-inner”>
-                    <span className=”pt-gauge-num”>{wRemaining >= 1000 ? `${(wRemaining/1000).toFixed(1)}k` : wRemaining}</span>
-                    <span className=”pt-gauge-label”>pt</span>
+                  <div className="pt-gauge-inner">
+                    <span className="pt-gauge-num">{wRemaining >= 1000 ? `${(wRemaining/1000).toFixed(1)}k` : wRemaining}</span>
+                    <span className="pt-gauge-label">pt</span>
                   </div>
-                  <div className=”pt-gauge-plan”>{PLAN_LABEL[wPlan]}</div>
+                  <div className="pt-gauge-plan">{PLAN_LABEL[wPlan]}</div>
                 </div>
               );
             })()}
             {(() => {
               const q = getDailyQuote(getAppLang());
               return (
-                <div className=”welcome-quote”>
-                  <span className=”welcome-quote-mark”>”</span>
-                  <span className=”welcome-quote-label”>{t('今日の一言')}</span>
-                  <p className=”welcome-quote-text”>{q.text}</p>
-                  <p className=”welcome-quote-author”>— {q.author}</p>
+                <div className="welcome-quote">
+                  <span className="welcome-quote-mark">"</span>
+                  <span className="welcome-quote-label">{t('今日の一言')}</span>
+                  <p className="welcome-quote-text">{q.text}</p>
+                  <p className="welcome-quote-author">— {q.author}</p>
                 </div>
               );
             })()}
