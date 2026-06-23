@@ -606,9 +606,7 @@ async function createNoteWithBlock(block: InsertableBlock, title: string): Promi
 function nameAddon(): string {
   const name = getUserName();
   if (!name) return '';
-  return getAppLang() === 'en'
-    ? `\n\nThe user's name is ${name}. Address them by name naturally when it feels right.`
-    : `\n\nユーザーの名前は「${name}」です。自然なタイミングで名前で呼びかけてください。`;
+  return `\n\nユーザーの名前は「${name}」です。自然なタイミングで名前で呼びかけてください。`;
 }
 
 function buildSystemPrompt(contextNotes: Note[], activeSkill?: Skill | null): string {

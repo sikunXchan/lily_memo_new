@@ -6,7 +6,7 @@ const LS_KEY = 'lily_app_lang';
 // Kept for backward compatibility only — no longer used.
 export const PROXY_KEY = '__proxy__';
 
-export function getAppLang(): AppLang {
+export function getAppLang(): string {
   return 'ja';
 }
 
