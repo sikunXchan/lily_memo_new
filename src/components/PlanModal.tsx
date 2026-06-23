@@ -11,6 +11,13 @@ interface PlanModalProps {
   onClose: () => void;
 }
 
+function nextMonthFirstStr(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  d.setDate(1);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月1日`;
+}
+
 export default function PlanModal({ onClose }: PlanModalProps) {
   const [currentPlan, setCurrentPlan] = useState<Plan>('free');
   const [remaining, setRemaining] = useState(0);
@@ -79,16 +86,23 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         .pm-costs-title{font-size:12px;font-weight:700;color:var(--text-muted,#888);margin-bottom:8px}
         .pm-cost-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:var(--text,#333)}
         .pm-cost-pts{font-weight:700;color:var(--primary,#f06292)}
+        .pm-plan-reset{font-size:12px;color:var(--text-muted,#888);background:var(--accent,#fff0f5);border-radius:8px;padding:8px 12px;margin-bottom:16px;line-height:1.5}
+        .pm-plan-reset strong{color:var(--text,#333)}
       `}</style>
       <div className="pm-modal" onClick={e => e.stopPropagation()}>
         <button className="pm-close" onClick={onClose}>✕</button>
         <h2 className="pm-title">プラン・利用状況</h2>
 
         <div className="pm-usage">
-          <div className="pm-usage-label">本日の残りポイント（毎日リセット）</div>
+          <div className="pm-usage-label">本日の残りポイント（毎日0時リセット）</div>
           <div className="pm-bar-wrap"><div className="pm-bar" style={{ width: `${pct}%` }} /></div>
           <div className="pm-usage-nums">{remaining.toLocaleString()} / {daily.toLocaleString()} pt（使用済 {used.toLocaleString()}pt）</div>
         </div>
+        {currentPlan !== 'free' && (
+          <div className="pm-plan-reset">
+            🔄 プランは <strong>{nextMonthFirstStr()}</strong> に Free へリセットされます
+          </div>
+        )}
 
         <div className="pm-cards">
           {PLAN_ORDER.map(plan => {
