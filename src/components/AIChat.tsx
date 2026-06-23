@@ -2507,7 +2507,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     onClick={() => setLilyUltraThinking(p => !p)}
                     disabled={economy || lilyThinking}
                   >
-                    <span className="hmi-emoji">⚡</span><span className="hmi-label">{t('Ultra思考')}</span><span className="hmi-state">{lilyUltraThinking ? 'ON' : 'OFF'}</span>
+                    <span className="hmi-emoji">⚡</span><span className="hmi-label">{t('Ultra思考モード')}</span><span className="hmi-state">{lilyUltraThinking ? 'ON' : 'OFF'}</span>
                   </button>
                   <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy} disabled={lilyThinking || lilyUltraThinking}>
                     <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
@@ -2711,7 +2711,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           <>
             <TypingIndicator />
             <BoxingOverlay />
-            {sikunProgress && <div className={`siku-progress${lilyUltraThinking ? ' ultra' : ''}`}>{sikunProgress}</div>}
+            {sikunProgress && <div className={`siku-progress${lilyUltraThinking ? ' ultra' : lilyThinking ? ' thinking' : ''}`}>{sikunProgress}</div>}
             {sikunLiveThinking && (
               <div className={`siku-thinking-live${lilyUltraThinking ? ' ultra' : ''}`}>
                 <div className="siku-thinking-live-header">
@@ -2944,6 +2944,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .siku-progress { font-size: 0.78rem; color: var(--fg-muted); padding-left: 52px; margin-top: -8px; font-style: italic; }
         .siku-progress.ultra { color: transparent; background: linear-gradient(90deg, #f59e0b, #ec4899, #8b5cf6, #f59e0b); background-size: 200% auto; background-clip: text; -webkit-background-clip: text; animation: ultra-progress-shine 2s linear infinite; font-weight: 700; font-style: normal; }
         @keyframes ultra-progress-shine { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
+        .siku-progress.thinking { color: transparent; background: linear-gradient(90deg, #6366f1, #a855f7, #06b6d4, #6366f1); background-size: 200% auto; background-clip: text; -webkit-background-clip: text; animation: thinking-progress-shine 2.5s linear infinite; font-weight: 600; font-style: normal; }
+        @keyframes thinking-progress-shine { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
         .header-menu-item.toggle.on.ultra { background: linear-gradient(120deg, rgba(245,158,11,0.15), rgba(139,92,246,0.15)); border-color: #f59e0b; color: #f59e0b; }
         .chat-saved-toast { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 6000; background: var(--foreground); color: var(--background); font-size: 0.84rem; font-weight: 700; padding: 10px 18px; border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); animation: toastIn 0.2s ease; pointer-events: none; }
         @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }

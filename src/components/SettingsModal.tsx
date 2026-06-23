@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Upload, Type, Sparkles, Eye, EyeOff, Wifi, User, Home } from 'lucide-react';
+import { Download, Upload, Type, Sparkles, Wifi, User, Home } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
@@ -27,7 +27,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [planDaily, setPlanDaily] = useState(0);
   const { fontId, setFontId, themeId, setThemeId } = useTheme();
   const [geminiKey, setGeminiKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [sikunTone, setSikunTone] = useState('tame');
@@ -262,16 +261,15 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             <p className="desc">{t('Gemini APIキーを設定すると、Lilyがメモの分析・図の作成・問題作りをお手伝いします。')}</p>
             <div className="api-key-wrap">
               <input
-                type={showKey ? 'text' : 'password'}
+                type="password"
                 className="api-key-input"
                 placeholder="AIzaSy..."
                 value={geminiKey}
                 onChange={e => setGeminiKey(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') saveGeminiKey(); }}
+                onContextMenu={e => e.preventDefault()}
+                onCopy={e => e.preventDefault()}
               />
-              <button className="show-key-btn" onClick={() => setShowKey(p => !p)} title={showKey ? t('隠す') : t('表示')}>
-                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
             </div>
             <button className={`btn-action ${keySaved ? 'saved' : ''}`} onClick={saveGeminiKey}>
               {keySaved ? t('✓ 保存しました') : t('保存する')}
@@ -591,16 +589,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           font-family: monospace;
         }
         .api-key-input:focus { border-color: var(--primary); }
-        .show-key-btn {
-          background: var(--accent);
-          border: 1px solid var(--border);
-          border-radius: 8px;
-          padding: 8px 10px;
-          cursor: pointer;
-          color: var(--fg-muted);
-          display: flex;
-          align-items: center;
-        }
         .toggle-row {
           display: flex;
           align-items: center;
