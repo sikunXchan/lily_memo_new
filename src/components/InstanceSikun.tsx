@@ -11,6 +11,8 @@ import {
   type SikunMessage,
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
+import { renderRich } from '@/lib/richText';
+import 'katex/dist/katex.min.css';
 
 interface InstanceSikunProps {
   activeNoteId?: number;
@@ -567,7 +569,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       }];
       const reply = await streamSikunlilyChat(
         turns, systemPrompt, apiKey, 0, {},
-        ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+        ['gemini-3.1-flash-lite'],
         false,
       );
       const qm = reply.match(/Q[：:]\s*(.+)/);
@@ -750,7 +752,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     try {
       const baseSystem = en ? INSTANCE_SIKUN_SYSTEM_EN : INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt());
       const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote + annotateNote;
-      const modelList = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+      const modelList = ['gemini-3.1-flash-lite'];
       // Pass 1: no search (free). sikun answers from its own knowledge, or
       // emits `[SEARCH: query]` when it hits something it doesn't know.
       let reply = await streamSikunlilyChat(
@@ -794,10 +796,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         } catch { /* ignore malformed JSON */ }
       }
 
-      const replyClean = replyForDisplay
-        .replace(/```[\s\S]*?```/g, '')
-        .replace(/^#+\s*/gm, '')
-        .trim() || '...';
+      const replyClean = replyForDisplay.trim() || '...';
       setLastReply(replyClean);
       setBubbleVisible(true);
       const sikunMsg: SikunMessage = { id: `s${Date.now()}`, role: 'sikun', text: replyClean, ts: Date.now() };
@@ -931,7 +930,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           <button className="sikun-bubble-close" onClick={() => { setBubbleVisible(false); setPendingAnswer(''); setQuizMode(false); }} aria-label={en ? 'Close' : '閉じる'}>
             <X size={12} />
           </button>
-          <div className="sikun-bubble-text">{lastReply}</div>
+          <div className="sikun-bubble-text" dangerouslySetInnerHTML={{ __html: renderRich(lastReply) }} />
           {(pendingAnswer || quizMode) && (
             <div className="sikun-quiz-actions">
               {pendingAnswer && (
@@ -1077,15 +1076,23 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           border: 1px solid var(--border, rgba(0,0,0,0.12)); border-radius: 14px;
           padding: 10px 26px 10px 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.18);
           font-size: 0.86rem; line-height: 1.55; z-index: 10002;
-          white-space: pre-wrap; word-wrap: break-word;
+          word-wrap: break-word; overflow-wrap: break-word;
         }
+        .sikun-bubble-text { display: block; }
+        .sikun-bubble-text :global(p) { margin: 0 0 6px; }
+        .sikun-bubble-text :global(p:last-child) { margin-bottom: 0; }
+        .sikun-bubble-text :global(strong) { font-weight: 700; }
+        .sikun-bubble-text :global(em) { font-style: italic; }
+        .sikun-bubble-text :global(code) { background: var(--accent,#f5f5f5); border-radius: 4px; padding: 1px 4px; font-size: 0.82em; font-family: monospace; }
+        .sikun-bubble-text :global(ul), .sikun-bubble-text :global(ol) { padding-left: 18px; margin: 4px 0; }
+        .sikun-bubble-text :global(li) { margin-bottom: 2px; }
+        .sikun-bubble-text :global(h1), .sikun-bubble-text :global(h2), .sikun-bubble-text :global(h3) { font-weight: 700; margin: 6px 0 4px; font-size: 0.95em; }
         .sikun-bubble-close {
           position: absolute; top: 4px; right: 4px;
           width: 20px; height: 20px; border-radius: 50%; border: none;
           background: var(--accent, #eee); color: var(--fg-muted, #666);
           display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
         }
-        .sikun-bubble-text { display: block; }
         .sikun-quiz-actions {
           display: flex;
           gap: 6px;

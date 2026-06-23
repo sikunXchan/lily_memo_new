@@ -1,6 +1,8 @@
 // Renders a math/geometry figure (points, vectors, segments, lines,
-// circles, polygons, angles and y=f(x) curves) to a standalone SVG
-// string — no dependencies. Lets Lily draw a diagram and explain it.
+// circles, polygons, angles and y=f(x) curves) to a standalone SVG string.
+// Labels containing $...$ or common LaTeX are rendered via KaTeX foreignObject.
+
+import katex from 'katex';
 
 export interface GeometrySpec {
   title?: string;
@@ -173,6 +175,65 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Returns true when the label contains LaTeX math notation.
+function hasMath(text: string): boolean {
+  return /\$[^$]+\$|\\\(|\\\[|\\(?:vec|frac|sqrt|hat|bar|dot|tilde|overline|underbrace|overbrace|sum|int|prod|lim|alpha|beta|gamma|delta|theta|lambda|mu|nu|pi|sigma|phi|omega|cdot|times|div|pm|mp|leq|geq|neq|approx|infty|partial|nabla|rightarrow|leftarrow|Rightarrow|Leftrightarrow)[\s{^_\\]/.test(text)
+    || /^\$.*\$$/.test(text.trim());
+}
+
+// Renders a math label via KaTeX inside a <foreignObject> so it appears in SVG.
+// Falls back to a plain <text> element on error.
+function mathLabel(
+  svgX: number, svgY: number,
+  text: string, color: string,
+  anchor: 'start' | 'middle' | 'end' = 'start',
+  fontSize = 13,
+): string {
+  // Strip surrounding $ delimiters for KaTeX input.
+  const stripped = text.trim().replace(/^\$|\$$/g, '').replace(/^\\\(|\\\)$/g, '');
+  try {
+    const html = katex.renderToString(stripped, {
+      throwOnError: false,
+      output: 'html',
+      strict: false,
+      trust: false,
+    });
+    const w = 160;
+    const h = fontSize + 12;
+    const dx = anchor === 'end' ? -w : anchor === 'middle' ? -(w / 2) : 0;
+    return (
+      `<foreignObject x="${(svgX + dx).toFixed(1)}" y="${(svgY - h + 4).toFixed(1)}" ` +
+      `width="${w}" height="${h}" overflow="visible">` +
+      `<div xmlns="http://www.w3.org/1999/xhtml" ` +
+      `style="font-size:${fontSize - 1}px;color:${color};white-space:nowrap;font-weight:600;line-height:1">` +
+      `${html}</div></foreignObject>`
+    );
+  } catch {
+    return plainLabel(svgX, svgY, text, color, anchor, fontSize);
+  }
+}
+
+function plainLabel(
+  svgX: number, svgY: number,
+  text: string, color: string,
+  anchor: 'start' | 'middle' | 'end' = 'start',
+  fontSize = 13,
+): string {
+  return `<text x="${svgX.toFixed(1)}" y="${svgY.toFixed(1)}" font-size="${fontSize}" font-weight="600" fill="${color}" text-anchor="${anchor}" dominant-baseline="auto">${esc(text)}</text>`;
+}
+
+// Unified label renderer: uses KaTeX for math labels, plain SVG text otherwise.
+function renderLabel(
+  svgX: number, svgY: number,
+  text: string, color: string,
+  anchor: 'start' | 'middle' | 'end' = 'start',
+  fontSize = 13,
+): string {
+  return hasMath(text)
+    ? mathLabel(svgX, svgY, text, color, anchor, fontSize)
+    : plainLabel(svgX, svgY, text, color, anchor, fontSize);
+}
+
 export function renderGeometrySvg(spec: GeometrySpec): string {
   const W = spec.width ?? 460;
   const H = spec.height ?? 380;
@@ -208,7 +269,6 @@ export function renderGeometrySvg(spec: GeometrySpec): string {
     `<circle cx="${X(x)}" cy="${Y(y)}" r="3.5" fill="${color}"/>`;
 
   // Direction-aware label: offset CW-perpendicular to the motion direction.
-  // svgDx/svgDy = direction vector already in SVG pixel space (y-down).
   const smartLbl = (
     svgTipX: number, svgTipY: number,
     svgDx: number, svgDy: number,
@@ -217,28 +277,26 @@ export function renderGeometrySvg(spec: GeometrySpec): string {
   ) => {
     const len = Math.sqrt(svgDx * svgDx + svgDy * svgDy) || 1;
     const udx = svgDx / len, udy = svgDy / len;
-    // CW perpendicular in SVG coords: (udy, -udx)
     const px = udy, py = -udx;
-    const lx = (svgTipX + udx * extraAlong + px * 14).toFixed(1);
-    const ly = (svgTipY + udy * extraAlong + py * 14).toFixed(1);
-    const anchor = px < -0.25 ? 'end' : px > 0.25 ? 'start' : 'middle';
-    return `<text x="${lx}" y="${ly}" font-size="13" font-weight="600" fill="${color}" text-anchor="${anchor}" dominant-baseline="middle">${esc(text)}</text>`;
+    const lx = svgTipX + udx * extraAlong + px * 14;
+    const ly = svgTipY + udy * extraAlong + py * 14;
+    const anchor: 'start' | 'middle' | 'end' = px < -0.25 ? 'end' : px > 0.25 ? 'start' : 'middle';
+    return renderLabel(lx, ly, text, color, anchor);
   };
 
   // Simple fixed label for midpoints (segments, circles, etc.)
-  const lbl = (svgX: number, svgY: number, text: string, color: string, anchor = 'start') =>
-    `<text x="${(svgX + 8).toFixed(1)}" y="${(svgY - 8).toFixed(1)}" font-size="13" font-weight="600" fill="${color}" text-anchor="${anchor}" dominant-baseline="auto">${esc(text)}</text>`;
+  const lbl = (svgX: number, svgY: number, text: string, color: string, anchor: 'start' | 'middle' | 'end' = 'start') =>
+    renderLabel(svgX + 8, svgY - 8, text, color, anchor);
 
   for (const el of spec.elements ?? []) {
     const color = ('color' in el && el.color) || DEF;
     if (el.type === 'point') {
       parts.push(dot(el.x, el.y, color));
       if (el.label) {
-        // Offset away from origin to avoid overlap
         const offX = el.x >= 0 ? 8 : -8;
         const offY = el.y >= 0 ? -10 : 12;
-        const anchor = el.x >= 0 ? 'start' : 'end';
-        parts.push(`<text x="${(X(el.x) + offX).toFixed(1)}" y="${(Y(el.y) + offY).toFixed(1)}" font-size="13" font-weight="600" fill="${color}" text-anchor="${anchor}" dominant-baseline="auto">${esc(el.label)}</text>`);
+        const anchor: 'start' | 'end' = el.x >= 0 ? 'start' : 'end';
+        parts.push(renderLabel(X(el.x) + offX, Y(el.y) + offY, el.label, color, anchor));
       }
     } else if (el.type === 'segment') {
       parts.push(`<line x1="${X(el.from[0])}" y1="${Y(el.from[1])}" x2="${X(el.to[0])}" y2="${Y(el.to[1])}" stroke="${color}" stroke-width="2"${el.dashed ? ' stroke-dasharray="5 4"' : ''}/>`);
@@ -288,11 +346,10 @@ export function renderGeometrySvg(spec: GeometrySpec): string {
       const sweep = ((a2 - a1) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) > Math.PI ? 1 : 0;
       parts.push(`<path d="M ${X(p1x)} ${Y(p1y)} A ${r * sx} ${r * sy} 0 0 ${sweep} ${X(p2x)} ${Y(p2y)}" stroke="${color}" stroke-width="1.5" fill="none"/>`);
       if (el.label) {
-        // Place label between the two angle arms, slightly outward
         const amid = (a1 + a2) / 2;
         const lx = X(el.at[0] + (r + 0.3) * Math.cos(amid));
         const ly = Y(el.at[1] + (r + 0.3) * Math.sin(amid));
-        parts.push(`<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="12" font-weight="600" fill="${color}" text-anchor="middle" dominant-baseline="middle">${esc(el.label)}</text>`);
+        parts.push(renderLabel(lx, ly, el.label, color, 'middle', 12));
       }
     } else if (el.type === 'function') {
       try {
@@ -308,17 +365,17 @@ export function renderGeometrySvg(spec: GeometrySpec): string {
           started = true;
         }
         parts.push(`<path d="${segs.join(' ')}" stroke="${color}" stroke-width="2" fill="none"/>`);
-        if (el.label) parts.push(`<text x="${W - pad}" y="${pad}" font-size="12" font-weight="600" fill="${color}" text-anchor="end">${esc(el.label)}</text>`);
+        if (el.label) parts.push(renderLabel(W - pad, pad, el.label, color, 'end', 12));
       } catch {
         parts.push(`<text x="${W / 2}" y="${H / 2}" font-size="12" fill="#cc0000" text-anchor="middle">式を解釈できなかったよ: ${esc(el.expr)}</text>`);
       }
     } else if (el.type === 'text') {
-      parts.push(`<text x="${X(el.x)}" y="${Y(el.y)}" font-size="13" font-weight="600" fill="${color}">${esc(el.text)}</text>`);
+      parts.push(renderLabel(X(el.x), Y(el.y), el.text, color));
     }
   }
 
   const titleSvg = spec.title
-    ? `<text x="${W / 2}" y="20" font-size="14" font-weight="700" fill="#222" text-anchor="middle">${esc(spec.title)}</text>`
+    ? renderLabel(W / 2, 20, spec.title, '#222', 'middle', 14)
     : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui,sans-serif" overflow="visible"><rect width="${W}" height="${H}" fill="#ffffff"/>${titleSvg}${parts.join('')}</svg>`;

@@ -7,14 +7,8 @@ export interface ChatAttachment {
   pdfTotalPages?: number; // total page count when pdfPageImages is truncated
 }
 
-// ── API endpoint / language mode ────────────────────────────────────────────
-// English ("zero-config") mode routes every Gemini call through our server
-// proxy (/api/gemini/...) so the key stays server-side; Japanese mode calls
-// Gemini directly with the user's own key. The language flag also makes the
-// model reply in English without translating the (Japanese) system prompts.
-// English/proxy is the app default; applyAppLang() overrides at startup.
-let _useProxy = true;
-let _lang: 'ja' | 'en' = 'en';
+let _useProxy = false;
+let _lang: 'ja' | 'en' = 'ja';
 
 export function setGeminiMode(opts: { proxy?: boolean; lang?: 'ja' | 'en' }): void {
   if (opts.proxy !== undefined) _useProxy = opts.proxy;
@@ -33,12 +27,8 @@ function geminiUrl(path: string, apiKey: string, extra: Record<string, string> =
   return `https://generativelanguage.googleapis.com/${path}?${qs.toString()}`;
 }
 
-// Append a language directive so the model answers in the UI language. We do
-// NOT translate the big system prompts — the model follows them in any language
-// and this single instruction governs the output language.
 function withLang(systemPrompt: string): string {
-  if (_lang !== 'en') return systemPrompt;
-  return `${systemPrompt}\n\n【OUTPUT LANGUAGE】Always respond to the user in natural, fluent English, regardless of the language of the instructions above. Every user-facing word you produce — explanations, questions, table headers, quiz questions and answers, labels — must be in English.`;
+  return systemPrompt;
 }
 
 // Upload a file to the Gemini File API and return its URI.
@@ -98,11 +88,10 @@ export interface ChatTurn {
   attachments?: ChatAttachment[];
 }
 
-// Free-tier quotas differ per model and Google changes them over time, so we
-// try models in order and fall back to the next one on transient errors.
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
+  'gemini-3.1-pro',
+  'gemini-3.5-flash',
+  'gemini-3.0-flash',
 ];
 
 // Status codes that are transient — retry with the next model.

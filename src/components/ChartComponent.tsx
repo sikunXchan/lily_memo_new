@@ -21,6 +21,25 @@ import Papa from 'papaparse';
 import { Upload, Edit3, Save, Download, Play, FileSpreadsheet } from 'lucide-react';
 import { triggerDownload } from '@/lib/fileGen';
 import { useT } from '@/lib/i18n';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+
+// Returns true when text contains LaTeX math notation.
+function hasMath(text: string): boolean {
+  return /\$[^$]+\$|\\\(|\\\[|\\[a-zA-Z]/.test(text);
+}
+
+// Renders a string that may contain $...$ inline math to safe HTML.
+function renderMathText(text: string): string {
+  if (!hasMath(text)) return text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  return text.replace(/\$([^$]+)\$/g, (_, tex) => {
+    try {
+      return katex.renderToString(tex, { throwOnError: false, output: 'html', strict: false });
+    } catch {
+      return tex;
+    }
+  });
+}
 
 ChartJS.register(
   CategoryScale,
@@ -266,17 +285,39 @@ return {
                     if (!chartConfig.data || !Array.isArray(chartConfig.data.datasets)) {
                         return <div className="error-message">{t('グラフデータの形式が不正です（datasets配列が見つかりません）。')}</div>;
                     }
+                    const rawTitle: string = chartConfig.options?.plugins?.title?.text ?? '';
+                    const titleHasMath = hasMath(rawTitle);
+                    // Build chart options: suppress built-in title when we render it via KaTeX.
+                    const chartOptions = titleHasMath
+                      ? {
+                          ...chartConfig.options,
+                          plugins: {
+                            ...chartConfig.options?.plugins,
+                            title: { ...chartConfig.options?.plugins?.title, display: false },
+                          },
+                        }
+                      : chartConfig.options;
                     const chartType = chartConfig.type || 'bar';
                     const props = {
                         // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         ref: chartRef as React.MutableRefObject<any>,
                         data: chartConfig.data,
-                        options: chartConfig.options
+                        options: chartOptions,
                     };
-                    return chartType === 'line' ? <Line {...props} /> :
-                           chartType === 'pie' ? <Pie {...props} /> :
-                           chartType === 'scatter' ? <Scatter {...props} /> :
-                           <Bar {...props} />;
+                    return (
+                      <>
+                        {titleHasMath && rawTitle && (
+                          <div
+                            className="chart-math-title"
+                            dangerouslySetInnerHTML={{ __html: renderMathText(rawTitle) }}
+                          />
+                        )}
+                        {chartType === 'line' ? <Line {...props} /> :
+                         chartType === 'pie' ? <Pie {...props} /> :
+                         chartType === 'scatter' ? <Scatter {...props} /> :
+                         <Bar {...props} />}
+                      </>
+                    );
                 })()
             ) : (
                 <div className="placeholder">{t('設定がありません。')}</div>
@@ -438,8 +479,16 @@ return {
           padding: 24px;
           max-height: 500px;
           display: flex;
+          flex-direction: column;
           justify-content: center;
           background: var(--background);
+        }
+        .chart-math-title {
+          text-align: center;
+          margin-bottom: 8px;
+          font-size: 1rem;
+          font-weight: 600;
+          color: var(--foreground);
         }
       `}</style>
     </NodeViewWrapper>

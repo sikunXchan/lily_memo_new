@@ -273,7 +273,8 @@ export interface GenerateResult {
 // Ask Lily to build a problem set. Throws a friendly error on failure.
 export async function generateProblemSet(
   request: string,
-  attachments: ChatAttachment[] = []
+  attachments: ChatAttachment[] = [],
+  models?: string[],
 ): Promise<GenerateResult> {
   const apiKey = getEffectiveApiKey();
   if (!apiKey) {
@@ -294,6 +295,7 @@ export async function generateProblemSet(
     temperature: 0.5,
     maxOutputTokens: 65536,
     thinkingBudget: 4096,
+    models,
   });
 
   let parsed: Record<string, unknown>;

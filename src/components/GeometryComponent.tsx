@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { downloadSvg, downloadSvgAsPng } from '@/lib/fileGen';
 import { useT } from '@/lib/i18n';
+import 'katex/dist/katex.min.css';
 
 export default function GeometryComponent({ node: { attrs }, updateAttributes }: ReactNodeViewProps) {
   const t = useT();
