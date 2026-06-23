@@ -38,6 +38,7 @@ import {
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
+import { canAfford, deductPoints, getRemainingPoints, PT } from '@/lib/points';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
@@ -143,17 +144,11 @@ function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
 }
 
-function canUseUltraToday(): boolean {
-  if (typeof window === 'undefined') return false;
-  const today = new Date().toISOString().slice(0, 10);
-  return parseInt(localStorage.getItem(`lily_ultra_${today}`) || '0') < 1;
-}
-
-function markUltraUsed(): void {
-  if (typeof window === 'undefined') return;
-  const today = new Date().toISOString().slice(0, 10);
-  const key = `lily_ultra_${today}`;
-  localStorage.setItem(key, String(parseInt(localStorage.getItem(key) || '0') + 1));
+function pointCostForMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean): number {
+  if (isUltra) return PT.ultra;
+  if (isThinking) return PT.thinking;
+  if (isEconomy) return PT.lite;
+  return PT.flash;
 }
 
 const QUOTES_JA: { text: string; author: string }[] = [
@@ -2074,6 +2069,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const userText = rawText;
     if ((!userText && sentAtts.length === 0) || isLoading || !apiKey) return;
 
+    const msgCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(rawText)) && !economy, economy);
+    if (!canAfford(msgCost)) {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'lily',
+        text: `ポイントが足りません（残り${getRemainingPoints()}pt・必要${msgCost}pt）。明日リセットされます。`,
+        timestamp: Date.now(),
+      }]);
+      return;
+    }
+
     setInput('');
     setAttachments([]);
     setFileError('');
@@ -2157,11 +2163,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       // + a low temperature so the model doesn't rush and drop answers.
       const accuracy = isAccuracyTask(userMsg.text);
       let aiText: string;
+      deductPoints(msgCost);
       if (lilyUltraThinking && !economy) {
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(t('⚡ Ultra思考中... 深く考えています'));
-        markUltraUsed();
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
@@ -2283,6 +2289,18 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       return turn;
     });
 
+    const lastUserText = [...history].reverse().find(h => h.role === 'user')?.text ?? '';
+    const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy);
+    if (!canAfford(regenCost)) {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'lily',
+        text: `ポイントが足りません（残り${getRemainingPoints()}pt・必要${regenCost}pt）。明日リセットされます。`,
+        timestamp: Date.now(),
+      }]);
+      return;
+    }
+
     // Remove the last lily message from display
     setMessages(prev => prev.slice(0, lilyIdx));
     setIsLoading(true);
@@ -2298,15 +2316,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         }
       }
 
-      const lastUserText = [...history].reverse().find(t => t.role === 'user')?.text ?? '';
       const accuracy = isAccuracyTask(lastUserText);
       let aiText: string;
+      deductPoints(regenCost);
       if (lilyUltraThinking && !economy) {
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(t('⚡ Ultra思考中... 深く考えています'));
-        markUltraUsed();
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
@@ -2467,24 +2484,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                   <button className={`header-menu-item toggle${webSearch ? ' on' : ''}`} onClick={() => setWebSearch(p => !p)}>
                     <Search size={15} /><span className="hmi-label">{t('ネット検索')}</span><span className="hmi-state">{webSearch ? 'ON' : 'OFF'}</span>
                   </button>
-                  <button className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`} onClick={() => { setLilyThinking(p => !p); setLilyUltraThinking(false); }} disabled={economy}>
+                  <button className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`} onClick={() => setLilyThinking(p => !p)} disabled={economy || lilyUltraThinking}>
                     <span className="hmi-emoji">🧠</span><span className="hmi-label">{t('思考モード')}</span><span className="hmi-state">{lilyThinking ? 'ON' : 'OFF'}</span>
                   </button>
                   <button
                     className={`header-menu-item toggle${lilyUltraThinking ? ' on ultra' : ''}`}
-                    onClick={() => {
-                      if (!lilyUltraThinking && !canUseUltraToday()) {
-                        alert(t('Ultra思考モードは1日1回までです。明日また使えます。'));
-                        return;
-                      }
-                      setLilyUltraThinking(p => !p);
-                      setLilyThinking(false);
-                    }}
-                    disabled={economy}
+                    onClick={() => setLilyUltraThinking(p => !p)}
+                    disabled={economy || lilyThinking}
                   >
                     <span className="hmi-emoji">⚡</span><span className="hmi-label">{t('Ultra思考')}</span><span className="hmi-state">{lilyUltraThinking ? 'ON' : 'OFF'}</span>
                   </button>
-                  <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy}>
+                  <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy} disabled={lilyThinking || lilyUltraThinking}>
                     <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
                   </button>
                   <div className="header-menu-divider" />
