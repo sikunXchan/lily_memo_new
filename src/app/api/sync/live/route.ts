@@ -21,10 +21,10 @@ function sanitizeKey(k: string): string {
 // first device had just contributed. With CAS the loser retries the merge on
 // top of the winner's data instead.
 const CAS_SCRIPT = `
-local cur = getRedis().call('GET', KEYS[2])
+local cur = redis.call('GET', KEYS[2])
 if (cur or '') ~= ARGV[2] then return 0 end
-getRedis().call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[3]))
-getRedis().call('SET', KEYS[2], ARGV[4], 'EX', tonumber(ARGV[3]))
+redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[3]))
+redis.call('SET', KEYS[2], ARGV[4], 'EX', tonumber(ARGV[3]))
 return 1
 `;
 
