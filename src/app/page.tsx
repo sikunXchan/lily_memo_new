@@ -225,7 +225,7 @@ export default function Home() {
                     onOpenSearch={() => setShowSearch(true)}
                   />
                 )}
-                {activeTab === 'pdf' && <PDFViewer />}
+                {activeTab === 'pdf' && <PDFViewer onSwitchTab={(tab) => { setActiveTab(tab as TabType); setActiveNoteId(undefined); }} />}
                 {activeTab === 'ai' && (
                   <AIChat
                     onOpenSettings={openSettings}

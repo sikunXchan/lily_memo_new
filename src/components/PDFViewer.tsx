@@ -6,7 +6,7 @@ import {
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
   Play, Pause, RotateCcw, RotateCw, Highlighter, Pencil, Trash2,
   Image as ImageIcon, Plus, Maximize2, Minimize2,
-  Minus, MessageSquare, ChevronDown, ChevronUp, FileDown,
+  Minus, MessageSquare, ChevronDown, ChevronUp, FileDown, Home,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -178,9 +178,10 @@ interface PDFViewerProps {
   // taking over the whole viewport (position:fixed). Used inside the
   // sketch tab's split panel so PDFs don't escape the panel.
   embedded?: boolean;
+  onSwitchTab?: (tab: string) => void;
 }
 
-export default function PDFViewer({ embedded = false }: PDFViewerProps) {
+export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerProps) {
   const t = useT();
   const [inputUrl, setInputUrl] = useState('');
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
@@ -933,6 +934,11 @@ export default function PDFViewer({ embedded = false }: PDFViewerProps) {
       <div className={`pdf-fullscreen${embedded ? ' embedded' : ''}${timerAlert ? ' timer-alert' : ''}${isAppFullscreen ? ' app-fullscreen' : ''}`}>
         {/* Top bar */}
         {!isAppFullscreen && <div className="pdf-top-bar">
+          {onSwitchTab && (
+            <button className="pdf-text-btn" onClick={() => onSwitchTab('memos')} title={t('ホーム')}>
+              <Home size={16} /><span>{t('ホーム')}</span>
+            </button>
+          )}
           <button className="pdf-text-btn" onClick={closePDF}>
             <X size={16} /><span>{t('閉じる')}</span>
           </button>
