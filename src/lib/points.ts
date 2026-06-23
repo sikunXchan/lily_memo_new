@@ -33,6 +33,7 @@ export const PT = {
 
 const UNLOCK_PASSWORD = '4934';
 const KEY_PLAN = 'lily-plan';
+const KEY_PLAN_MONTH = 'lily-plan-month'; // 'YYYY-MM' of when plan was set
 const KEY_DATE = 'lily-pts-date';
 const KEY_USED = 'lily-pts-used';
 
@@ -40,14 +41,35 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function currentMonthStr(): string {
+  return new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+}
+
+// If we've entered a new calendar month, reset the plan to Free.
+function resetPlanIfNewMonth(): void {
+  const month = currentMonthStr();
+  const stored = localStorage.getItem(KEY_PLAN_MONTH);
+  if (stored && stored !== month) {
+    localStorage.setItem(KEY_PLAN, 'free');
+    localStorage.removeItem(KEY_PLAN_MONTH);
+  }
+}
+
 export function getPlan(): Plan {
   if (typeof window === 'undefined') return 'free';
+  resetPlanIfNewMonth();
   return (localStorage.getItem(KEY_PLAN) as Plan) ?? 'free';
 }
 
 export function setPlan(plan: Plan): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(KEY_PLAN, plan);
+  // Record the month this plan was set so it auto-resets next month
+  if (plan !== 'free') {
+    localStorage.setItem(KEY_PLAN_MONTH, currentMonthStr());
+  } else {
+    localStorage.removeItem(KEY_PLAN_MONTH);
+  }
 }
 
 export function canUpgradeTo(plan: Plan): boolean {
