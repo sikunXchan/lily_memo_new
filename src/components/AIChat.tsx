@@ -2207,24 +2207,29 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       });
 
       // Files from messages outside the history window are normally dropped.
-      // Collect them and prepend as a synthetic turn so the model can still
-      // reference e.g. a PDF uploaded earlier in a long conversation.
-      const recentMsgSet = new Set(recentMsgs.map(m => m.id));
-      const olderFiles: ChatAttachment[] = allMsgs
-        .filter(m => !recentMsgSet.has(m.id) && m.role === 'user' && m.attachments?.length)
-        .flatMap(m => m.attachments!.map<ChatAttachment>(a => ({
-          mimeType: a.mimeType,
-          data: a.fileUri || a.extractedText || a.pdfPageImages ? '' : a.data,
-          fileUri: a.fileUri,
-          extractedText: a.extractedText,
-          pdfPageImages: a.pdfPageImages,
-          pdfTotalPages: a.pdfTotalPages,
-        })));
-      if (olderFiles.length > 0) {
-        history.unshift(
-          { role: 'model', text: '承知しました。以前のファイルも確認しました。' },
-          { role: 'user', text: '以前の会話で共有したファイルです。引き続き参照してください。', attachments: olderFiles },
-        );
+      // Re-attaching every old file each turn balloons input token cost, so we
+      // only do it when the request actually needs the source material —
+      // problem/quiz generation, explanation, grading etc. (i.e. NOT a casual
+      // simple question, which is the auto-lite path). Re-sending PDF page
+      // images is expensive, so casual chat skips them entirely.
+      if (!autoLite) {
+        const recentMsgSet = new Set(recentMsgs.map(m => m.id));
+        const olderFiles: ChatAttachment[] = allMsgs
+          .filter(m => !recentMsgSet.has(m.id) && m.role === 'user' && m.attachments?.length)
+          .flatMap(m => m.attachments!.map<ChatAttachment>(a => ({
+            mimeType: a.mimeType,
+            data: a.fileUri || a.extractedText || a.pdfPageImages ? '' : a.data,
+            fileUri: a.fileUri,
+            extractedText: a.extractedText,
+            pdfPageImages: a.pdfPageImages,
+            pdfTotalPages: a.pdfTotalPages,
+          })));
+        if (olderFiles.length > 0) {
+          history.unshift(
+            { role: 'model', text: '承知しました。以前のファイルも確認しました。' },
+            { role: 'user', text: '以前の会話で共有したファイルです。引き続き参照してください。', attachments: olderFiles },
+          );
+        }
       }
 
       // Problem/quiz generation, grading, summarizing etc. auto-engage thinking
