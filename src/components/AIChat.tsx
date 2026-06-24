@@ -58,6 +58,9 @@ initMermaid();
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12MB per file
 const MAX_FILES = 5;
+// Cap how many notes can be sent as context. "All notes" mode is disabled
+// entirely because re-sending every note each turn balloons input token cost.
+const MAX_CONTEXT_NOTES = 5;
 const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,.md,.txt';
 
 interface AttachmentMeta {
@@ -2626,17 +2629,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             {/* Quick options */}
             <div className="ctx-quick">
               <button
-                className={`ctx-quick-btn${lilyAllNotes ? ' on' : ''}`}
-                onClick={() => { setLilyAllNotes(true); setLilyNoteIds([]); }}
-              >
-                📚 {t('全メモ')}
-              </button>
-              <button
-                className={`ctx-quick-btn${!lilyAllNotes && lilyNoteIds.length === 0 ? ' on' : ''}`}
+                className={`ctx-quick-btn${lilyNoteIds.length === 0 ? ' on' : ''}`}
                 onClick={() => { setLilyAllNotes(false); setLilyNoteIds([]); }}
               >
                 {t('なし')}
               </button>
+              <span className="ctx-quick-hint">{t('最大{n}件まで選択できます', { n: MAX_CONTEXT_NOTES })}</span>
             </div>
 
             {/* Search */}
@@ -2661,10 +2659,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                   return (
                     <button
                       key={n.id}
-                      className={`ctx-item${sel ? ' on' : ''}${lilyAllNotes ? ' dim' : ''}`}
+                      className={`ctx-item${sel ? ' on' : ''}`}
                       onClick={() => {
                         setLilyAllNotes(false);
-                        setLilyNoteIds(prev => prev.includes(n.id!) ? prev.filter(id => id !== n.id) : [...prev, n.id!]);
+                        setLilyNoteIds(prev => {
+                          if (prev.includes(n.id!)) return prev.filter(id => id !== n.id);
+                          if (prev.length >= MAX_CONTEXT_NOTES) return prev; // cap reached
+                          return [...prev, n.id!];
+                        });
                       }}
                     >
                       <span className="ctx-check">{sel && <Check size={11} />}</span>
@@ -3091,8 +3093,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .ctx-head-ic { color: var(--primary); }
         .ctx-close { margin-left: auto; display: flex; align-items: center; border: none; background: none; color: var(--fg-muted); cursor: pointer; padding: 2px; border-radius: 8px; }
         .ctx-close:hover { color: var(--foreground); background: var(--border); }
-        .ctx-quick { display: flex; gap: 8px; padding: 10px 14px 6px; }
-        .ctx-quick-btn { flex: 1; padding: 7px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: .8rem; font-weight: 700; background: none; color: var(--fg-muted); cursor: pointer; transition: all .14s; }
+        .ctx-quick { display: flex; gap: 8px; padding: 10px 14px 6px; align-items: center; }
+        .ctx-quick-hint { font-size: .72rem; color: var(--fg-muted); opacity: .8; }
+        .ctx-quick-btn { padding: 7px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: .8rem; font-weight: 700; background: none; color: var(--fg-muted); cursor: pointer; transition: all .14s; }
         .ctx-quick-btn.on { background: var(--primary); color: #fff; border-color: var(--primary); }
         .ctx-search { display: flex; align-items: center; gap: 8px; margin: 4px 14px 8px; padding: 7px 12px; background: color-mix(in srgb, var(--fg-muted) 8%, var(--background)); border: 1px solid var(--border); border-radius: 10px; color: var(--fg-muted); }
         .ctx-search input { flex: 1; border: none; background: none; outline: none; font-size: .84rem; color: var(--foreground); font-family: inherit; }
