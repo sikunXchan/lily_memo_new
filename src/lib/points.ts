@@ -45,11 +45,13 @@ const KEY_DATE = 'lily-pts-date';
 const KEY_USED = 'lily-pts-used';
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function currentMonthStr(): string {
-  return new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 // If we've entered a new calendar month, reset the plan to Free.
