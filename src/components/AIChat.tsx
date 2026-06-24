@@ -82,6 +82,7 @@ interface ChatMessage {
   questions?: ClarifyQuestion[];
   attachments?: AttachmentMeta[];
   thinking?: string;
+  qaChecked?: Record<string, number[]>; // block.id → checked indices
 }
 
 interface InsertableBlock {
@@ -791,12 +792,23 @@ function FilePreview({ block }: { block: InsertableBlock }) {
   );
 }
 
-function QAPreview({ code }: { code: string }) {
+function QAPreview({ code, initialChecked, onCheckChange }: {
+  code: string;
+  initialChecked?: number[];
+  onCheckChange?: (indices: number[]) => void;
+}) {
   const t = useT();
   const pairs = useMemo(() => parseQAPairs(code), [code]);
   const [open, setOpen] = useState<Set<number>>(new Set());
-  const [checked, setChecked] = useState<Set<number>>(new Set());
-  const toggle = (i: number) => setChecked(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
+  const [checked, setChecked] = useState<Set<number>>(
+    () => new Set(initialChecked ?? []),
+  );
+  const toggle = (i: number) => setChecked(s => {
+    const n = new Set(s);
+    n.has(i) ? n.delete(i) : n.add(i);
+    onCheckChange?.([...n]);
+    return n;
+  });
   const allDone = checked.size === pairs.length && pairs.length > 0;
   return (
     <div className="qa-prev">
@@ -1017,11 +1029,15 @@ function InsertableBlockCard({
   allNotes,
   defaultNoteId,
   onNoteCreated,
+  qaInitialChecked,
+  onQaCheckChange,
 }: {
   block: InsertableBlock;
   allNotes: Note[];
   defaultNoteId?: number;
   onNoteCreated?: (id: number) => void;
+  qaInitialChecked?: number[];
+  onQaCheckChange?: (indices: number[]) => void;
 }) {
   const t = useT();
   const NEW_NOTE = '__new__';
@@ -1069,7 +1085,7 @@ function InsertableBlockCard({
       <div className="block-visual">
         {block.type === 'mermaid' && <MermaidPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'chart' && <ChartPreview code={block.rawCode} baseName={baseName} />}
-        {block.type === 'qa' && <QAPreview code={block.rawCode} />}
+        {block.type === 'qa' && <QAPreview code={block.rawCode} initialChecked={qaInitialChecked} onCheckChange={onQaCheckChange} />}
         {block.type === 'geometry' && <GeometryPreview code={block.rawCode} baseName={baseName} />}
         {block.type === 'file' && <FilePreview block={block} />}
         {block.type === 'table' && (
@@ -1331,7 +1347,7 @@ function stripBlockMarkers(text: string): string {
 }
 
 function LilyBubble({
-  message, allNotes, selectedNoteId, model, onNoteCreated, onRegenerate,
+  message, allNotes, selectedNoteId, model, onNoteCreated, onRegenerate, onQaCheck,
 }: {
   message: ChatMessage;
   allNotes: Note[];
@@ -1339,6 +1355,7 @@ function LilyBubble({
   model?: 'lily';
   onNoteCreated?: (id: number) => void;
   onRegenerate?: () => void;
+  onQaCheck?: (blockId: string, indices: number[]) => void;
 }) {
   const t = useT();
   const avatarSrc = '/9D507C9A-09F0-4B05-9F41-612FBD120675.png';
@@ -1430,6 +1447,8 @@ function LilyBubble({
         allNotes={allNotes}
         defaultNoteId={selectedNoteId}
         onNoteCreated={onNoteCreated}
+        qaInitialChecked={message.qaChecked?.[block.id]}
+        onQaCheckChange={onQaCheck ? (indices) => onQaCheck(block.id, indices) : undefined}
       />
     );
 
@@ -2041,7 +2060,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     }
   }, [messages, isLoading, apiKey, t]);
 
-  const sendMessage = useCallback(async (text?: string, opts?: { forceSearch?: boolean }) => {
+  const sendMessage = useCallback(async (text?: string, opts?: { forceSearch?: boolean; fixedCost?: number }) => {
     const rawText = (text ?? input).trim();
     const sentAtts = attachments;
 
@@ -2063,7 +2082,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           return;
         }
         if (sc.id === 'quiz') {
-          await sendMessage(arg ? t('{topic}について、練習問題(QA)を作成して。', { topic: arg }) : t('ここまでの会話の内容から、練習問題(QA)を作成して。'));
+          await sendMessage(arg ? t('{topic}について、練習問題(QA)を作成して。', { topic: arg }) : t('ここまでの会話の内容から、練習問題(QA)を作成して。'), { fixedCost: PT.exercise });
+          return;
+        }
+        if (sc.id === 'hard') {
+          await sendMessage(arg
+            ? t('{topic}について、受験生でも解けないような超難問・鬼問題を作成して。一切の手加減なし。複数の知識を組み合わせる高度な思考を要する問題にして。', { topic: arg })
+            : t('ここまでの会話の内容から、受験生でも解けないような超難問・鬼問題を作成して。一切の手加減なし。'), { fixedCost: PT.hardProblem });
           return;
         }
         if (sc.id === 'review') {
@@ -2075,7 +2100,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         const fk = FORMAT_CMD[sc.id];
         if (fk) {
           const base = arg || '選択中のメモ・ここまでの会話の内容から問題を作成して';
-          await sendMessage(`${base}\n\n【出力形式指定】必ず${fk.label}形式で出力し、\`\`\`qa ブロックの1行目に @@kind:${fk.kind} を付けてください。`);
+          await sendMessage(`${base}\n\n【出力形式指定】必ず${fk.label}形式で出力し、\`\`\`qa ブロックの1行目に @@kind:${fk.kind} を付けてください。`, { fixedCost: PT.exercise });
           return;
         }
       }
@@ -2085,7 +2110,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const userText = rawText;
     if ((!userText && sentAtts.length === 0) || isLoading || !apiKey) return;
 
-    const msgCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(rawText)) && !economy, economy);
+    const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(rawText)) && !economy, economy);
     if (!canAfford(msgCost)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2705,6 +2730,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               model="lily"
               onNoteCreated={onNoteCreated}
               onRegenerate={isLastLily && !isLoading ? handleRegenerate : undefined}
+              onQaCheck={(blockId, indices) =>
+                setMessages(prev => prev.map(m =>
+                  m.id === msg.id
+                    ? { ...m, qaChecked: { ...m.qaChecked, [blockId]: indices } }
+                    : m
+                ))
+              }
             />
           );
         })}

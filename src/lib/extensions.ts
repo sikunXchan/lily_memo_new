@@ -13,6 +13,7 @@ export const MermaidExtension = Node.create({
   name: 'mermaid',
   group: 'block',
   atom: true,
+  draggable: true,
   addAttributes() {
     return {
       content: { default: '' },
@@ -34,6 +35,7 @@ export const ChartExtension = Node.create({
   name: 'chart',
   group: 'block',
   atom: true,
+  draggable: true,
   addAttributes() {
     return {
       data: { default: null },
@@ -113,6 +115,7 @@ export const QAExtension = Node.create({
   name: 'qa',
   group: 'block',
   atom: true,
+  draggable: true,
   addAttributes() {
     return {
       pairs: {
@@ -152,6 +155,7 @@ export const GeometryExtension = Node.create({
   name: 'geometry',
   group: 'block',
   atom: true,
+  draggable: true,
   addAttributes() {
     return {
       code: { default: '' },
@@ -173,6 +177,7 @@ export const HandwritingExtension = Node.create({
   name: 'handwriting',
   group: 'block',
   atom: true,
+  draggable: true,
   addAttributes() {
     return {
       data: {

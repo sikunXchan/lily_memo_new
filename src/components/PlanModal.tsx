@@ -144,11 +144,17 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         </div>
 
         <div className="pm-costs">
-          <div className="pm-costs-title">消費ポイント（1回あたり）</div>
+          <div className="pm-costs-title">消費ポイント（AIモード / 1回）</div>
           <div className="pm-cost-row"><span>🪶 軽量モード・sikun</span><span className="pm-cost-pts">{PT.lite}pt</span></div>
           <div className="pm-cost-row"><span>🌸 通常モード</span><span className="pm-cost-pts">{PT.flash}pt</span></div>
           <div className="pm-cost-row"><span>🧠 思考モード</span><span className="pm-cost-pts">{PT.thinking}pt</span></div>
-          <div className="pm-cost-row"><span>⚡ Ultra思考</span><span className="pm-cost-pts">{PT.ultra}pt</span></div>
+          <div className="pm-cost-row"><span>⚡ Ultra思考モード</span><span className="pm-cost-pts">{PT.ultra}pt</span></div>
+        </div>
+        <div className="pm-costs" style={{ marginTop: '12px' }}>
+          <div className="pm-costs-title">消費ポイント（タスク別）</div>
+          <div className="pm-cost-row"><span>📝 演習問題生成（/quiz, /qa など）</span><span className="pm-cost-pts">{PT.exercise}pt</span></div>
+          <div className="pm-cost-row"><span>👹 鬼問題作成（/hard）</span><span className="pm-cost-pts">{PT.hardProblem}pt</span></div>
+          <div className="pm-cost-row"><span>🎓 授業セッション（マイク録音）</span><span className="pm-cost-pts">{PT.lesson}pt</span></div>
         </div>
       </div>
     </div>
