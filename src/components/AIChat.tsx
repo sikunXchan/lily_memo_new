@@ -1918,6 +1918,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
     const doc = await pdfjs.getDocument({ data: bytes }).promise;
     const totalPages = doc.numPages;
+    if (totalPages === 0) throw new Error('The document has no pages.');
     const MAX_PAGES = 20;
     const images: Array<{ data: string }> = [];
     for (let p = 1; p <= Math.min(totalPages, MAX_PAGES); p++) {
