@@ -3,19 +3,19 @@ export type Plan = 'free' | 'plus' | 'pro' | 'max' | 'ultimate';
 export const PLAN_ORDER: Plan[] = ['free', 'plus', 'pro', 'max', 'ultimate'];
 
 export const PLAN_DAILY_POINTS: Record<Plan, number> = {
-  free: 500,
-  plus: 1000,
-  pro: 1500,
-  max: 2000,
-  ultimate: 3000,
+  free: 100,
+  plus: 250,
+  pro: 500,
+  max: 750,
+  ultimate: 1000,
 };
 
 export const PLAN_PRICE_YEN: Record<Plan, number> = {
   free: 0,
-  plus: 30,
-  pro: 100,
-  max: 300,
-  ultimate: 500,
+  plus: 100,
+  pro: 200,
+  max: 500,
+  ultimate: 750,
 };
 
 export const PLAN_LABEL: Record<Plan, string> = {
@@ -32,6 +32,10 @@ export const PT = {
   flash: 50,     // gemini-3.5-flash
   thinking: 70,  // flash + thinkingBudget
   ultra: 500,    // gemini-3.1-pro-preview
+  // Task-based costs
+  exercise: 100,  // 演習問題生成
+  hardProblem: 500, // 鬼問題作成
+  lesson: 50,     // 授業1セッション
 } as const;
 
 const UNLOCK_PASSWORD = '4934';

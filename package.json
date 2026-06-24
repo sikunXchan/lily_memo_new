@@ -53,6 +53,7 @@
     "react": "19.2.4",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.2.4",
+    "stripe": "^22.2.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

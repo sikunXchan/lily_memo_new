@@ -258,6 +258,10 @@ function attachmentToParts(attachments: ChatAttachment[]): GeminiPart[] {
       return [{ text: `[添付PDFの内容]\n${a.extractedText}` } as GeminiPart];
     if (a.fileUri)
       return [{ file_data: { mime_type: a.mimeType, file_uri: a.fileUri } } as GeminiPart];
+    // PDFs without rendered pages or extracted text have no sendable content
+    // (e.g. stripped from saved-chat history). Skip them to avoid the Gemini
+    // "The document has no pages." error that a bare inline PDF with empty data causes.
+    if (a.mimeType === 'application/pdf') return [];
     return [{ inline_data: { mime_type: a.mimeType, data: a.data } } as GeminiPart];
   });
 }

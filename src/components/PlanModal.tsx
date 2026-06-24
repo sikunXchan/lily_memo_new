@@ -25,6 +25,8 @@ export default function PlanModal({ onClose }: PlanModalProps) {
   const [expandedPlan, setExpandedPlan] = useState<Plan | null>(null);
   const [password, setPassword] = useState('');
   const [pwError, setPwError] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState<Plan | null>(null);
+  const [checkoutError, setCheckoutError] = useState('');
 
   useEffect(() => {
     setCurrentPlan(getPlan());
@@ -36,6 +38,7 @@ export default function PlanModal({ onClose }: PlanModalProps) {
     setExpandedPlan(plan);
     setPassword('');
     setPwError('');
+    setCheckoutError('');
   }
 
   function handleConfirm(plan: Plan) {
@@ -46,6 +49,28 @@ export default function PlanModal({ onClose }: PlanModalProps) {
       setExpandedPlan(null);
     } else {
       setPwError('パスワードが違います');
+    }
+  }
+
+  async function handleStripeCheckout(plan: Plan) {
+    setCheckoutLoading(plan);
+    setCheckoutError('');
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json() as { url?: string; error?: string };
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setCheckoutError(data.error ?? '決済の開始に失敗しました');
+      }
+    } catch {
+      setCheckoutError('ネットワークエラーが発生しました');
+    } finally {
+      setCheckoutLoading(null);
     }
   }
 
@@ -74,20 +99,27 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         .pm-card-price{font-size:13px;font-weight:600;margin-left:auto}
         .pm-card-badge{font-size:11px;background:var(--primary,#f06292);color:#fff;padding:2px 8px;border-radius:20px}
         .pm-card-btn{font-size:12px;background:var(--primary,#f06292);color:#fff;border:none;border-radius:20px;padding:4px 12px;cursor:pointer;margin-left:auto}
-        .pm-card-btn:hover{opacity:.85}
+        .pm-card-btn:disabled{opacity:.6;cursor:default}
+        .pm-card-btn:not(:disabled):hover{opacity:.85}
+        .pm-stripe-btn{font-size:12px;background:#635bff;color:#fff;border:none;border-radius:20px;padding:5px 14px;cursor:pointer;display:flex;align-items:center;gap:5px;margin-left:auto}
+        .pm-stripe-btn:disabled{opacity:.6;cursor:default}
+        .pm-stripe-btn:not(:disabled):hover{opacity:.85}
         .pm-pw-area{margin-top:10px;display:flex;flex-direction:column;gap:6px}
         .pm-pw-hint{font-size:12px;color:var(--text-muted,#888);margin:0}
         .pm-pw-input{border:1.5px solid var(--border,#ddd);border-radius:8px;padding:8px 10px;font-size:14px;width:100%;box-sizing:border-box}
         .pm-pw-error{font-size:12px;color:#e53935;margin:0}
-        .pm-pw-btns{display:flex;gap:8px}
+        .pm-pw-btns{display:flex;gap:8px;flex-wrap:wrap}
         .pm-pw-confirm{background:var(--primary,#f06292);color:#fff;border:none;border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px}
         .pm-pw-cancel{background:none;border:1.5px solid var(--border,#ddd);border-radius:8px;padding:7px 16px;cursor:pointer;font-size:13px}
+        .pm-checkout-err{font-size:12px;color:#e53935;margin:6px 0 0}
         .pm-costs{border-top:1px solid var(--border,#eee);padding-top:14px}
         .pm-costs-title{font-size:12px;font-weight:700;color:var(--text-muted,#888);margin-bottom:8px}
         .pm-cost-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:var(--text,#333)}
         .pm-cost-pts{font-weight:700;color:var(--primary,#f06292)}
         .pm-plan-reset{font-size:12px;color:var(--text-muted,#888);background:var(--accent,#fff0f5);border-radius:8px;padding:8px 12px;margin-bottom:16px;line-height:1.5}
         .pm-plan-reset strong{color:var(--text,#333)}
+        .pm-divider{display:flex;align-items:center;gap:8px;margin:8px 0 4px;font-size:11px;color:var(--text-muted,#aaa)}
+        .pm-divider::before,.pm-divider::after{content:'';flex:1;height:1px;background:var(--border,#eee)}
       `}</style>
       <div className="pm-modal" onClick={e => e.stopPropagation()}>
         <button className="pm-close" onClick={onClose}>✕</button>
@@ -108,6 +140,7 @@ export default function PlanModal({ onClose }: PlanModalProps) {
           {PLAN_ORDER.map(plan => {
             const isCurrent = plan === currentPlan;
             const canUp = canUpgradeTo(plan);
+            const isPaid = PLAN_PRICE_YEN[plan] > 0;
             return (
               <div key={plan} className={`pm-card${isCurrent ? ' current' : ''}${!canUp && !isCurrent ? ' locked' : ''}`}>
                 <div className="pm-card-row">
@@ -116,10 +149,23 @@ export default function PlanModal({ onClose }: PlanModalProps) {
                   <span className="pm-card-price">{PLAN_PRICE_YEN[plan] === 0 ? '無料' : `¥${PLAN_PRICE_YEN[plan]}/月`}</span>
                   {isCurrent && <span className="pm-card-badge">現在</span>}
                   {canUp && !isCurrent && expandedPlan !== plan && (
-                    <button className="pm-card-btn" onClick={() => handleUpgrade(plan)}>アップグレード</button>
+                    isPaid ? (
+                      <button
+                        className="pm-stripe-btn"
+                        onClick={() => void handleStripeCheckout(plan)}
+                        disabled={checkoutLoading === plan}
+                      >
+                        {checkoutLoading === plan ? '処理中...' : '💳 支払う'}
+                      </button>
+                    ) : (
+                      <button className="pm-card-btn" onClick={() => handleUpgrade(plan)}>アップグレード</button>
+                    )
                   )}
                 </div>
-                {expandedPlan === plan && (
+                {checkoutError && expandedPlan !== plan && canUp && isPaid && (
+                  <p className="pm-checkout-err">{checkoutError}</p>
+                )}
+                {expandedPlan === plan && !isPaid && (
                   <div className="pm-pw-area">
                     <p className="pm-pw-hint">パスワードを入力してください</p>
                     <input
@@ -144,11 +190,17 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         </div>
 
         <div className="pm-costs">
-          <div className="pm-costs-title">消費ポイント（1回あたり）</div>
+          <div className="pm-costs-title">消費ポイント（AIモード / 1回）</div>
           <div className="pm-cost-row"><span>🪶 軽量モード・sikun</span><span className="pm-cost-pts">{PT.lite}pt</span></div>
           <div className="pm-cost-row"><span>🌸 通常モード</span><span className="pm-cost-pts">{PT.flash}pt</span></div>
           <div className="pm-cost-row"><span>🧠 思考モード</span><span className="pm-cost-pts">{PT.thinking}pt</span></div>
-          <div className="pm-cost-row"><span>⚡ Ultra思考</span><span className="pm-cost-pts">{PT.ultra}pt</span></div>
+          <div className="pm-cost-row"><span>⚡ Ultra思考モード</span><span className="pm-cost-pts">{PT.ultra}pt</span></div>
+        </div>
+        <div className="pm-costs" style={{ marginTop: '12px' }}>
+          <div className="pm-costs-title">消費ポイント（タスク別）</div>
+          <div className="pm-cost-row"><span>📝 演習問題生成（/quiz, /qa など）</span><span className="pm-cost-pts">{PT.exercise}pt</span></div>
+          <div className="pm-cost-row"><span>👹 鬼問題作成（/hard）</span><span className="pm-cost-pts">{PT.hardProblem}pt</span></div>
+          <div className="pm-cost-row"><span>🎓 授業セッション（マイク録音）</span><span className="pm-cost-pts">{PT.lesson}pt</span></div>
         </div>
       </div>
     </div>

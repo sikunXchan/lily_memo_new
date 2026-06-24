@@ -7,6 +7,7 @@ import type { ChatTurn } from '@/lib/gemini';
 import { pickAudioMime, transcribeAudioBlob, isNoSpeech } from '@/lib/audioTranscribe';
 import { useT, translate } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
+import { canAfford, deductPoints, PT } from '@/lib/points';
 
 interface LectureRecorderProps {
   apiKey: string;
@@ -204,6 +205,12 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
   }, []);
 
   const startRecording = useCallback(async () => {
+    if (!canAfford(PT.lesson)) {
+      setError(translate('ポイントが足りません（授業1セッション: {pt}pt必要）。', { pt: String(PT.lesson) }));
+      return;
+    }
+    deductPoints(PT.lesson);
+
     accumulatedRef.current = '';
     chunkBufferRef.current = '';
     chunksRef.current = [];
