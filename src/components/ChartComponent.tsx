@@ -79,10 +79,38 @@ return {
   }
 };`;
 
-export default function ChartComponent({ node: { attrs }, updateAttributes, deleteNode }: ReactNodeViewProps) {
+export default function ChartComponent({ node: { attrs }, updateAttributes, deleteNode, editor, getPos }: ReactNodeViewProps) {
   const t = useT();
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const chartRef = useRef<ChartJS>(null);
+
+  function moveBlock(dir: 'up' | 'down') {
+    if (!editor || typeof getPos !== 'function') return;
+    const pos = (getPos as () => number | undefined)();
+    if (pos === undefined) return;
+    const { state } = editor;
+    const { doc, tr } = state;
+    const $pos = doc.resolve(pos);
+    const index = $pos.index();
+    const parent = $pos.parent;
+    const curNode = doc.nodeAt(pos);
+    if (!curNode) return;
+    if (dir === 'up') {
+      if (index === 0) return;
+      const prevNode = parent.child(index - 1);
+      const prevPos = pos - prevNode.nodeSize;
+      tr.delete(prevPos, pos + curNode.nodeSize);
+      tr.insert(prevPos, [curNode, prevNode]);
+    } else {
+      const nextPos = pos + curNode.nodeSize;
+      if (index >= parent.childCount - 1) return;
+      const nextNode = parent.child(index + 1);
+      tr.delete(pos, nextPos + nextNode.nodeSize);
+      tr.insert(pos, [nextNode, curNode]);
+    }
+    editor.view.dispatch(tr);
+  }
 
   const getInitialCode = () => {
     if (attrs.code) return attrs.code;
@@ -241,9 +269,18 @@ return {
               {editing ? <Save size={16} /> : <Edit3 size={16} />}
               {editing ? t('完了') : t('コード編集')}
             </button>
-            <button className="btn-delete" onClick={() => deleteNode()} title={t('削除')}>
-              <Trash2 size={13} />
-            </button>
+            <button className="btn-move" onClick={() => moveBlock('up')} title={t('上へ移動')}>↑</button>
+            <button className="btn-move" onClick={() => moveBlock('down')} title={t('下へ移動')}>↓</button>
+            {confirmDelete ? (
+              <>
+                <button className="btn-delete-confirm" onClick={() => deleteNode()}>{t('削除する')}</button>
+                <button className="btn-delete-cancel" onClick={() => setConfirmDelete(false)}>{t('キャンセル')}</button>
+              </>
+            ) : (
+              <button className="btn-delete" onClick={() => setConfirmDelete(true)} title={t('削除')}>
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
       </div>
 
@@ -357,6 +394,28 @@ return {
           color: var(--foreground);
         }
         .chart-drag:active { cursor: grabbing; }
+        .btn-move {
+          display: inline-flex;
+          align-items: center;
+          background: transparent;
+          border: 1px solid var(--border);
+          padding: 2px 6px;
+          border-radius: 5px;
+          cursor: pointer;
+          color: var(--foreground);
+          font-size: 0.75rem;
+          opacity: 0.6;
+          transition: opacity 0.2s;
+        }
+        .btn-move:hover { opacity: 1; background: var(--accent); }
+        .btn-delete-confirm {
+          padding: 3px 8px; border-radius: 5px; border: none;
+          background: #ef4444; color: #fff; font-size: 0.75rem; cursor: pointer;
+        }
+        .btn-delete-cancel {
+          padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border);
+          background: transparent; color: var(--foreground); font-size: 0.75rem; cursor: pointer;
+        }
         .btn-delete {
           display: inline-flex;
           align-items: center;

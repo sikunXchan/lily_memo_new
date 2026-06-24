@@ -459,7 +459,7 @@ function CardStyles() {
   );
 }
 
-export default function QAComponent({ node: { attrs }, updateAttributes, deleteNode }: ReactNodeViewProps) {
+export default function QAComponent({ node: { attrs }, updateAttributes, deleteNode, editor, getPos }: ReactNodeViewProps) {
   const t = useT();
   const pairs: QAPair[] = attrs.pairs || [];
   const kind: string = attrs.kind || 'qa';
@@ -469,6 +469,34 @@ export default function QAComponent({ node: { attrs }, updateAttributes, deleteN
   const [qText, setQText] = useState('');
   const [aText, setAText] = useState('');
   const [revealAll, setRevealAll] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  function moveBlock(dir: 'up' | 'down') {
+    if (!editor || typeof getPos !== 'function') return;
+    const pos = (getPos as () => number | undefined)();
+    if (pos === undefined) return;
+    const { state } = editor;
+    const { doc, tr } = state;
+    const $pos = doc.resolve(pos);
+    const index = $pos.index();
+    const parent = $pos.parent;
+    const curNode = doc.nodeAt(pos);
+    if (!curNode) return;
+    if (dir === 'up') {
+      if (index === 0) return;
+      const prevNode = parent.child(index - 1);
+      const prevPos = pos - prevNode.nodeSize;
+      tr.delete(prevPos, pos + curNode.nodeSize);
+      tr.insert(prevPos, [curNode, prevNode]);
+    } else {
+      const nextPos = pos + curNode.nodeSize;
+      if (index >= parent.childCount - 1) return;
+      const nextNode = parent.child(index + 1);
+      tr.delete(pos, nextPos + nextNode.nodeSize);
+      tr.insert(pos, [nextNode, curNode]);
+    }
+    editor.view.dispatch(tr);
+  }
 
   const KIND_PLACEHOLDER: Record<string, { q: string; a: string; hint?: string }> = {
     qa:        { q: '1. 日本の首都は？\n2. 光合成に必要なものは？', a: '1. 東京\n2. 光・水・二酸化炭素' },
@@ -591,7 +619,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes, deleteN
           .qa-select:focus { border-color: var(--primary); }
           .qa-textarea {
             width: 100%;
-            min-height: 100px;
+            min-height: 64px;
             padding: 10px 12px;
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -653,12 +681,21 @@ export default function QAComponent({ node: { attrs }, updateAttributes, deleteN
             )}
           </span>
           <div className="qa-block-header-actions">
+            <button className="qa-move-btn" onClick={() => moveBlock('up')} title={t('上へ移動')}>↑</button>
+            <button className="qa-move-btn" onClick={() => moveBlock('down')} title={t('下へ移動')}>↓</button>
             <button className="qa-action-btn" onClick={toggleRevealAll}>
               {revealAll ? t('答えを隠す') : t('答え合わせ')}
             </button>
-            <button className="qa-action-btn qa-delete-btn" onClick={() => deleteNode()} title={t('削除')}>
-              <Trash2 size={13} />
-            </button>
+            {confirmDelete ? (
+              <>
+                <button className="qa-action-btn qa-delete-confirm-btn" onClick={() => deleteNode()}>{t('削除する')}</button>
+                <button className="qa-action-btn" onClick={() => setConfirmDelete(false)}>{t('キャンセル')}</button>
+              </>
+            ) : (
+              <button className="qa-action-btn qa-delete-btn" onClick={() => setConfirmDelete(true)} title={t('削除')}>
+                <Trash2 size={13} />
+              </button>
+            )}
             <button
               className="qa-action-btn"
               onClick={() => {
@@ -705,7 +742,7 @@ export default function QAComponent({ node: { attrs }, updateAttributes, deleteN
           box-shadow: 0 4px 20px rgba(0,0,0,0.06);
         }
         .qa-block-header {
-          padding: 14px 18px;
+          padding: 10px 14px;
           background: transparent;
           border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
           display: flex;
@@ -758,19 +795,30 @@ export default function QAComponent({ node: { attrs }, updateAttributes, deleteN
           background: var(--accent);
           transform: translateY(-1px);
         }
+        .qa-move-btn {
+          display: inline-flex; align-items: center; justify-content: center;
+          background: transparent; border: 1.5px solid color-mix(in srgb, var(--border) 80%, transparent);
+          color: var(--foreground); border-radius: 999px; padding: 4px 8px;
+          font-size: 0.8rem; cursor: pointer; opacity: 0.55; transition: opacity 0.14s;
+        }
+        .qa-move-btn:hover { opacity: 1; background: var(--accent); }
         .qa-delete-btn {
           padding: 6px 10px;
           color: #ef4444;
           border-color: rgba(239,68,68,.3);
         }
         .qa-delete-btn:hover { background: rgba(239,68,68,.08); }
+        .qa-delete-confirm-btn {
+          background: #ef4444 !important; color: #fff !important;
+          border-color: #ef4444 !important;
+        }
         .qa-block-drag {
           display: flex; align-items: center; padding: 4px 2px;
           color: #aaa; cursor: grab; flex-shrink: 0;
         }
         .qa-block-drag:active { cursor: grabbing; }
         .qa-cards {
-          padding: 14px;
+          padding: 10px;
           display: flex;
           flex-direction: column;
           gap: 12px;
