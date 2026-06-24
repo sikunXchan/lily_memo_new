@@ -10,13 +10,41 @@ import { useT } from '@/lib/i18n';
 
 initMermaid();
 
-export default function MermaidComponent({ node: { attrs }, updateAttributes, deleteNode }: ReactNodeViewProps) {
+export default function MermaidComponent({ node: { attrs }, updateAttributes, deleteNode, editor, getPos }: ReactNodeViewProps) {
   const t = useT();
   const [svg, setSvg] = useState('');
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
   const renderRef = useRef<HTMLDivElement>(null);
   const [extraSpace, setExtraSpace] = useState(0);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  function moveBlock(dir: 'up' | 'down') {
+    if (!editor || typeof getPos !== 'function') return;
+    const pos = (getPos as () => number | undefined)();
+    if (pos === undefined) return;
+    const { state } = editor;
+    const { doc, tr } = state;
+    const $pos = doc.resolve(pos);
+    const index = $pos.index();
+    const parent = $pos.parent;
+    const curNode = doc.nodeAt(pos);
+    if (!curNode) return;
+    if (dir === 'up') {
+      if (index === 0) return;
+      const prevNode = parent.child(index - 1);
+      const prevPos = pos - prevNode.nodeSize;
+      tr.delete(prevPos, pos + curNode.nodeSize);
+      tr.insert(prevPos, [curNode, prevNode]);
+    } else {
+      const nextPos = pos + curNode.nodeSize;
+      if (index >= parent.childCount - 1) return;
+      const nextNode = parent.child(index + 1);
+      tr.delete(pos, nextPos + nextNode.nodeSize);
+      tr.insert(pos, [nextNode, curNode]);
+    }
+    editor.view.dispatch(tr);
+  }
   const widthNum = attrs.width ? parseInt(attrs.width as string) : 100;
   const scale = widthNum > 100 ? widthNum / 100 : 1;
 
@@ -101,12 +129,21 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes, de
               <option value="200%">200%</option>
               <option value="300%">300%</option>
             </select>
+            <button className="btn-move" onClick={() => moveBlock('up')} title={t('上へ移動')}>↑</button>
+            <button className="btn-move" onClick={() => moveBlock('down')} title={t('下へ移動')}>↓</button>
             <button className="btn-edit" onClick={() => { setError(''); setEditing(!editing); }}>
               {editing ? t('プレビュー表示') : t('コードを編集')}
             </button>
-            <button className="btn-delete" onClick={() => deleteNode()} title={t('削除')}>
-              <Trash2 size={13} />
-            </button>
+            {confirmDelete ? (
+              <>
+                <button className="btn-delete-confirm" onClick={() => deleteNode()}>{t('削除する')}</button>
+                <button className="btn-delete-cancel" onClick={() => setConfirmDelete(false)}>{t('キャンセル')}</button>
+              </>
+            ) : (
+              <button className="btn-delete" onClick={() => setConfirmDelete(true)} title={t('削除')}>
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
       </div>
 
@@ -171,6 +208,20 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes, de
           color: var(--foreground);
         }
         .mermaid-drag:active { cursor: grabbing; }
+        .btn-move {
+          display: inline-flex;
+          align-items: center;
+          background: transparent;
+          border: 1px solid var(--border);
+          padding: 2px 6px;
+          border-radius: 5px;
+          cursor: pointer;
+          color: var(--foreground);
+          font-size: 0.75rem;
+          opacity: 0.6;
+          transition: opacity 0.2s;
+        }
+        .btn-move:hover { opacity: 1; background: var(--accent); }
         .btn-delete {
           display: inline-flex;
           align-items: center;
@@ -184,6 +235,14 @@ export default function MermaidComponent({ node: { attrs }, updateAttributes, de
           transition: opacity 0.2s;
         }
         .btn-delete:hover { opacity: 1; background: rgba(239,68,68,.08); }
+        .btn-delete-confirm {
+          padding: 3px 8px; border-radius: 5px; border: none;
+          background: #ef4444; color: #fff; font-size: 0.75rem; cursor: pointer;
+        }
+        .btn-delete-cancel {
+          padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border);
+          background: transparent; color: var(--foreground); font-size: 0.75rem; cursor: pointer;
+        }
         .mermaid-header-actions {
           display: flex;
           align-items: center;

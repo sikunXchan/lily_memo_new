@@ -8,10 +8,38 @@ import { downloadSvg, downloadSvgAsPng } from '@/lib/fileGen';
 import { useT } from '@/lib/i18n';
 import 'katex/dist/katex.min.css';
 
-export default function GeometryComponent({ node: { attrs }, updateAttributes, deleteNode }: ReactNodeViewProps) {
+export default function GeometryComponent({ node: { attrs }, updateAttributes, deleteNode, editor, getPos }: ReactNodeViewProps) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [localCode, setLocalCode] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  function moveBlock(dir: 'up' | 'down') {
+    if (!editor || typeof getPos !== 'function') return;
+    const pos = (getPos as () => number | undefined)();
+    if (pos === undefined) return;
+    const { state } = editor;
+    const { doc, tr } = state;
+    const $pos = doc.resolve(pos);
+    const index = $pos.index();
+    const parent = $pos.parent;
+    const curNode = doc.nodeAt(pos);
+    if (!curNode) return;
+    if (dir === 'up') {
+      if (index === 0) return;
+      const prevNode = parent.child(index - 1);
+      const prevPos = pos - prevNode.nodeSize;
+      tr.delete(prevPos, pos + curNode.nodeSize);
+      tr.insert(prevPos, [curNode, prevNode]);
+    } else {
+      const nextPos = pos + curNode.nodeSize;
+      if (index >= parent.childCount - 1) return;
+      const nextNode = parent.child(index + 1);
+      tr.delete(pos, nextPos + nextNode.nodeSize);
+      tr.insert(pos, [nextNode, curNode]);
+    }
+    editor.view.dispatch(tr);
+  }
 
   const code = (attrs.code as string) || '';
   const widthNum = attrs.width ? parseInt(attrs.width as string) : 100;
@@ -66,9 +94,18 @@ export default function GeometryComponent({ node: { attrs }, updateAttributes, d
           <button className="btn-edit" onClick={editing ? saveEdit : startEdit}>
             {editing ? `✓ ${t('保存')}` : t('コードを編集')}
           </button>
-          <button className="btn-geo-delete" onClick={() => deleteNode()} title={t('削除')}>
-            <Trash2 size={13} />
-          </button>
+          <button className="btn-move" onClick={() => moveBlock('up')} title={t('上へ移動')}>↑</button>
+          <button className="btn-move" onClick={() => moveBlock('down')} title={t('下へ移動')}>↓</button>
+          {confirmDelete ? (
+            <>
+              <button className="btn-geo-delete-confirm" onClick={() => deleteNode()}>{t('削除する')}</button>
+              <button className="btn-geo-delete-cancel" onClick={() => setConfirmDelete(false)}>{t('キャンセル')}</button>
+            </>
+          ) : (
+            <button className="btn-geo-delete" onClick={() => setConfirmDelete(true)} title={t('削除')}>
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -102,8 +139,12 @@ export default function GeometryComponent({ node: { attrs }, updateAttributes, d
         .geo-label { font-size: 0.75rem; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; }
         .geo-drag { display: inline-flex; align-items: center; cursor: grab; opacity: 0.4; color: var(--foreground); }
         .geo-drag:active { cursor: grabbing; }
+        .btn-move { display: inline-flex; align-items: center; background: transparent; border: 1px solid var(--border); padding: 2px 6px; border-radius: 5px; cursor: pointer; color: var(--foreground); font-size: 0.75rem; opacity: 0.6; transition: opacity 0.2s; }
+        .btn-move:hover { opacity: 1; background: var(--accent); }
         .btn-geo-delete { display: inline-flex; align-items: center; background: transparent; border: none; padding: 3px 6px; border-radius: 5px; cursor: pointer; color: #ef4444; opacity: 0.7; transition: opacity 0.2s; }
         .btn-geo-delete:hover { opacity: 1; background: rgba(239,68,68,.08); }
+        .btn-geo-delete-confirm { padding: 3px 8px; border-radius: 5px; border: none; background: #ef4444; color: #fff; font-size: 0.75rem; cursor: pointer; }
+        .btn-geo-delete-cancel { padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--foreground); font-size: 0.75rem; cursor: pointer; }
         .geo-actions { display: flex; align-items: center; gap: 6px; }
         .size-select { padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--foreground); font-size: 0.75rem; outline: none; cursor: pointer; }
         .btn-edit { padding: 4px 12px; background: var(--primary); color: white; border-radius: 6px; font-size: 0.8rem; border: none; cursor: pointer; white-space: nowrap; }
