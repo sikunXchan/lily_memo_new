@@ -30,7 +30,7 @@ export const PLAN_LABEL: Record<Plan, string> = {
 export const PT = {
   lite: 20,      // gemini-3.1-flash-lite
   flash: 50,     // gemini-3.5-flash
-  thinking: 70,  // flash + thinkingBudget
+  thinking: 200, // flash + thinkingBudget
   ultra: 500,    // gemini-3.1-pro-preview
   // Task-based costs
   exercise: 100,  // 演習問題生成

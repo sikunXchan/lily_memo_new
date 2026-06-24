@@ -145,10 +145,10 @@ function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
 }
 
-function pointCostForMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean): number {
+function pointCostForMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean, isAutoLite = false): number {
   if (isUltra) return PT.ultra;
   if (isThinking) return PT.thinking;
-  if (isEconomy) return PT.lite;
+  if (isEconomy || isAutoLite) return PT.lite;
   return PT.flash;
 }
 
@@ -2110,7 +2110,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const userText = rawText;
     if ((!userText && sentAtts.length === 0) || isLoading || !apiKey) return;
 
-    const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(rawText)) && !economy, economy);
+    const hasNewFiles = sentAtts.length > 0;
+    const accuracy0 = isAccuracyTask(rawText);
+    const autoLite = !lilyThinking && !lilyUltraThinking && !economy && !accuracy0 && !hasNewFiles && !opts?.fixedCost;
+    const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy, autoLite);
     if (!canAfford(msgCost)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2200,6 +2203,27 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         return turn;
       });
 
+      // Files from messages outside the history window are normally dropped.
+      // Collect them and prepend as a synthetic turn so the model can still
+      // reference e.g. a PDF uploaded earlier in a long conversation.
+      const recentMsgSet = new Set(recentMsgs.map(m => m.id));
+      const olderFiles: ChatAttachment[] = allMsgs
+        .filter(m => !recentMsgSet.has(m.id) && m.role === 'user' && m.attachments?.length)
+        .flatMap(m => m.attachments!.map<ChatAttachment>(a => ({
+          mimeType: a.mimeType,
+          data: a.fileUri || a.extractedText || a.pdfPageImages ? '' : a.data,
+          fileUri: a.fileUri,
+          extractedText: a.extractedText,
+          pdfPageImages: a.pdfPageImages,
+          pdfTotalPages: a.pdfTotalPages,
+        })));
+      if (olderFiles.length > 0) {
+        history.unshift(
+          { role: 'model', text: '承知しました。以前のファイルも確認しました。' },
+          { role: 'user', text: '以前の会話で共有したファイルです。引き続き参照してください。', attachments: olderFiles },
+        );
+      }
+
       // Problem/quiz generation, grading, summarizing etc. auto-engage thinking
       // + a low temperature so the model doesn't rush and drop answers.
       const accuracy = isAccuracyTask(userMsg.text);
@@ -2260,10 +2284,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else {
+        const useLite = economy || autoLite;
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch: webSearch || opts?.forceSearch,
-          models: economy ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
-          maxOutputTokens: economy ? 8192 : undefined,
+          models: useLite ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
+          maxOutputTokens: useLite ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
       }
@@ -2331,7 +2356,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     });
 
     const lastUserText = [...history].reverse().find(h => h.role === 'user')?.text ?? '';
-    const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy);
+    const regenHasFiles = recentMsgs.some(m => m.role === 'user' && m.attachments?.length);
+    const regenAutoLite = !lilyThinking && !lilyUltraThinking && !economy && !isAccuracyTask(lastUserText) && !regenHasFiles;
+    const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy, regenAutoLite);
     if (!canAfford(regenCost)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2418,10 +2445,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         pendingThinkingRef.current = thinkingAccum;
       } else {
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        const regenUseLite = economy || regenAutoLite;
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
-          models: economy ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
-          maxOutputTokens: economy ? 8192 : undefined,
+          models: regenUseLite ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
+          maxOutputTokens: regenUseLite ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
       }
