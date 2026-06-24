@@ -58,6 +58,9 @@ initMermaid();
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12MB per file
 const MAX_FILES = 5;
+// Cap how many notes can be sent as context. "All notes" mode is disabled
+// entirely because re-sending every note each turn balloons input token cost.
+const MAX_CONTEXT_NOTES = 5;
 const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,.md,.txt';
 
 interface AttachmentMeta {
@@ -145,10 +148,10 @@ function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
 }
 
-function pointCostForMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean): number {
+function pointCostForMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean, isAutoLite = false): number {
   if (isUltra) return PT.ultra;
   if (isThinking) return PT.thinking;
-  if (isEconomy) return PT.lite;
+  if (isEconomy || isAutoLite) return PT.lite;
   return PT.flash;
 }
 
@@ -2110,7 +2113,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const userText = rawText;
     if ((!userText && sentAtts.length === 0) || isLoading || !apiKey) return;
 
-    const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(rawText)) && !economy, economy);
+    const hasNewFiles = sentAtts.length > 0;
+    const accuracy0 = isAccuracyTask(rawText);
+    const autoLite = !lilyThinking && !lilyUltraThinking && !economy && !accuracy0 && !hasNewFiles && !opts?.fixedCost;
+    const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy, autoLite);
     if (!canAfford(msgCost)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2200,6 +2206,32 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         return turn;
       });
 
+      // Files from messages outside the history window are normally dropped.
+      // Re-attaching every old file each turn balloons input token cost, so we
+      // only do it when the request actually needs the source material —
+      // problem/quiz generation, explanation, grading etc. (i.e. NOT a casual
+      // simple question, which is the auto-lite path). Re-sending PDF page
+      // images is expensive, so casual chat skips them entirely.
+      if (!autoLite) {
+        const recentMsgSet = new Set(recentMsgs.map(m => m.id));
+        const olderFiles: ChatAttachment[] = allMsgs
+          .filter(m => !recentMsgSet.has(m.id) && m.role === 'user' && m.attachments?.length)
+          .flatMap(m => m.attachments!.map<ChatAttachment>(a => ({
+            mimeType: a.mimeType,
+            data: a.fileUri || a.extractedText || a.pdfPageImages ? '' : a.data,
+            fileUri: a.fileUri,
+            extractedText: a.extractedText,
+            pdfPageImages: a.pdfPageImages,
+            pdfTotalPages: a.pdfTotalPages,
+          })));
+        if (olderFiles.length > 0) {
+          history.unshift(
+            { role: 'model', text: '承知しました。以前のファイルも確認しました。' },
+            { role: 'user', text: '以前の会話で共有したファイルです。引き続き参照してください。', attachments: olderFiles },
+          );
+        }
+      }
+
       // Problem/quiz generation, grading, summarizing etc. auto-engage thinking
       // + a low temperature so the model doesn't rush and drop answers.
       const accuracy = isAccuracyTask(userMsg.text);
@@ -2260,10 +2292,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else {
+        const useLite = economy || autoLite;
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch: webSearch || opts?.forceSearch,
-          models: economy ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
-          maxOutputTokens: economy ? 8192 : undefined,
+          models: useLite ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
+          maxOutputTokens: useLite ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
       }
@@ -2331,7 +2364,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     });
 
     const lastUserText = [...history].reverse().find(h => h.role === 'user')?.text ?? '';
-    const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy);
+    const regenHasFiles = recentMsgs.some(m => m.role === 'user' && m.attachments?.length);
+    const regenAutoLite = !lilyThinking && !lilyUltraThinking && !economy && !isAccuracyTask(lastUserText) && !regenHasFiles;
+    const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy, regenAutoLite);
     if (!canAfford(regenCost)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2418,10 +2453,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         pendingThinkingRef.current = thinkingAccum;
       } else {
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        const regenUseLite = economy || regenAutoLite;
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
-          models: economy ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
-          maxOutputTokens: economy ? 8192 : undefined,
+          models: regenUseLite ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
+          maxOutputTokens: regenUseLite ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
       }
@@ -2598,17 +2634,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             {/* Quick options */}
             <div className="ctx-quick">
               <button
-                className={`ctx-quick-btn${lilyAllNotes ? ' on' : ''}`}
-                onClick={() => { setLilyAllNotes(true); setLilyNoteIds([]); }}
-              >
-                📚 {t('全メモ')}
-              </button>
-              <button
-                className={`ctx-quick-btn${!lilyAllNotes && lilyNoteIds.length === 0 ? ' on' : ''}`}
+                className={`ctx-quick-btn${lilyNoteIds.length === 0 ? ' on' : ''}`}
                 onClick={() => { setLilyAllNotes(false); setLilyNoteIds([]); }}
               >
                 {t('なし')}
               </button>
+              <span className="ctx-quick-hint">{t('最大{n}件まで選択できます', { n: MAX_CONTEXT_NOTES })}</span>
             </div>
 
             {/* Search */}
@@ -2633,10 +2664,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                   return (
                     <button
                       key={n.id}
-                      className={`ctx-item${sel ? ' on' : ''}${lilyAllNotes ? ' dim' : ''}`}
+                      className={`ctx-item${sel ? ' on' : ''}`}
                       onClick={() => {
                         setLilyAllNotes(false);
-                        setLilyNoteIds(prev => prev.includes(n.id!) ? prev.filter(id => id !== n.id) : [...prev, n.id!]);
+                        setLilyNoteIds(prev => {
+                          if (prev.includes(n.id!)) return prev.filter(id => id !== n.id);
+                          if (prev.length >= MAX_CONTEXT_NOTES) return prev; // cap reached
+                          return [...prev, n.id!];
+                        });
                       }}
                     >
                       <span className="ctx-check">{sel && <Check size={11} />}</span>
@@ -3063,8 +3098,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .ctx-head-ic { color: var(--primary); }
         .ctx-close { margin-left: auto; display: flex; align-items: center; border: none; background: none; color: var(--fg-muted); cursor: pointer; padding: 2px; border-radius: 8px; }
         .ctx-close:hover { color: var(--foreground); background: var(--border); }
-        .ctx-quick { display: flex; gap: 8px; padding: 10px 14px 6px; }
-        .ctx-quick-btn { flex: 1; padding: 7px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: .8rem; font-weight: 700; background: none; color: var(--fg-muted); cursor: pointer; transition: all .14s; }
+        .ctx-quick { display: flex; gap: 8px; padding: 10px 14px 6px; align-items: center; }
+        .ctx-quick-hint { font-size: .72rem; color: var(--fg-muted); opacity: .8; }
+        .ctx-quick-btn { padding: 7px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: .8rem; font-weight: 700; background: none; color: var(--fg-muted); cursor: pointer; transition: all .14s; }
         .ctx-quick-btn.on { background: var(--primary); color: #fff; border-color: var(--primary); }
         .ctx-search { display: flex; align-items: center; gap: 8px; margin: 4px 14px 8px; padding: 7px 12px; background: color-mix(in srgb, var(--fg-muted) 8%, var(--background)); border: 1px solid var(--border); border-radius: 10px; color: var(--fg-muted); }
         .ctx-search input { flex: 1; border: none; background: none; outline: none; font-size: .84rem; color: var(--foreground); font-family: inherit; }

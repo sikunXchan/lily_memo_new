@@ -30,7 +30,7 @@ export const PLAN_LABEL: Record<Plan, string> = {
 export const PT = {
   lite: 20,      // gemini-3.1-flash-lite
   flash: 50,     // gemini-3.5-flash
-  thinking: 70,  // flash + thinkingBudget
+  thinking: 200, // flash + thinkingBudget
   ultra: 500,    // gemini-3.1-pro-preview
   // Task-based costs
   exercise: 100,  // 演習問題生成
@@ -45,11 +45,13 @@ const KEY_DATE = 'lily-pts-date';
 const KEY_USED = 'lily-pts-used';
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function currentMonthStr(): string {
-  return new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 // If we've entered a new calendar month, reset the plan to Free.
