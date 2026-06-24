@@ -2263,7 +2263,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          ['gemini-3.1-pro-preview', 'gemini-3.5-flash'],
+          ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'],
           webSearch || opts?.forceSearch,
           65536,
           0.6,
@@ -2289,9 +2289,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          lilyThinking
-            ? ['gemini-3.5-flash']
-            : ['gemini-3.5-flash'],
+          ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
           webSearch || opts?.forceSearch,
           65536,
           accuracy ? 0.35 : 0.6,
@@ -2303,7 +2301,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         const useLite = economy || autoLite;
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch: webSearch || opts?.forceSearch,
-          models: useLite ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
+          models: useLite
+            ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
+            : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
           maxOutputTokens: useLite ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
@@ -2423,7 +2423,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          ['gemini-3.1-pro-preview', 'gemini-3.5-flash'],
+          ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'],
           webSearch,
           65536,
           0.6,
@@ -2450,9 +2450,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               setSikunProgress(t('✍️ 回答を生成中...'));
             },
           },
-          lilyThinking
-            ? ['gemini-3.5-flash']
-            : ['gemini-3.5-flash'],
+          ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
           webSearch,
           65536,
           accuracy ? 0.35 : 0.6,
@@ -2465,7 +2463,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         const regenUseLite = economy || regenAutoLite;
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
-          models: regenUseLite ? ['gemini-3.1-flash-lite'] : ['gemini-3.5-flash'],
+          models: regenUseLite
+            ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
+            : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
           maxOutputTokens: regenUseLite ? 8192 : undefined,
           temperature: accuracy ? 0.35 : undefined,
         });
