@@ -88,6 +88,30 @@ export interface ChatTurn {
   attachments?: ChatAttachment[];
 }
 
+// --- Temporary token-usage diagnostic ---------------------------------------
+// Captures usageMetadata from the most recent Gemini response so the UI can
+// show whether implicit context caching is actually kicking in (cached > 0).
+export interface GeminiUsage {
+  prompt: number;
+  cached: number;
+  output: number;
+  thoughts: number;
+  total: number;
+}
+let _lastUsage: GeminiUsage | null = null;
+export function getLastUsage(): GeminiUsage | null { return _lastUsage; }
+function captureUsage(data: unknown): void {
+  const u = (data as { usageMetadata?: Record<string, number> })?.usageMetadata;
+  if (!u) return;
+  _lastUsage = {
+    prompt: u.promptTokenCount ?? 0,
+    cached: u.cachedContentTokenCount ?? 0,
+    output: u.candidatesTokenCount ?? 0,
+    thoughts: u.thoughtsTokenCount ?? 0,
+    total: u.totalTokenCount ?? 0,
+  };
+}
+
 const GEMINI_MODELS = [
   'gemini-3.5-flash',
   'gemini-3.1-flash-lite',
@@ -214,6 +238,7 @@ export async function streamSikunlilyChat(
           if (raw === '[DONE]') break outer;
           try {
             const chunk = JSON.parse(raw);
+            captureUsage(chunk);
             const parts: Array<{ text?: string; thought?: boolean }> =
               chunk.candidates?.[0]?.content?.parts ?? [];
             for (const part of parts) {
@@ -319,6 +344,7 @@ export async function callGeminiChat(
 
       if (response.ok) {
         const data = await response.json();
+        captureUsage(data);
         const parts = data.candidates?.[0]?.content?.parts;
         if (Array.isArray(parts)) {
           const text = parts
