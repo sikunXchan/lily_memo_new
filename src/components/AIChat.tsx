@@ -27,6 +27,7 @@ import {
   callGeminiChat, uploadToFileApi,
   streamSikunlilyChat,
   LILY_CHAT_SYSTEM_PROMPT,
+  getLastUsage,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -86,6 +87,7 @@ interface ChatMessage {
   attachments?: AttachmentMeta[];
   thinking?: string;
   qaChecked?: Record<string, number[]>; // block.id → checked indices
+  usage?: { prompt: number; cached: number; output: number; thoughts: number; total: number }; // temp token diagnostic
 }
 
 interface InsertableBlock {
@@ -1510,6 +1512,12 @@ function LilyBubble({
             </button>
           )}
         </div>
+        {message.usage && (
+          <div className="msg-usage" style={{ fontSize: '0.68rem', color: message.usage.cached > 0 ? '#1a7a4d' : 'var(--fg-muted,#999)', marginTop: '4px', opacity: 0.85 }}>
+            入力{message.usage.prompt.toLocaleString()}（うちキャッシュ{message.usage.cached.toLocaleString()}）/ 出力{message.usage.output.toLocaleString()}
+            {message.usage.thoughts > 0 ? `（思考${message.usage.thoughts.toLocaleString()}）` : ''} = 計{message.usage.total.toLocaleString()}tok
+          </div>
+        )}
       </div>
       <style jsx>{`
         .lily-bubble-row { display: flex; align-items: flex-start; gap: 10px; align-self: flex-start; max-width: 85%; }
@@ -2316,6 +2324,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
         thinking: capturedThinking || undefined,
+        usage: getLastUsage() ?? undefined,
       }]);
     } catch (e) {
       setSikunProgress('');
@@ -2473,6 +2482,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
         thinking: capturedThinking || undefined,
+        usage: getLastUsage() ?? undefined,
       }]);
     } catch (e) {
       setSikunProgress('');
