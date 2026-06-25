@@ -2123,7 +2123,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
 
     const hasNewFiles = sentAtts.length > 0;
     const accuracy0 = isAccuracyTask(rawText);
-    const autoLite = !lilyThinking && !lilyUltraThinking && !economy && !accuracy0 && !hasNewFiles && !opts?.fixedCost && rawText.trim().length < 50;
+    const autoLite = false;
     const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy, autoLite);
     if (!canAfford(msgCost)) {
       setMessages(prev => [...prev, {
@@ -2374,7 +2374,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
 
     const lastUserText = [...history].reverse().find(h => h.role === 'user')?.text ?? '';
     const regenHasFiles = recentMsgs.some(m => m.role === 'user' && m.attachments?.length);
-    const regenAutoLite = !lilyThinking && !lilyUltraThinking && !economy && !isAccuracyTask(lastUserText) && !regenHasFiles && lastUserText.trim().length < 50;
+    const regenAutoLite = false;
     const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy, regenAutoLite);
     if (!canAfford(regenCost)) {
       setMessages(prev => [...prev, {
