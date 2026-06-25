@@ -2304,7 +2304,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           models: useLite
             ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
             : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
-          maxOutputTokens: useLite ? 8192 : undefined,
+          maxOutputTokens: useLite ? 8192 : accuracy ? 65536 : 32768,
           temperature: accuracy ? 0.35 : undefined,
         });
       }
@@ -2466,7 +2466,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           models: regenUseLite
             ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
             : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
-          maxOutputTokens: regenUseLite ? 8192 : undefined,
+          maxOutputTokens: regenUseLite ? 8192 : accuracy ? 65536 : 32768,
           temperature: accuracy ? 0.35 : undefined,
         });
       }
