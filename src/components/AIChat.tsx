@@ -144,7 +144,7 @@ function detectChartLabel(code: string): string {
 // quiz generation, grading, summarizing, translating, proofreading, explaining.
 // For these we automatically engage extended thinking + a low temperature so
 // the model doesn't rush and drop answers, regardless of the thinking toggle.
-const ACCURACY_RE = /問題|もんだい|クイズ|テスト|試験|演習|過去問|穴埋め|空欄|単語(カード|帳)|フラッシュ|暗記|一問一答|○×|まるばつ|正誤|並べ替え|並べかえ|選択問題|多肢選択|[0-9０-９]\s*択|採点|添削|校正|要約|翻訳|和訳|英訳|解説|説明して|証明|計算|解いて|解答|グラフ|図解|図にして|図示|可視化|ベクトル|関数|方程式|微分|積分|フローチャート/;
+const ACCURACY_RE = /問題|もんだい|クイズ|テスト|試験|演習|過去問|穴埋め|空欄|単語(カード|帳)|フラッシュ|暗記|一問一答|○×|まるばつ|正誤|並べ替え|並べかえ|選択問題|多肢選択|[0-9０-９]\s*択|採点|添削|校正|要約|翻訳|和訳|英訳|解説|説明して|証明|計算|解いて|解答|グラフ|図解|図にして|図示|可視化|ベクトル|関数|方程式|微分|積分|フローチャート|教えて|について|とは[？?]|なぜ|どうして|仕組み|の違い|比較|まとめ|復習|理解|意味|理由|どのよう|どういう|どれ|どちら/;
 
 function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
@@ -2123,7 +2123,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
 
     const hasNewFiles = sentAtts.length > 0;
     const accuracy0 = isAccuracyTask(rawText);
-    const autoLite = !lilyThinking && !lilyUltraThinking && !economy && !accuracy0 && !hasNewFiles && !opts?.fixedCost;
+    const autoLite = !lilyThinking && !lilyUltraThinking && !economy && !accuracy0 && !hasNewFiles && !opts?.fixedCost && rawText.trim().length < 50;
     const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy, autoLite);
     if (!canAfford(msgCost)) {
       setMessages(prev => [...prev, {
@@ -2374,7 +2374,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
 
     const lastUserText = [...history].reverse().find(h => h.role === 'user')?.text ?? '';
     const regenHasFiles = recentMsgs.some(m => m.role === 'user' && m.attachments?.length);
-    const regenAutoLite = !lilyThinking && !lilyUltraThinking && !economy && !isAccuracyTask(lastUserText) && !regenHasFiles;
+    const regenAutoLite = !lilyThinking && !lilyUltraThinking && !economy && !isAccuracyTask(lastUserText) && !regenHasFiles && lastUserText.trim().length < 50;
     const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy, regenAutoLite);
     if (!canAfford(regenCost)) {
       setMessages(prev => [...prev, {
