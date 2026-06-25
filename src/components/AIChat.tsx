@@ -2613,6 +2613,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           apiKey={apiKey}
           onClose={() => setShowLectureRecorder(false)}
           onComplete={handleLectureComplete}
+          contextNotes={(allNotes ?? [])
+            .filter(n => lilyNoteIds.includes(n.id!))
+            .map(n => ({ title: n.title || '無題', text: noteHtmlToText(n.content || '').slice(0, 3000) }))}
         />
       )}
       {showVoiceChat && (

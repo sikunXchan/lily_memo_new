@@ -13,6 +13,7 @@ interface LectureRecorderProps {
   apiKey: string;
   onClose: () => void;
   onComplete: (summary: string) => void;
+  contextNotes?: Array<{ title: string; text: string }>;
 }
 
 type Phase = 'idle' | 'recording' | 'paused' | 'finalizing' | 'done';
@@ -37,7 +38,7 @@ function formatDuration(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export default function LectureRecorder({ apiKey, onClose, onComplete }: LectureRecorderProps) {
+export default function LectureRecorder({ apiKey, onClose, onComplete, contextNotes }: LectureRecorderProps) {
   const t = useT();
   const [phase, setPhase] = useState<Phase>('idle');
   const [liveText, setLiveText] = useState('');
@@ -316,8 +317,13 @@ export default function LectureRecorder({ apiKey, onClose, onComplete }: Lecture
     }
 
     const totalMin = Math.round(elapsedRef.current / 60000);
+    const noteCtxBlock = contextNotes && contextNotes.length > 0
+      ? (getAppLang() === 'en'
+        ? `\n\n[Reference notes from student]\n${contextNotes.map(n => `## ${n.title}\n${n.text}`).join('\n\n---\n\n')}\n`
+        : `\n\n【学生の参照メモ】\n${contextNotes.map(n => `## ${n.title}\n${n.text}`).join('\n\n---\n\n')}\n`)
+      : '';
     const summaryPrompt = getAppLang() === 'en'
-      ? `The following is a transcript of a ${totalMin > 0 ? `roughly ${totalMin}-minute ` : ''}class lecture. Output the following sections in English, in this order.
+      ? `The following is a transcript of a ${totalMin > 0 ? `roughly ${totalMin}-minute ` : ''}class lecture. Output the following sections in English, in this order.${noteCtxBlock}
 
 ## Lecture summary (Cornell notes style)
 
@@ -363,7 +369,7 @@ A10: (answer)
 
 [Lecture transcript]
 ${allText}`
-      : `以下は${totalMin > 0 ? `約${totalMin}分` : ''}の授業の文字起こしです。以下の順で日本語で出力してください。
+      : `以下は${totalMin > 0 ? `約${totalMin}分` : ''}の授業の文字起こしです。以下の順で日本語で出力してください。${noteCtxBlock}
 
 ## 授業まとめ（コーネルノート形式）
 
