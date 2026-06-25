@@ -49,8 +49,9 @@ export default function PlanModal({ onClose }: PlanModalProps) {
     }
   }
 
+  const isDeveloper = currentPlan === 'developer';
   const daily = PLAN_DAILY_POINTS[currentPlan];
-  const pct = Math.max(0, Math.min(100, (remaining / daily) * 100));
+  const pct = isDeveloper ? 100 : Math.max(0, Math.min(100, (remaining / daily) * 100));
 
   return (
     <div className="pm-overlay" onClick={onClose}>
@@ -96,9 +97,12 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         <div className="pm-usage">
           <div className="pm-usage-label">本日の残りポイント（毎日0時リセット）</div>
           <div className="pm-bar-wrap"><div className="pm-bar" style={{ width: `${pct}%` }} /></div>
-          <div className="pm-usage-nums">{remaining.toLocaleString()} / {daily.toLocaleString()} pt（使用済 {used.toLocaleString()}pt）</div>
+          <div className="pm-usage-nums">
+            {isDeveloper ? '∞ / 無制限' : `${remaining.toLocaleString()} / ${daily.toLocaleString()} pt`}
+            {!isDeveloper && `（使用済 ${used.toLocaleString()}pt）`}
+          </div>
         </div>
-        {currentPlan !== 'free' && (
+        {currentPlan !== 'free' && !isDeveloper && (
           <div className="pm-plan-reset">
             🔄 プランは <strong>{nextMonthFirstStr()}</strong> に Free へリセットされます
           </div>
@@ -112,8 +116,8 @@ export default function PlanModal({ onClose }: PlanModalProps) {
               <div key={plan} className={`pm-card${isCurrent ? ' current' : ''}${!canUp && !isCurrent ? ' locked' : ''}`}>
                 <div className="pm-card-row">
                   <span className="pm-card-name">{PLAN_LABEL[plan]}</span>
-                  <span className="pm-card-pts">{PLAN_DAILY_POINTS[plan].toLocaleString()}pt/日</span>
-                  <span className="pm-card-price">{PLAN_PRICE_YEN[plan] === 0 ? '無料' : `¥${PLAN_PRICE_YEN[plan]}/月`}</span>
+                  <span className="pm-card-pts">{plan === 'developer' ? '無制限' : `${PLAN_DAILY_POINTS[plan].toLocaleString()}pt/日`}</span>
+                  <span className="pm-card-price">{plan === 'developer' ? '開発者専用' : PLAN_PRICE_YEN[plan] === 0 ? '無料' : `¥${PLAN_PRICE_YEN[plan]}/月`}</span>
                   {isCurrent && <span className="pm-card-badge">現在</span>}
                   {canUp && !isCurrent && expandedPlan !== plan && (
                     <button className="pm-card-btn" onClick={() => handleUpgrade(plan)}>アップグレード</button>
