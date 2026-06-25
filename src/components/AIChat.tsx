@@ -63,6 +63,7 @@ const MAX_FILES = 5;
 // entirely because re-sending every note each turn balloons input token cost.
 const MAX_CONTEXT_NOTES = 5;
 const ACCEPTED_FILE_TYPES = 'image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf,text/plain,text/markdown,.md,.txt';
+const CHAT_DRAFT_KEY = 'lily_chat_draft';
 
 interface AttachmentMeta {
   id: string;
@@ -119,6 +120,18 @@ interface AIChatProps {
 
 function escHtmlAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function stripForDraft(msgs: ChatMessage[]): ChatMessage[] {
+  return msgs.map(m => {
+    if (!m.attachments?.length) return m;
+    const attachments = m.attachments.map(a => ({
+      ...a,
+      pdfPageImages: undefined,
+      data: a.isImage ? a.data : '',
+    }));
+    return { ...m, attachments };
+  });
 }
 
 function detectMermaidLabel(code: string): string {
@@ -1852,6 +1865,37 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Restore draft conversation on mount (survives tab switches and page reloads)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_DRAFT_KEY);
+      if (raw) {
+        const msgs = JSON.parse(raw) as ChatMessage[];
+        if (Array.isArray(msgs) && msgs.length > 0) setMessages(msgs);
+      }
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-save current conversation as draft (debounced)
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    if (messages.length === 0) {
+      localStorage.removeItem(CHAT_DRAFT_KEY);
+      return;
+    }
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(CHAT_DRAFT_KEY, JSON.stringify(stripForDraft(messages)));
+      } catch { /* QuotaExceededError — too large for localStorage */ }
+    }, 800);
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    };
+  }, [messages]);
+
   const skills = useLiveQuery(() => db.skills.orderBy('createdAt').toArray(), []) ?? [];
   const activeSkill = skills.find(s => s.id === activeSkillId) ?? null;
   useEffect(() => {
@@ -2086,7 +2130,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       if (sc) {
         setInput('');
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
-        if (sc.id === 'clear') { setMessages([]); return; }
+        if (sc.id === 'clear') { setMessages([]); localStorage.removeItem(CHAT_DRAFT_KEY); return; }
         if (sc.id === 'compact') { await compactHistory(); return; }
         if (sc.id === 'search') {
           await sendMessage(arg || t('わからないことを正確に調べて教えて'), { forceSearch: true });
@@ -2594,7 +2638,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     <History size={15} />{t('保存した会話')}
                   </button>
                   {messages.length > 0 && (
-                    <button className="header-menu-item" onClick={() => { setMessages([]); setShowHeaderMenu(false); }}>
+                    <button className="header-menu-item" onClick={() => { setMessages([]); localStorage.removeItem(CHAT_DRAFT_KEY); setShowHeaderMenu(false); }}>
                       <RotateCcw size={15} />{t('会話をリセット')}
                     </button>
                   )}
