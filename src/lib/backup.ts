@@ -174,22 +174,19 @@ export async function restoreBackupFromJson(jsonText: string): Promise<void> {
     } as Folder;
   });
 
-  const savedChats: SavedChat[] = (data.savedChats ?? []).map(c => ({
-    title: c.title ?? '',
-    model: c.model === 'sikunlily' ? 'sikunlily' : 'lily',
-    messages: c.messages ?? '[]',
-    count: c.count ?? 0,
-    createdAt: c.createdAt ?? now,
-  }));
-
-  await db.transaction('rw', db.folders, db.notes, db.savedChats, async () => {
+  await db.transaction('rw', db.folders, db.notes, async () => {
     await db.folders.clear();
     await db.notes.clear();
-    await db.savedChats.clear();
     if (folders.length) await db.folders.bulkPut(folders);
     if (notes.length) await db.notes.bulkPut(notes);
-    if (savedChats.length) await db.savedChats.bulkPut(savedChats);
   });
+
+  // Saved chats: additive MERGE by createdAt (NOT replace). Clearing here used to
+  // wipe the importing device's own conversations — so two devices syncing via
+  // code would each lose the chats unique to the other, and the history never
+  // converged. Now we merge newest-wins and preserve updatedAt/deletedAt so the
+  // live-sync version clock and tombstones keep working after a restore.
+  await mergeSavedChats(data.savedChats ?? [], now);
 
   // Study history: additive MERGE by syncId. Unlike notes/folders (full replace),
   // we never clear here — so restoring a backup never wipes existing study data
@@ -203,6 +200,37 @@ export async function restoreBackupFromJson(jsonText: string): Promise<void> {
   // created at the exact same time on different devices are the same session).
   // Newest updatedAt wins so continued sessions propagate.
   await mergeLessonSessions(data.lessonSessions ?? [], now);
+}
+
+// Merge saved chats by `createdAt` (stable natural key across devices) without
+// clearing — newest write (updatedAt) wins and tombstones (deletedAt) are
+// respected, so importing a backup adds the other device's conversations
+// instead of replacing your own, and deletions still propagate.
+async function mergeSavedChats(incoming: SavedChat[], now: number): Promise<void> {
+  if (!incoming.length) return;
+  await db.transaction('rw', db.savedChats, async () => {
+    const existing = await db.savedChats.toArray();
+    const byCreatedAt = new Map(existing.map(c => [c.createdAt, c]));
+    for (const raw of incoming) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = raw;
+      const chat: Omit<SavedChat, 'id'> = {
+        title: rest.title ?? '',
+        model: rest.model === 'sikunlily' ? 'sikunlily' : 'lily',
+        messages: rest.messages ?? '[]',
+        count: rest.count ?? 0,
+        createdAt: rest.createdAt ?? now,
+        updatedAt: rest.updatedAt ?? rest.createdAt ?? now,
+        deletedAt: rest.deletedAt,
+      };
+      const local = byCreatedAt.get(chat.createdAt);
+      if (!local) {
+        if (!chat.deletedAt) await db.savedChats.add(chat as SavedChat);
+      } else if ((chat.updatedAt ?? 0) > (local.updatedAt ?? local.createdAt)) {
+        await db.savedChats.update(local.id!, chat);
+      }
+    }
+  });
 }
 
 // Merge diary entries by `date` without clearing — newest write (updatedAt) wins,
