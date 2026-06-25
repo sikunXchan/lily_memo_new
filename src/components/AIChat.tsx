@@ -1878,6 +1878,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Always keep a ref pointing to the latest messages so the unmount flush below
+  // can access the most-recent state without stale closures.
+  const latestMessagesRef = useRef<ChatMessage[]>([]);
+  latestMessagesRef.current = messages;
+
   // Auto-save current conversation as draft (debounced)
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -1895,6 +1900,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     };
   }, [messages]);
+
+  // Flush the draft immediately on unmount so that the last few changes (e.g. a
+  // checkbox tick) aren't lost when the user switches tabs before the 800ms debounce fires.
+  useEffect(() => () => {
+    const msgs = latestMessagesRef.current;
+    if (msgs.length > 0) {
+      try {
+        localStorage.setItem(CHAT_DRAFT_KEY, JSON.stringify(stripForDraft(msgs)));
+      } catch { /* ignore */ }
+    }
+  }, []);
 
   const skills = useLiveQuery(() => db.skills.orderBy('createdAt').toArray(), []) ?? [];
   const activeSkill = skills.find(s => s.id === activeSkillId) ?? null;
