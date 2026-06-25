@@ -1867,10 +1867,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Restore draft conversation on mount (survives tab switches and page reloads)
+  // Restore the in-progress draft on mount. We use sessionStorage (NOT
+  // localStorage) on purpose: it survives switching tabs within a running
+  // session, but is cleared when the app is fully closed and reopened — so a
+  // fresh open always starts on a clean slate instead of dropping you back into
+  // a half-finished old conversation.
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(CHAT_DRAFT_KEY);
+      const raw = sessionStorage.getItem(CHAT_DRAFT_KEY);
       if (raw) {
         const msgs = JSON.parse(raw) as ChatMessage[];
         if (Array.isArray(msgs) && msgs.length > 0) setMessages(msgs);
@@ -1889,13 +1893,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   useEffect(() => {
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     if (messages.length === 0) {
-      localStorage.removeItem(CHAT_DRAFT_KEY);
+      sessionStorage.removeItem(CHAT_DRAFT_KEY);
       return;
     }
     draftTimerRef.current = setTimeout(() => {
       try {
-        localStorage.setItem(CHAT_DRAFT_KEY, JSON.stringify(stripForDraft(messages)));
-      } catch { /* QuotaExceededError — too large for localStorage */ }
+        sessionStorage.setItem(CHAT_DRAFT_KEY, JSON.stringify(stripForDraft(messages)));
+      } catch { /* QuotaExceededError — too large for sessionStorage */ }
     }, 800);
     return () => {
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -1908,7 +1912,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const msgs = latestMessagesRef.current;
     if (msgs.length > 0) {
       try {
-        localStorage.setItem(CHAT_DRAFT_KEY, JSON.stringify(stripForDraft(msgs)));
+        sessionStorage.setItem(CHAT_DRAFT_KEY, JSON.stringify(stripForDraft(msgs)));
       } catch { /* ignore */ }
     }
   }, []);
@@ -2158,7 +2162,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       if (sc) {
         setInput('');
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
-        if (sc.id === 'clear') { setMessages([]); setLoadedFromChatId(null); localStorage.removeItem(CHAT_DRAFT_KEY); return; }
+        if (sc.id === 'clear') { setMessages([]); setLoadedFromChatId(null); sessionStorage.removeItem(CHAT_DRAFT_KEY); return; }
         if (sc.id === 'compact') { await compactHistory(); return; }
         if (sc.id === 'search') {
           await sendMessage(arg || t('わからないことを正確に調べて教えて'), { forceSearch: true });
@@ -2667,7 +2671,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     <History size={15} />{t('保存した会話')}
                   </button>
                   {messages.length > 0 && (
-                    <button className="header-menu-item" onClick={() => { setMessages([]); setLoadedFromChatId(null); localStorage.removeItem(CHAT_DRAFT_KEY); setShowHeaderMenu(false); }}>
+                    <button className="header-menu-item" onClick={() => { setMessages([]); setLoadedFromChatId(null); sessionStorage.removeItem(CHAT_DRAFT_KEY); setShowHeaderMenu(false); }}>
                       <RotateCcw size={15} />{t('会話をリセット')}
                     </button>
                   )}
