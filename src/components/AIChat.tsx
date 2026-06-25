@@ -22,7 +22,7 @@ import { initMermaid } from '@/lib/mermaidConfig';
 import 'katex/dist/katex.min.css';
 import { db, newSyncId } from '@/lib/db';
 import type { Note, Folder, SavedChat } from '@/lib/db';
-import { saveChat, deleteSavedChat, parseSavedMessages } from '@/lib/chatHistory';
+import { saveChat, updateSavedChat, deleteSavedChat, parseSavedMessages } from '@/lib/chatHistory';
 import {
   callGeminiChat, uploadToFileApi,
   streamSikunlilyChat,
@@ -1832,6 +1832,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const [economy, setEconomy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [loadedFromChatId, setLoadedFromChatId] = useState<number | null>(null);
   const [showLectureRecorder, setShowLectureRecorder] = useState(false);
   const [showVoiceChat, setShowVoiceChat] = useState(false);
   const [showToolbox, setShowToolbox] = useState(false);
@@ -1940,14 +1941,25 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
 
   const handleSaveChat = useCallback(async () => {
     if (messages.length === 0) return;
+    if (loadedFromChatId != null) {
+      // Update the existing record so loading + re-saving doesn't create duplicates.
+      const existing = await db.savedChats.get(loadedFromChatId);
+      if (existing && !existing.deletedAt) {
+        await updateSavedChat(loadedFromChatId, messages);
+        setSavedToast(true);
+        setTimeout(() => setSavedToast(false), 1800);
+        return;
+      }
+    }
     await saveChat('lily', messages);
     setSavedToast(true);
     setTimeout(() => setSavedToast(false), 1800);
-  }, [messages]);
+  }, [messages, loadedFromChatId]);
 
   const handleLoadChat = useCallback((chat: SavedChat) => {
     const loaded = parseSavedMessages<ChatMessage>(chat);
     setMessages(loaded);
+    setLoadedFromChatId(chat.id ?? null);
     setQuestionQueue([]);
     setCollectedAnswers([]);
     setShowHistory(false);
@@ -2146,7 +2158,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       if (sc) {
         setInput('');
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
-        if (sc.id === 'clear') { setMessages([]); localStorage.removeItem(CHAT_DRAFT_KEY); return; }
+        if (sc.id === 'clear') { setMessages([]); setLoadedFromChatId(null); localStorage.removeItem(CHAT_DRAFT_KEY); return; }
         if (sc.id === 'compact') { await compactHistory(); return; }
         if (sc.id === 'search') {
           await sendMessage(arg || t('わからないことを正確に調べて教えて'), { forceSearch: true });
@@ -2210,6 +2222,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       attachments: sentAtts.length > 0 ? sentAtts : undefined,
     };
     setMessages(prev => [...prev, userMsg]);
+    setLoadedFromChatId(null); // new message → diverged from loaded chat, next save creates a new entry
 
     try {
       const contextNotes: Note[] = [];
@@ -2654,7 +2667,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     <History size={15} />{t('保存した会話')}
                   </button>
                   {messages.length > 0 && (
-                    <button className="header-menu-item" onClick={() => { setMessages([]); localStorage.removeItem(CHAT_DRAFT_KEY); setShowHeaderMenu(false); }}>
+                    <button className="header-menu-item" onClick={() => { setMessages([]); setLoadedFromChatId(null); localStorage.removeItem(CHAT_DRAFT_KEY); setShowHeaderMenu(false); }}>
                       <RotateCcw size={15} />{t('会話をリセット')}
                     </button>
                   )}

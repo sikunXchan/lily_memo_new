@@ -45,6 +45,24 @@ let _pollTimer:   ReturnType<typeof setInterval> | null = null;
 let _dexieSub:    { unsubscribe: () => void }    | null = null;
 let _listenersOn  = false;
 
+// ── Strip image attachment data from a savedChat for sync ────────
+// Local DB keeps full base64 image data; the sync snapshot strips it so
+// image-heavy conversations don't hit the 1.5 MB per-record filter and
+// disappear from sync silently. Text content (the valuable part) always syncs.
+type MsgLike = { attachments?: Array<Record<string, unknown>>; [k: string]: unknown };
+function stripSavedChatForSync(chat: SavedChat): SavedChat {
+  try {
+    const msgs = JSON.parse(chat.messages) as MsgLike[];
+    const stripped = msgs.map(m => {
+      if (!m.attachments?.length) return m;
+      return { ...m, attachments: m.attachments.map(a => ({ ...a, data: '', pdfPageImages: undefined })) };
+    });
+    return { ...chat, messages: JSON.stringify(stripped) };
+  } catch {
+    return chat;
+  }
+}
+
 // ── Build local snapshot ─────────────────────────────────────────
 async function buildSnapshot(): Promise<LiveSnapshot> {
   const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries, lessonSessions] = await Promise.all([
@@ -78,7 +96,9 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
   }));
   return {
     notes: outNotes, folders: outFolders, studySessions: outSessions,
-    studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries, lessonSessions,
+    studyCategories, exams, scheduleDays,
+    savedChats: savedChats.map(stripSavedChatForSync),
+    todos, earnedBadges, problemSets, diaries, lessonSessions,
     ts: Date.now(),
   };
 }

@@ -47,6 +47,21 @@ export async function saveChat(
   return (await db.savedChats.add(entry)) as number;
 }
 
+// Update an existing saved chat in place (e.g. after loading and extending it).
+// Bumps updatedAt so the change propagates via live sync.
+export async function updateSavedChat(
+  id: number,
+  messages: readonly unknown[],
+): Promise<void> {
+  const t = Date.now();
+  await db.savedChats.update(id, {
+    title: makeTitle(messages),
+    messages: JSON.stringify(stripHeavy(messages)),
+    count: messages.length,
+    updatedAt: t,
+  });
+}
+
 // Soft-delete (tombstone) so the deletion propagates through live sync — a hard
 // delete would just vanish locally and the other device would re-add it.
 export async function deleteSavedChat(id: number): Promise<void> {
