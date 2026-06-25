@@ -1,6 +1,6 @@
-export type Plan = 'free' | 'plus' | 'pro' | 'max' | 'ultimate';
+export type Plan = 'free' | 'plus' | 'pro' | 'max' | 'ultimate' | 'developer';
 
-export const PLAN_ORDER: Plan[] = ['free', 'plus', 'pro', 'max', 'ultimate'];
+export const PLAN_ORDER: Plan[] = ['free', 'plus', 'pro', 'max', 'ultimate', 'developer'];
 
 export const PLAN_DAILY_POINTS: Record<Plan, number> = {
   free: 100,
@@ -8,6 +8,7 @@ export const PLAN_DAILY_POINTS: Record<Plan, number> = {
   pro: 500,
   max: 750,
   ultimate: 1000,
+  developer: Number.MAX_SAFE_INTEGER,
 };
 
 export const PLAN_PRICE_YEN: Record<Plan, number> = {
@@ -16,6 +17,7 @@ export const PLAN_PRICE_YEN: Record<Plan, number> = {
   pro: 200,
   max: 500,
   ultimate: 750,
+  developer: 0,
 };
 
 export const PLAN_LABEL: Record<Plan, string> = {
@@ -24,6 +26,7 @@ export const PLAN_LABEL: Record<Plan, string> = {
   pro: 'Pro',
   max: 'Max',
   ultimate: 'Ultimate',
+  developer: 'Developer',
 };
 
 // Point costs per call type
@@ -38,7 +41,10 @@ export const PT = {
   lesson: 50,     // 授業1セッション
 } as const;
 
-const UNLOCK_PASSWORD = '4934';
+const PLAN_PASSWORDS: Partial<Record<Plan, string>> = {
+  developer: 'sikun0120493',
+};
+const DEFAULT_UNLOCK_PASSWORD = '4934';
 const KEY_PLAN = 'lily-plan';
 const KEY_PLAN_MONTH = 'lily-plan-month'; // 'YYYY-MM' of when plan was set
 const KEY_DATE = 'lily-pts-date';
@@ -54,13 +60,18 @@ function currentMonthStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// If we've entered a new calendar month, reset the plan to Free.
+// If we've entered a new calendar month, reset the plan to Free (not for developer).
 function resetPlanIfNewMonth(): void {
   const month = currentMonthStr();
   const stored = localStorage.getItem(KEY_PLAN_MONTH);
   if (stored && stored !== month) {
-    localStorage.setItem(KEY_PLAN, 'free');
-    localStorage.removeItem(KEY_PLAN_MONTH);
+    const plan = localStorage.getItem(KEY_PLAN) as Plan | null;
+    if (plan !== 'developer') {
+      localStorage.setItem(KEY_PLAN, 'free');
+      localStorage.removeItem(KEY_PLAN_MONTH);
+    } else {
+      localStorage.setItem(KEY_PLAN_MONTH, month);
+    }
   }
 }
 
@@ -73,7 +84,6 @@ export function getPlan(): Plan {
 export function setPlan(plan: Plan): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(KEY_PLAN, plan);
-  // Record the month this plan was set so it auto-resets next month
   if (plan !== 'free') {
     localStorage.setItem(KEY_PLAN_MONTH, currentMonthStr());
   } else {
@@ -88,7 +98,8 @@ export function canUpgradeTo(plan: Plan): boolean {
 }
 
 export function tryUnlockWithPassword(password: string, targetPlan: Plan): boolean {
-  if (password !== UNLOCK_PASSWORD) return false;
+  const expected = PLAN_PASSWORDS[targetPlan] ?? DEFAULT_UNLOCK_PASSWORD;
+  if (password !== expected) return false;
   if (!canUpgradeTo(targetPlan)) return false;
   setPlan(targetPlan);
   return true;
