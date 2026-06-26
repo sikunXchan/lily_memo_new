@@ -110,23 +110,38 @@ export default function AnnouncementModal() {
 
   if (!open) return null;
 
-  const isNotice = !!NOTICE;
-  const item = isNotice ? NOTICE : getTodaysTip();
-  const headerLabel = isNotice ? '⚠️ 重要なお知らせ' : '💡 今日のヒント';
+  const tip = getTodaysTip();
 
   return (
-    <div className="am-backdrop" onClick={dismiss} role="dialog" aria-modal="true" aria-label={headerLabel}>
+    <div className="am-backdrop" onClick={dismiss} role="dialog" aria-modal="true" aria-label="お知らせ">
       <div className="am-card" onClick={(e) => e.stopPropagation()}>
+        {NOTICE && (
+          <>
+            <div className="am-header">
+              <span className="am-badge am-badge-notice">⚠️ 重要なお知らせ</span>
+            </div>
+            <div className="am-items" style={{ marginBottom: 14 }}>
+              <div className="am-item am-item-notice">
+                <span className="am-item-emoji">{NOTICE.emoji}</span>
+                <div className="am-item-text">
+                  <div className="am-item-title">{NOTICE.title}</div>
+                  <div className="am-item-body">{NOTICE.body}</div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="am-header">
-          <span className={`am-badge ${isNotice ? 'am-badge-notice' : ''}`}>{headerLabel}</span>
+          <span className="am-badge">💡 今日のヒント</span>
         </div>
 
         <div className="am-items">
-          <div className={`am-item ${isNotice ? 'am-item-notice' : ''}`}>
-            <span className="am-item-emoji">{item.emoji}</span>
+          <div className="am-item">
+            <span className="am-item-emoji">{tip.emoji}</span>
             <div className="am-item-text">
-              <div className="am-item-title">{item.title}</div>
-              <div className="am-item-body">{item.body}</div>
+              <div className="am-item-title">{tip.title}</div>
+              <div className="am-item-body">{tip.body}</div>
             </div>
           </div>
         </div>
