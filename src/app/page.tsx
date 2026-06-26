@@ -26,6 +26,7 @@ const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false
 const TrophyRoom = dynamic(() => import('@/components/TrophyRoom'), { ssr: false });
 const PracticeScreen = dynamic(() => import('@/components/PracticeScreen'), { ssr: false });
 const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
+const AnnouncementModal = dynamic(() => import('@/components/AnnouncementModal'), { ssr: false });
 type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'diary' | 'todo' | 'practice' | 'sketch';
 
 export default function Home() {
@@ -154,6 +155,7 @@ export default function Home() {
 
   return (
     <div className={`app-container ${isMobile ? 'mobile-mode' : ''} ${isDesktopLayout ? 'desktop-sidebar' : ''}`}>
+      <AnnouncementModal />
       {showSearch && (
         <SearchModal
           isOpen={showSearch}
