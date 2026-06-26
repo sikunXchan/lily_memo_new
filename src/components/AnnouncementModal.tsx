@@ -13,10 +13,12 @@ import { useEffect, useState } from 'react';
 // Set NOTICE to show a notice; set to null to fall back to daily tips.
 // Bump NOTICE_VERSION when publishing a new notice so it re-appears for users
 // who had already dismissed the previous one.
-const NOTICE_VERSION = '2026-06-26';
-const NOTICE: { emoji: string; title: string; body: string } | null = null;
-// Example:
-// const NOTICE = { emoji: '🚧', title: 'メンテナンスのお知らせ', body: '6/30 AM2:00〜4:00 はサービスを停止します。' };
+const NOTICE_VERSION = '2026-07-10-maintenance';
+const NOTICE: { emoji: string; title: string; body: string } | null = {
+  emoji: '🚧',
+  title: '大型メンテナンスのお知らせ',
+  body: '7月10日〜20日の間、大型メンテナンスを実施します。この期間中はサービスが一時停止または不安定になる場合があります。',
+};
 
 // ── Daily tips (add / edit freely — rotates automatically each day) ──────────
 const TIPS: { emoji: string; title: string; body: string }[] = [
