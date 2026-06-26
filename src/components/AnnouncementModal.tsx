@@ -1,41 +1,91 @@
 'use client';
 
-// First-open announcement / お知らせ modal.
+// First-open modal — two modes:
+//   • NOTICE set  → important notice (⚠️). Bump NOTICE_VERSION to re-show.
+//   • NOTICE null → today's rotating tip (💡). Auto-rotates daily; no bump needed.
 //
-// Shown once per browser session when the app opens. A "今日はもう表示しない"
-// checkbox suppresses it for the rest of the day (across sessions).
-//
-// To publish a NEW announcement:
-//   1. Edit NEWS_TITLE / NEWS_ITEMS below.
-//   2. Bump NEWS_VERSION — this makes the announcement re-appear even for
-//      users who had checked "今日はもう表示しない" for the previous one.
-// The 注意（CAUTION）section is fixed policy text and normally stays as-is.
+// "今日はもう表示しない" suppresses for the rest of the day.
+// The caution section is fixed policy text and normally stays as-is.
 
 import { useEffect, useState } from 'react';
 
-// Bump when publishing a new announcement (any unique string — a date works).
-const NEWS_VERSION = '2026-06-26';
+// ── Important notice ─────────────────────────────────────────────────────────
+// Set NOTICE to show a notice; set to null to fall back to daily tips.
+// Bump NOTICE_VERSION when publishing a new notice so it re-appears for users
+// who had already dismissed the previous one.
+const NOTICE_VERSION = '2026-06-26';
+const NOTICE: { emoji: string; title: string; body: string } | null = null;
+// Example:
+// const NOTICE = { emoji: '🚧', title: 'メンテナンスのお知らせ', body: '6/30 AM2:00〜4:00 はサービスを停止します。' };
 
-// ── Editable announcement content ──────────────────────────────────────────
-const NEWS_TITLE = '新機能のお知らせ';
-const NEWS_ITEMS: { emoji: string; title: string; body: string }[] = [
+// ── Daily tips (add / edit freely — rotates automatically each day) ──────────
+const TIPS: { emoji: string; title: string; body: string }[] = [
   {
-    emoji: '✨',
-    title: 'Lilyの解説がさらに分かりやすく',
-    body: '途中式や理由を省略せず、頭にイメージが浮かぶように説明するよう改善しました。',
+    emoji: '⌨️',
+    title: 'キーボードショートカット',
+    body: 'Ctrl+K（Mac: ⌘K）でメモを素早く検索できます。',
   },
-  // 新しいお知らせはここに追加してください
+  {
+    emoji: '⚡',
+    title: 'ポイントを節約しよう',
+    body: '簡単な質問は「軽量」モードを選ぶと消費ポイントを抑えられます。',
+  },
+  {
+    emoji: '📄',
+    title: 'PDFにそのまま質問',
+    body: 'PDFビューワーでファイルを開いた状態でLilyに質問すると、PDF内容を踏まえて回答します。',
+  },
+  {
+    emoji: '🎯',
+    title: 'フォーカスモードで集中',
+    body: 'スタディトラッカー内のフォーカスモードを使うと、勉強中の余計な操作を防げます。',
+  },
+  {
+    emoji: '💾',
+    title: '端末間でデータを移す',
+    body: '設定画面の「バックアップをダウンロード」→ 別端末で「復元ファイルをアップロード」でメモを移行できます。',
+  },
+  {
+    emoji: '🧠',
+    title: '演習問題を生成',
+    body: 'AIチャットの「演習」モードで、ノートの内容から練習問題を自動生成できます。',
+  },
+  {
+    emoji: '🕸️',
+    title: 'メモの繋がりを見る',
+    body: 'サイドバー上部のグラフアイコンでメモ同士のリンク関係をグラフ表示できます。',
+  },
+  {
+    emoji: '📝',
+    title: '毎日の日記',
+    body: '日記タブで毎日の学習・気づきを記録しておくと、振り返りに役立ちます。',
+  },
+  {
+    emoji: '🏆',
+    title: 'トロフィーを集めよう',
+    body: '学習を続けるとトロフィーが解放されます。モチベーション維持に活用してみてください。',
+  },
+  {
+    emoji: '🔗',
+    title: 'メモ間リンク',
+    body: 'ノートエディタで [[メモ名]] と書くとメモ同士をリンクできます。グラフ表示でも可視化されます。',
+  },
 ];
-// ───────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
-// localStorage: "<version>|<YYYY-MM-DD>" set when "今日はもう表示しない" is checked.
 const KEY_HIDE = 'lily-news-hide';
-// sessionStorage: marks that we've already shown it once this session.
 const SESSION_KEY = 'lily-news-shown';
 
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getTodaysTip(): { emoji: string; title: string; body: string } {
+  const d = new Date();
+  const start = new Date(d.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((d.getTime() - start.getTime()) / 86400000);
+  return TIPS[dayOfYear % TIPS.length];
 }
 
 export default function AnnouncementModal() {
@@ -44,37 +94,39 @@ export default function AnnouncementModal() {
 
   useEffect(() => {
     if (sessionStorage.getItem(SESSION_KEY)) return;
-    if (localStorage.getItem(KEY_HIDE) === `${NEWS_VERSION}|${todayStr()}`) return;
+    const version = NOTICE ? NOTICE_VERSION : todayStr();
+    if (localStorage.getItem(KEY_HIDE) === `${version}|${todayStr()}`) return;
     setOpen(true);
   }, []);
 
   const dismiss = () => {
     sessionStorage.setItem(SESSION_KEY, '1');
-    if (hideToday) localStorage.setItem(KEY_HIDE, `${NEWS_VERSION}|${todayStr()}`);
+    const version = NOTICE ? NOTICE_VERSION : todayStr();
+    if (hideToday) localStorage.setItem(KEY_HIDE, `${version}|${todayStr()}`);
     setOpen(false);
   };
 
   if (!open) return null;
 
+  const isNotice = !!NOTICE;
+  const item = isNotice ? NOTICE : getTodaysTip();
+  const headerLabel = isNotice ? '⚠️ 重要なお知らせ' : '💡 今日のヒント';
+
   return (
-    <div className="am-backdrop" onClick={dismiss} role="dialog" aria-modal="true" aria-label={NEWS_TITLE}>
+    <div className="am-backdrop" onClick={dismiss} role="dialog" aria-modal="true" aria-label={headerLabel}>
       <div className="am-card" onClick={(e) => e.stopPropagation()}>
         <div className="am-header">
-          <span className="am-badge">📣 お知らせ</span>
+          <span className={`am-badge ${isNotice ? 'am-badge-notice' : ''}`}>{headerLabel}</span>
         </div>
 
-        <h2 className="am-title">{NEWS_TITLE}</h2>
-
         <div className="am-items">
-          {NEWS_ITEMS.map((item, i) => (
-            <div key={i} className="am-item">
-              <span className="am-item-emoji">{item.emoji}</span>
-              <div className="am-item-text">
-                <div className="am-item-title">{item.title}</div>
-                <div className="am-item-body">{item.body}</div>
-              </div>
+          <div className={`am-item ${isNotice ? 'am-item-notice' : ''}`}>
+            <span className="am-item-emoji">{item.emoji}</span>
+            <div className="am-item-text">
+              <div className="am-item-title">{item.title}</div>
+              <div className="am-item-body">{item.body}</div>
             </div>
-          ))}
+          </div>
         </div>
 
         <div className="am-caution">
@@ -121,17 +173,16 @@ export default function AnnouncementModal() {
           box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
           animation: amPop 0.32s cubic-bezier(0.16, 1.3, 0.4, 1) both;
         }
-        .am-header { display: flex; justify-content: center; margin-bottom: 12px; }
+        .am-header { display: flex; justify-content: center; margin-bottom: 16px; }
         .am-badge {
           font-size: 13px; font-weight: 800; letter-spacing: 0.02em;
           color: var(--primary-dark, #ff8da1);
           background: color-mix(in srgb, var(--primary, #ffb6c1) 22%, transparent);
           padding: 5px 14px; border-radius: 999px;
         }
-        .am-title {
-          margin: 0 0 16px; text-align: center;
-          font-size: 19px; font-weight: 800; line-height: 1.4;
-          color: var(--foreground, #3d3d3d);
+        .am-badge-notice {
+          color: #e8a200;
+          background: color-mix(in srgb, #ffb300 22%, transparent);
         }
         .am-items { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
         .am-item {
@@ -139,6 +190,10 @@ export default function AnnouncementModal() {
           background: var(--accent, #fff0f5);
           border: 1px solid var(--border, #ffe0e8);
           border-radius: 14px; padding: 12px 13px;
+        }
+        .am-item-notice {
+          background: color-mix(in srgb, #ffb300 12%, transparent);
+          border-color: color-mix(in srgb, #e8a200 40%, transparent);
         }
         .am-item-emoji { font-size: 20px; line-height: 1.3; flex-shrink: 0; }
         .am-item-text { min-width: 0; }
