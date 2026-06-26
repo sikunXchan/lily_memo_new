@@ -133,3 +133,14 @@ export function deductPoints(cost: number): void {
   const used = getPointsUsedToday() + cost;
   localStorage.setItem(KEY_USED, String(used));
 }
+
+// Token-based surcharge applied post-call on top of the fixed base cost.
+// Conversations within FREE_INPUT_TOKENS pay no surcharge.
+// Large contexts (PDFs, very long histories) are charged proportionally.
+export const FREE_INPUT_TOKENS = 16000;
+export const PT_PER_1K_EXCESS_INPUT = 2;
+
+export function calcTokenSurcharge(promptTokens: number): number {
+  const excess = Math.max(0, promptTokens - FREE_INPUT_TOKENS);
+  return Math.ceil(excess / 1000) * PT_PER_1K_EXCESS_INPUT;
+}

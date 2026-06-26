@@ -39,7 +39,7 @@ import {
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
-import { canAfford, deductPoints, getRemainingPoints, getPlan, PT, PLAN_DAILY_POINTS, PLAN_LABEL } from '@/lib/points';
+import { canAfford, deductPoints, getRemainingPoints, getPlan, PT, PLAN_DAILY_POINTS, PLAN_LABEL, calcTokenSurcharge } from '@/lib/points';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
@@ -2389,6 +2389,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       const capturedThinking = pendingThinkingRef.current;
       pendingThinkingRef.current = '';
 
+      const finalUsage = getLastUsage();
+      const surcharge = calcTokenSurcharge(finalUsage?.prompt ?? 0);
+      if (surcharge > 0) deductPoints(surcharge);
+
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
@@ -2401,7 +2405,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
         thinking: capturedThinking || undefined,
-        usage: getLastUsage() ?? undefined,
+        usage: finalUsage ?? undefined,
       }]);
     } catch (e) {
       setSikunProgress('');
@@ -2551,6 +2555,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       const { textContent, blocks, questions } = parseAIResponse(aiText, true);
       const capturedThinking = pendingThinkingRef.current;
       pendingThinkingRef.current = '';
+
+      const regenUsage = getLastUsage();
+      const regenSurcharge = calcTokenSurcharge(regenUsage?.prompt ?? 0);
+      if (regenSurcharge > 0) deductPoints(regenSurcharge);
+
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
@@ -2559,7 +2568,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
         thinking: capturedThinking || undefined,
-        usage: getLastUsage() ?? undefined,
+        usage: regenUsage ?? undefined,
       }]);
     } catch (e) {
       setSikunProgress('');
