@@ -5,10 +5,20 @@ import { mergeSnapshots, type SyncSnapshot } from '@/lib/syncMerge';
 
 let _redis: Redis | null = null;
 function getRedis(): Redis {
-  // enableAutoPipelining: false — Upstash restricts the EVAL command on most
-  // plans; the default auto-pipeline mode batches commands via EVAL internally,
-  // which triggers NOPERM errors even when the token itself is read/write.
-  if (!_redis) _redis = Redis.fromEnv({ enableAutoPipelining: false });
+  if (!_redis) {
+    // Read + trim() the env vars instead of Redis.fromEnv(): a trailing newline
+    // or stray whitespace pasted into the dashboard makes fromEnv() reject the
+    // URL ("invalid URL ... Received: https://...\n") at construction time and
+    // silently kills ALL sync. trim() makes the client resilient to that.
+    // enableAutoPipelining: false — Upstash restricts the EVAL command on most
+    // plans; the default auto-pipeline mode batches commands via EVAL internally,
+    // which triggers NOPERM errors even when the token itself is read/write.
+    _redis = new Redis({
+      url: (process.env.UPSTASH_REDIS_REST_URL ?? '').trim(),
+      token: (process.env.UPSTASH_REDIS_REST_TOKEN ?? '').trim(),
+      enableAutoPipelining: false,
+    });
+  }
   return _redis;
 }
 const TTL_S    = 30 * 24 * 3600; // 30 days

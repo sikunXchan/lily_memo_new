@@ -4,7 +4,15 @@ import type { NextRequest } from 'next/server';
 
 let _redis: Redis | null = null;
 function getRedis(): Redis {
-  if (!_redis) _redis = Redis.fromEnv({ enableAutoPipelining: false });
+  if (!_redis) {
+    // trim() guards against a trailing newline/whitespace pasted into the env
+    // var, which makes Redis.fromEnv() reject the URL and break sync entirely.
+    _redis = new Redis({
+      url: (process.env.UPSTASH_REDIS_REST_URL ?? '').trim(),
+      token: (process.env.UPSTASH_REDIS_REST_TOKEN ?? '').trim(),
+      enableAutoPipelining: false,
+    });
+  }
   return _redis;
 }
 
