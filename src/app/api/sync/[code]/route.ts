@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server';
 
 let _redis: Redis | null = null;
 function getRedis(): Redis {
-  if (!_redis) _redis = Redis.fromEnv();
+  if (!_redis) _redis = Redis.fromEnv({ enableAutoPipelining: false });
   return _redis;
 }
 

@@ -5,7 +5,10 @@ import { mergeSnapshots, type SyncSnapshot } from '@/lib/syncMerge';
 
 let _redis: Redis | null = null;
 function getRedis(): Redis {
-  if (!_redis) _redis = Redis.fromEnv();
+  // enableAutoPipelining: false — Upstash restricts the EVAL command on most
+  // plans; the default auto-pipeline mode batches commands via EVAL internally,
+  // which triggers NOPERM errors even when the token itself is read/write.
+  if (!_redis) _redis = Redis.fromEnv({ enableAutoPipelining: false });
   return _redis;
 }
 const TTL_S    = 30 * 24 * 3600; // 30 days
