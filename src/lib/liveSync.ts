@@ -181,7 +181,6 @@ async function push() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
-      keepalive: true,
     });
     if (!res.ok) throw new Error(`push failed: ${res.status}`);
     _pushFailures = 0;
