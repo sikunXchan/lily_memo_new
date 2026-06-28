@@ -13,7 +13,7 @@
 //     route (/api/pdf-proxy) is large and URL-specific; caching it
 //     would bloat storage with no real win.
 
-const VERSION = 'lily-memo-v5';
+const VERSION = 'lily-memo-v6';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
