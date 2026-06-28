@@ -1,4 +1,4 @@
-import { liveQuery } from 'dexie';
+import { liveQuery, type Table } from 'dexie';
 import { db, newSyncId } from './db';
 import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession } from './db';
 
@@ -199,6 +199,7 @@ async function push() {
 }
 
 function schedulePush() {
+  if (!_key) return; // inert when sync is disabled — write hooks call this freely
   if (_pushTimer) clearTimeout(_pushTimer);
   const now = Date.now();
   // When inside the suppress window (or mid-merge) wait until just after it
@@ -517,6 +518,34 @@ function onPageHide() {
   flushPendingPush();
 }
 
+// ── Reliable change detection via Dexie write hooks ──────────────
+// The liveQuery watcher in initLiveSync infers "something changed" from
+// max(updatedAt)/count(), which can MISS a mutation — e.g. a soft-delete, or an
+// add/edit whose updatedAt isn't the table's new maximum (records synced from a
+// device with a faster clock leave "future" timestamps behind). A missed change
+// leaves the device able to PULL but never PUSH, so its own edits never reach
+// other devices. These hooks fire on EVERY local create/update/delete
+// regardless of values, guaranteeing a push is scheduled. Installed once;
+// schedulePush() is a no-op while sync is disabled.
+let _hooksInstalled = false;
+function installWriteHooks() {
+  if (_hooksInstalled) return;
+  _hooksInstalled = true;
+  // Must return undefined: a non-undefined return from a 'creating'/'updating'
+  // hook is treated by Dexie as a primary-key / modifications override.
+  const onWrite = () => { schedulePush(); };
+  const tables = [
+    db.notes, db.folders, db.studySessions, db.studyCategories, db.exams,
+    db.scheduleDays, db.savedChats, db.todos, db.earnedBadges, db.problemSets,
+    db.diaries, db.lessonSessions,
+  ] as unknown as Table[];
+  for (const table of tables) {
+    table.hook('creating', onWrite);
+    table.hook('updating', onWrite);
+    table.hook('deleting', onWrite);
+  }
+}
+
 // ── Public API ───────────────────────────────────────────────────
 export function initLiveSync(key: string) {
   if (_key === key && _pollTimer) return; // already running with same key
@@ -524,6 +553,8 @@ export function initLiveSync(key: string) {
 
   _key        = key;
   _lastSyncTs = Number(localStorage.getItem('lily_livesync_ts') ?? 0);
+
+  installWriteHooks(); // reliable per-write push trigger (idempotent)
 
   // Watch Dexie for local changes.
   // Tables whose mutations are UPDATEs (soft-deletes, done/pin toggles) are
