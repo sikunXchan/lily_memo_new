@@ -6,9 +6,6 @@ const PUSH_DEBOUNCE_MS  = 3_000;
 const POLL_INTERVAL_MS  = 30_000;
 const MERGE_SUPPRESS_MS = 5_000;  // suppress push triggers right after a merge
 const MAX_PUSH_BYTES    = 7.5 * 1024 * 1024;
-// Records bigger than this (notes with embedded base64 images, huge chats) are
-// excluded from an oversized push instead of killing sync for EVERYTHING.
-const OVERSIZE_RECORD_BYTES = 1_500_000;
 
 // Snapshot records carry the *sync ids* of their relations, because numeric
 // auto-increment ids (folderId, parentId, categoryId) are device-local and
@@ -103,6 +100,60 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
   };
 }
 
+// Shrink an oversized snapshot until its serialized push body fits under
+// MAX_PUSH_BYTES, by dropping the largest note `content` / chat `messages`
+// records first (base64-image notes are the usual culprit). The lightweight
+// tables (todos, folders, diaries, study sessions/categories, problem-set
+// metadata, lesson sessions…) are never touched, so they always sync even when
+// a handful of notes are too image-heavy to upload. Dropping a record just
+// omits it from THIS push — the server keeps its existing copy, so nothing is
+// deleted; that note simply syncs later once it fits (or via manual backup).
+function trimSnapshotToFit(snapshot: LiveSnapshot): string {
+  let body = JSON.stringify({ key: _key, snapshot });
+  if (body.length <= MAX_PUSH_BYTES) return body;
+
+  const noteSize = (n: SyncNote)  => n.content?.length  ?? 0;
+  const chatSize = (c: SavedChat) => c.messages?.length ?? 0;
+
+  // Rank heavy records largest-first (by reference, so we can drop them without
+  // index bookkeeping). Content is base64/ASCII so char length is a good
+  // byte-size proxy; the margin below covers JSON escaping/overhead.
+  type Heavy =
+    | { rec: SyncNote;  size: number; isNote: true }
+    | { rec: SavedChat; size: number; isNote: false };
+  const heavy: Heavy[] = [
+    ...snapshot.notes.map((n): Heavy      => ({ rec: n, size: noteSize(n), isNote: true  })),
+    ...snapshot.savedChats.map((c): Heavy => ({ rec: c, size: chatSize(c), isNote: false })),
+  ].sort((a, b) => b.size - a.size);
+
+  let need = body.length - MAX_PUSH_BYTES + 4096; // chars to shed + margin
+  const dropNotes = new Set<SyncNote>();
+  const dropChats = new Set<SavedChat>();
+  for (const h of heavy) {
+    if (need <= 0 || h.size === 0) break;
+    if (h.isNote) dropNotes.add(h.rec); else dropChats.add(h.rec);
+    need -= h.size;
+  }
+  if (dropNotes.size) snapshot.notes      = snapshot.notes.filter(n => !dropNotes.has(n));
+  if (dropChats.size) snapshot.savedChats = snapshot.savedChats.filter(c => !dropChats.has(c));
+
+  body = JSON.stringify({ key: _key, snapshot });
+  // Safety net: if the estimate undershot, keep dropping the single largest
+  // remaining note (then chat) until we're under the cap (bounded, rarely runs).
+  let guard = 0;
+  while (body.length > MAX_PUSH_BYTES && guard++ < 5000) {
+    const topNote = snapshot.notes.reduce<SyncNote | null>((m, n) => (!m || noteSize(n) > noteSize(m) ? n : m), null);
+    const topChat = snapshot.savedChats.reduce<SavedChat | null>((m, c) => (!m || chatSize(c) > chatSize(m) ? c : m), null);
+    const nSize = topNote ? noteSize(topNote) : 0;
+    const cSize = topChat ? chatSize(topChat) : 0;
+    if (nSize === 0 && cSize === 0) break; // nothing heavy left to drop
+    if (nSize >= cSize && topNote) snapshot.notes      = snapshot.notes.filter(n => n !== topNote);
+    else if (topChat)              snapshot.savedChats = snapshot.savedChats.filter(c => c !== topChat);
+    body = JSON.stringify({ key: _key, snapshot });
+  }
+  return body;
+}
+
 // ── Push to Redis ────────────────────────────────────────────────
 async function push() {
   if (!_key) return;
@@ -119,16 +170,12 @@ async function push() {
     let body = JSON.stringify({ key: _key, snapshot });
     if (body.length > MAX_PUSH_BYTES) {
       // Snapshot too large — almost always notes with embedded base64 images.
-      // Previously this silently aborted, which permanently killed sync for
-      // ALL data. Instead, exclude only the oversized records and push the rest.
-      snapshot.notes      = snapshot.notes.filter(n => (n.content?.length ?? 0) <= OVERSIZE_RECORD_BYTES);
-      snapshot.savedChats = snapshot.savedChats.filter(c => (c.messages?.length ?? 0) <= OVERSIZE_RECORD_BYTES);
-      body = JSON.stringify({ key: _key, snapshot });
-      if (body.length > MAX_PUSH_BYTES) {
-        console.warn('liveSync: snapshot too large to push even after excluding oversized records');
-        return;
-      }
-      console.warn('liveSync: some oversized records (likely notes with large embedded images) were excluded from sync');
+      // Shrink it to fit by dropping the heaviest note/chat records, but NEVER
+      // abort the whole push: a wholesale abort stranded every OTHER table
+      // (todos, folders, study history, diaries…) on this device, so nothing —
+      // not even a one-line todo — ever synced out while one big note existed.
+      body = trimSnapshotToFit(snapshot);
+      console.warn('liveSync: snapshot exceeded the push size limit; the largest image-heavy notes were left out of this sync (every other record still synced)');
     }
     const res = await fetch('/api/sync/live', {
       method: 'POST',
