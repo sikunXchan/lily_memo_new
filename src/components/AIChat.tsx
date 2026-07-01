@@ -89,6 +89,7 @@ interface ChatMessage {
   thinking?: string;
   qaChecked?: Record<string, number[]>; // block.id → checked indices
   usage?: { prompt: number; cached: number; output: number; thoughts: number; total: number }; // temp token diagnostic
+  billedTokens?: number; // actual tokens deducted from the daily budget (usage.total × mode multiplier)
 }
 
 interface InsertableBlock {
@@ -1535,6 +1536,9 @@ function LilyBubble({
           <div className="msg-usage" style={{ fontSize: '0.68rem', color: message.usage.cached > 0 ? '#1a7a4d' : 'var(--fg-muted,#999)', marginTop: '4px', opacity: 0.85 }}>
             入力{message.usage.prompt.toLocaleString()}（うちキャッシュ{message.usage.cached.toLocaleString()}）/ 出力{message.usage.output.toLocaleString()}
             {message.usage.thoughts > 0 ? `（思考${message.usage.thoughts.toLocaleString()}）` : ''} = 計{message.usage.total.toLocaleString()}tok
+            {message.billedTokens !== undefined && (
+              <strong style={{ color: '#ef4444', fontWeight: 700 }}> ／ 消費{formatTokens(message.billedTokens)}tok</strong>
+            )}
           </div>
         )}
       </div>
@@ -2401,7 +2405,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       pendingThinkingRef.current = '';
 
       const finalUsage = getLastUsage();
-      deductTokens(tokenCost(finalUsage?.total ?? 0, responseMode));
+      const billedTokens = tokenCost(finalUsage?.total ?? 0, responseMode);
+      deductTokens(billedTokens);
 
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2416,6 +2421,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         questions: questions.length > 0 ? questions : undefined,
         thinking: capturedThinking || undefined,
         usage: finalUsage ?? undefined,
+        billedTokens,
       }]);
 
       if (ticketMode && getTicketLimit(ticketMode) < Number.MAX_SAFE_INTEGER) {
@@ -2584,7 +2590,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       pendingThinkingRef.current = '';
 
       const regenUsage = getLastUsage();
-      deductTokens(tokenCost(regenUsage?.total ?? 0, responseMode));
+      const regenBilledTokens = tokenCost(regenUsage?.total ?? 0, responseMode);
+      deductTokens(regenBilledTokens);
 
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2595,6 +2602,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         questions: questions.length > 0 ? questions : undefined,
         thinking: capturedThinking || undefined,
         usage: regenUsage ?? undefined,
+        billedTokens: regenBilledTokens,
       }]);
 
       if (ticketMode && getTicketLimit(ticketMode) < Number.MAX_SAFE_INTEGER) {
