@@ -46,7 +46,8 @@ const PLAN_PASSWORDS: Partial<Record<Plan, string>> = {
 };
 const DEFAULT_UNLOCK_PASSWORD = '4934';
 const KEY_PLAN = 'lily-plan';
-const KEY_PLAN_MONTH = 'lily-plan-month'; // 'YYYY-MM' of when plan was set
+const KEY_PLAN_MONTH = 'lily-plan-month'; // 'YYYY-MM' of when a paid plan was set
+const KEY_DEV_DAY = 'lily-plan-dev-day'; // 'YYYY-MM-DD' Developer was last unlocked/confirmed
 const KEY_DATE = 'lily-pts-date';
 const KEY_USED = 'lily-pts-used';
 
@@ -60,34 +61,46 @@ function currentMonthStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// If we've entered a new calendar month, reset the plan to Free (not for developer).
-function resetPlanIfNewMonth(): void {
+// Developer is a same-day trial: it reverts to Free the moment the date
+// changes, so it must be re-unlocked with the password every day. Other paid
+// plans (Plus/Pro/Max/Ultimate) instead reset to Free at the start of a new
+// calendar month.
+function resetPlanIfExpired(): void {
+  const plan = localStorage.getItem(KEY_PLAN) as Plan | null;
+  if (plan === 'developer') {
+    if (localStorage.getItem(KEY_DEV_DAY) !== todayStr()) {
+      localStorage.setItem(KEY_PLAN, 'free');
+      localStorage.removeItem(KEY_DEV_DAY);
+      localStorage.removeItem(KEY_PLAN_MONTH);
+    }
+    return;
+  }
   const month = currentMonthStr();
   const stored = localStorage.getItem(KEY_PLAN_MONTH);
   if (stored && stored !== month) {
-    const plan = localStorage.getItem(KEY_PLAN) as Plan | null;
-    if (plan !== 'developer') {
-      localStorage.setItem(KEY_PLAN, 'free');
-      localStorage.removeItem(KEY_PLAN_MONTH);
-    } else {
-      localStorage.setItem(KEY_PLAN_MONTH, month);
-    }
+    localStorage.setItem(KEY_PLAN, 'free');
+    localStorage.removeItem(KEY_PLAN_MONTH);
   }
 }
 
 export function getPlan(): Plan {
   if (typeof window === 'undefined') return 'free';
-  resetPlanIfNewMonth();
+  resetPlanIfExpired();
   return (localStorage.getItem(KEY_PLAN) as Plan) ?? 'free';
 }
 
 export function setPlan(plan: Plan): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(KEY_PLAN, plan);
-  if (plan !== 'free') {
+  if (plan === 'developer') {
+    localStorage.setItem(KEY_DEV_DAY, todayStr());
+    localStorage.removeItem(KEY_PLAN_MONTH);
+  } else if (plan !== 'free') {
     localStorage.setItem(KEY_PLAN_MONTH, currentMonthStr());
+    localStorage.removeItem(KEY_DEV_DAY);
   } else {
     localStorage.removeItem(KEY_PLAN_MONTH);
+    localStorage.removeItem(KEY_DEV_DAY);
   }
 }
 

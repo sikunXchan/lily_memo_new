@@ -1943,12 +1943,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     };
   }, []);
 
-  const toggleEconomy = useCallback(() => {
-    setEconomy(prev => {
-      const next = !prev;
-      try { localStorage.setItem('lily_economy_mode', next ? '1' : '0'); } catch {}
-      return next;
-    });
+  // Response mode is a single choice among the four toggles below — selecting
+  // one deselects the others (radio-style), so 安定モード (economy=false,
+  // thinking=false, ultra=false) is reachable as an explicit option instead of
+  // only as "whatever's left after turning 軽量モード off".
+  const selectResponseMode = useCallback((mode: 'lite' | 'stable' | 'thinking' | 'ultra') => {
+    setEconomy(mode === 'lite');
+    setLilyThinking(mode === 'thinking');
+    setLilyUltraThinking(mode === 'ultra');
+    try { localStorage.setItem('lily_economy_mode', mode === 'lite' ? '1' : '0'); } catch {}
   }, []);
 
   useEffect(() => {
@@ -2445,10 +2448,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       if (ticketMode && getTicketLimit(ticketMode) < Number.MAX_SAFE_INTEGER) {
         consumeTicket(ticketMode);
         if (getTicketsLeft(ticketMode) <= 0) {
-          setLilyThinking(false);
-          setLilyUltraThinking(false);
-          setEconomy(true);
-          try { localStorage.setItem('lily_economy_mode', '1'); } catch {}
+          selectResponseMode('lite');
           setMessages(prev => [...prev, {
             id: crypto.randomUUID(),
             role: 'lily',
@@ -2470,7 +2470,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, allNotes, webSearch, activeMode, economy, activeSkill, compactHistory, t]);
+  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, allNotes, webSearch, activeMode, economy, activeSkill, compactHistory, t, selectResponseMode]);
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
@@ -2629,10 +2629,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       if (ticketMode && getTicketLimit(ticketMode) < Number.MAX_SAFE_INTEGER) {
         consumeTicket(ticketMode);
         if (getTicketsLeft(ticketMode) <= 0) {
-          setLilyThinking(false);
-          setLilyUltraThinking(false);
-          setEconomy(true);
-          try { localStorage.setItem('lily_economy_mode', '1'); } catch {}
+          selectResponseMode('lite');
           setMessages(prev => [...prev, {
             id: crypto.randomUUID(),
             role: 'lily',
@@ -2654,7 +2651,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, activeMode, economy, apiKey, webSearch, activeSkill]);
+  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, activeMode, economy, apiKey, webSearch, activeSkill, selectResponseMode]);
 
   const lilyDefaultNoteId = lilyNoteIds[0];
   const thinkingTicketLimit = getTicketLimit('thinking');
@@ -2741,27 +2738,34 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     <Search size={15} /><span className="hmi-label">{t('ネット検索')}</span><span className="hmi-state">{webSearch ? 'ON' : 'OFF'}</span>
                   </button>
                   <button
+                    className={`header-menu-item toggle${economy ? ' on' : ''}`}
+                    onClick={() => selectResponseMode('lite')}
+                  >
+                    <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
+                  </button>
+                  <button
+                    className={`header-menu-item toggle${!economy && !lilyThinking && !lilyUltraThinking ? ' on' : ''}`}
+                    onClick={() => selectResponseMode('stable')}
+                    disabled={economy && stableTicketLimit < Number.MAX_SAFE_INTEGER && stableTicketsLeft <= 0}
+                  >
+                    <span className="hmi-emoji">🌸</span><span className="hmi-label">{t('安定モード')}</span>
+                    <span className="hmi-state">{ticketStateText(!economy && !lilyThinking && !lilyUltraThinking, stableTicketsLeft, stableTicketLimit)}</span>
+                  </button>
+                  <button
                     className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`}
-                    onClick={() => setLilyThinking(p => !p)}
-                    disabled={economy || lilyUltraThinking || thinkingTicketsLeft <= 0}
+                    onClick={() => selectResponseMode('thinking')}
+                    disabled={!lilyThinking && thinkingTicketsLeft <= 0}
                   >
                     <span className="hmi-emoji">🧠</span><span className="hmi-label">{t('思考モード')}</span>
                     <span className="hmi-state">{ticketStateText(lilyThinking, thinkingTicketsLeft, thinkingTicketLimit)}</span>
                   </button>
                   <button
                     className={`header-menu-item toggle${lilyUltraThinking ? ' on ultra' : ''}`}
-                    onClick={() => setLilyUltraThinking(p => !p)}
-                    disabled={economy || lilyThinking || ultraTicketsLeft <= 0}
+                    onClick={() => selectResponseMode('ultra')}
+                    disabled={!lilyUltraThinking && ultraTicketsLeft <= 0}
                   >
                     <span className="hmi-emoji">⚡</span><span className="hmi-label">{t('Ultra思考モード')}</span>
                     <span className="hmi-state">{ticketStateText(lilyUltraThinking, ultraTicketsLeft, ultraTicketLimit)}</span>
-                  </button>
-                  <button
-                    className={`header-menu-item toggle${economy ? ' on' : ''}`}
-                    onClick={toggleEconomy}
-                    disabled={lilyThinking || lilyUltraThinking || (economy && stableTicketLimit < Number.MAX_SAFE_INTEGER && stableTicketsLeft <= 0)}
-                  >
-                    <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
                   </button>
                   <div className="header-menu-divider" />
                   {messages.length > 0 && (
