@@ -7,7 +7,7 @@ import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat, type ChatTurn } from '@/lib/gemini';
 import { getPdfSnapshot, getPdfAllPages, addPdfAnnotation, type SikunAnnotation } from '@/lib/pdfBridge';
 import {
-  loadSikunHistory, saveSikunHistory, toChatTurns,
+  capSikunHistory, toChatTurns,
   type SikunMessage,
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
@@ -255,8 +255,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const moved = useRef(false);
   const longPressTimer = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { setHistory(loadSikunHistory()); }, []);
 
   useEffect(() => {
     if (mode === 'input') setTimeout(() => inputRef.current?.focus(), 30);
@@ -691,7 +689,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     setPendingAnswer('');
 
     const userMsg: SikunMessage = { id: `u${Date.now()}`, role: 'user', text, ts: Date.now() };
-    const nextHistory = [...history, userMsg];
+    const nextHistory = capSikunHistory([...history, userMsg]);
     setHistory(nextHistory);
 
     // On-demand note fetch — only when user actually sends a message.
@@ -793,9 +791,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       setLastReply(replyClean);
       setBubbleVisible(true);
       const sikunMsg: SikunMessage = { id: `s${Date.now()}`, role: 'sikun', text: replyClean, ts: Date.now() };
-      const finalHistory = [...nextHistory, sikunMsg];
-      setHistory(finalHistory);
-      saveSikunHistory(finalHistory);
+      setHistory(capSikunHistory([...nextHistory, sikunMsg]));
       setMode('closed');
     } catch (err) {
       setLastReply(`${en ? 'Error' : 'エラー'}: ${err instanceof Error ? err.message : (en ? 'failed' : '失敗')}`);
