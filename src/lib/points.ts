@@ -188,8 +188,8 @@ export type TicketMode = 'thinking' | 'ultra' | 'stable' | 'exercise' | 'lesson'
 
 export const PLAN_THINKING_TICKETS: Record<Plan, number> = {
   free: 0,
-  plus: 2,
-  pro: 2,
+  plus: 1,
+  pro: 1,
   max: 2,
   ultimate: 2,
   developer: Number.MAX_SAFE_INTEGER,
