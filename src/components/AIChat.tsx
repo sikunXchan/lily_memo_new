@@ -41,7 +41,7 @@ import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
 import {
   hasTokenBudget, deductTokens, getRemainingTokens, getPlan, PLAN_DAILY_TOKENS, PLAN_LABEL,
   getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode, formatTokens,
-  type ResponseMode, tokenCost,
+  type ResponseMode, tokenCost, estimatedMinCost,
 } from '@/lib/points';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
@@ -2217,11 +2217,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       : !economy && !lilyThinking && !lilyUltraThinking && getPlan() === 'free' ? 'stable'
       : null;
     const responseMode = currentResponseMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy);
-    if (!hasTokenBudget()) {
+    if (!hasTokenBudget(responseMode)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: 'トークンが足りません（残り0）。明日リセットされます。',
+        text: `トークンが足りません（残り${formatTokens(getRemainingTokens())}tok、このモードの目安必要量は${formatTokens(estimatedMinCost(responseMode))}tok）。軽量モードに切り替えるか、明日リセットをお待ちください。`,
         timestamp: Date.now(),
       }]);
       return;
@@ -2491,11 +2491,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       : !economy && !lilyThinking && !lilyUltraThinking && getPlan() === 'free' ? 'stable'
       : null;
     const responseMode = currentResponseMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy);
-    if (!hasTokenBudget()) {
+    if (!hasTokenBudget(responseMode)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: 'トークンが足りません（残り0）。明日リセットされます。',
+        text: `トークンが足りません（残り${formatTokens(getRemainingTokens())}tok、このモードの目安必要量は${formatTokens(estimatedMinCost(responseMode))}tok）。軽量モードに切り替えるか、明日リセットをお待ちください。`,
         timestamp: Date.now(),
       }]);
       return;

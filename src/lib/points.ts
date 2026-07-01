@@ -159,13 +159,20 @@ export function getRemainingTokens(): number {
   return Math.max(0, PLAN_DAILY_TOKENS[getPlan()] - getTokensUsedToday());
 }
 
-// Real cost is only known after a call finishes (it depends on actual
-// usage), so there's no way to pre-check "can this specific message be
-// afforded" the way a flat per-call cost could. Instead, only block sending
-// once the budget is already fully spent — a message that pushes the count
-// past zero is still allowed to complete, and the next one is blocked.
-export function hasTokenBudget(): boolean {
-  return getRemainingTokens() > 0;
+// Real cost is only known after a call finishes, so the exact amount can't
+// be pre-checked. Instead, estimate a floor using a typical prompt size
+// (~7,000 input tokens) scaled by the mode multiplier, and block sending
+// once the remaining budget can't even cover that floor — otherwise a
+// message could be sent with only a handful of tokens left, spend far more
+// than what's available, and leave the budget deeply negative.
+const ESTIMATED_MIN_PROMPT_TOKENS = 7_000;
+
+export function estimatedMinCost(mode: ResponseMode): number {
+  return ESTIMATED_MIN_PROMPT_TOKENS * MODE_MULTIPLIER[mode];
+}
+
+export function hasTokenBudget(mode: ResponseMode): boolean {
+  return getRemainingTokens() >= estimatedMinCost(mode);
 }
 
 export function deductTokens(cost: number): void {
