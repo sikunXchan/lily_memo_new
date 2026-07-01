@@ -150,7 +150,7 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         <div className="pm-costs">
           <div className="pm-costs-title">消費ポイント（AIモード / 1回）</div>
           <div className="pm-cost-row"><span>🪶 軽量モード・sikun</span><span className="pm-cost-pts">{PT.lite}pt</span></div>
-          <div className="pm-cost-row"><span>🌸 通常モード</span><span className="pm-cost-pts">{PT.flash}pt</span></div>
+          <div className="pm-cost-row"><span>🌸 安定モード</span><span className="pm-cost-pts">{PT.flash}pt</span></div>
           <div className="pm-cost-row"><span>🧠 思考モード</span><span className="pm-cost-pts">{PT.thinking}pt</span></div>
           <div className="pm-cost-row"><span>⚡ Ultra思考モード</span><span className="pm-cost-pts">{PT.ultra}pt</span></div>
         </div>
