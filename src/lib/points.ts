@@ -2,12 +2,16 @@ export type Plan = 'free' | 'plus' | 'pro' | 'max' | 'ultimate' | 'developer';
 
 export const PLAN_ORDER: Plan[] = ['free', 'plus', 'pro', 'max', 'ultimate', 'developer'];
 
-export const PLAN_DAILY_POINTS: Record<Plan, number> = {
-  free: 100,
-  plus: 250,
-  pro: 500,
-  max: 750,
-  ultimate: 1000,
+// Daily token budget per plan — the same raw-token unit shown throughout the
+// UI. Bumped up from the old flat-per-call point costs now that usage is
+// billed against what a message actually consumed (see tokenCost below)
+// rather than a fixed amount per call.
+export const PLAN_DAILY_TOKENS: Record<Plan, number> = {
+  free: 30_000,
+  plus: 75_000,
+  pro: 150_000,
+  max: 225_000,
+  ultimate: 300_000,
   developer: Number.MAX_SAFE_INTEGER,
 };
 
@@ -29,25 +33,22 @@ export const PLAN_LABEL: Record<Plan, string> = {
   developer: 'Developer',
 };
 
-// Point costs per call type
-export const PT = {
-  lite: 20,      // gemini-3.1-flash-lite
-  flash: 50,     // gemini-3.5-flash
-  thinking: 200, // flash + thinkingBudget
-  ultra: 500,    // gemini-3.1-pro-preview
-  // Task-based costs
-  exercise: 100,  // 演習問題生成
-  hardProblem: 500, // 鬼問題作成
-} as const;
+// A message's real token cost (input+output+thoughts, from the Gemini
+// response's usageMetadata) is multiplied by this factor before being
+// deducted from the daily token budget — pricier modes weigh more heavily
+// per token actually used, instead of charging a flat amount per call
+// regardless of how long the exchange was.
+export type ResponseMode = 'lite' | 'stable' | 'thinking' | 'ultra';
 
-// Points are an internal accounting unit only — displaying raw "pt" numbers
-// next to real per-message token counts (already shown in the chat UI) was
-// confusing, so every user-facing display converts to this token scale
-// instead. The accounting logic above is untouched; only the label changes.
-export const TOKENS_PER_POINT = 200;
+export const MODE_MULTIPLIER: Record<ResponseMode, number> = {
+  lite: 1,
+  stable: 2,
+  thinking: 10,
+  ultra: 15,
+};
 
-export function ptToTokens(pt: number): number {
-  return pt * TOKENS_PER_POINT;
+export function tokenCost(actualTokens: number, mode: ResponseMode): number {
+  return Math.ceil(Math.max(0, actualTokens) * MODE_MULTIPLIER[mode]);
 }
 
 export function formatTokens(tokens: number): string {
@@ -141,45 +142,39 @@ function resetIfNewDay(): void {
   }
 }
 
-export function getPointsUsedToday(): number {
+export function getTokensUsedToday(): number {
   if (typeof window === 'undefined') return 0;
   resetIfNewDay();
   return parseInt(localStorage.getItem(KEY_USED) ?? '0', 10);
 }
 
-export function getRemainingPoints(): number {
-  return Math.max(0, PLAN_DAILY_POINTS[getPlan()] - getPointsUsedToday());
+export function getRemainingTokens(): number {
+  return Math.max(0, PLAN_DAILY_TOKENS[getPlan()] - getTokensUsedToday());
 }
 
-export function canAfford(cost: number): boolean {
-  return getRemainingPoints() >= cost;
+// Real cost is only known after a call finishes (it depends on actual
+// usage), so there's no way to pre-check "can this specific message be
+// afforded" the way a flat per-call cost could. Instead, only block sending
+// once the budget is already fully spent — a message that pushes the count
+// past zero is still allowed to complete, and the next one is blocked.
+export function hasTokenBudget(): boolean {
+  return getRemainingTokens() > 0;
 }
 
-export function deductPoints(cost: number): void {
+export function deductTokens(cost: number): void {
   if (typeof window === 'undefined') return;
   resetIfNewDay();
-  const used = getPointsUsedToday() + cost;
+  const used = getTokensUsedToday() + cost;
   localStorage.setItem(KEY_USED, String(used));
-}
-
-// Token-based surcharge applied post-call on top of the fixed base cost.
-// Conversations within FREE_INPUT_TOKENS pay no surcharge.
-// Large contexts (PDFs, very long histories) are charged proportionally.
-export const FREE_INPUT_TOKENS = 16000;
-export const PT_PER_1K_EXCESS_INPUT = 2;
-
-export function calcTokenSurcharge(promptTokens: number): number {
-  const excess = Math.max(0, promptTokens - FREE_INPUT_TOKENS);
-  return Math.ceil(excess / 1000) * PT_PER_1K_EXCESS_INPUT;
 }
 
 // --- Elevated-mode daily tickets --------------------------------------------
 // 思考モード / Ultra思考モード are gated by a small number of uses per day,
-// separate from the point budget. Free plan can't use them at all. Free's
+// separate from the token budget. Free plan can't use them at all. Free's
 // 安定モード (the plain, non-lightweight response) is likewise capped to one
 // use per day. Developer is unrestricted.
 //
-// 演習タブの問題作成・授業 are also ticket-gated (not point-metered) since
+// 演習タブの問題作成・授業 are also ticket-gated (not token-metered) since
 // their token cost varies too much per generation to budget sensibly.
 export type TicketMode = 'thinking' | 'ultra' | 'stable' | 'exercise' | 'lesson';
 

@@ -39,8 +39,9 @@ import {
 } from '@/lib/fileGen';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
 import {
-  canAfford, deductPoints, getRemainingPoints, getPlan, PT, PLAN_DAILY_POINTS, PLAN_LABEL, calcTokenSurcharge,
-  getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode, ptToTokens, formatTokens,
+  hasTokenBudget, deductTokens, getRemainingTokens, getPlan, PLAN_DAILY_TOKENS, PLAN_LABEL,
+  getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode, formatTokens,
+  type ResponseMode, tokenCost,
 } from '@/lib/points';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
@@ -162,11 +163,11 @@ function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
 }
 
-function pointCostForMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean, isAutoLite = false): number {
-  if (isUltra) return PT.ultra;
-  if (isThinking) return PT.thinking;
-  if (isEconomy || isAutoLite) return PT.lite;
-  return PT.flash;
+function currentResponseMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean): ResponseMode {
+  if (isUltra) return 'ultra';
+  if (isThinking) return 'thinking';
+  if (isEconomy) return 'lite';
+  return 'stable';
 }
 
 function ticketModeLabel(mode: TicketMode): string {
@@ -2150,7 +2151,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     }
   }, [messages, isLoading, apiKey, t]);
 
-  const sendMessage = useCallback(async (text?: string, opts?: { forceSearch?: boolean; fixedCost?: number }) => {
+  const sendMessage = useCallback(async (text?: string, opts?: { forceSearch?: boolean }) => {
     const rawText = (text ?? input).trim();
     const sentAtts = attachments;
 
@@ -2172,13 +2173,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           return;
         }
         if (sc.id === 'quiz') {
-          await sendMessage(arg ? t('{topic}について、練習問題(QA)を作成して。', { topic: arg }) : t('ここまでの会話の内容から、練習問題(QA)を作成して。'), { fixedCost: PT.exercise });
+          await sendMessage(arg ? t('{topic}について、練習問題(QA)を作成して。', { topic: arg }) : t('ここまでの会話の内容から、練習問題(QA)を作成して。'));
           return;
         }
         if (sc.id === 'hard') {
           await sendMessage(arg
             ? t('{topic}について、受験生でも解けないような超難問・鬼問題を作成して。一切の手加減なし。複数の知識を組み合わせる高度な思考を要する問題にして。', { topic: arg })
-            : t('ここまでの会話の内容から、受験生でも解けないような超難問・鬼問題を作成して。一切の手加減なし。'), { fixedCost: PT.hardProblem });
+            : t('ここまでの会話の内容から、受験生でも解けないような超難問・鬼問題を作成して。一切の手加減なし。'));
           return;
         }
         if (sc.id === 'review') {
@@ -2190,7 +2191,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         const fk = FORMAT_CMD[sc.id];
         if (fk) {
           const base = arg || '選択中のメモ・ここまでの会話の内容から問題を作成して';
-          await sendMessage(`${base}\n\n【出力形式指定】必ず${fk.label}形式で出力し、\`\`\`qa ブロックの1行目に @@kind:${fk.kind} を付けてください。`, { fixedCost: PT.exercise });
+          await sendMessage(`${base}\n\n【出力形式指定】必ず${fk.label}形式で出力し、\`\`\`qa ブロックの1行目に @@kind:${fk.kind} を付けてください。`);
           return;
         }
       }
@@ -2205,18 +2206,18 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const autoLite = false;
     // Explicit 思考/Ultra思考 toggles (not the hidden accuracy-task auto-boost)
     // and, for Free plan only, plain 安定モード are gated by a daily ticket
-    // count independent of the point budget — see consumeTicketAndMaybeDowngrade.
+    // count independent of the token budget — see consumeTicketAndMaybeDowngrade.
     const ticketMode: TicketMode | null =
       lilyUltraThinking && !economy ? 'ultra'
       : lilyThinking && !economy ? 'thinking'
       : !economy && !lilyThinking && !lilyUltraThinking && getPlan() === 'free' ? 'stable'
       : null;
-    const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy, autoLite);
-    if (!canAfford(msgCost)) {
+    const responseMode = currentResponseMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy);
+    if (!hasTokenBudget()) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: `トークンが足りません（残り${formatTokens(ptToTokens(getRemainingPoints()))}・必要${formatTokens(ptToTokens(msgCost))}）。明日リセットされます。`,
+        text: 'トークンが足りません（残り0）。明日リセットされます。',
         timestamp: Date.now(),
       }]);
       return;
@@ -2332,7 +2333,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       // + a low temperature so the model doesn't rush and drop answers.
       const accuracy = isAccuracyTask(userMsg.text);
       let aiText: string;
-      deductPoints(msgCost);
       if (lilyUltraThinking && !economy) {
         setSikunLiveThinking('');
         let thinkingAccum = '';
@@ -2401,8 +2401,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       pendingThinkingRef.current = '';
 
       const finalUsage = getLastUsage();
-      const surcharge = calcTokenSurcharge(finalUsage?.prompt ?? 0);
-      if (surcharge > 0) deductPoints(surcharge);
+      deductTokens(tokenCost(finalUsage?.total ?? 0, responseMode));
 
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2485,12 +2484,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       : lilyThinking && !economy ? 'thinking'
       : !economy && !lilyThinking && !lilyUltraThinking && getPlan() === 'free' ? 'stable'
       : null;
-    const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy, regenAutoLite);
-    if (!canAfford(regenCost)) {
+    const responseMode = currentResponseMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy);
+    if (!hasTokenBudget()) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: `トークンが足りません（残り${formatTokens(ptToTokens(getRemainingPoints()))}・必要${formatTokens(ptToTokens(regenCost))}）。明日リセットされます。`,
+        text: 'トークンが足りません（残り0）。明日リセットされます。',
         timestamp: Date.now(),
       }]);
       return;
@@ -2513,7 +2512,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
 
       const accuracy = isAccuracyTask(lastUserText);
       let aiText: string;
-      deductPoints(regenCost);
       if (lilyUltraThinking && !economy) {
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         setSikunLiveThinking('');
@@ -2586,8 +2584,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       pendingThinkingRef.current = '';
 
       const regenUsage = getLastUsage();
-      const regenSurcharge = calcTokenSurcharge(regenUsage?.prompt ?? 0);
-      if (regenSurcharge > 0) deductPoints(regenSurcharge);
+      deductTokens(tokenCost(regenUsage?.total ?? 0, responseMode));
 
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2860,8 +2857,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             )}
             {(() => {
               const wPlan = getPlan();
-              const wDaily = PLAN_DAILY_POINTS[wPlan];
-              const wRemaining = getRemainingPoints();
+              const wDaily = PLAN_DAILY_TOKENS[wPlan];
+              const wRemaining = getRemainingTokens();
               const wPct = Math.max(0, Math.min(100, (wRemaining / wDaily) * 100));
               const R = 36;
               const circ = 2 * Math.PI * R;
@@ -2881,7 +2878,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     />
                   </svg>
                   <div className="pt-gauge-inner">
-                    <span className="pt-gauge-num">{formatTokens(ptToTokens(wRemaining))}</span>
+                    <span className="pt-gauge-num">{formatTokens(wRemaining)}</span>
                     <span className="pt-gauge-label">tok</span>
                   </div>
                   <div className="pt-gauge-plan">{PLAN_LABEL[wPlan]}</div>

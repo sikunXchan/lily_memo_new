@@ -11,7 +11,6 @@ import {
   type SikunMessage,
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
-import { canAfford, deductPoints, getRemainingPoints, PT, ptToTokens, formatTokens } from '@/lib/points';
 import { renderRich } from '@/lib/richText';
 import 'katex/dist/katex.min.css';
 
@@ -561,11 +560,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       setBubbleVisible(true);
       return;
     }
-    if (!canAfford(PT.lite)) {
-      setLastReply(en ? `Not enough tokens (${formatTokens(ptToTokens(getRemainingPoints()))} remaining).` : `トークンが足りません（残り${formatTokens(ptToTokens(getRemainingPoints()))}）。明日リセットされます。`);
-      setBubbleVisible(true);
-      return;
-    }
     setLoading(true);
     setBubbleVisible(false);
     setLastReply('');
@@ -585,7 +579,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           ? 'Create exactly one question from this whole note. Output in the format "Q: question\nA: answer", in English.'
           : 'このメモ全体の内容から1問だけ出して。「Q: 問題\nA: 答え」の形式で出力してね。',
       }];
-      deductPoints(PT.lite);
       const reply = await streamSikunlilyChat(
         turns, systemPrompt, apiKey, 0, {},
         ['gemini-3.1-flash-lite'],
@@ -690,11 +683,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       setMode('closed');
       return;
     }
-    if (!canAfford(PT.lite)) {
-      setLastReply(en ? `Not enough tokens (${formatTokens(ptToTokens(getRemainingPoints()))} remaining).` : `トークンが足りません（残り${formatTokens(ptToTokens(getRemainingPoints()))}）。明日リセットされます。`);
-      setBubbleVisible(true);
-      return;
-    }
     closeInput();
     setLoading(true);
     setBubbleVisible(false);
@@ -777,7 +765,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       const baseSystem = sikunBaseSystem(en);
       const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote + annotateNote;
       const modelList = ['gemini-3.1-flash-lite'];
-      deductPoints(PT.lite);
       // sikun never searches — it answers from its own knowledge or tells the
       // user to ask Lily in the AI tab (see the system prompt's search rule).
       const reply = await streamSikunlilyChat(
