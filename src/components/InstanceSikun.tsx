@@ -11,7 +11,8 @@ import {
   type SikunMessage,
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
-import { canAfford, deductPoints, getRemainingPoints, PT } from '@/lib/points';
+import { canAfford, deductPoints, getRemainingPoints, PT, ptToTokens, formatTokens } from '@/lib/points';
+import { buildAppKnowledgeText } from '@/lib/appKnowledge';
 import { renderRich } from '@/lib/richText';
 import 'katex/dist/katex.min.css';
 
@@ -161,6 +162,11 @@ Reply with one line only: "Ask the full sikunlily in the AI tab for that."
 
 # Tone
 Friendly, warm, and concise — like a helpful study buddy. A light emoji now and then is fine.`;
+
+function sikunBaseSystem(en: boolean): string {
+  const base = en ? INSTANCE_SIKUN_SYSTEM_EN : INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt());
+  return `${base}\n\n${buildAppKnowledgeText()}`;
+}
 
 // Appended to system prompt when Sikun is asked to annotate a PDF page.
 const PDF_ANNOTATE_ADDON = `
@@ -556,7 +562,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       return;
     }
     if (!canAfford(PT.lite)) {
-      setLastReply(en ? `Not enough points (${getRemainingPoints()}pt remaining).` : `ポイントが足りません（残り${getRemainingPoints()}pt）。明日リセットされます。`);
+      setLastReply(en ? `Not enough tokens (${formatTokens(ptToTokens(getRemainingPoints()))} remaining).` : `トークンが足りません（残り${formatTokens(ptToTokens(getRemainingPoints()))}）。明日リセットされます。`);
       setBubbleVisible(true);
       return;
     }
@@ -572,7 +578,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       const noteCtx = en
         ? `\n\n# The note the user currently has open\nTitle: ${note.title || 'Untitled'}\nFull text: ${plain}`
         : `\n\n# 現在ユーザーが開いているメモ\nタイトル: ${note.title || '無題'}\n本文全文: ${plain}`;
-      const systemPrompt = (en ? INSTANCE_SIKUN_SYSTEM_EN : INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt())) + noteCtx;
+      const systemPrompt = sikunBaseSystem(en) + noteCtx;
       const turns: ChatTurn[] = [{
         role: 'user',
         text: en
@@ -685,7 +691,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       return;
     }
     if (!canAfford(PT.lite)) {
-      setLastReply(en ? `Not enough points (${getRemainingPoints()}pt remaining).` : `ポイントが足りません（残り${getRemainingPoints()}pt）。明日リセットされます。`);
+      setLastReply(en ? `Not enough tokens (${formatTokens(ptToTokens(getRemainingPoints()))} remaining).` : `トークンが足りません（残り${formatTokens(ptToTokens(getRemainingPoints()))}）。明日リセットされます。`);
       setBubbleVisible(true);
       return;
     }
@@ -768,7 +774,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     const annotateNote = opts?.annotatePdf ? PDF_ANNOTATE_ADDON : '';
 
     try {
-      const baseSystem = en ? INSTANCE_SIKUN_SYSTEM_EN : INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt());
+      const baseSystem = sikunBaseSystem(en);
       const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote + annotateNote;
       const modelList = ['gemini-3.1-flash-lite'];
       deductPoints(PT.lite);

@@ -7,7 +7,7 @@ import {
   Sparkles, Send, ChevronDown, ChevronUp, RotateCcw,
   Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, ArrowLeft,
-  Save, History, Trash2, Mic, Phone, Wrench, MoreVertical, PencilLine,
+  Save, History, Trash2, Wrench, MoreVertical, PencilLine,
   NotebookText, Check,
 } from 'lucide-react';
 import {
@@ -37,21 +37,18 @@ import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
-import dynamic from 'next/dynamic';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
 import {
   canAfford, deductPoints, getRemainingPoints, getPlan, PT, PLAN_DAILY_POINTS, PLAN_LABEL, calcTokenSurcharge,
-  getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode,
+  getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode, ptToTokens, formatTokens,
 } from '@/lib/points';
+import { buildAppKnowledgeText } from '@/lib/appKnowledge';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
 import { ensureSkillsSeeded, skillPromptAddon, type Skill } from '@/lib/skills';
 import { useShortcuts } from '@/lib/shortcuts';
 import ToolboxModal from '@/components/ToolboxModal';
-
-const LectureRecorder = dynamic(() => import('@/components/LectureRecorder'), { ssr: false });
-const VoiceChat = dynamic(() => import('@/components/VoiceChat'), { ssr: false });
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, PointElement, LineElement,
@@ -633,7 +630,8 @@ function nameAddon(): string {
 }
 
 function buildSystemPrompt(contextNotes: Note[], activeSkill?: Skill | null): string {
-  const skillAddon = (activeSkill ? skillPromptAddon(activeSkill) : '') + nameAddon();
+  const skillAddon = (activeSkill ? skillPromptAddon(activeSkill) : '') + nameAddon()
+    + `\n\n${buildAppKnowledgeText()}`;
   if (contextNotes.length === 0) return LILY_CHAT_SYSTEM_PROMPT + skillAddon;
   // Adaptive per-note cap: when the user is focused on just a few notes, send
   // (almost) the whole thing so Lily doesn't miss content that's actually
@@ -1842,8 +1840,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const [loadedFromChatId, setLoadedFromChatId] = useState<number | null>(null);
-  const [showLectureRecorder, setShowLectureRecorder] = useState(false);
-  const [showVoiceChat, setShowVoiceChat] = useState(false);
   const [showToolbox, setShowToolbox] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [activeSkillId, setActiveSkillId] = useState<number | null>(null);
@@ -1986,26 +1982,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     setQuestionQueue([]);
     setCollectedAnswers([]);
     setShowHistory(false);
-  }, []);
-
-  const handleLectureComplete = useCallback((summary: string) => {
-    setShowLectureRecorder(false);
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      text: '📖 授業録音が終わりました。まとめをチャットに表示してください。',
-      timestamp: Date.now(),
-    };
-    const { textContent, blocks, questions } = parseAIResponse(summary, true);
-    const lilyMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'lily',
-      text: textContent || t('授業まとめを作成しました！'),
-      timestamp: Date.now(),
-      extractedBlocks: blocks.length > 0 ? blocks : undefined,
-      questions: questions.length > 0 ? questions : undefined,
-    };
-    setMessages(prev => [...prev, userMsg, lilyMsg]);
   }, []);
 
   const prevScrollTriggerRef = useRef({ len: 0, loading: false });
@@ -2242,7 +2218,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: `ポイントが足りません（残り${getRemainingPoints()}pt・必要${msgCost}pt）。明日リセットされます。`,
+        text: `トークンが足りません（残り${formatTokens(ptToTokens(getRemainingPoints()))}・必要${formatTokens(ptToTokens(msgCost))}）。明日リセットされます。`,
         timestamp: Date.now(),
       }]);
       return;
@@ -2516,7 +2492,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'lily',
-        text: `ポイントが足りません（残り${getRemainingPoints()}pt・必要${regenCost}pt）。明日リセットされます。`,
+        text: `トークンが足りません（残り${formatTokens(ptToTokens(getRemainingPoints()))}・必要${formatTokens(ptToTokens(regenCost))}）。明日リセットされます。`,
         timestamp: Date.now(),
       }]);
       return;
@@ -2791,31 +2767,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       {showToolbox && <ToolboxModal onClose={() => setShowToolbox(false)} />}
       {showHistory && <ChatHistoryModal onClose={() => setShowHistory(false)} onLoad={handleLoadChat} />}
       {savedToast && <div className="chat-saved-toast">{t('会話を保存しました ✓')}</div>}
-      {showLectureRecorder && (
-        <LectureRecorder
-          apiKey={apiKey}
-          onClose={() => setShowLectureRecorder(false)}
-          onComplete={handleLectureComplete}
-          contextNotes={(allNotes ?? [])
-            .filter(n => lilyNoteIds.includes(n.id!))
-            .map(n => ({ title: n.title || '無題', text: noteHtmlToText(n.content || '').slice(0, 3000) }))}
-        />
-      )}
-      {showVoiceChat && (
-        <VoiceChat
-          apiKey={apiKey}
-          systemPrompt={
-            buildSystemPrompt(
-              lilyAllNotes
-                ? (allNotes ?? [])
-                : (allNotes ?? []).filter(n => lilyNoteIds.includes(n.id!)),
-              activeSkill,
-            ) + (activeMode ? `\n\n（${TONES.find(m => m.id === activeMode)?.directive ?? ''}）` : '')
-          }
-          modeLabel={TONES.find(m => m.id === activeMode)?.label}
-          onClose={() => setShowVoiceChat(false)}
-        />
-      )}
 
       {showContextPanel && typeof document !== 'undefined' && createPortal(
         <div className="ctx-backdrop" onClick={() => setShowContextPanel(false)}>
@@ -2932,8 +2883,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     />
                   </svg>
                   <div className="pt-gauge-inner">
-                    <span className="pt-gauge-num">{wRemaining >= 1000 ? `${(wRemaining/1000).toFixed(1)}k` : wRemaining}</span>
-                    <span className="pt-gauge-label">pt</span>
+                    <span className="pt-gauge-num">{formatTokens(ptToTokens(wRemaining))}</span>
+                    <span className="pt-gauge-label">tok</span>
                   </div>
                   <div className="pt-gauge-plan">{PLAN_LABEL[wPlan]}</div>
                 </div>
@@ -3123,22 +3074,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           title={t('ファイルを添付（複数可）')}
         >
           <Paperclip size={20} />
-        </button>
-        <button
-          className="attach-btn lecture-btn"
-          onClick={() => setShowLectureRecorder(true)}
-          disabled={isLoading}
-          title={t('授業リアルタイム要約 — 音声を文字起こし→Geminiでまとめ')}
-        >
-          <Mic size={20} />
-        </button>
-        <button
-          className="attach-btn voice-chat-btn"
-          onClick={() => setShowVoiceChat(true)}
-          disabled={isLoading}
-          title={t('音声対話 — Lily と声で会話する')}
-        >
-          <Phone size={20} />
         </button>
         <textarea
           ref={textareaRef}
@@ -3401,8 +3336,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .attach-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--accent); color: var(--fg-muted); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
         .attach-btn:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
         .attach-btn:disabled { opacity: 0.4; cursor: default; }
-        .lecture-btn { color: #6366f1; border-color: rgba(99,102,241,0.35); }
-        .lecture-btn:hover:not(:disabled) { color: #6366f1; border-color: #6366f1; background: rgba(99,102,241,0.1); }
         .send-btn { flex-shrink: 0; width: 40px; height: 40px; background: var(--primary); color: white; border: none; border-radius: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s; }
         .send-btn:disabled { opacity: 0.4; cursor: default; }
         .web-toggle.eco-toggle.on { background: color-mix(in srgb, #16a34a 15%, transparent); border-color: #16a34a; color: #16a34a; }

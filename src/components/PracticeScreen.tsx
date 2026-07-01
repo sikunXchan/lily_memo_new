@@ -24,6 +24,7 @@ import {
 import type { ChatAttachment, ChatTurn } from '@/lib/gemini';
 import { callGeminiChat } from '@/lib/gemini';
 import { getEffectiveApiKey, getUserName } from '@/lib/appLang';
+import { getTicketsLeft, consumeTicket } from '@/lib/points';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
@@ -476,6 +477,11 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     if (lessonLoading) return;
     const apiKey = getEffectiveApiKey();
     if (!apiKey) { setLessonError(en ? 'Set your API key in Settings.' : 'APIキーを設定してください。'); return; }
+    if (getTicketsLeft('lesson') <= 0) {
+      setLessonError(en ? 'Today\'s lesson limit has been reached (1/day for every plan). Try again tomorrow.' : '本日の授業の利用回数の上限（全プラン1日1回）に達しました。明日また試してね。');
+      return;
+    }
+    consumeTicket('lesson');
 
     // Gather attachments once for the kickoff turn.
     const mdAtts: ChatAttachment[] = genMdFiles.map(f => ({
@@ -707,9 +713,14 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const handleGenerate = async () => {
     if (genLoading) return;
     if (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genPdfs.length === 0 && genNotes.length === 0) return;
+    if (getTicketsLeft('exercise') <= 0) {
+      setGenError(en ? 'Today\'s problem-set creation limit has been reached. Try again tomorrow.' : '本日の問題作成の利用回数の上限に達しました。明日また試してね。');
+      return;
+    }
     setGenLoading(true);
     setGenError('');
     try {
+      consumeTicket('exercise');
       const mdAtts: ChatAttachment[] = genMdFiles.map(f => ({
         mimeType: 'text/plain',
         data: utf8ToBase64(f.content),
@@ -1237,12 +1248,17 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               <button
                 className="ps-lesson-btn"
                 onClick={() => void startLesson()}
-                disabled={(!lessonTopic.trim() && genImages.length === 0 && genMdFiles.length === 0 && genPdfs.length === 0 && genNotes.length === 0) || lessonLoading}
+                disabled={(!lessonTopic.trim() && genImages.length === 0 && genMdFiles.length === 0 && genPdfs.length === 0 && genNotes.length === 0) || lessonLoading || getTicketsLeft('lesson') <= 0}
               >
                 {lessonLoading ? <Loader2 size={15} className="ps-spin" /> : <GraduationCap size={15} />}
                 {en ? 'Start lesson' : '授業を始める'}
               </button>
             </div>
+            <p className="ps-lesson-ticket-hint">
+              {en
+                ? `Today's remaining lessons: ${getTicketsLeft('lesson')} (1/day for every plan)`
+                : `本日の授業の残り回数: ${getTicketsLeft('lesson')}回（全プラン1日1回）`}
+            </p>
             {lessonError && <p className="ps-lesson-err">{lessonError}</p>}
 
             {/* ── Past lessons ── */}
@@ -1594,13 +1610,18 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             <button
               className="ps-gen-btn"
               onClick={() => void handleGenerate()}
-              disabled={genLoading || (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genPdfs.length === 0 && genNotes.length === 0)}
+              disabled={genLoading || getTicketsLeft('exercise') <= 0 || (!genInput.trim() && genImages.length === 0 && genMdFiles.length === 0 && genPdfs.length === 0 && genNotes.length === 0)}
             >
               {genLoading
                 ? <><Loader2 size={16} className="ps-spin" /> {en ? 'Creating…' : '作成中…'}</>
                 : <><Wand2 size={16} /> {en ? 'Generate' : '作成する'}</>}
             </button>
           </div>
+          <p className="ps-gen-ticket-hint">
+            {en
+              ? `Today's remaining problem sets: ${getTicketsLeft('exercise')}`
+              : `本日の問題作成の残り回数: ${getTicketsLeft('exercise')}回`}
+          </p>
         </div>}
 
         {/* ── In-app note picker (shared between modes) ── */}
@@ -1788,6 +1809,7 @@ function PracticeStyles() {
   .ps-sg-chip { flex-shrink: 0; background: var(--background); border: 1px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); color: #8b5cf6; border-radius: 16px; padding: 5px 12px; font-size: 0.74rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .15s; }
   .ps-sg-chip:hover:not(:disabled) { background: color-mix(in srgb, #8b5cf6 12%, transparent); }
   .ps-gen-err { font-size: 0.78rem; color: #ef4444; margin: 0; font-weight: 600; }
+  .ps-gen-ticket-hint { font-size: 0.72rem; color: var(--fg-muted); margin: 0; }
   .ps-gen-opts-toggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 1px solid var(--border); color: var(--fg-muted); border-radius: 99px; padding: 4px 12px; font-size: 0.74rem; font-weight: 700; cursor: pointer; transition: all .15s; }
   .ps-gen-opts-toggle:hover { color: #8b5cf6; border-color: #8b5cf6; }
   .ps-gen-opts { display: flex; flex-direction: column; gap: 10px; padding: 10px; background: var(--background); border: 1px solid var(--border); border-radius: 12px; }
@@ -2008,6 +2030,7 @@ function PracticeStyles() {
   .ps-lesson-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; border: none; border-radius: 12px; font-size: 0.86rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
   .ps-lesson-btn:disabled { opacity: 0.5; cursor: default; }
   .ps-lesson-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
+  .ps-lesson-ticket-hint { font-size: 0.72rem; color: var(--fg-muted); margin: 0; }
   /* Past lesson history */
   .ps-past-lessons { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--border); padding-top: 12px; }
   .ps-past-label { font-size: 0.72rem; font-weight: 800; letter-spacing: .05em; color: var(--fg-muted); margin: 0 0 4px; text-transform: uppercase; }
