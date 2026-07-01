@@ -57,10 +57,17 @@ export function formatTokens(tokens: number): string {
   return tokens.toLocaleString();
 }
 
+// Each plan has its own distinct unlock password — no shared default.
+// Max and Ultimate intentionally share one password (both unlock with it;
+// which of the two is actually granted is still whichever targetPlan the
+// caller requests).
 const PLAN_PASSWORDS: Partial<Record<Plan, string>> = {
+  plus: '4934',
+  pro: '493494',
+  max: 'Sikun493',
+  ultimate: 'Sikun493',
   developer: 'sikun0120493',
 };
-const DEFAULT_UNLOCK_PASSWORD = '4934';
 const KEY_PLAN = 'lily-plan';
 const KEY_PLAN_MONTH = 'lily-plan-month'; // 'YYYY-MM' of when a paid plan was set
 const KEY_DEV_DAY = 'lily-plan-dev-day'; // 'YYYY-MM-DD' Developer was last unlocked/confirmed
@@ -127,8 +134,8 @@ export function canUpgradeTo(plan: Plan): boolean {
 }
 
 export function tryUnlockWithPassword(password: string, targetPlan: Plan): boolean {
-  const expected = PLAN_PASSWORDS[targetPlan] ?? DEFAULT_UNLOCK_PASSWORD;
-  if (password !== expected) return false;
+  const expected = PLAN_PASSWORDS[targetPlan];
+  if (!expected || password !== expected) return false;
   if (!canUpgradeTo(targetPlan)) return false;
   setPlan(targetPlan);
   return true;
@@ -170,9 +177,10 @@ export function deductTokens(cost: number): void {
 
 // --- Elevated-mode daily tickets --------------------------------------------
 // 思考モード / Ultra思考モード are gated by a small number of uses per day,
-// separate from the token budget. Free plan can't use them at all. Free's
-// 安定モード (the plain, non-lightweight response) is likewise capped to one
-// use per day. Developer is unrestricted.
+// separate from the token budget. Free plan can't use them at all.
+// 安定モード (the plain, non-lightweight response) is likewise capped per
+// day for Free/Plus/Pro (1/2/5 respectively); Max and above are unlimited.
+// Developer is unrestricted everywhere.
 //
 // 演習タブの問題作成・授業 are also ticket-gated (not token-metered) since
 // their token cost varies too much per generation to budget sensibly.
@@ -180,8 +188,8 @@ export type TicketMode = 'thinking' | 'ultra' | 'stable' | 'exercise' | 'lesson'
 
 export const PLAN_THINKING_TICKETS: Record<Plan, number> = {
   free: 0,
-  plus: 2,
-  pro: 2,
+  plus: 1,
+  pro: 1,
   max: 2,
   ultimate: 2,
   developer: Number.MAX_SAFE_INTEGER,
@@ -198,8 +206,8 @@ export const PLAN_ULTRA_TICKETS: Record<Plan, number> = {
 
 export const PLAN_STABLE_TICKETS: Record<Plan, number> = {
   free: 1,
-  plus: Number.MAX_SAFE_INTEGER,
-  pro: Number.MAX_SAFE_INTEGER,
+  plus: 2,
+  pro: 5,
   max: Number.MAX_SAFE_INTEGER,
   ultimate: Number.MAX_SAFE_INTEGER,
   developer: Number.MAX_SAFE_INTEGER,

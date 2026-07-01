@@ -2725,7 +2725,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                   <button
                     className={`header-menu-item toggle${!economy && !lilyThinking && !lilyUltraThinking ? ' on' : ''}`}
                     onClick={() => selectResponseMode('stable')}
-                    disabled={economy && stableTicketLimit < Number.MAX_SAFE_INTEGER && stableTicketsLeft <= 0}
+                    disabled={!(!economy && !lilyThinking && !lilyUltraThinking) && stableTicketLimit < Number.MAX_SAFE_INTEGER && stableTicketsLeft <= 0}
                   >
                     <span className="hmi-emoji">🌸</span><span className="hmi-label">{t('安定モード')}</span>
                     <span className="hmi-state">{ticketStateText(!economy && !lilyThinking && !lilyUltraThinking, stableTicketsLeft, stableTicketLimit)}</span>
