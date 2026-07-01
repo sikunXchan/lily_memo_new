@@ -109,6 +109,11 @@ export default function PlanModal({ onClose }: PlanModalProps) {
             {!isDeveloper && `（使用済 ${used.toLocaleString()}pt）`}
           </div>
         </div>
+        {isDeveloper && (
+          <div className="pm-plan-reset">
+            🔄 Developerプランは<strong>毎日0時</strong>にFreeへリセットされます（再度パスワードの入力が必要です）
+          </div>
+        )}
         {currentPlan !== 'free' && !isDeveloper && (
           <div className="pm-plan-reset">
             🔄 プランは <strong>{nextMonthFirstStr()}</strong> に Free へリセットされます
