@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Upload, Type, Sparkles, Wifi, User, Home } from 'lucide-react';
+import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
@@ -28,6 +28,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { fontId, setFontId, themeId, setThemeId } = useTheme();
   const [geminiKey, setGeminiKey] = useState('');
   const [keySaved, setKeySaved] = useState(false);
+  const [defaultResponseMode, setDefaultResponseModeState] = useState<'lite' | 'stable'>('lite');
   const [sikunEnabled, setSikunEnabled] = useState(false);
   const [sikunTone, setSikunTone] = useState('tame');
   const [userName, setUserNameState] = useState('');
@@ -55,6 +56,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     setLiveKey(localStorage.getItem('lily_livesync_key') || '');
     setLiveEnabled(localStorage.getItem('lily_livesync_enabled') === '1');
     setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
+    setDefaultResponseModeState(localStorage.getItem('lily_economy_mode') === '0' ? 'stable' : 'lite');
     const plan = getPlan();
     setPlanLabel(PLAN_LABEL[plan]);
     setPlanRemaining(getRemainingPoints());
@@ -68,6 +70,12 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
       localStorage.setItem('lily_sikun_tone', 'tame');
     }
   }, []);
+
+  const changeDefaultResponseMode = (mode: 'lite' | 'stable') => {
+    setDefaultResponseModeState(mode);
+    localStorage.setItem('lily_economy_mode', mode === 'lite' ? '1' : '0');
+    window.dispatchEvent(new Event('lily-settings-changed'));
+  };
 
   const toggleSikun = () => {
     const next = !sikunEnabled;
@@ -248,6 +256,32 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   <span className="option-name">{t(f.name)}</span>
                 </button>
               ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Gauge size={20} />
+            <h3>{t('デフォルトの応答モード')}</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">{t('チャットを開いたときの初期モードを選べます。軽量モードは速くて消費ポイントも少ない代わりに回答の品質が下がります。安定モードは以前までの通常モードと同じ品質です。')}</p>
+            <div className="option-grid">
+              <button
+                className={`option-card ${defaultResponseMode === 'lite' ? 'selected' : ''}`}
+                onClick={() => changeDefaultResponseMode('lite')}
+              >
+                <span className="option-name">{t('🪶 軽量モード')}</span>
+                <span className="option-tag">{t('デフォルト・低コスト')}</span>
+              </button>
+              <button
+                className={`option-card ${defaultResponseMode === 'stable' ? 'selected' : ''}`}
+                onClick={() => changeDefaultResponseMode('stable')}
+              >
+                <span className="option-name">{t('🌸 安定モード')}</span>
+                <span className="option-tag">{t('高品質・旧通常モード')}</span>
+              </button>
             </div>
           </div>
         </section>

@@ -39,7 +39,10 @@ import {
 } from '@/lib/fileGen';
 import dynamic from 'next/dynamic';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
-import { canAfford, deductPoints, getRemainingPoints, getPlan, PT, PLAN_DAILY_POINTS, PLAN_LABEL, calcTokenSurcharge } from '@/lib/points';
+import {
+  canAfford, deductPoints, getRemainingPoints, getPlan, PT, PLAN_DAILY_POINTS, PLAN_LABEL, calcTokenSurcharge,
+  getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode,
+} from '@/lib/points';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
@@ -168,6 +171,12 @@ function pointCostForMode(isUltra: boolean, isThinking: boolean, isEconomy: bool
   if (isThinking) return PT.thinking;
   if (isEconomy || isAutoLite) return PT.lite;
   return PT.flash;
+}
+
+function ticketModeLabel(mode: TicketMode): string {
+  if (mode === 'ultra') return 'Ultra思考モード';
+  if (mode === 'thinking') return '思考モード';
+  return '安定モード';
 }
 
 const QUOTES_JA: { text: string; author: string }[] = [
@@ -1829,7 +1838,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const [sikunProgress, setSikunProgress] = useState<string>('');
   const [sikunLiveThinking, setSikunLiveThinking] = useState<string>('');
   const pendingThinkingRef = useRef<string>('');
-  const [economy, setEconomy] = useState(false);
+  const [economy, setEconomy] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const [loadedFromChatId, setLoadedFromChatId] = useState<number | null>(null);
@@ -1921,10 +1930,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const activeSkill = skills.find(s => s.id === activeSkillId) ?? null;
   useEffect(() => {
     const refreshKey = () => setApiKey(getEffectiveApiKey());
+    // Default is lightweight mode for every plan; only an explicit '0'
+    // (user picked 安定モード / stable mode) opts out of it.
+    const refreshEconomy = () => setEconomy(localStorage.getItem('lily_economy_mode') !== '0');
     refreshKey();
-    setEconomy(localStorage.getItem('lily_economy_mode') === '1');
+    refreshEconomy();
     window.addEventListener('lily-lang-changed', refreshKey);
-    return () => window.removeEventListener('lily-lang-changed', refreshKey);
+    window.addEventListener('lily-settings-changed', refreshEconomy);
+    return () => {
+      window.removeEventListener('lily-lang-changed', refreshKey);
+      window.removeEventListener('lily-settings-changed', refreshEconomy);
+    };
   }, []);
 
   const toggleEconomy = useCallback(() => {
@@ -1989,8 +2005,18 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     setMessages(prev => [...prev, userMsg, lilyMsg]);
   }, []);
 
+  const prevScrollTriggerRef = useRef({ len: 0, loading: false });
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const prev = prevScrollTriggerRef.current;
+    const lengthChanged = messages.length !== prev.len;
+    const loadingChanged = isLoading !== prev.loading;
+    prevScrollTriggerRef.current = { len: messages.length, loading: isLoading };
+    // Only auto-scroll when a message is added/removed or the loading indicator
+    // toggles — not when an existing message is mutated in place (e.g. a QA
+    // checkbox tick), which would otherwise force-jump the user to the bottom.
+    if (lengthChanged || loadingChanged) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, isLoading]);
 
   const autoResizeTextarea = () => {
@@ -2200,6 +2226,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const hasNewFiles = sentAtts.length > 0;
     const accuracy0 = isAccuracyTask(rawText);
     const autoLite = false;
+    // Explicit 思考/Ultra思考 toggles (not the hidden accuracy-task auto-boost)
+    // and, for Free plan only, plain 安定モード are gated by a daily ticket
+    // count independent of the point budget — see consumeTicketAndMaybeDowngrade.
+    const ticketMode: TicketMode | null =
+      lilyUltraThinking && !economy ? 'ultra'
+      : lilyThinking && !economy ? 'thinking'
+      : !economy && !lilyThinking && !lilyUltraThinking && getPlan() === 'free' ? 'stable'
+      : null;
     const msgCost = opts?.fixedCost ?? pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy, autoLite);
     if (!canAfford(msgCost)) {
       setMessages(prev => [...prev, {
@@ -2407,6 +2441,22 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         thinking: capturedThinking || undefined,
         usage: finalUsage ?? undefined,
       }]);
+
+      if (ticketMode && getTicketLimit(ticketMode) < Number.MAX_SAFE_INTEGER) {
+        consumeTicket(ticketMode);
+        if (getTicketsLeft(ticketMode) <= 0) {
+          setLilyThinking(false);
+          setLilyUltraThinking(false);
+          setEconomy(true);
+          try { localStorage.setItem('lily_economy_mode', '1'); } catch {}
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            role: 'lily',
+            text: t('本日の{mode}の利用上限に達したため、軽量モードに移行しました。', { mode: t(ticketModeLabel(ticketMode)) }),
+            timestamp: Date.now(),
+          }]);
+        }
+      }
     } catch (e) {
       setSikunProgress('');
       setSikunLiveThinking('');
@@ -2456,6 +2506,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const lastUserText = [...history].reverse().find(h => h.role === 'user')?.text ?? '';
     const regenHasFiles = recentMsgs.some(m => m.role === 'user' && m.attachments?.length);
     const regenAutoLite = false;
+    const ticketMode: TicketMode | null =
+      lilyUltraThinking && !economy ? 'ultra'
+      : lilyThinking && !economy ? 'thinking'
+      : !economy && !lilyThinking && !lilyUltraThinking && getPlan() === 'free' ? 'stable'
+      : null;
     const regenCost = pointCostForMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy, regenAutoLite);
     if (!canAfford(regenCost)) {
       setMessages(prev => [...prev, {
@@ -2570,6 +2625,22 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         thinking: capturedThinking || undefined,
         usage: regenUsage ?? undefined,
       }]);
+
+      if (ticketMode && getTicketLimit(ticketMode) < Number.MAX_SAFE_INTEGER) {
+        consumeTicket(ticketMode);
+        if (getTicketsLeft(ticketMode) <= 0) {
+          setLilyThinking(false);
+          setLilyUltraThinking(false);
+          setEconomy(true);
+          try { localStorage.setItem('lily_economy_mode', '1'); } catch {}
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            role: 'lily',
+            text: t('本日の{mode}の利用上限に達したため、軽量モードに移行しました。', { mode: t(ticketModeLabel(ticketMode)) }),
+            timestamp: Date.now(),
+          }]);
+        }
+      }
     } catch (e) {
       setSikunProgress('');
       setSikunLiveThinking('');
@@ -2586,6 +2657,18 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, activeMode, economy, apiKey, webSearch, activeSkill]);
 
   const lilyDefaultNoteId = lilyNoteIds[0];
+  const thinkingTicketLimit = getTicketLimit('thinking');
+  const thinkingTicketsLeft = getTicketsLeft('thinking');
+  const ultraTicketLimit = getTicketLimit('ultra');
+  const ultraTicketsLeft = getTicketsLeft('ultra');
+  const stableTicketLimit = getTicketLimit('stable');
+  const stableTicketsLeft = getTicketsLeft('stable');
+  const ticketStateText = (active: boolean, ticketsLeft: number, limit: number): string => {
+    if (active) return 'ON';
+    if (limit >= Number.MAX_SAFE_INTEGER) return 'OFF';
+    if (ticketsLeft <= 0) return t('本日上限');
+    return `OFF (${ticketsLeft})`;
+  };
 
   if (!apiKey) {
     return (
@@ -2657,17 +2740,27 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                   <button className={`header-menu-item toggle${webSearch ? ' on' : ''}`} onClick={() => setWebSearch(p => !p)}>
                     <Search size={15} /><span className="hmi-label">{t('ネット検索')}</span><span className="hmi-state">{webSearch ? 'ON' : 'OFF'}</span>
                   </button>
-                  <button className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`} onClick={() => setLilyThinking(p => !p)} disabled={economy || lilyUltraThinking}>
-                    <span className="hmi-emoji">🧠</span><span className="hmi-label">{t('思考モード')}</span><span className="hmi-state">{lilyThinking ? 'ON' : 'OFF'}</span>
+                  <button
+                    className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`}
+                    onClick={() => setLilyThinking(p => !p)}
+                    disabled={economy || lilyUltraThinking || thinkingTicketsLeft <= 0}
+                  >
+                    <span className="hmi-emoji">🧠</span><span className="hmi-label">{t('思考モード')}</span>
+                    <span className="hmi-state">{ticketStateText(lilyThinking, thinkingTicketsLeft, thinkingTicketLimit)}</span>
                   </button>
                   <button
                     className={`header-menu-item toggle${lilyUltraThinking ? ' on ultra' : ''}`}
                     onClick={() => setLilyUltraThinking(p => !p)}
-                    disabled={economy || lilyThinking}
+                    disabled={economy || lilyThinking || ultraTicketsLeft <= 0}
                   >
-                    <span className="hmi-emoji">⚡</span><span className="hmi-label">{t('Ultra思考モード')}</span><span className="hmi-state">{lilyUltraThinking ? 'ON' : 'OFF'}</span>
+                    <span className="hmi-emoji">⚡</span><span className="hmi-label">{t('Ultra思考モード')}</span>
+                    <span className="hmi-state">{ticketStateText(lilyUltraThinking, ultraTicketsLeft, ultraTicketLimit)}</span>
                   </button>
-                  <button className={`header-menu-item toggle${economy ? ' on' : ''}`} onClick={toggleEconomy} disabled={lilyThinking || lilyUltraThinking}>
+                  <button
+                    className={`header-menu-item toggle${economy ? ' on' : ''}`}
+                    onClick={toggleEconomy}
+                    disabled={lilyThinking || lilyUltraThinking || (economy && stableTicketLimit < Number.MAX_SAFE_INTEGER && stableTicketsLeft <= 0)}
+                  >
                     <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
                   </button>
                   <div className="header-menu-divider" />
@@ -2807,6 +2900,11 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="welcome-lily" />
             </div>
+            {economy && (
+              <div className="welcome-mode-notice">
+                {t('デフォルトが軽量モードになっているため、品質が低下しています。品質が低下したもしくはより高性能なモデルを使用したいと感じた場合は、チャット右上からモードを変更してください。')}
+              </div>
+            )}
             {(() => {
               const wPlan = getPlan();
               const wDaily = PLAN_DAILY_POINTS[wPlan];
@@ -3236,6 +3334,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         @keyframes halo-pulse { 0%, 100% { transform: scale(1); opacity: 0.75; } 50% { transform: scale(1.15); opacity: 1; } }
         .welcome-lily { position: relative; width: 142px; height: auto; object-fit: contain; animation: float 3.4s ease-in-out infinite; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.18)); }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .welcome-mode-notice {
+          max-width: 320px; margin: 0 14px; padding: 10px 14px; text-align: center;
+          border-radius: 14px; font-size: 0.74rem; line-height: 1.6; font-weight: 600;
+          color: #92680b; background: color-mix(in srgb, #f59e0b 16%, transparent);
+          border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent);
+        }
         .welcome-quote {
           position: relative; max-width: 320px; margin: 0 14px; padding: 22px 22px 18px;
           text-align: center; border-radius: 20px;

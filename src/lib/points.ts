@@ -144,3 +144,85 @@ export function calcTokenSurcharge(promptTokens: number): number {
   const excess = Math.max(0, promptTokens - FREE_INPUT_TOKENS);
   return Math.ceil(excess / 1000) * PT_PER_1K_EXCESS_INPUT;
 }
+
+// --- Elevated-mode daily tickets --------------------------------------------
+// 思考モード / Ultra思考モード are gated by a small number of uses per day,
+// separate from the point budget. Free plan can't use them at all. Free's
+// 安定モード (the plain, non-lightweight response) is likewise capped to one
+// use per day. Developer is unrestricted.
+export type TicketMode = 'thinking' | 'ultra' | 'stable';
+
+export const PLAN_THINKING_TICKETS: Record<Plan, number> = {
+  free: 0,
+  plus: 2,
+  pro: 2,
+  max: 2,
+  ultimate: 2,
+  developer: Number.MAX_SAFE_INTEGER,
+};
+
+export const PLAN_ULTRA_TICKETS: Record<Plan, number> = {
+  free: 0,
+  plus: 1,
+  pro: 1,
+  max: 1,
+  ultimate: 1,
+  developer: Number.MAX_SAFE_INTEGER,
+};
+
+export const PLAN_STABLE_TICKETS: Record<Plan, number> = {
+  free: 1,
+  plus: Number.MAX_SAFE_INTEGER,
+  pro: Number.MAX_SAFE_INTEGER,
+  max: Number.MAX_SAFE_INTEGER,
+  ultimate: Number.MAX_SAFE_INTEGER,
+  developer: Number.MAX_SAFE_INTEGER,
+};
+
+const TICKET_LIMITS: Record<TicketMode, Record<Plan, number>> = {
+  thinking: PLAN_THINKING_TICKETS,
+  ultra: PLAN_ULTRA_TICKETS,
+  stable: PLAN_STABLE_TICKETS,
+};
+
+const KEY_TICKET_DATE = 'lily-tickets-date';
+const KEY_TICKET_USED: Record<TicketMode, string> = {
+  thinking: 'lily-tickets-used-thinking',
+  ultra: 'lily-tickets-used-ultra',
+  stable: 'lily-tickets-used-stable',
+};
+
+function resetTicketsIfNewDay(): void {
+  const t = todayStr();
+  if (localStorage.getItem(KEY_TICKET_DATE) !== t) {
+    localStorage.setItem(KEY_TICKET_DATE, t);
+    localStorage.setItem(KEY_TICKET_USED.thinking, '0');
+    localStorage.setItem(KEY_TICKET_USED.ultra, '0');
+    localStorage.setItem(KEY_TICKET_USED.stable, '0');
+  }
+}
+
+export function getTicketLimit(mode: TicketMode): number {
+  return TICKET_LIMITS[mode][getPlan()];
+}
+
+export function getTicketsUsedToday(mode: TicketMode): number {
+  if (typeof window === 'undefined') return 0;
+  resetTicketsIfNewDay();
+  return parseInt(localStorage.getItem(KEY_TICKET_USED[mode]) ?? '0', 10);
+}
+
+export function getTicketsLeft(mode: TicketMode): number {
+  return Math.max(0, getTicketLimit(mode) - getTicketsUsedToday(mode));
+}
+
+export function hasTicket(mode: TicketMode): boolean {
+  return getTicketsLeft(mode) > 0;
+}
+
+export function consumeTicket(mode: TicketMode): void {
+  if (typeof window === 'undefined') return;
+  resetTicketsIfNewDay();
+  const used = getTicketsUsedToday(mode) + 1;
+  localStorage.setItem(KEY_TICKET_USED[mode], String(used));
+}
