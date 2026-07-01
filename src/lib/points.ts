@@ -38,8 +38,23 @@ export const PT = {
   // Task-based costs
   exercise: 100,  // 演習問題生成
   hardProblem: 500, // 鬼問題作成
-  lesson: 50,     // 授業1セッション
 } as const;
+
+// Points are an internal accounting unit only — displaying raw "pt" numbers
+// next to real per-message token counts (already shown in the chat UI) was
+// confusing, so every user-facing display converts to this token scale
+// instead. The accounting logic above is untouched; only the label changes.
+export const TOKENS_PER_POINT = 200;
+
+export function ptToTokens(pt: number): number {
+  return pt * TOKENS_PER_POINT;
+}
+
+export function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
+  return tokens.toLocaleString();
+}
 
 const PLAN_PASSWORDS: Partial<Record<Plan, string>> = {
   developer: 'sikun0120493',
@@ -163,7 +178,10 @@ export function calcTokenSurcharge(promptTokens: number): number {
 // separate from the point budget. Free plan can't use them at all. Free's
 // 安定モード (the plain, non-lightweight response) is likewise capped to one
 // use per day. Developer is unrestricted.
-export type TicketMode = 'thinking' | 'ultra' | 'stable';
+//
+// 演習タブの問題作成・授業 are also ticket-gated (not point-metered) since
+// their token cost varies too much per generation to budget sensibly.
+export type TicketMode = 'thinking' | 'ultra' | 'stable' | 'exercise' | 'lesson';
 
 export const PLAN_THINKING_TICKETS: Record<Plan, number> = {
   free: 0,
@@ -192,10 +210,32 @@ export const PLAN_STABLE_TICKETS: Record<Plan, number> = {
   developer: Number.MAX_SAFE_INTEGER,
 };
 
+// 演習タブ「Lilyに問題を作ってもらう」: Free は1日1回、それ以外の有料プランは1日2回。
+export const PLAN_EXERCISE_TICKETS: Record<Plan, number> = {
+  free: 1,
+  plus: 2,
+  pro: 2,
+  max: 2,
+  ultimate: 2,
+  developer: Number.MAX_SAFE_INTEGER,
+};
+
+// 演習タブ「授業」: 全プラン共通で1日1回（Developerも例外なし）。
+export const PLAN_LESSON_TICKETS: Record<Plan, number> = {
+  free: 1,
+  plus: 1,
+  pro: 1,
+  max: 1,
+  ultimate: 1,
+  developer: 1,
+};
+
 const TICKET_LIMITS: Record<TicketMode, Record<Plan, number>> = {
   thinking: PLAN_THINKING_TICKETS,
   ultra: PLAN_ULTRA_TICKETS,
   stable: PLAN_STABLE_TICKETS,
+  exercise: PLAN_EXERCISE_TICKETS,
+  lesson: PLAN_LESSON_TICKETS,
 };
 
 const KEY_TICKET_DATE = 'lily-tickets-date';
@@ -203,15 +243,17 @@ const KEY_TICKET_USED: Record<TicketMode, string> = {
   thinking: 'lily-tickets-used-thinking',
   ultra: 'lily-tickets-used-ultra',
   stable: 'lily-tickets-used-stable',
+  exercise: 'lily-tickets-used-exercise',
+  lesson: 'lily-tickets-used-lesson',
 };
 
 function resetTicketsIfNewDay(): void {
   const t = todayStr();
   if (localStorage.getItem(KEY_TICKET_DATE) !== t) {
     localStorage.setItem(KEY_TICKET_DATE, t);
-    localStorage.setItem(KEY_TICKET_USED.thinking, '0');
-    localStorage.setItem(KEY_TICKET_USED.ultra, '0');
-    localStorage.setItem(KEY_TICKET_USED.stable, '0');
+    for (const key of Object.values(KEY_TICKET_USED)) {
+      localStorage.setItem(key, '0');
+    }
   }
 }
 

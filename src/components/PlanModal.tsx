@@ -4,7 +4,7 @@ import {
   getPlan, canUpgradeTo, tryUnlockWithPassword,
   getRemainingPoints, getPointsUsedToday,
   PLAN_ORDER, PLAN_DAILY_POINTS, PLAN_PRICE_YEN, PLAN_LABEL, PT,
-  getTicketLimit, getTicketsLeft,
+  getTicketLimit, getTicketsLeft, ptToTokens, formatTokens,
 } from '@/lib/points';
 import type { Plan } from '@/lib/points';
 
@@ -102,11 +102,11 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         <h2 className="pm-title">プラン・利用状況</h2>
 
         <div className="pm-usage">
-          <div className="pm-usage-label">本日の残りポイント（毎日0時リセット）</div>
+          <div className="pm-usage-label">本日の残りトークン（毎日0時リセット）</div>
           <div className="pm-bar-wrap"><div className="pm-bar" style={{ width: `${pct}%` }} /></div>
           <div className="pm-usage-nums">
-            {isDeveloper ? '∞ / 無制限' : `${remaining.toLocaleString()} / ${daily.toLocaleString()} pt`}
-            {!isDeveloper && `（使用済 ${used.toLocaleString()}pt）`}
+            {isDeveloper ? '∞ / 無制限' : `${formatTokens(ptToTokens(remaining))} / ${formatTokens(ptToTokens(daily))} トークン`}
+            {!isDeveloper && `（使用済 ${formatTokens(ptToTokens(used))}トークン）`}
           </div>
         </div>
         {isDeveloper && (
@@ -128,7 +128,7 @@ export default function PlanModal({ onClose }: PlanModalProps) {
               <div key={plan} className={`pm-card${isCurrent ? ' current' : ''}${!canUp && !isCurrent ? ' locked' : ''}`}>
                 <div className="pm-card-row">
                   <span className="pm-card-name">{PLAN_LABEL[plan]}</span>
-                  <span className="pm-card-pts">{plan === 'developer' ? '無制限' : `${PLAN_DAILY_POINTS[plan].toLocaleString()}pt/日`}</span>
+                  <span className="pm-card-pts">{plan === 'developer' ? '無制限' : `${formatTokens(ptToTokens(PLAN_DAILY_POINTS[plan]))}トークン/日`}</span>
                   <span className="pm-card-price">{plan === 'developer' ? '開発者専用' : PLAN_PRICE_YEN[plan] === 0 ? '無料' : `¥${PLAN_PRICE_YEN[plan]}/月`}</span>
                   {isCurrent && <span className="pm-card-badge">現在</span>}
                   {canUp && !isCurrent && expandedPlan !== plan && (
@@ -160,11 +160,11 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         </div>
 
         <div className="pm-costs">
-          <div className="pm-costs-title">消費ポイント（AIモード / 1回）</div>
-          <div className="pm-cost-row"><span>🪶 軽量モード・sikun</span><span className="pm-cost-pts">{PT.lite}pt</span></div>
-          <div className="pm-cost-row"><span>🌸 安定モード</span><span className="pm-cost-pts">{PT.flash}pt</span></div>
-          <div className="pm-cost-row"><span>🧠 思考モード</span><span className="pm-cost-pts">{PT.thinking}pt</span></div>
-          <div className="pm-cost-row"><span>⚡ Ultra思考モード</span><span className="pm-cost-pts">{PT.ultra}pt</span></div>
+          <div className="pm-costs-title">消費トークン（AIモード / 1回）</div>
+          <div className="pm-cost-row"><span>🪶 軽量モード・sikun</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.lite))}</span></div>
+          <div className="pm-cost-row"><span>🌸 安定モード</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.flash))}</span></div>
+          <div className="pm-cost-row"><span>🧠 思考モード</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.thinking))}</span></div>
+          <div className="pm-cost-row"><span>⚡ Ultra思考モード</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.ultra))}</span></div>
         </div>
         <div className="pm-costs" style={{ marginTop: '12px' }}>
           <div className="pm-costs-title">現在のプランの利用回数上限（毎日0時リセット）</div>
@@ -189,12 +189,25 @@ export default function PlanModal({ onClose }: PlanModalProps) {
               {getTicketLimit('ultra') > 0 && getTicketLimit('ultra') < Number.MAX_SAFE_INTEGER ? `（残り${getTicketsLeft('ultra')}）` : ''}
             </span>
           </div>
+          <div className="pm-cost-row">
+            <span>📝 演習タブ・問題作成</span>
+            <span className="pm-cost-pts">
+              {ticketLimitText(getTicketLimit('exercise'))}
+              {`（残り${getTicketsLeft('exercise')}）`}
+            </span>
+          </div>
+          <div className="pm-cost-row">
+            <span>🎓 演習タブ・授業</span>
+            <span className="pm-cost-pts">
+              {ticketLimitText(getTicketLimit('lesson'))}
+              {`（残り${getTicketsLeft('lesson')}）`}
+            </span>
+          </div>
         </div>
         <div className="pm-costs" style={{ marginTop: '12px' }}>
-          <div className="pm-costs-title">消費ポイント（タスク別）</div>
-          <div className="pm-cost-row"><span>📝 演習問題生成（/quiz, /qa など）</span><span className="pm-cost-pts">{PT.exercise}pt</span></div>
-          <div className="pm-cost-row"><span>👹 鬼問題作成（/hard）</span><span className="pm-cost-pts">{PT.hardProblem}pt</span></div>
-          <div className="pm-cost-row"><span>🎓 授業セッション（マイク録音）</span><span className="pm-cost-pts">{PT.lesson}pt</span></div>
+          <div className="pm-costs-title">消費トークン（チャットのタスク別コマンド）</div>
+          <div className="pm-cost-row"><span>📝 演習問題生成（/quiz, /qa など）</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.exercise))}</span></div>
+          <div className="pm-cost-row"><span>👹 鬼問題作成（/hard）</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.hardProblem))}</span></div>
         </div>
       </div>
     </div>

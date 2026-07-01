@@ -10,6 +10,11 @@
 //
 // Only TONES and SLASH_COMMANDS are fixed built-ins, so they live here.
 
+import { PT, ptToTokens, formatTokens } from '@/lib/points';
+
+const EXERCISE_TOK = formatTokens(ptToTokens(PT.exercise));
+const HARD_PROBLEM_TOK = formatTokens(ptToTokens(PT.hardProblem));
+
 export interface ToneDef {
   id: string;
   label: string;
@@ -41,14 +46,14 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { id: 'compact', cmd: '/compact', description: '会話の履歴をLilyに要約させて圧縮する（長い会話のコスト・読み返しやすさ対策）' },
   { id: 'clear', cmd: '/clear', description: '会話をリセットする' },
   { id: 'search', cmd: '/search', description: 'ネット検索をその場でONにして、正確に調べてから答えてもらう' },
-  { id: 'quiz', cmd: '/quiz', description: 'ここまでの話題から練習問題(QA)を作ってもらう（100pt）' },
-  { id: 'hard', cmd: '/hard', description: '超難問・鬼問題を作成（500pt）' },
+  { id: 'quiz', cmd: '/quiz', description: `ここまでの話題から練習問題(QA)を作ってもらう（${EXERCISE_TOK}）` },
+  { id: 'hard', cmd: '/hard', description: `超難問・鬼問題を作成（${HARD_PROBLEM_TOK}）` },
   { id: 'review', cmd: '/review', description: 'これまでの理解を批判的にチェックしてもらう（添削）' },
   // Format modifiers — force Lily to output a specific QA block format.
-  { id: 'qa', cmd: '/qa', description: '一問一答（Q&A）形式で問題を生成（100pt）。例：/qa 江戸時代' },
-  { id: 'fill', cmd: '/fill', description: '穴埋め問題形式で生成（100pt）。例：/fill 光合成の仕組み' },
-  { id: 'choice', cmd: '/choice', description: '選択問題（4択）形式で生成（100pt）。例：/choice 三権分立' },
-  { id: 'tf', cmd: '/tf', description: '○×問題形式で生成（100pt）。例：/tf 細胞の構造' },
-  { id: 'flash', cmd: '/flash', description: '単語カード形式で生成（100pt）。例：/flash 英単語リスト' },
-  { id: 'order', cmd: '/order', description: '並べ替え問題形式で生成（100pt）。例：/order 歴史の流れ' },
+  { id: 'qa', cmd: '/qa', description: `一問一答（Q&A）形式で問題を生成（${EXERCISE_TOK}）。例：/qa 江戸時代` },
+  { id: 'fill', cmd: '/fill', description: `穴埋め問題形式で生成（${EXERCISE_TOK}）。例：/fill 光合成の仕組み` },
+  { id: 'choice', cmd: '/choice', description: `選択問題（4択）形式で生成（${EXERCISE_TOK}）。例：/choice 三権分立` },
+  { id: 'tf', cmd: '/tf', description: `○×問題形式で生成（${EXERCISE_TOK}）。例：/tf 細胞の構造` },
+  { id: 'flash', cmd: '/flash', description: `単語カード形式で生成（${EXERCISE_TOK}）。例：/flash 英単語リスト` },
+  { id: 'order', cmd: '/order', description: `並べ替え問題形式で生成（${EXERCISE_TOK}）。例：/order 歴史の流れ` },
 ];

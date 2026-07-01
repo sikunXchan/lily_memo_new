@@ -8,7 +8,7 @@ import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
 import { getUserName, setUserName } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
 import PlanModal from '@/components/PlanModal';
-import { getPlan, getRemainingPoints, PLAN_LABEL, PLAN_DAILY_POINTS } from '@/lib/points';
+import { getPlan, getRemainingPoints, PLAN_LABEL, PLAN_DAILY_POINTS, ptToTokens, formatTokens } from '@/lib/points';
 
 function randCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -407,7 +407,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             <h3>{t('プラン・ポイント')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">{t('現在のプラン：')}<strong>{planLabel}</strong>　{t('残り：')}<strong>{planRemaining.toLocaleString()} / {planDaily.toLocaleString()} pt</strong></p>
+            <p className="desc">{t('現在のプラン：')}<strong>{planLabel}</strong>　{t('残り：')}<strong>{formatTokens(ptToTokens(planRemaining))} / {formatTokens(ptToTokens(planDaily))} トークン</strong></p>
             <button className="btn-action" onClick={() => setShowPlanModal(true)}>
               {t('プランを変更・確認')}
             </button>
