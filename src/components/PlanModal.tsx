@@ -2,9 +2,9 @@
 import { useState, useEffect } from 'react';
 import {
   getPlan, canUpgradeTo, tryUnlockWithPassword,
-  getRemainingPoints, getPointsUsedToday,
-  PLAN_ORDER, PLAN_DAILY_POINTS, PLAN_PRICE_YEN, PLAN_LABEL, PT,
-  getTicketLimit, getTicketsLeft, ptToTokens, formatTokens,
+  getRemainingTokens, getTokensUsedToday,
+  PLAN_ORDER, PLAN_DAILY_TOKENS, PLAN_PRICE_YEN, PLAN_LABEL, MODE_MULTIPLIER,
+  getTicketLimit, getTicketsLeft, formatTokens,
 } from '@/lib/points';
 import type { Plan } from '@/lib/points';
 
@@ -35,8 +35,8 @@ export default function PlanModal({ onClose }: PlanModalProps) {
 
   useEffect(() => {
     setCurrentPlan(getPlan());
-    setRemaining(getRemainingPoints());
-    setUsed(getPointsUsedToday());
+    setRemaining(getRemainingTokens());
+    setUsed(getTokensUsedToday());
   }, []);
 
   function handleUpgrade(plan: Plan) {
@@ -49,7 +49,7 @@ export default function PlanModal({ onClose }: PlanModalProps) {
     const ok = tryUnlockWithPassword(password, plan);
     if (ok) {
       setCurrentPlan(plan);
-      setRemaining(getRemainingPoints());
+      setRemaining(getRemainingTokens());
       setExpandedPlan(null);
     } else {
       setPwError('パスワードが違います');
@@ -57,7 +57,7 @@ export default function PlanModal({ onClose }: PlanModalProps) {
   }
 
   const isDeveloper = currentPlan === 'developer';
-  const daily = PLAN_DAILY_POINTS[currentPlan];
+  const daily = PLAN_DAILY_TOKENS[currentPlan];
   const pct = isDeveloper ? 100 : Math.max(0, Math.min(100, (remaining / daily) * 100));
 
   return (
@@ -105,8 +105,8 @@ export default function PlanModal({ onClose }: PlanModalProps) {
           <div className="pm-usage-label">本日の残りトークン（毎日0時リセット）</div>
           <div className="pm-bar-wrap"><div className="pm-bar" style={{ width: `${pct}%` }} /></div>
           <div className="pm-usage-nums">
-            {isDeveloper ? '∞ / 無制限' : `${formatTokens(ptToTokens(remaining))} / ${formatTokens(ptToTokens(daily))} トークン`}
-            {!isDeveloper && `（使用済 ${formatTokens(ptToTokens(used))}トークン）`}
+            {isDeveloper ? '∞ / 無制限' : `${formatTokens(remaining)} / ${formatTokens(daily)} トークン`}
+            {!isDeveloper && `（使用済 ${formatTokens(used)}トークン）`}
           </div>
         </div>
         {isDeveloper && (
@@ -128,7 +128,7 @@ export default function PlanModal({ onClose }: PlanModalProps) {
               <div key={plan} className={`pm-card${isCurrent ? ' current' : ''}${!canUp && !isCurrent ? ' locked' : ''}`}>
                 <div className="pm-card-row">
                   <span className="pm-card-name">{PLAN_LABEL[plan]}</span>
-                  <span className="pm-card-pts">{plan === 'developer' ? '無制限' : `${formatTokens(ptToTokens(PLAN_DAILY_POINTS[plan]))}トークン/日`}</span>
+                  <span className="pm-card-pts">{plan === 'developer' ? '無制限' : `${formatTokens(PLAN_DAILY_TOKENS[plan])}トークン/日`}</span>
                   <span className="pm-card-price">{plan === 'developer' ? '開発者専用' : PLAN_PRICE_YEN[plan] === 0 ? '無料' : `¥${PLAN_PRICE_YEN[plan]}/月`}</span>
                   {isCurrent && <span className="pm-card-badge">現在</span>}
                   {canUp && !isCurrent && expandedPlan !== plan && (
@@ -160,11 +160,12 @@ export default function PlanModal({ onClose }: PlanModalProps) {
         </div>
 
         <div className="pm-costs">
-          <div className="pm-costs-title">消費トークン（AIモード / 1回）</div>
-          <div className="pm-cost-row"><span>🪶 軽量モード・sikun</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.lite))}</span></div>
-          <div className="pm-cost-row"><span>🌸 安定モード</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.flash))}</span></div>
-          <div className="pm-cost-row"><span>🧠 思考モード</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.thinking))}</span></div>
-          <div className="pm-cost-row"><span>⚡ Ultra思考モード</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.ultra))}</span></div>
+          <div className="pm-costs-title">モード別トークン消費倍率（実際に使ったトークン数に掛け算）</div>
+          <div className="pm-cost-row"><span>🪶 軽量モード</span><span className="pm-cost-pts">×{MODE_MULTIPLIER.lite}</span></div>
+          <div className="pm-cost-row"><span>🌸 安定モード</span><span className="pm-cost-pts">×{MODE_MULTIPLIER.stable}</span></div>
+          <div className="pm-cost-row"><span>🧠 思考モード</span><span className="pm-cost-pts">×{MODE_MULTIPLIER.thinking}</span></div>
+          <div className="pm-cost-row"><span>⚡ Ultra思考モード</span><span className="pm-cost-pts">×{MODE_MULTIPLIER.ultra}</span></div>
+          <div className="pm-cost-row"><span>🐕 sikun（常駐アシスタント）</span><span className="pm-cost-pts">無料</span></div>
         </div>
         <div className="pm-costs" style={{ marginTop: '12px' }}>
           <div className="pm-costs-title">現在のプランの利用回数上限（毎日0時リセット）</div>
@@ -205,9 +206,8 @@ export default function PlanModal({ onClose }: PlanModalProps) {
           </div>
         </div>
         <div className="pm-costs" style={{ marginTop: '12px' }}>
-          <div className="pm-costs-title">消費トークン（チャットのタスク別コマンド）</div>
-          <div className="pm-cost-row"><span>📝 演習問題生成（/quiz, /qa など）</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.exercise))}</span></div>
-          <div className="pm-cost-row"><span>👹 鬼問題作成（/hard）</span><span className="pm-cost-pts">{formatTokens(ptToTokens(PT.hardProblem))}</span></div>
+          <div className="pm-costs-title">チャットのタスク別コマンド（/quiz, /hard など）</div>
+          <div className="pm-cost-row"><span>現在選択中の応答モードの倍率がそのまま適用されます（固定料金なし）</span></div>
         </div>
       </div>
     </div>

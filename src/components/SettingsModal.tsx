@@ -8,7 +8,7 @@ import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
 import { getUserName, setUserName } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
 import PlanModal from '@/components/PlanModal';
-import { getPlan, getRemainingPoints, PLAN_LABEL, PLAN_DAILY_POINTS, ptToTokens, formatTokens } from '@/lib/points';
+import { getPlan, getRemainingTokens, PLAN_LABEL, PLAN_DAILY_TOKENS, formatTokens } from '@/lib/points';
 
 function randCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -59,8 +59,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     setDefaultResponseModeState(localStorage.getItem('lily_economy_mode') === '0' ? 'stable' : 'lite');
     const plan = getPlan();
     setPlanLabel(PLAN_LABEL[plan]);
-    setPlanRemaining(getRemainingPoints());
-    setPlanDaily(PLAN_DAILY_POINTS[plan]);
+    setPlanRemaining(getRemainingTokens());
+    setPlanDaily(PLAN_DAILY_TOKENS[plan]);
     // 武士モードは廃止。旧設定が残っていればタメ口に移行する。
     const savedTone = localStorage.getItem('lily_sikun_tone');
     if (savedTone && savedTone !== 'bushi') {
@@ -407,7 +407,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             <h3>{t('プラン・ポイント')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">{t('現在のプラン：')}<strong>{planLabel}</strong>　{t('残り：')}<strong>{formatTokens(ptToTokens(planRemaining))} / {formatTokens(ptToTokens(planDaily))} トークン</strong></p>
+            <p className="desc">{t('現在のプラン：')}<strong>{planLabel}</strong>　{t('残り：')}<strong>{formatTokens(planRemaining)} / {formatTokens(planDaily)} トークン</strong></p>
             <button className="btn-action" onClick={() => setShowPlanModal(true)}>
               {t('プランを変更・確認')}
             </button>
@@ -789,7 +789,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         }
       `}</style>
     </div>
-    {showPlanModal && <PlanModal onClose={() => { setShowPlanModal(false); const p = getPlan(); setPlanLabel(PLAN_LABEL[p]); setPlanRemaining(getRemainingPoints()); setPlanDaily(PLAN_DAILY_POINTS[p]); }} />}
+    {showPlanModal && <PlanModal onClose={() => { setShowPlanModal(false); const p = getPlan(); setPlanLabel(PLAN_LABEL[p]); setPlanRemaining(getRemainingTokens()); setPlanDaily(PLAN_DAILY_TOKENS[p]); }} />}
   </>
   );
 }
