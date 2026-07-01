@@ -4,8 +4,15 @@ import {
   getPlan, canUpgradeTo, tryUnlockWithPassword,
   getRemainingPoints, getPointsUsedToday,
   PLAN_ORDER, PLAN_DAILY_POINTS, PLAN_PRICE_YEN, PLAN_LABEL, PT,
+  getTicketLimit, getTicketsLeft,
 } from '@/lib/points';
 import type { Plan } from '@/lib/points';
+
+function ticketLimitText(limit: number): string {
+  if (limit >= Number.MAX_SAFE_INTEGER) return '無制限';
+  if (limit <= 0) return '利用不可';
+  return `1日${limit}回`;
+}
 
 interface PlanModalProps {
   onClose: () => void;
@@ -153,6 +160,30 @@ export default function PlanModal({ onClose }: PlanModalProps) {
           <div className="pm-cost-row"><span>🌸 安定モード</span><span className="pm-cost-pts">{PT.flash}pt</span></div>
           <div className="pm-cost-row"><span>🧠 思考モード</span><span className="pm-cost-pts">{PT.thinking}pt</span></div>
           <div className="pm-cost-row"><span>⚡ Ultra思考モード</span><span className="pm-cost-pts">{PT.ultra}pt</span></div>
+        </div>
+        <div className="pm-costs" style={{ marginTop: '12px' }}>
+          <div className="pm-costs-title">現在のプランの利用回数上限（毎日0時リセット）</div>
+          <div className="pm-cost-row">
+            <span>🌸 安定モード</span>
+            <span className="pm-cost-pts">
+              {ticketLimitText(getTicketLimit('stable'))}
+              {getTicketLimit('stable') > 0 && getTicketLimit('stable') < Number.MAX_SAFE_INTEGER ? `（残り${getTicketsLeft('stable')}）` : ''}
+            </span>
+          </div>
+          <div className="pm-cost-row">
+            <span>🧠 思考モード</span>
+            <span className="pm-cost-pts">
+              {ticketLimitText(getTicketLimit('thinking'))}
+              {getTicketLimit('thinking') > 0 && getTicketLimit('thinking') < Number.MAX_SAFE_INTEGER ? `（残り${getTicketsLeft('thinking')}）` : ''}
+            </span>
+          </div>
+          <div className="pm-cost-row">
+            <span>⚡ Ultra思考モード</span>
+            <span className="pm-cost-pts">
+              {ticketLimitText(getTicketLimit('ultra'))}
+              {getTicketLimit('ultra') > 0 && getTicketLimit('ultra') < Number.MAX_SAFE_INTEGER ? `（残り${getTicketsLeft('ultra')}）` : ''}
+            </span>
+          </div>
         </div>
         <div className="pm-costs" style={{ marginTop: '12px' }}>
           <div className="pm-costs-title">消費ポイント（タスク別）</div>
