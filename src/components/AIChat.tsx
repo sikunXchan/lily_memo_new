@@ -42,7 +42,6 @@ import {
   canAfford, deductPoints, getRemainingPoints, getPlan, PT, PLAN_DAILY_POINTS, PLAN_LABEL, calcTokenSurcharge,
   getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode, ptToTokens, formatTokens,
 } from '@/lib/points';
-import { buildAppKnowledgeText } from '@/lib/appKnowledge';
 import { useT, translate } from '@/lib/i18n';
 import { TONES, SLASH_COMMANDS } from '@/lib/toolboxData';
 import { useEnabledTones } from '@/lib/toolbox';
@@ -630,8 +629,7 @@ function nameAddon(): string {
 }
 
 function buildSystemPrompt(contextNotes: Note[], activeSkill?: Skill | null): string {
-  const skillAddon = (activeSkill ? skillPromptAddon(activeSkill) : '') + nameAddon()
-    + `\n\n${buildAppKnowledgeText()}`;
+  const skillAddon = (activeSkill ? skillPromptAddon(activeSkill) : '') + nameAddon();
   if (contextNotes.length === 0) return LILY_CHAT_SYSTEM_PROMPT + skillAddon;
   // Adaptive per-note cap: when the user is focused on just a few notes, send
   // (almost) the whole thing so Lily doesn't miss content that's actually

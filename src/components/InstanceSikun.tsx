@@ -12,7 +12,6 @@ import {
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
 import { canAfford, deductPoints, getRemainingPoints, PT, ptToTokens, formatTokens } from '@/lib/points';
-import { buildAppKnowledgeText } from '@/lib/appKnowledge';
 import { renderRich } from '@/lib/richText';
 import 'katex/dist/katex.min.css';
 
@@ -105,11 +104,12 @@ sikunlilyの軽量版で、ユーザーが作業中にちらっと質問する�
 - 選択された文章の解説
 - 直接的な事実回答や言い換え
 
-# 検索について（重要・コスト節約）
-- 基本は自分の知識だけで答える。検索は有料なので安易に使わない。
-- ただし「自分が知らない固有名詞・専門用語」や「最新情報（時事・価格・リリース等）が必須の質問」で、知識だけでは正確に答えられないと判断したときは、本文を一切書かず、次の一行だけを出力せよ:
-  [SEARCH: 調べたいキーワード]
-- 知っている内容なら絶対に [SEARCH] を使わず普通に答える。
+# 検索について（重要）
+- ネット検索は一切使わない（禁止）。常に自分の知識だけで答える。
+- 自分の知識だけでは正確に答えられない質問（最新情報・時事・価格など）が来た場合は、無理に答えようとせず「詳しく調べたいなら AI タブの Lily に聞いてね」とだけ伝える。
+
+# このアプリの仕様について聞かれたら
+料金プラン・トークン予算・各モードの利用回数制限など、アプリの仕様や運営に関する質問には憶測で答えない。「その質問は開発者に直接聞いてね」とだけ伝える。
 
 # テキスト整形のルール
 - **重要な用語・キーワード**は **太字** にする
@@ -122,7 +122,7 @@ sikunlilyの軽量版で、ユーザーが作業中にちらっと質問する�
 - 「次のアクション」「次のステップ」みたいなメタ説明をしない
 
 # 複雑な依頼が来たら
-「それは AI タブの sikunlily 本体に頼んでくれ」とひと言だけ返せ。
+「それは AI タブの Lily に頼んでくれ」とひと言だけ返せ。
 （例: 「マインドマップ作って」「クイズ作って」「グラフ書いて」「Deep Research して」など）
 
 # 口調
@@ -138,11 +138,12 @@ You're the lightweight version of sikunlily, made for quick questions while the 
 - Explaining a selected sentence
 - Direct factual answers and rephrasing
 
-# About search (important — save cost)
-- Answer from your own knowledge by default. Search costs money, so don't reach for it lightly.
-- But when a question hinges on a proper noun / technical term you don't know, or needs up-to-date info (news, prices, releases) you can't answer accurately from memory, output nothing but this single line:
-  [SEARCH: keywords to look up]
-- If you know the answer, never use [SEARCH] — just answer normally.
+# About search (important)
+- Never search the web — that's forbidden. Always answer from your own knowledge only.
+- If a question truly needs info you don't have (news, prices, anything current), don't guess — just say "For that, ask Lily in the AI tab" and stop there.
+
+# When asked about this app's specs
+Don't guess at questions about pricing plans, token budgets, per-mode usage limits, or how the app is run. Just say "Ask the developer directly for that."
 
 # Text formatting rules
 - **Bold** important terms and keywords
@@ -155,7 +156,7 @@ You're the lightweight version of sikunlily, made for quick questions while the 
 - No meta commentary like "next action" or "next step"
 
 # When a complex request comes in
-Reply with one line only: "Ask the full sikunlily in the AI tab for that."
+Reply with one line only: "Ask Lily in the AI tab for that."
 (e.g. "make a mind map", "make a quiz", "draw a graph", "do Deep Research")
 
 # Always reply in English.
@@ -164,8 +165,7 @@ Reply with one line only: "Ask the full sikunlily in the AI tab for that."
 Friendly, warm, and concise — like a helpful study buddy. A light emoji now and then is fine.`;
 
 function sikunBaseSystem(en: boolean): string {
-  const base = en ? INSTANCE_SIKUN_SYSTEM_EN : INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt());
-  return `${base}\n\n${buildAppKnowledgeText()}`;
+  return en ? INSTANCE_SIKUN_SYSTEM_EN : INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt());
 }
 
 // Appended to system prompt when Sikun is asked to annotate a PDF page.
@@ -778,9 +778,9 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote + annotateNote;
       const modelList = ['gemini-3.1-flash-lite'];
       deductPoints(PT.lite);
-      // Pass 1: no search (free). sikun answers from its own knowledge, or
-      // emits `[SEARCH: query]` when it hits something it doesn't know.
-      let reply = await streamSikunlilyChat(
+      // sikun never searches — it answers from its own knowledge or tells the
+      // user to ask Lily in the AI tab (see the system prompt's search rule).
+      const reply = await streamSikunlilyChat(
         turns,
         systemPrompt,
         apiKey,
@@ -789,25 +789,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         modelList,
         false,
       );
-      // Pass 2: only if sikun asked to search → re-run with Google Search on (paid).
-      const searchReq = reply.match(/\[SEARCH:\s*([^\]]+)\]/i);
-      if (searchReq) {
-        const query = searchReq[1].trim();
-        const searchTurns: ChatTurn[] = [
-          ...turns,
-          { role: 'model', text: reply },
-          { role: 'user', text: en ? `Search for "${query}" and answer the original question.` : `「${query}」を調べて、最初の質問に答えて。` },
-        ];
-        reply = await streamSikunlilyChat(
-          searchTurns,
-          systemPrompt,
-          apiKey,
-          0,
-          {},
-          modelList,
-          true,
-        );
-      }
       // Extract and apply PDF annotation blocks before showing reply text
       let replyForDisplay = reply;
       const annMatch = reply.match(/\[PDF_WRITE\]\s*([\s\S]*?)\s*\[\/PDF_WRITE\]/);
