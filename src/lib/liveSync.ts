@@ -1,6 +1,7 @@
 import { liveQuery, type Table } from 'dexie';
 import { db, newSyncId } from './db';
 import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession } from './db';
+import { getPlanSyncState, applyPlanSyncState, registerPlanSyncHook, type PlanSyncState } from './points';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
 const POLL_INTERVAL_MS  = 30_000;
@@ -28,6 +29,7 @@ interface LiveSnapshot {
   problemSets:      ProblemSet[];
   diaries:          Diary[];
   lessonSessions:   LessonSession[];
+  planState?:       PlanSyncState;
   ts: number;
 }
 
@@ -96,6 +98,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     studyCategories, exams, scheduleDays,
     savedChats: savedChats.map(stripSavedChatForSync),
     todos, earnedBadges, problemSets, diaries, lessonSessions,
+    planState: getPlanSyncState(),
     ts: Date.now(),
   };
 }
@@ -209,6 +212,12 @@ function schedulePush() {
   _pushTimer = setTimeout(() => void push(), delay);
 }
 
+// Plan/token changes live in localStorage, not Dexie, so they don't flow
+// through installWriteHooks() below — register directly with points.ts so a
+// plan unlock or a spent message schedules a push the same way a note edit
+// does. A no-op call (schedulePush() bails out when sync is disabled).
+registerPlanSyncHook(() => schedulePush());
+
 // Fire a pending debounced push immediately (page being hidden/closed).
 function flushPendingPush() {
   if (!_pushTimer) return;
@@ -221,6 +230,9 @@ function flushPendingPush() {
 async function mergeSnapshot(remote: LiveSnapshot) {
   _isMerging = true;
   try {
+    // ── Plan + today's token usage (see lib/points.ts for the merge rules).
+    applyPlanSyncState(remote.planState);
+
     // ── Folders: syncId-based, newer updatedAt wins (tombstones carry a bumped
     // updatedAt so deletions propagate). parentId is resolved in a second pass
     // because the parent may itself arrive later in the same snapshot.

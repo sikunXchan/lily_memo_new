@@ -2226,6 +2226,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       }]);
       return;
     }
+    const searchRequested = webSearch || !!opts?.forceSearch;
+    if (searchRequested && getTicketsLeft('search') <= 0) {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'lily',
+        text: t('本日のネット検索の利用上限に達しました。明日リセットされます。'),
+        timestamp: Date.now(),
+      }]);
+      return;
+    }
 
     setInput('');
     setAttachments([]);
@@ -2356,7 +2366,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             },
           },
           ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'],
-          webSearch || opts?.forceSearch,
+          searchRequested,
           65536,
           0.6,
         );
@@ -2382,7 +2392,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             },
           },
           ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
-          webSearch || opts?.forceSearch,
+          searchRequested,
           65536,
           accuracy ? 0.35 : 0.6,
         );
@@ -2392,7 +2402,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       } else {
         const useLite = economy || autoLite;
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
-          webSearch: webSearch || opts?.forceSearch,
+          webSearch: searchRequested,
           models: useLite
             ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
             : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
@@ -2435,6 +2445,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             timestamp: Date.now(),
           }]);
         }
+      }
+      if (searchRequested) {
+        consumeTicket('search');
+        if (getTicketsLeft('search') <= 0) setWebSearch(false);
       }
     } catch (e) {
       setSikunProgress('');
@@ -2496,6 +2510,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         id: crypto.randomUUID(),
         role: 'lily',
         text: `トークンが足りません（残り${formatTokens(getRemainingTokens())}tok、このモードの目安必要量は${formatTokens(estimatedMinCost(responseMode))}tok）。軽量モードに切り替えるか、明日リセットをお待ちください。`,
+        timestamp: Date.now(),
+      }]);
+      return;
+    }
+    if (webSearch && getTicketsLeft('search') <= 0) {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'lily',
+        text: t('本日のネット検索の利用上限に達しました。明日リセットされます。'),
         timestamp: Date.now(),
       }]);
       return;
@@ -2605,6 +2628,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         billedTokens: regenBilledTokens,
       }]);
 
+      if (webSearch) {
+        consumeTicket('search');
+        if (getTicketsLeft('search') <= 0) setWebSearch(false);
+      }
       if (ticketMode && getTicketLimit(ticketMode) < Number.MAX_SAFE_INTEGER) {
         consumeTicket(ticketMode);
         if (getTicketsLeft(ticketMode) <= 0) {
@@ -2639,6 +2666,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const ultraTicketsLeft = getTicketsLeft('ultra');
   const stableTicketLimit = getTicketLimit('stable');
   const stableTicketsLeft = getTicketsLeft('stable');
+  const searchTicketLimit = getTicketLimit('search');
+  const searchTicketsLeft = getTicketsLeft('search');
   const ticketStateText = (active: boolean, ticketsLeft: number, limit: number): string => {
     if (active) return 'ON';
     if (limit >= Number.MAX_SAFE_INTEGER) return 'OFF';
@@ -2713,8 +2742,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                 <div className="header-menu-backdrop" onClick={() => setShowHeaderMenu(false)} />
                 <div className="header-menu">
                   <div className="header-menu-section">{t('応答モード')}</div>
-                  <button className={`header-menu-item toggle${webSearch ? ' on' : ''}`} onClick={() => setWebSearch(p => !p)}>
-                    <Search size={15} /><span className="hmi-label">{t('ネット検索')}</span><span className="hmi-state">{webSearch ? 'ON' : 'OFF'}</span>
+                  <button
+                    className={`header-menu-item toggle${webSearch ? ' on' : ''}`}
+                    onClick={() => setWebSearch(p => !p)}
+                    disabled={!webSearch && searchTicketsLeft <= 0}
+                  >
+                    <Search size={15} /><span className="hmi-label">{t('ネット検索')}</span>
+                    <span className="hmi-state">{ticketStateText(webSearch, searchTicketsLeft, searchTicketLimit)}</span>
                   </button>
                   <button
                     className={`header-menu-item toggle${economy ? ' on' : ''}`}

@@ -106,6 +106,14 @@ function resetPlanIfExpired(): void {
   }
 }
 
+// Registered by lib/liveSync.ts so a plan/token change on this device
+// schedules a sync push, without points.ts having to import liveSync.ts
+// (which itself imports points.ts to build/merge the synced snapshot).
+let _onSyncableChange: (() => void) | null = null;
+export function registerPlanSyncHook(fn: () => void): void {
+  _onSyncableChange = fn;
+}
+
 export function getPlan(): Plan {
   if (typeof window === 'undefined') return 'free';
   resetPlanIfExpired();
@@ -125,6 +133,7 @@ export function setPlan(plan: Plan): void {
     localStorage.removeItem(KEY_PLAN_MONTH);
     localStorage.removeItem(KEY_DEV_DAY);
   }
+  _onSyncableChange?.();
 }
 
 export function canUpgradeTo(plan: Plan): boolean {
@@ -180,6 +189,66 @@ export function deductTokens(cost: number): void {
   resetIfNewDay();
   const used = getTokensUsedToday() + cost;
   localStorage.setItem(KEY_USED, String(used));
+  _onSyncableChange?.();
+}
+
+// --- Cross-device plan/token sync --------------------------------------------
+// Plan and today's token usage live in localStorage (not Dexie), so they sit
+// outside the normal notes/folders/study-history sync in lib/liveSync.ts.
+// These two functions let liveSync fold plan + token state into the same
+// snapshot/merge cycle without duplicating the reset-on-expiry logic here.
+export interface PlanSyncState {
+  plan: Plan;
+  planMonth: string | null;
+  devDay: string | null;
+  ptsDate: string | null;
+  ptsUsed: number;
+}
+
+export function getPlanSyncState(): PlanSyncState {
+  if (typeof window === 'undefined') {
+    return { plan: 'free', planMonth: null, devDay: null, ptsDate: null, ptsUsed: 0 };
+  }
+  resetPlanIfExpired();
+  resetIfNewDay();
+  return {
+    plan: (localStorage.getItem(KEY_PLAN) as Plan) ?? 'free',
+    planMonth: localStorage.getItem(KEY_PLAN_MONTH),
+    devDay: localStorage.getItem(KEY_DEV_DAY),
+    ptsDate: localStorage.getItem(KEY_DATE),
+    ptsUsed: parseInt(localStorage.getItem(KEY_USED) ?? '0', 10),
+  };
+}
+
+// Merge a remote device's plan/token state into this device's localStorage.
+// Plan: the higher-ranked plan wins — an unlock on one device should show up
+// everywhere, and a device that hasn't rolled over to a new day/month yet
+// shouldn't downgrade a still-valid plan seen on the other side.
+// Token usage: today's spend is a shared daily budget, so once both sides
+// agree it's "today" the higher of the two counts wins (never added — a
+// repeated merge must stay idempotent instead of double-counting the same
+// spend every poll cycle).
+export function applyPlanSyncState(remote: PlanSyncState | undefined): void {
+  if (!remote || typeof window === 'undefined') return;
+  resetPlanIfExpired();
+  resetIfNewDay();
+
+  const localPlan = (localStorage.getItem(KEY_PLAN) as Plan) ?? 'free';
+  if (PLAN_ORDER.indexOf(remote.plan) > PLAN_ORDER.indexOf(localPlan)) {
+    localStorage.setItem(KEY_PLAN, remote.plan);
+    if (remote.planMonth) localStorage.setItem(KEY_PLAN_MONTH, remote.planMonth);
+    else localStorage.removeItem(KEY_PLAN_MONTH);
+    if (remote.devDay) localStorage.setItem(KEY_DEV_DAY, remote.devDay);
+    else localStorage.removeItem(KEY_DEV_DAY);
+  }
+
+  if (remote.ptsDate === todayStr()) {
+    const localUsed = parseInt(localStorage.getItem(KEY_USED) ?? '0', 10);
+    if (remote.ptsUsed > localUsed) {
+      localStorage.setItem(KEY_DATE, todayStr());
+      localStorage.setItem(KEY_USED, String(remote.ptsUsed));
+    }
+  }
 }
 
 // --- Elevated-mode daily tickets --------------------------------------------
@@ -191,7 +260,10 @@ export function deductTokens(cost: number): void {
 //
 // 演習タブの問題作成・授業 are also ticket-gated (not token-metered) since
 // their token cost varies too much per generation to budget sensibly.
-export type TicketMode = 'thinking' | 'ultra' | 'stable' | 'exercise' | 'lesson';
+// ネット検索 is likewise ticket-gated (1/day, every plan including Free and
+// Developer) rather than token-metered — grounded search calls vary too much
+// in cost to fold into the per-mode multiplier cleanly.
+export type TicketMode = 'thinking' | 'ultra' | 'stable' | 'exercise' | 'lesson' | 'search';
 
 export const PLAN_THINKING_TICKETS: Record<Plan, number> = {
   free: 0,
@@ -240,12 +312,23 @@ export const PLAN_LESSON_TICKETS: Record<Plan, number> = {
   developer: 1,
 };
 
+// ネット検索: 全プラン共通で1日1回（Developerも例外なし）。
+export const PLAN_SEARCH_TICKETS: Record<Plan, number> = {
+  free: 1,
+  plus: 1,
+  pro: 1,
+  max: 1,
+  ultimate: 1,
+  developer: 1,
+};
+
 const TICKET_LIMITS: Record<TicketMode, Record<Plan, number>> = {
   thinking: PLAN_THINKING_TICKETS,
   ultra: PLAN_ULTRA_TICKETS,
   stable: PLAN_STABLE_TICKETS,
   exercise: PLAN_EXERCISE_TICKETS,
   lesson: PLAN_LESSON_TICKETS,
+  search: PLAN_SEARCH_TICKETS,
 };
 
 const KEY_TICKET_DATE = 'lily-tickets-date';
@@ -255,6 +338,7 @@ const KEY_TICKET_USED: Record<TicketMode, string> = {
   stable: 'lily-tickets-used-stable',
   exercise: 'lily-tickets-used-exercise',
   lesson: 'lily-tickets-used-lesson',
+  search: 'lily-tickets-used-search',
 };
 
 function resetTicketsIfNewDay(): void {
