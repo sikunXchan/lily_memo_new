@@ -365,7 +365,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           </div>
           <div className="section-content">
             <p className="desc">
-              {t('同じ共有キーを設定した端末間で、メモ・フォルダ・勉強記録を自動で同期します。何も操作しなくても、変更から約30秒以内にもう一方の端末に反映されます。')}
+              {t('同じ共有キーを設定した端末間で、メモ・フォルダ・勉強記録・プランとトークン残量を自動で同期します。何も操作しなくても、変更から約30秒以内にもう一方の端末に反映されます。')}
             </p>
             <div className="toggle-row" style={{ marginBottom: 16 }}>
               <span className="toggle-state">{liveEnabled ? t('同期中') : t('停止中')}</span>
