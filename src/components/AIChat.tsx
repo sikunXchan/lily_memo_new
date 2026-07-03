@@ -164,7 +164,8 @@ function isAccuracyTask(text: string): boolean {
   return ACCURACY_RE.test(text || '');
 }
 
-function currentResponseMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean): ResponseMode {
+function currentResponseMode(isUltra: boolean, isThinking: boolean, isEconomy: boolean, isLegacy = false): ResponseMode {
+  if (isLegacy) return 'legacy';
   if (isUltra) return 'ultra';
   if (isThinking) return 'thinking';
   if (isEconomy) return 'lite';
@@ -1827,6 +1828,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const [lilyNoteIds, setLilyNoteIds] = useState<number[]>([]);
   const [lilyThinking, setLilyThinking] = useState(false);
   const [lilyUltraThinking, setLilyUltraThinking] = useState(false);
+  // 古いモデル（2.x系Gemini）モード。品質は lily-memo-2.0 相当だが、どのプラン
+  // でも無制限に使え、トークン消費は0.1倍。
+  const [lilyLegacy, setLilyLegacy] = useState(false);
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [contextSearch, setContextSearch] = useState('');
   const [apiKey, setApiKey] = useState<string>('');
@@ -1931,7 +1935,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const refreshKey = () => setApiKey(getEffectiveApiKey());
     // Default is lightweight mode for every plan; only an explicit '0'
     // (user picked 安定モード / stable mode) opts out of it.
-    const refreshEconomy = () => setEconomy(localStorage.getItem('lily_economy_mode') !== '0');
+    const refreshEconomy = () => {
+      const legacy = localStorage.getItem('lily_legacy_mode') === '1';
+      setLilyLegacy(legacy);
+      // 古いモデルが選ばれているときは軽量モードではない。
+      setEconomy(!legacy && localStorage.getItem('lily_economy_mode') !== '0');
+    };
     refreshKey();
     refreshEconomy();
     window.addEventListener('lily-lang-changed', refreshKey);
@@ -1946,11 +1955,13 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   // one deselects the others (radio-style), so 安定モード (economy=false,
   // thinking=false, ultra=false) is reachable as an explicit option instead of
   // only as "whatever's left after turning 軽量モード off".
-  const selectResponseMode = useCallback((mode: 'lite' | 'stable' | 'thinking' | 'ultra') => {
+  const selectResponseMode = useCallback((mode: 'legacy' | 'lite' | 'stable' | 'thinking' | 'ultra') => {
     setEconomy(mode === 'lite');
     setLilyThinking(mode === 'thinking');
     setLilyUltraThinking(mode === 'ultra');
+    setLilyLegacy(mode === 'legacy');
     try { localStorage.setItem('lily_economy_mode', mode === 'lite' ? '1' : '0'); } catch {}
+    try { localStorage.setItem('lily_legacy_mode', mode === 'legacy' ? '1' : '0'); } catch {}
   }, []);
 
   useEffect(() => {
@@ -2206,17 +2217,17 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     if ((!userText && sentAtts.length === 0) || isLoading || !apiKey) return;
 
     const hasNewFiles = sentAtts.length > 0;
-    const accuracy0 = isAccuracyTask(rawText);
     const autoLite = false;
-    // Explicit 思考/Ultra思考 toggles (not the hidden accuracy-task auto-boost)
-    // and, for Free plan only, plain 安定モード are gated by a daily ticket
-    // count independent of the token budget — see consumeTicketAndMaybeDowngrade.
+    // Explicit 思考/Ultra思考 toggles and, for Free plan only, plain 安定モード
+    // are gated by a daily ticket count independent of the token budget.
+    // 安定モードはユーザーが明示的に選んだモードなので、精度重視タスクでも
+    // 勝手に思考モードへ引き上げない（＝チケット・課金は安定モードのまま）。
     const ticketMode: TicketMode | null =
       lilyUltraThinking && !economy ? 'ultra'
       : lilyThinking && !economy ? 'thinking'
-      : !economy && !lilyThinking && !lilyUltraThinking && getPlan() === 'free' ? 'stable'
+      : !economy && !lilyThinking && !lilyUltraThinking && !lilyLegacy && getPlan() === 'free' ? 'stable'
       : null;
-    const responseMode = currentResponseMode(lilyUltraThinking && !economy, (lilyThinking || accuracy0) && !economy, economy);
+    const responseMode = currentResponseMode(lilyUltraThinking && !economy, lilyThinking && !economy, economy, lilyLegacy);
     if (!hasTokenBudget(responseMode)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2343,8 +2354,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         }
       }
 
-      // Problem/quiz generation, grading, summarizing etc. auto-engage thinking
-      // + a low temperature so the model doesn't rush and drop answers.
+      // Accuracy-critical requests (problem/quiz generation, grading, summarizing…)
+      // still get a lower temperature and a larger output budget for quality, but
+      // in 安定モード they are NOT silently promoted to 思考モード — the extended
+      // thinking path only runs when the user explicitly turns 思考/Ultra思考 on.
       const accuracy = isAccuracyTask(userMsg.text);
       let aiText: string;
       if (lilyUltraThinking && !economy) {
@@ -2373,15 +2386,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunProgress('');
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
-      } else if ((lilyThinking || accuracy) && !economy) {
+      } else if (lilyThinking && !economy) {
         setSikunLiveThinking('');
         let thinkingAccum = '';
-        setSikunProgress(accuracy && !lilyThinking ? t('🧠 じっくり考えてるよ…') : t('🧠 思考中...'));
+        setSikunProgress(t('🧠 思考中...'));
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
           apiKey,
-          lilyThinking ? 8192 : 4096,
+          8192,
           {
             onThinkingDelta: (delta) => {
               thinkingAccum += delta;
@@ -2401,12 +2414,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         pendingThinkingRef.current = thinkingAccum;
       } else {
         const useLite = economy || autoLite;
+        // 古いモデル（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch: searchRequested,
-          models: useLite
-            ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
-            : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
-          maxOutputTokens: useLite ? 8192 : accuracy ? 65536 : 32768,
+          models: lilyLegacy
+            ? ['gemini-2.5-flash', 'gemini-2.0-flash']
+            : useLite
+              ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
+              : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
+          maxOutputTokens: lilyLegacy || useLite ? 8192 : accuracy ? 65536 : 32768,
           temperature: accuracy ? 0.35 : undefined,
         });
       }
@@ -2463,7 +2479,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     } finally {
       setIsLoading(false);
     }
-  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, allNotes, webSearch, activeMode, economy, activeSkill, compactHistory, t, selectResponseMode]);
+  }, [input, attachments, isLoading, apiKey, messages, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, lilyLegacy, allNotes, webSearch, activeMode, economy, activeSkill, compactHistory, t, selectResponseMode]);
 
   const handleRegenerate = useCallback(async () => {
     if (isLoading) return;
@@ -2502,9 +2518,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const ticketMode: TicketMode | null =
       lilyUltraThinking && !economy ? 'ultra'
       : lilyThinking && !economy ? 'thinking'
-      : !economy && !lilyThinking && !lilyUltraThinking && getPlan() === 'free' ? 'stable'
+      : !economy && !lilyThinking && !lilyUltraThinking && !lilyLegacy && getPlan() === 'free' ? 'stable'
       : null;
-    const responseMode = currentResponseMode(lilyUltraThinking && !economy, (lilyThinking || isAccuracyTask(lastUserText)) && !economy, economy);
+    const responseMode = currentResponseMode(lilyUltraThinking && !economy, lilyThinking && !economy, economy, lilyLegacy);
     if (!hasTokenBudget(responseMode)) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -2568,16 +2584,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunProgress('');
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
-      } else if ((lilyThinking || accuracy) && !economy) {
+      } else if (lilyThinking && !economy) {
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         setSikunLiveThinking('');
         let thinkingAccum = '';
-        setSikunProgress(accuracy && !lilyThinking ? t('🧠 じっくり考えてるよ…') : t('🧠 思考中...'));
+        setSikunProgress(t('🧠 思考中...'));
         aiText = await streamSikunlilyChat(
           history,
           systemPrompt,
           apiKey,
-          lilyThinking ? 8192 : 4096,
+          8192,
           {
             onThinkingDelta: (delta) => {
               thinkingAccum += delta;
@@ -2598,12 +2614,15 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       } else {
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         const regenUseLite = economy || regenAutoLite;
+        // 古いモデル（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
-          models: regenUseLite
-            ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
-            : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
-          maxOutputTokens: regenUseLite ? 8192 : accuracy ? 65536 : 32768,
+          models: lilyLegacy
+            ? ['gemini-2.5-flash', 'gemini-2.0-flash']
+            : regenUseLite
+              ? ['gemini-3.1-flash-lite', 'gemini-3.5-flash']
+              : ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
+          maxOutputTokens: lilyLegacy || regenUseLite ? 8192 : accuracy ? 65536 : 32768,
           temperature: accuracy ? 0.35 : undefined,
         });
       }
@@ -2657,7 +2676,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, activeMode, economy, apiKey, webSearch, activeSkill, selectResponseMode]);
+  }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, lilyLegacy, activeMode, economy, apiKey, webSearch, activeSkill, selectResponseMode]);
 
   const lilyDefaultNoteId = lilyNoteIds[0];
   const thinkingTicketLimit = getTicketLimit('thinking');
@@ -2734,7 +2753,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             </span>
           </button>
           <div className="header-menu-wrap">
-            <button className={`clear-btn${webSearch || lilyThinking || lilyUltraThinking || economy ? ' has-active' : ''}`} onClick={() => setShowHeaderMenu(v => !v)} title={t('メニュー')}>
+            <button className={`clear-btn${webSearch || lilyThinking || lilyUltraThinking || lilyLegacy || economy ? ' has-active' : ''}`} onClick={() => setShowHeaderMenu(v => !v)} title={t('メニュー')}>
               <MoreVertical size={17} />
             </button>
             {showHeaderMenu && typeof document !== 'undefined' && createPortal(
@@ -2742,6 +2761,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                 <div className="header-menu-backdrop" onClick={() => setShowHeaderMenu(false)} />
                 <div className="header-menu">
                   <div className="header-menu-section">{t('応答モード')}</div>
+                  <div className="header-menu-hint">{t('🎁 「軽量モード」と「古いモデル」はどのプランでも無制限。まずはこの2つがおすすめ！')}</div>
                   <button
                     className={`header-menu-item toggle${webSearch ? ' on' : ''}`}
                     onClick={() => setWebSearch(p => !p)}
@@ -2754,15 +2774,25 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     className={`header-menu-item toggle${economy ? ' on' : ''}`}
                     onClick={() => selectResponseMode('lite')}
                   >
-                    <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span><span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
+                    <span className="hmi-emoji">🪶</span><span className="hmi-label">{t('軽量モード')}</span>
+                    <span className="hmi-free">{t('無制限')}</span>
+                    <span className="hmi-state">{economy ? 'ON' : 'OFF'}</span>
                   </button>
                   <button
-                    className={`header-menu-item toggle${!economy && !lilyThinking && !lilyUltraThinking ? ' on' : ''}`}
+                    className={`header-menu-item toggle${lilyLegacy ? ' on legacy' : ''}`}
+                    onClick={() => selectResponseMode('legacy')}
+                  >
+                    <span className="hmi-emoji">🕰️</span><span className="hmi-label">{t('古いモデル')}</span>
+                    <span className="hmi-free">{t('無制限')}</span>
+                    <span className="hmi-state">{lilyLegacy ? 'ON' : 'OFF'}</span>
+                  </button>
+                  <button
+                    className={`header-menu-item toggle${!economy && !lilyThinking && !lilyUltraThinking && !lilyLegacy ? ' on' : ''}`}
                     onClick={() => selectResponseMode('stable')}
-                    disabled={!(!economy && !lilyThinking && !lilyUltraThinking) && stableTicketLimit < Number.MAX_SAFE_INTEGER && stableTicketsLeft <= 0}
+                    disabled={!(!economy && !lilyThinking && !lilyUltraThinking && !lilyLegacy) && stableTicketLimit < Number.MAX_SAFE_INTEGER && stableTicketsLeft <= 0}
                   >
                     <span className="hmi-emoji">🌸</span><span className="hmi-label">{t('安定モード')}</span>
-                    <span className="hmi-state">{ticketStateText(!economy && !lilyThinking && !lilyUltraThinking, stableTicketsLeft, stableTicketLimit)}</span>
+                    <span className="hmi-state">{ticketStateText(!economy && !lilyThinking && !lilyUltraThinking && !lilyLegacy, stableTicketsLeft, stableTicketLimit)}</span>
                   </button>
                   <button
                     className={`header-menu-item toggle${lilyThinking ? ' on' : ''}`}
@@ -2897,6 +2927,18 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                 {t('デフォルトが軽量モードになっているため、品質が低下しています。品質が低下したもしくはより高性能なモデルを使用したいと感じた場合は、チャット右上からモードを変更してください。')}
               </div>
             )}
+            {lilyLegacy && (
+              <div className="welcome-mode-notice legacy">
+                {t('「古いモデル」を使用中です。品質は lily-memo-2.0 version のままですが、どのプランでも無制限に使え、トークン消費は通常の0.1倍です。')}
+              </div>
+            )}
+            <button className="welcome-mode-cta" onClick={() => setShowHeaderMenu(true)}>
+              <span className="welcome-mode-cta-emoji">🎁</span>
+              <span className="welcome-mode-cta-text">
+                <strong>{t('モード機能、知ってる？')}</strong>
+                {t('「軽量モード」と「古いモデル」はどのプランでも無制限。右上の ⋮ から切り替えできます。')}
+              </span>
+            </button>
             {(() => {
               const wPlan = getPlan();
               const wDaily = PLAN_DAILY_TOKENS[wPlan];
@@ -3253,14 +3295,18 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .header-menu-backdrop { position: fixed; inset: 0; z-index: 40; }
         .header-menu { position: fixed; top: 52px; right: 10px; z-index: 9997; background: var(--background); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.16); padding: 6px; min-width: 220px; display: flex; flex-direction: column; gap: 2px; }
         .header-menu-section { font-size: 0.68rem; font-weight: 700; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 12px 2px; }
+        .header-menu-hint { font-size: 0.72rem; line-height: 1.5; font-weight: 600; color: #92680b; background: color-mix(in srgb, #f59e0b 14%, transparent); border: 1px solid color-mix(in srgb, #f59e0b 34%, transparent); border-radius: 9px; padding: 7px 10px; margin: 2px 4px 4px; white-space: normal; }
         .header-menu-divider { height: 1px; background: var(--border); margin: 5px 4px; }
         .header-menu-item { display: flex; align-items: center; gap: 10px; background: none; border: none; border-radius: 8px; padding: 9px 12px; font-size: 0.84rem; color: var(--foreground); cursor: pointer; text-align: left; white-space: nowrap; }
         .header-menu-item:hover { background: var(--accent); color: var(--primary); }
         .header-menu-item.toggle .hmi-label { flex: 1; }
         .header-menu-item.toggle .hmi-emoji { font-size: 14px; width: 15px; text-align: center; }
         .header-menu-item.toggle .hmi-state { font-size: 0.7rem; font-weight: 800; color: var(--fg-muted); }
+        .header-menu-item.toggle .hmi-free { font-size: 0.62rem; font-weight: 800; letter-spacing: 0.02em; color: #16a34a; background: color-mix(in srgb, #22c55e 18%, transparent); border-radius: 999px; padding: 2px 7px; }
         .header-menu-item.toggle.on { color: var(--primary); }
         .header-menu-item.toggle.on .hmi-state { color: var(--primary); }
+        .header-menu-item.toggle.on.legacy { background: color-mix(in srgb, #6366f1 14%, transparent); border-color: #6366f1; color: #6366f1; }
+        .header-menu-item.toggle.on.legacy .hmi-state { color: #6366f1; }
         .header-menu-item.toggle:disabled { opacity: 0.4; cursor: default; }
         .header-menu-item.toggle:disabled:hover { background: none; color: var(--foreground); }
         /* Note context picker modal */
@@ -3316,6 +3362,22 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           color: #92680b; background: color-mix(in srgb, #f59e0b 16%, transparent);
           border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent);
         }
+        .welcome-mode-notice.legacy {
+          color: #4338ca; background: color-mix(in srgb, #6366f1 14%, transparent);
+          border-color: color-mix(in srgb, #6366f1 40%, transparent);
+        }
+        .welcome-mode-cta {
+          display: flex; align-items: center; gap: 11px; text-align: left; cursor: pointer;
+          max-width: 340px; margin: 0 14px; padding: 12px 15px; border-radius: 16px;
+          background: linear-gradient(120deg, color-mix(in srgb, #22c55e 16%, transparent), color-mix(in srgb, var(--primary) 16%, transparent));
+          border: 1px solid color-mix(in srgb, #22c55e 42%, transparent);
+          transition: transform 0.12s ease, filter 0.15s ease;
+        }
+        .welcome-mode-cta:hover { filter: brightness(1.04); transform: translateY(-1px); }
+        .welcome-mode-cta:active { transform: scale(0.99); }
+        .welcome-mode-cta-emoji { font-size: 1.5rem; flex-shrink: 0; }
+        .welcome-mode-cta-text { display: flex; flex-direction: column; gap: 2px; font-size: 0.74rem; line-height: 1.55; font-weight: 600; color: var(--foreground); }
+        .welcome-mode-cta-text strong { font-size: 0.84rem; font-weight: 800; color: #15803d; }
         .welcome-quote {
           position: relative; max-width: 320px; margin: 0 14px; padding: 22px 22px 18px;
           text-align: center; border-radius: 20px;
