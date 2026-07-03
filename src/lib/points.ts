@@ -38,9 +38,14 @@ export const PLAN_LABEL: Record<Plan, string> = {
 // deducted from the daily token budget — pricier modes weigh more heavily
 // per token actually used, instead of charging a flat amount per call
 // regardless of how long the exchange was.
-export type ResponseMode = 'lite' | 'stable' | 'thinking' | 'ultra';
+//
+// 'legacy' (古いモデル) routes to the previous-generation 2.x Gemini models —
+// lower quality (lily-memo-2.0 相当) but very cheap, so it's billed at just
+// 0.1× and is usable without limit on every plan.
+export type ResponseMode = 'legacy' | 'lite' | 'stable' | 'thinking' | 'ultra';
 
 export const MODE_MULTIPLIER: Record<ResponseMode, number> = {
+  legacy: 0.1,
   lite: 1,
   stable: 2,
   thinking: 10,

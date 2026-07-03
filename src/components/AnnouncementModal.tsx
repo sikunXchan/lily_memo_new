@@ -8,6 +8,7 @@
 // The caution section is fixed policy text and normally stays as-is.
 
 import { useEffect, useState } from 'react';
+import TutorialModal, { tutorialDone } from './TutorialModal';
 
 // ── Important notice ─────────────────────────────────────────────────────────
 // Set NOTICE to show a notice; set to null to fall back to daily tips.
@@ -93,8 +94,11 @@ function getTodaysTip(): { emoji: string; title: string; body: string } {
 export default function AnnouncementModal() {
   const [open, setOpen] = useState(false);
   const [hideToday, setHideToday] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [isNewUser, setIsNewUser] = useState(false);
 
   useEffect(() => {
+    setIsNewUser(!tutorialDone());
     if (sessionStorage.getItem(SESSION_KEY)) return;
     const version = NOTICE ? NOTICE_VERSION : todayStr();
     if (localStorage.getItem(KEY_HIDE) === `${version}|${todayStr()}`) return;
@@ -108,6 +112,16 @@ export default function AnnouncementModal() {
     setOpen(false);
   };
 
+  const startTutorial = () => {
+    sessionStorage.setItem(SESSION_KEY, '1');
+    setOpen(false);
+    setShowTutorial(true);
+  };
+
+  if (showTutorial) {
+    return <TutorialModal onClose={() => { setShowTutorial(false); setIsNewUser(false); }} />;
+  }
+
   if (!open) return null;
 
   const tip = getTodaysTip();
@@ -115,6 +129,15 @@ export default function AnnouncementModal() {
   return (
     <div className="am-backdrop" onClick={dismiss} role="dialog" aria-modal="true" aria-label="お知らせ">
       <div className="am-card" onClick={(e) => e.stopPropagation()}>
+        <button className={`am-tutorial${isNewUser ? ' pulse' : ''}`} onClick={startTutorial}>
+          <span className="am-tutorial-emoji">🐶</span>
+          <span className="am-tutorial-text">
+            <span className="am-tutorial-eyebrow">{isNewUser ? 'はじめての方へ' : '使い方ガイド'}</span>
+            <span className="am-tutorial-title">チュートリアルをはじめる</span>
+            <span className="am-tutorial-sub">1分でLily Memoの使い方が分かります ▶</span>
+          </span>
+        </button>
+
         {NOTICE && (
           <>
             <div className="am-header">
@@ -190,6 +213,32 @@ export default function AnnouncementModal() {
           box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
           animation: amPop 0.32s cubic-bezier(0.16, 1.3, 0.4, 1) both;
         }
+        .am-tutorial {
+          width: 100%; display: flex; align-items: center; gap: 14px; cursor: pointer;
+          text-align: left; margin-bottom: 18px; padding: 15px 16px; border-radius: 16px;
+          color: #fff; border: none;
+          background: linear-gradient(120deg, #ff8da1 0%, #ffa76b 100%);
+          box-shadow: 0 10px 26px -8px rgba(255, 141, 161, 0.7);
+          transition: transform 0.12s ease, filter 0.15s ease;
+        }
+        .am-tutorial:hover { filter: brightness(1.05); transform: translateY(-1px); }
+        .am-tutorial:active { transform: scale(0.99); }
+        .am-tutorial.pulse { animation: amTutPulse 1.9s ease-in-out infinite; }
+        .am-tutorial-emoji {
+          font-size: 34px; line-height: 1; flex-shrink: 0;
+          width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
+          background: rgba(255, 255, 255, 0.24); border-radius: 14px;
+        }
+        .am-tutorial-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .am-tutorial-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.05em; opacity: 0.92; }
+        .am-tutorial-title { font-size: 18px; font-weight: 900; letter-spacing: 0.01em; }
+        .am-tutorial-sub { font-size: 12px; font-weight: 600; opacity: 0.92; }
+        @keyframes amTutPulse {
+          0%, 100% { box-shadow: 0 10px 26px -8px rgba(255, 141, 161, 0.7); }
+          50% { box-shadow: 0 10px 30px -4px rgba(255, 141, 161, 0.95); }
+        }
+        @media (prefers-reduced-motion: reduce) { .am-tutorial.pulse { animation: none; } }
+
         .am-header { display: flex; justify-content: center; margin-bottom: 16px; }
         .am-badge {
           font-size: 13px; font-weight: 800; letter-spacing: 0.02em;
