@@ -39,7 +39,7 @@ export const PLAN_LABEL: Record<Plan, string> = {
 // per token actually used, instead of charging a flat amount per call
 // regardless of how long the exchange was.
 //
-// 'legacy' (古いモデル) routes to the previous-generation 2.x Gemini models —
+// 'legacy' (古いモード) routes to the previous-generation 2.x Gemini models —
 // lower quality (lily-memo-2.0 相当) but very cheap, so it's billed at just
 // 0.1× and is usable without limit on every plan.
 export type ResponseMode = 'legacy' | 'lite' | 'stable' | 'thinking' | 'ultra';
