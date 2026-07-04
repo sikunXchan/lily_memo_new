@@ -209,6 +209,19 @@ export const THEMES: Record<string, Theme> = {
 
 export const THEME_LIST = ['cream', 'paper', 'clean', 'night', 'starry', 'fireworks', 'flower', 'library'];
 
+// ── Skins (解放スキン) ───────────────────────────────────────────────────────
+// Plain themes are free; the fancy ones are premium "skins" unlocked with a
+// single code (persisted in localStorage — no server needed). Seasonal skins
+// additionally carry a 期間限定 badge.
+export const PREMIUM_SKINS = new Set<string>(['starry', 'fireworks', 'flower', 'library']);
+export const SEASONAL_SKINS: Record<string, string> = { flower: '春 限定', fireworks: '夏 限定' };
+export const SKIN_UNLOCK_CODE = 'sikun-skin';
+export const SKINS_STORAGE_KEY = 'lily-skins-unlocked';
+
+export function isPremiumSkin(id: string): boolean {
+  return PREMIUM_SKINS.has(id);
+}
+
 export const THEME_STORAGE_KEY = 'lily-memo-theme';
 
 export const DEFAULT_THEME_ID = 'cream';

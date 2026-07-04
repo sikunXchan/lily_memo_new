@@ -1,10 +1,10 @@
 'use client';
 
-import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge } from 'lucide-react';
+import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge, Palette, Lock } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
-import { FONT_OPTIONS, THEME_LIST, THEMES } from '@/lib/themes';
+import { FONT_OPTIONS, THEME_LIST, THEMES, SEASONAL_SKINS } from '@/lib/themes';
 import { getUserName, setUserName } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
 import PlanModal from '@/components/PlanModal';
@@ -25,7 +25,14 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [planLabel, setPlanLabel] = useState('');
   const [planRemaining, setPlanRemaining] = useState(0);
   const [planDaily, setPlanDaily] = useState(0);
-  const { fontId, setFontId, themeId, setThemeId } = useTheme();
+  const { fontId, setFontId, themeId, setThemeId, skinsUnlocked, unlockSkins, isSkinLocked } = useTheme();
+  const [skinCode, setSkinCode] = useState('');
+  const [skinCodeError, setSkinCodeError] = useState(false);
+  const [showSkinUnlock, setShowSkinUnlock] = useState(false);
+  const submitSkinCode = () => {
+    if (unlockSkins(skinCode)) { setSkinCode(''); setSkinCodeError(false); setShowSkinUnlock(false); }
+    else setSkinCodeError(true);
+  };
   const [geminiKey, setGeminiKey] = useState('');
   const [keySaved, setKeySaved] = useState(false);
   const [defaultResponseMode, setDefaultResponseModeState] = useState<'lite' | 'stable'>('lite');
@@ -230,6 +237,58 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             <button className={`btn-action ${nameSaved ? 'saved' : ''}`} onClick={saveUserName}>
               {nameSaved ? t('✓ 保存しました') : t('保存する')}
             </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Palette size={20} />
+            <h3>{t('テーマ・スキン')}</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">{t('アプリ全体の配色を選べます。🔒 のスキンは解放コードで開放できます。')}</p>
+            <div className="skin-grid">
+              {THEME_LIST.map(id => {
+                const th = THEMES[id];
+                const locked = isSkinLocked(id);
+                const season = SEASONAL_SKINS[id];
+                return (
+                  <button
+                    key={id}
+                    className={`skin-card ${themeId === id ? 'selected' : ''} ${locked ? 'locked' : ''}`}
+                    onClick={() => locked ? setShowSkinUnlock(true) : setThemeId(id)}
+                  >
+                    <span className="skin-swatch" style={{ background: th.bg, borderColor: th.border }}>
+                      <span className="skin-dot" style={{ background: th.primary }} />
+                      <span className="skin-dot" style={{ background: th.folders.blue }} />
+                      <span className="skin-dot" style={{ background: th.folders.green }} />
+                      {locked && <span className="skin-lock"><Lock size={13} /></span>}
+                    </span>
+                    <span className="skin-name">{t(th.name)}</span>
+                    {season && <span className="skin-season">{t(season)}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {!skinsUnlocked && (
+              showSkinUnlock ? (
+                <div className="skin-unlock">
+                  <input
+                    className="skin-code-input"
+                    value={skinCode}
+                    onChange={e => { setSkinCode(e.target.value); setSkinCodeError(false); }}
+                    onKeyDown={e => { if (e.key === 'Enter') submitSkinCode(); }}
+                    placeholder={t('スキン解放コード')}
+                  />
+                  <button className="btn-action" onClick={submitSkinCode}>{t('解放')}</button>
+                  {skinCodeError && <span className="skin-code-err">{t('コードが違うみたい')}</span>}
+                </div>
+              ) : (
+                <button className="skin-unlock-open" onClick={() => setShowSkinUnlock(true)}>
+                  <Lock size={13} /> {t('スキンを解放する')}
+                </button>
+              )
+            )}
           </div>
         </section>
 
@@ -518,6 +577,21 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           border-color: var(--primary);
           box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
         }
+        .skin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; }
+        .skin-card { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 6px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface, var(--background)); cursor: pointer; font-family: inherit; transition: border-color 0.14s, box-shadow 0.14s; }
+        .skin-card.selected { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
+        .skin-card.locked { opacity: 0.85; }
+        .skin-swatch { position: relative; height: 44px; border-radius: 8px; border: 1px solid; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .skin-dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+        .skin-lock { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.34); color: #fff; border-radius: 8px; }
+        .skin-name { font-size: 0.76rem; font-weight: 700; color: var(--foreground); text-align: center; }
+        .skin-season { font-size: 0.6rem; font-weight: 800; color: #d97706; background: color-mix(in srgb, #f59e0b 20%, transparent); border-radius: 999px; padding: 1px 6px; align-self: center; }
+        .skin-unlock { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+        .skin-code-input { flex: 1; min-width: 140px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--background); color: var(--foreground); font-family: inherit; font-size: 0.9rem; outline: none; }
+        .skin-code-input:focus { border-color: var(--primary); }
+        .skin-code-err { font-size: 0.78rem; color: #dc2626; font-weight: 600; width: 100%; }
+        .skin-unlock-open { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--fg-muted, #888); font-size: 0.82rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+        .skin-unlock-open:hover { border-color: var(--primary); color: var(--primary); }
         .swatch {
           width: 100%;
           height: 38px;

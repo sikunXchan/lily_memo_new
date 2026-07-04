@@ -5,6 +5,7 @@ import {
   THEMES, THEME_LIST, THEME_STORAGE_KEY, DEFAULT_THEME_ID,
   FONT_OPTIONS, FONT_STORAGE_KEY, DEFAULT_FONT_ID,
   themeCssVars, type Theme,
+  isPremiumSkin, SKIN_UNLOCK_CODE, SKINS_STORAGE_KEY,
 } from '@/lib/themes';
 
 interface ThemeContextValue {
@@ -15,6 +16,9 @@ interface ThemeContextValue {
   nextThemeName: string;
   fontId: string;
   setFontId: (id: string) => void;
+  skinsUnlocked: boolean;
+  unlockSkins: (code: string) => boolean;
+  isSkinLocked: (id: string) => boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -25,6 +29,9 @@ const ThemeContext = createContext<ThemeContextValue>({
   nextThemeName: '',
   fontId: DEFAULT_FONT_ID,
   setFontId: () => {},
+  skinsUnlocked: false,
+  unlockSkins: () => false,
+  isSkinLocked: () => false,
 });
 
 function applyFont(fontId: string) {
@@ -61,6 +68,7 @@ function applyTheme(theme: Theme) {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeId, setThemeIdState] = useState<string>(DEFAULT_THEME_ID);
   const [fontId, setFontIdState] = useState<string>(DEFAULT_FONT_ID);
+  const [skinsUnlocked, setSkinsUnlocked] = useState(false);
 
   useEffect(() => {
     let initial = DEFAULT_THEME_ID;
@@ -83,13 +91,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* localStorage unavailable */
     }
+    let unlocked = false;
+    try { unlocked = localStorage.getItem(SKINS_STORAGE_KEY) === '1'; } catch { /* unavailable */ }
     // Read persisted prefs only after mount so server and client render
     // the same default (avoids a hydration mismatch).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setThemeIdState(initial);
     setFontIdState(initialFont);
+    setSkinsUnlocked(unlocked);
     applyTheme(THEMES[initial]);
     applyFont(initialFont);
+  }, []);
+
+  const isSkinLocked = useCallback(
+    (id: string) => isPremiumSkin(id) && !skinsUnlocked,
+    [skinsUnlocked],
+  );
+
+  const unlockSkins = useCallback((code: string): boolean => {
+    if (code.trim() !== SKIN_UNLOCK_CODE) return false;
+    setSkinsUnlocked(true);
+    try { localStorage.setItem(SKINS_STORAGE_KEY, '1'); } catch { /* unavailable */ }
+    return true;
   }, []);
 
   const setFontId = useCallback((id: string) => {
@@ -105,6 +128,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setThemeId = useCallback((id: string) => {
     if (!THEMES[id]) return;
+    if (isPremiumSkin(id) && !skinsUnlocked) return; // locked skin — ignore
     setThemeIdState(id);
     applyTheme(THEMES[id]);
     try {
@@ -112,12 +136,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* localStorage unavailable */
     }
-  }, []);
+  }, [skinsUnlocked]);
 
   const cycleTheme = useCallback(() => {
+    // Cycle only through skins the user can actually use (free + unlocked).
+    const available = THEME_LIST.filter(id => !isPremiumSkin(id) || skinsUnlocked);
     setThemeIdState((current) => {
-      const idx = THEME_LIST.indexOf(current);
-      const next = THEME_LIST[(idx + 1) % THEME_LIST.length];
+      const pos = available.indexOf(current);
+      const next = available[(pos + 1) % available.length] ?? available[0];
       applyTheme(THEMES[next]);
       try {
         localStorage.setItem(THEME_STORAGE_KEY, next);
@@ -126,14 +152,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
-  }, []);
+  }, [skinsUnlocked]);
 
   const theme = THEMES[themeId] ?? THEMES[DEFAULT_THEME_ID];
-  const nextIdx = (THEME_LIST.indexOf(themeId) + 1) % THEME_LIST.length;
-  const nextThemeName = THEMES[THEME_LIST[nextIdx]].name;
+  const availableCycle = THEME_LIST.filter(id => !isPremiumSkin(id) || skinsUnlocked);
+  const nextPos = (availableCycle.indexOf(themeId) + 1) % availableCycle.length;
+  const nextThemeName = THEMES[availableCycle[nextPos] ?? availableCycle[0]].name;
 
   return (
-    <ThemeContext.Provider value={{ theme, themeId, setThemeId, cycleTheme, nextThemeName, fontId, setFontId }}>
+    <ThemeContext.Provider value={{ theme, themeId, setThemeId, cycleTheme, nextThemeName, fontId, setFontId, skinsUnlocked, unlockSkins, isSkinLocked }}>
       {theme.starfield && <div className="starfield-overlay" aria-hidden="true" />}
       {theme.fireworks && (
         <div className="fireworks-overlay" aria-hidden="true">
