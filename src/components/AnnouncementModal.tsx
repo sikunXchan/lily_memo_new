@@ -78,6 +78,7 @@ const TIPS: { emoji: string; title: string; body: string }[] = [
 
 const KEY_HIDE = 'lily-news-hide';
 const SESSION_KEY = 'lily-news-shown';
+const KEY_FIRST_RUN = 'lily-first-run'; // set on the very first app open
 
 function todayStr(): string {
   const d = new Date();
@@ -99,6 +100,12 @@ export default function AnnouncementModal() {
 
   useEffect(() => {
     setIsNewUser(!tutorialDone());
+    // First-ever launch → guide brand-new users straight into the tutorial
+    // instead of the news modal (only once; the news shows on later opens).
+    if (!localStorage.getItem(KEY_FIRST_RUN)) {
+      try { localStorage.setItem(KEY_FIRST_RUN, todayStr()); } catch {}
+      if (!tutorialDone()) { setShowTutorial(true); return; }
+    }
     if (sessionStorage.getItem(SESSION_KEY)) return;
     const version = NOTICE ? NOTICE_VERSION : todayStr();
     if (localStorage.getItem(KEY_HIDE) === `${version}|${todayStr()}`) return;
