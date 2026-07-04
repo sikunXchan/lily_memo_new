@@ -20,8 +20,12 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 }
 
-const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
-const DEFAULT_ZOOM_INDEX = 4;
+// Same practical range as before (0.5x–2.5x), but continuous so a two-finger
+// pinch can drive it directly instead of only jumping between fixed steps.
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 2.5;
+const DEFAULT_SCALE = 1.5;
+const ZOOM_BTN_STEP = 1.25; // +/- button multiplier
 const HL_COLORS = ['#ffeb3b80', '#86efac80', '#fda4af80', '#93c5fd80'];
 const PEN_COLORS = ['#ef4444', '#1d4ed8', '#16a34a', '#f97316', '#7c3aed', '#000000'];
 const PEN_WIDTHS = [1.5, 3, 6]; // PDF units
@@ -187,7 +191,7 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
+  const [scale, setScale] = useState(DEFAULT_SCALE);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [openUrl, setOpenUrl] = useState('');
@@ -250,10 +254,14 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const currentPenPathRef = useRef<Array<{ x: number; y: number }>>([]);
   const photoThumbsRef = useRef<string[]>([]);
   photoThumbsRef.current = photoThumbs;
+  // Two-finger pinch-to-zoom (viewing only — disabled while an annotation
+  // tool is active so it doesn't fight with drawing pointer capture).
+  const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStartRef = useRef<{ dist: number; scale: number } | null>(null);
 
   // Stable refs for overlay drawing callbacks
   const annotationsRef = useRef(annotations);
-  const scaleRef = useRef(ZOOM_LEVELS[DEFAULT_ZOOM_INDEX]);
+  const scaleRef = useRef(DEFAULT_SCALE);
   const currentPageRef = useRef(1);
   const annotationModeRef = useRef<AnnMode>('none');
   const hlColorRef = useRef(HL_COLORS[0]);
@@ -261,15 +269,44 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const penWidthRef = useRef(PEN_WIDTHS[1]);
 
   annotationsRef.current = annotations;
-  scaleRef.current = ZOOM_LEVELS[zoomIndex];
+  scaleRef.current = scale;
   currentPageRef.current = currentPage;
   annotationModeRef.current = annotationMode;
   hlColorRef.current = HL_COLORS[hlColorIdx];
   penColorRef.current = PEN_COLORS[penColorIdx];
   penWidthRef.current = PEN_WIDTHS[penWidthIdx];
-
-  const scale = ZOOM_LEVELS[zoomIndex];
   const hasPDF = pdfDoc !== null;
+
+  const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+  const zoomByStep = (dir: 1 | -1) =>
+    setScale(s => clampScale(dir === 1 ? s * ZOOM_BTN_STEP : s / ZOOM_BTN_STEP));
+
+  // ---- Two-finger pinch-to-zoom (viewing only) ----
+  // Panning stays native (browser scroll); this only ever touches `scale`.
+  const pinchDist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
+
+  const handleWrapperPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (annotationModeRef.current !== 'none') return; // let drawing tools own the gesture
+    pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinchPointersRef.current.size === 2) {
+      const [a, b] = [...pinchPointersRef.current.values()];
+      pinchStartRef.current = { dist: pinchDist(a, b) || 1, scale: scaleRef.current };
+    }
+  };
+  const handleWrapperPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pinchPointersRef.current.has(e.pointerId)) return;
+    pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pts = [...pinchPointersRef.current.values()];
+    if (pts.length === 2 && pinchStartRef.current) {
+      const d = pinchDist(pts[0], pts[1]);
+      setScale(clampScale(pinchStartRef.current.scale * (d / pinchStartRef.current.dist)));
+    }
+  };
+  const endWrapperPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    pinchPointersRef.current.delete(e.pointerId);
+    if (pinchPointersRef.current.size < 2) pinchStartRef.current = null;
+  };
 
   // ---- PDF loading ----
   const loadPDF = useCallback(async (url: string, originalUrl: string) => {
@@ -952,11 +989,11 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
             </button>
           </div>
           <div className="pdf-zoom-group">
-            <button className="pdf-icon-btn" onClick={() => setZoomIndex(i => Math.max(0, i-1))} disabled={zoomIndex === 0} title={t('縮小')}>
+            <button className="pdf-icon-btn" onClick={() => zoomByStep(-1)} disabled={scale <= MIN_SCALE + 1e-6} title={t('縮小')}>
               <ZoomOut size={18} />
             </button>
             <span className="pdf-zoom-label">{Math.round(scale * 100)}%</span>
-            <button className="pdf-icon-btn" onClick={() => setZoomIndex(i => Math.min(ZOOM_LEVELS.length-1, i+1))} disabled={zoomIndex === ZOOM_LEVELS.length-1} title={t('拡大')}>
+            <button className="pdf-icon-btn" onClick={() => zoomByStep(1)} disabled={scale >= MAX_SCALE - 1e-6} title={t('拡大')}>
               <ZoomIn size={18} />
             </button>
           </div>
@@ -999,11 +1036,11 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
                 <button className="pdf-fs-nav-btn" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage >= totalPages}>
                   <ChevronRight size={18} />
                 </button>
-                <button className="pdf-fs-nav-btn" onClick={() => setZoomIndex(i => Math.max(0, i-1))} disabled={zoomIndex === 0} title={t('縮小')}>
+                <button className="pdf-fs-nav-btn" onClick={() => zoomByStep(-1)} disabled={scale <= MIN_SCALE + 1e-6} title={t('縮小')}>
                   <ZoomOut size={16} />
                 </button>
                 <span className="pdf-fs-nav-label">{Math.round(scale * 100)}%</span>
-                <button className="pdf-fs-nav-btn" onClick={() => setZoomIndex(i => Math.min(ZOOM_LEVELS.length-1, i+1))} disabled={zoomIndex === ZOOM_LEVELS.length-1} title={t('拡大')}>
+                <button className="pdf-fs-nav-btn" onClick={() => zoomByStep(1)} disabled={scale >= MAX_SCALE - 1e-6} title={t('拡大')}>
                   <ZoomIn size={16} />
                 </button>
               </div>
@@ -1210,7 +1247,13 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
             </div>
           )}
           {!isLoading && !error && (
-            <div className="pdf-canvas-wrapper">
+            <div
+              className="pdf-canvas-wrapper"
+              onPointerDown={handleWrapperPointerDown}
+              onPointerMove={handleWrapperPointerMove}
+              onPointerUp={endWrapperPointer}
+              onPointerCancel={endWrapperPointer}
+            >
               <canvas ref={canvasRef} className="pdf-canvas" />
               <canvas
                 ref={overlayCanvasRef}
@@ -1575,21 +1618,24 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           .timer-btn.pause { background:#f59e0b; color:white; }
           .timer-btn.reset { background:var(--accent); color:var(--foreground); border:1px solid var(--border); }
           .timer-btn:hover { opacity:0.85; }
-          /* Canvas — stable centering via scrollbar-gutter + text-align */
+          /* Canvas — scrolls both ways once zoomed past the viewport. Pinch
+             (2-finger) is handled in JS via pointer events on the wrapper;
+             touch-action lists only pan-x/pan-y (no pinch-zoom) so the browser
+             leaves 2-finger gestures to our handler instead of zooming the page. */
           .pdf-canvas-area {
-            flex:1; overflow-y:auto; overflow-x:hidden; min-height:0;
+            flex:1; overflow:auto; min-height:0;
             -webkit-overflow-scrolling:touch;
-            touch-action: pan-y;
-            overscroll-behavior-x: none;
+            touch-action: pan-x pan-y;
+            overscroll-behavior: contain;
             padding:16px;
             display:flex; justify-content:center; align-items:flex-start;
           }
           .pdf-canvas-wrapper {
-            position:relative; max-width:100%; flex-shrink:0;
+            position:relative; flex-shrink:0; margin:auto;
           }
           .pdf-canvas {
             display:block;
-            max-width:100%; height:auto;
+            height:auto;
             box-shadow:0 4px 20px rgba(0,0,0,0.4);
           }
           .pdf-overlay {
