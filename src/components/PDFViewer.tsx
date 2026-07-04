@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X, Upload, FileText, Link as LinkIcon, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
-  Play, Pause, RotateCcw, RotateCw, Highlighter, Pencil, Trash2,
+  Play, Pause, RotateCcw, RotateCw, Highlighter, Trash2,
   Image as ImageIcon, Plus, Maximize2, Minimize2,
   Minus, MessageSquare, ChevronDown, ChevronUp, FileDown, Home,
 } from 'lucide-react';
@@ -20,12 +20,8 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 }
 
-// Continuous zoom so the PDF feels like real paper — pinch / wheel / buttons all
-// nudge a single free-form scale instead of snapping between fixed steps.
-const MIN_SCALE = 0.35;
-const MAX_SCALE = 6;
-const DEFAULT_SCALE = 1.5;
-const ZOOM_STEP = 1.25; // +/- button multiplier
+const ZOOM_LEVELS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
+const DEFAULT_ZOOM_INDEX = 4;
 const HL_COLORS = ['#ffeb3b80', '#86efac80', '#fda4af80', '#93c5fd80'];
 const PEN_COLORS = ['#ef4444', '#1d4ed8', '#16a34a', '#f97316', '#7c3aed', '#000000'];
 const PEN_WIDTHS = [1.5, 3, 6]; // PDF units
@@ -191,7 +187,7 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(DEFAULT_SCALE);
+  const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [openUrl, setOpenUrl] = useState('');
@@ -252,19 +248,12 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const blobUrlRef = useRef('');
   const drawingRef = useRef<{ x: number; y: number } | null>(null);
   const currentPenPathRef = useRef<Array<{ x: number; y: number }>>([]);
-  // Paper-like zoom & pan
-  const pdfAreaRef = useRef<HTMLDivElement>(null);
-  const basePageSizeRef = useRef<{ w: number; h: number } | null>(null); // intrinsic (scale=1) page size in CSS px
-  const pendingFocalRef = useRef<{ ratio: number; cx: number; cy: number } | null>(null);
-  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
-  const panRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const photoThumbsRef = useRef<string[]>([]);
   photoThumbsRef.current = photoThumbs;
 
   // Stable refs for overlay drawing callbacks
   const annotationsRef = useRef(annotations);
-  const scaleRef = useRef(DEFAULT_SCALE);
+  const scaleRef = useRef(ZOOM_LEVELS[DEFAULT_ZOOM_INDEX]);
   const currentPageRef = useRef(1);
   const annotationModeRef = useRef<AnnMode>('none');
   const hlColorRef = useRef(HL_COLORS[0]);
@@ -272,37 +261,15 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const penWidthRef = useRef(PEN_WIDTHS[1]);
 
   annotationsRef.current = annotations;
-  scaleRef.current = scale;
+  scaleRef.current = ZOOM_LEVELS[zoomIndex];
   currentPageRef.current = currentPage;
   annotationModeRef.current = annotationMode;
   hlColorRef.current = HL_COLORS[hlColorIdx];
   penColorRef.current = PEN_COLORS[penColorIdx];
   penWidthRef.current = PEN_WIDTHS[penWidthIdx];
 
+  const scale = ZOOM_LEVELS[zoomIndex];
   const hasPDF = pdfDoc !== null;
-
-  // ---- Paper-like zoom & pan helpers ----
-  const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
-
-  // Zoom toward a focal point (in client coords). Preserves the point under the
-  // cursor/pinch center by recording the ratio + focal offset; the actual scroll
-  // adjustment is applied in a layout effect once the canvas has been resized.
-  const zoomTo = useCallback((next: number, focalClientX?: number, focalClientY?: number) => {
-    setScale(prev => {
-      const clamped = clampScale(next);
-      if (clamped === prev) return prev;
-      const area = pdfAreaRef.current;
-      if (area) {
-        const r = area.getBoundingClientRect();
-        const cx = (focalClientX ?? r.left + r.width / 2) - r.left;
-        const cy = (focalClientY ?? r.top + r.height / 2) - r.top;
-        pendingFocalRef.current = { ratio: clamped / prev, cx, cy };
-      }
-      return clamped;
-    });
-  }, []);
-
-  const zoomByStep = (dir: 1 | -1) => zoomTo(scale * (dir === 1 ? ZOOM_STEP : 1 / ZOOM_STEP));
 
   // ---- PDF loading ----
   const loadPDF = useCallback(async (url: string, originalUrl: string) => {
@@ -577,9 +544,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
         canvas.width = physicalViewport.width;
         canvas.height = physicalViewport.height;
         canvas.style.width = `${logicalViewport.width}px`;
-        // Remember the intrinsic (scale=1) page size so zoom can resize the
-        // element synchronously for smooth pinch/wheel focal-point math.
-        basePageSizeRef.current = { w: logicalViewport.width / scale, h: logicalViewport.height / scale };
         const task = page.render({ canvasContext: ctx, viewport: physicalViewport });
         renderTaskRef.current = task;
         await task.promise;
@@ -596,88 +560,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
       renderTaskRef.current = null;
     };
   }, [pdfDoc, currentPage, scale]);
-
-  // When the scale changes, resize the canvas element synchronously (independent
-  // of the async pdf.js re-render) and keep the pinch/wheel focal point fixed by
-  // adjusting scroll. Doing this in a layout effect avoids a visible jump.
-  useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    const base = basePageSizeRef.current;
-    if (canvas && base) canvas.style.width = `${base.w * scale}px`;
-    const area = pdfAreaRef.current;
-    const focal = pendingFocalRef.current;
-    if (area && focal) {
-      pendingFocalRef.current = null;
-      area.scrollLeft = (area.scrollLeft + focal.cx) * focal.ratio - focal.cx;
-      area.scrollTop = (area.scrollTop + focal.cy) * focal.ratio - focal.cy;
-    }
-  }, [scale]);
-
-  // Ctrl/⌘ + wheel (and trackpad pinch, which arrives as ctrlKey wheel) zooms
-  // toward the cursor. A plain wheel keeps the native scroll (pan). Registered
-  // as a non-passive listener so preventDefault() actually suppresses page zoom.
-  useEffect(() => {
-    const area = pdfAreaRef.current;
-    if (!area) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      e.preventDefault();
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      zoomTo(scaleRef.current * factor, e.clientX, e.clientY);
-    };
-    area.addEventListener('wheel', onWheel, { passive: false });
-    return () => area.removeEventListener('wheel', onWheel);
-  }, [zoomTo, pdfDoc, isAppFullscreen]);
-
-  // ---- Paper-like pan & pinch (on the canvas area, when not drawing) ----
-  const dist2 = (a: { x: number; y: number }, b: { x: number; y: number }) =>
-    Math.hypot(a.x - b.x, a.y - b.y);
-
-  const handleAreaPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // While an annotation tool is active the overlay handles the pointer; only
-    // pan/pinch the paper in the neutral "reading" state.
-    if (annotationModeRef.current !== 'none') return;
-    const area = pdfAreaRef.current;
-    if (!area) return;
-    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    try { area.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    if (pointersRef.current.size === 2) {
-      const [a, b] = [...pointersRef.current.values()];
-      pinchRef.current = { startDist: dist2(a, b) || 1, startScale: scaleRef.current };
-      panRef.current = null;
-    } else if (pointersRef.current.size === 1) {
-      panRef.current = { x: e.clientX, y: e.clientY, left: area.scrollLeft, top: area.scrollTop };
-    }
-  };
-
-  const handleAreaPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!pointersRef.current.has(e.pointerId)) return;
-    const area = pdfAreaRef.current;
-    if (!area) return;
-    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const pts = [...pointersRef.current.values()];
-    if (pts.length === 2 && pinchRef.current) {
-      const d = dist2(pts[0], pts[1]);
-      const midX = (pts[0].x + pts[1].x) / 2;
-      const midY = (pts[0].y + pts[1].y) / 2;
-      zoomTo(pinchRef.current.startScale * (d / pinchRef.current.startDist), midX, midY);
-    } else if (pts.length === 1 && panRef.current) {
-      area.scrollLeft = panRef.current.left - (e.clientX - panRef.current.x);
-      area.scrollTop = panRef.current.top - (e.clientY - panRef.current.y);
-    }
-  };
-
-  const endAreaPointer = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!pointersRef.current.delete(e.pointerId)) return;
-    const area = pdfAreaRef.current;
-    if (pointersRef.current.size < 2) pinchRef.current = null;
-    if (pointersRef.current.size === 1 && area) {
-      // Re-anchor the remaining finger so panning resumes without a jump.
-      const [p] = [...pointersRef.current.values()];
-      panRef.current = { x: p.x, y: p.y, left: area.scrollLeft, top: area.scrollTop };
-    }
-    if (pointersRef.current.size === 0) panRef.current = null;
-  };
 
   // Expose the current page (and a full-document renderer) to the floating
   // sikun while a PDF is open. Both run on demand — sikun only calls them
@@ -1070,20 +952,17 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
             </button>
           </div>
           <div className="pdf-zoom-group">
-            <button className="pdf-icon-btn" onClick={() => zoomByStep(-1)} disabled={scale <= MIN_SCALE + 1e-6} title={t('縮小')}>
+            <button className="pdf-icon-btn" onClick={() => setZoomIndex(i => Math.max(0, i-1))} disabled={zoomIndex === 0} title={t('縮小')}>
               <ZoomOut size={18} />
             </button>
             <span className="pdf-zoom-label">{Math.round(scale * 100)}%</span>
-            <button className="pdf-icon-btn" onClick={() => zoomByStep(1)} disabled={scale >= MAX_SCALE - 1e-6} title={t('拡大')}>
+            <button className="pdf-icon-btn" onClick={() => setZoomIndex(i => Math.min(ZOOM_LEVELS.length-1, i+1))} disabled={zoomIndex === ZOOM_LEVELS.length-1} title={t('拡大')}>
               <ZoomIn size={18} />
             </button>
           </div>
           <div className="pdf-bar-right">
             <button className={`pdf-icon-btn${annotationMode === 'highlight' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'highlight' ? 'none' : 'highlight')} title={t('ハイライト')}>
               <Highlighter size={18} />
-            </button>
-            <button className={`pdf-icon-btn${annotationMode === 'pen' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'pen' ? 'none' : 'pen')} title={t('ペン手書き')}>
-              <Pencil size={18} />
             </button>
             <button className={`pdf-icon-btn mask-btn${annotationMode === 'mask' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'mask' ? 'none' : 'mask')} title={t('赤シート（隠す/見せる）')}>
               <span className="mask-icon-inner" />
@@ -1120,11 +999,11 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
                 <button className="pdf-fs-nav-btn" onClick={() => setCurrentPage(p => Math.min(totalPages, p+1))} disabled={currentPage >= totalPages}>
                   <ChevronRight size={18} />
                 </button>
-                <button className="pdf-fs-nav-btn" onClick={() => zoomByStep(-1)} disabled={scale <= MIN_SCALE + 1e-6} title={t('縮小')}>
+                <button className="pdf-fs-nav-btn" onClick={() => setZoomIndex(i => Math.max(0, i-1))} disabled={zoomIndex === 0} title={t('縮小')}>
                   <ZoomOut size={16} />
                 </button>
                 <span className="pdf-fs-nav-label">{Math.round(scale * 100)}%</span>
-                <button className="pdf-fs-nav-btn" onClick={() => zoomByStep(1)} disabled={scale >= MAX_SCALE - 1e-6} title={t('拡大')}>
+                <button className="pdf-fs-nav-btn" onClick={() => setZoomIndex(i => Math.min(ZOOM_LEVELS.length-1, i+1))} disabled={zoomIndex === ZOOM_LEVELS.length-1} title={t('拡大')}>
                   <ZoomIn size={16} />
                 </button>
               </div>
@@ -1141,11 +1020,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
                 onClick={() => setAnnotationMode('highlight')} title={t('ハイライト')}>
                 <Highlighter size={14} />
                 <span>HL</span>
-              </button>
-              <button className={`ann-tool-btn${annotationMode === 'pen' ? ' active pen' : ''}`}
-                onClick={() => setAnnotationMode('pen')} title={t('ペン')}>
-                <Pencil size={14} />
-                <span>{t('ペン')}</span>
               </button>
               <button className={`ann-tool-btn${annotationMode === 'line' ? ' active pen' : ''}`}
                 onClick={() => setAnnotationMode('line')} title={t('直線')}>
@@ -1321,15 +1195,8 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           </div>
         )}
 
-        {/* Canvas area — free zoom / pan like paper */}
-        <div
-          ref={pdfAreaRef}
-          className={`pdf-canvas-area${annotationMode === 'none' && hasPDF ? ' pannable' : ''}`}
-          onPointerDown={handleAreaPointerDown}
-          onPointerMove={handleAreaPointerMove}
-          onPointerUp={endAreaPointer}
-          onPointerCancel={endAreaPointer}
-        >
+        {/* Canvas area — stable centering */}
+        <div className="pdf-canvas-area">
           {isLoading && (
             <div className="pdf-status">
               <div className="pdf-spinner" /><span>{t('読み込み中...')}</span>
@@ -1708,25 +1575,21 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           .timer-btn.pause { background:#f59e0b; color:white; }
           .timer-btn.reset { background:var(--accent); color:var(--foreground); border:1px solid var(--border); }
           .timer-btn:hover { opacity:0.85; }
-          /* Canvas — free 2D zoom/pan like paper. Pan & pinch are handled in JS
-             (touch-action:none), so the page can be moved & scaled past the
-             viewport instead of only scrolling vertically. */
+          /* Canvas — stable centering via scrollbar-gutter + text-align */
           .pdf-canvas-area {
-            flex:1; overflow:auto; min-height:0;
+            flex:1; overflow-y:auto; overflow-x:hidden; min-height:0;
             -webkit-overflow-scrolling:touch;
-            touch-action: none;
-            overscroll-behavior: contain;
+            touch-action: pan-y;
+            overscroll-behavior-x: none;
             padding:16px;
-            display:flex; justify-content:safe center; align-items:flex-start;
+            display:flex; justify-content:center; align-items:flex-start;
           }
-          .pdf-canvas-area.pannable { cursor: grab; }
-          .pdf-canvas-area.pannable:active { cursor: grabbing; }
           .pdf-canvas-wrapper {
-            position:relative; flex-shrink:0; margin:auto;
+            position:relative; max-width:100%; flex-shrink:0;
           }
           .pdf-canvas {
             display:block;
-            height:auto;
+            max-width:100%; height:auto;
             box-shadow:0 4px 20px rgba(0,0,0,0.4);
           }
           .pdf-overlay {
