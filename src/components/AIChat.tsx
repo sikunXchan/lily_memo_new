@@ -1828,7 +1828,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const [lilyNoteIds, setLilyNoteIds] = useState<number[]>([]);
   const [lilyThinking, setLilyThinking] = useState(false);
   const [lilyUltraThinking, setLilyUltraThinking] = useState(false);
-  // 古いモデル（2.x系Gemini）モード。品質は lily-memo-2.0 相当だが、どのプラン
+  // 古いモード（2.x系Gemini）モード。品質は lily-memo-2.0 相当だが、どのプラン
   // でも無制限に使え、トークン消費は0.1倍。
   const [lilyLegacy, setLilyLegacy] = useState(false);
   const [showContextPanel, setShowContextPanel] = useState(false);
@@ -1938,7 +1938,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const refreshEconomy = () => {
       const legacy = localStorage.getItem('lily_legacy_mode') === '1';
       setLilyLegacy(legacy);
-      // 古いモデルが選ばれているときは軽量モードではない。
+      // 古いモードが選ばれているときは軽量モードではない。
       setEconomy(!legacy && localStorage.getItem('lily_economy_mode') !== '0');
     };
     refreshKey();
@@ -2414,7 +2414,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         pendingThinkingRef.current = thinkingAccum;
       } else {
         const useLite = economy || autoLite;
-        // 古いモデル（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
+        // 古いモード（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch: searchRequested,
           models: lilyLegacy
@@ -2614,7 +2614,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       } else {
         const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
         const regenUseLite = economy || regenAutoLite;
-        // 古いモデル（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
+        // 古いモード（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
           webSearch,
           models: lilyLegacy
@@ -2761,7 +2761,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                 <div className="header-menu-backdrop" onClick={() => setShowHeaderMenu(false)} />
                 <div className="header-menu">
                   <div className="header-menu-section">{t('応答モード')}</div>
-                  <div className="header-menu-hint">{t('🎁 「軽量モード」と「古いモデル」はどのプランでも無制限。まずはこの2つがおすすめ！')}</div>
+                  <div className="header-menu-hint">{t('🎁 「軽量モード」と「古いモード」はどのプランでも無制限。まずはこの2つがおすすめ！')}</div>
                   <button
                     className={`header-menu-item toggle${webSearch ? ' on' : ''}`}
                     onClick={() => setWebSearch(p => !p)}
@@ -2782,7 +2782,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
                     className={`header-menu-item toggle${lilyLegacy ? ' on legacy' : ''}`}
                     onClick={() => selectResponseMode('legacy')}
                   >
-                    <span className="hmi-emoji">🕰️</span><span className="hmi-label">{t('古いモデル')}</span>
+                    <span className="hmi-emoji">🕰️</span><span className="hmi-label">{t('古いモード')}</span>
                     <span className="hmi-free">{t('無制限')}</span>
                     <span className="hmi-state">{lilyLegacy ? 'ON' : 'OFF'}</span>
                   </button>
@@ -2929,14 +2929,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             )}
             {lilyLegacy && (
               <div className="welcome-mode-notice legacy">
-                {t('「古いモデル」を使用中です。品質は lily-memo-2.0 version のままですが、どのプランでも無制限に使え、トークン消費は通常の0.1倍です。')}
+                {t('「古いモード」を使用中です。品質は lily-memo-2.0 version のままですが、どのプランでも無制限に使え、トークン消費は通常の0.1倍です。')}
               </div>
             )}
             <button className="welcome-mode-cta" onClick={() => setShowHeaderMenu(true)}>
               <span className="welcome-mode-cta-emoji">🎁</span>
               <span className="welcome-mode-cta-text">
                 <strong>{t('モード機能、知ってる？')}</strong>
-                {t('「軽量モード」と「古いモデル」はどのプランでも無制限。右上の ⋮ から切り替えできます。')}
+                {t('「軽量モード」と「古いモード」はどのプランでも無制限。右上の ⋮ から切り替えできます。')}
               </span>
             </button>
             {(() => {
