@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, ChevronLeft, ChevronRight, Check, ListTodo, Heart, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Check, ListTodo, Heart, RefreshCw, Sparkles } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
@@ -121,6 +121,9 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const [aiError, setAiError] = useState('');
   const [avatarOk, setAvatarOk] = useState(true);
   const [liked, setLiked] = useState(false);
+  // 月次カルテ（日記のAI振り返り）
+  const [karteState, setKarteState] = useState<'idle' | 'working' | 'done' | 'error'>('idle');
+  const [karteMsg, setKarteMsg] = useState('');
 
   const diaries = useLiveQuery<Diary[]>(() =>
     db.diaries.filter(d => !d.deletedAt).toArray()
@@ -205,6 +208,75 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
     if (!m) return undefined;
     const idx = MOODS.indexOf(m);
     return idx >= 0 ? MOOD_TINT[idx] : undefined;
+  };
+
+  // 月次カルテ: 表示中の月の日記＋学習記録をLilyが振り返り、通常メモとして保存する。
+  // （振り返りの"記録先"問題は、生成物を普通のメモにすることで解決）
+  const generateMonthlyKarte = async () => {
+    if (karteState === 'working') return;
+    const apiKey = localStorage.getItem('lily_gemini_api_key') || '';
+    if (!apiKey) { setKarteState('error'); setKarteMsg(t('設定画面で Gemini API キーを登録してね')); return; }
+    const y = viewDate.getFullYear();
+    const m = viewDate.getMonth() + 1;
+    const monthKey = `${y}-${String(m).padStart(2, '0')}`; // 'YYYY-MM'
+    setKarteState('working'); setKarteMsg('');
+    try {
+      const monthDiaries = (diaries ?? [])
+        .filter(d => d.date.startsWith(monthKey))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const sessions = (await db.studySessions
+        .filter(s => !s.deletedAt && s.date.startsWith(monthKey))
+        .toArray());
+      const totalSec = sessions.reduce((sum, s) => sum + (s.duration ?? 0), 0);
+      const studyDays = new Set(sessions.map(s => s.date)).size;
+      const byCat = new Map<string, number>();
+      for (const s of sessions) {
+        const key = s.categoryName || t('カテゴリなし');
+        byCat.set(key, (byCat.get(key) ?? 0) + (s.duration ?? 0));
+      }
+      const hrs = (sec: number) => `${Math.floor(sec / 3600)}時間${Math.floor((sec % 3600) / 60)}分`;
+      const catLines = [...byCat.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, sec]) => `- ${name}: ${hrs(sec)}`).join('\n') || '（記録なし）';
+      const moodCount = new Map<string, number>();
+      for (const d of monthDiaries) if (d.mood) moodCount.set(d.mood, (moodCount.get(d.mood) ?? 0) + 1);
+      const moodLine = [...moodCount.entries()].map(([e, n]) => `${e}×${n}`).join(' ') || '（記録なし）';
+      const diaryExcerpts = monthDiaries.length
+        ? monthDiaries.map(d => `【${d.date}${d.mood ? ' ' + d.mood : ''}】${d.content.replace(/\s+/g, ' ').slice(0, 200)}`).join('\n')
+        : '（この月の日記はありません）';
+
+      if (monthDiaries.length === 0 && sessions.length === 0) {
+        setKarteState('error');
+        setKarteMsg(t('{y}年{m}月の日記・学習記録がまだないよ。', { y, m }));
+        return;
+      }
+
+      const name = getUserName();
+      const prompt =
+        `あなたは「Lily」という、ユーザーの一番の親友のような存在です。${name ? `相手の名前は「${name}」。` : ''}` +
+        `以下の「${y}年${m}月」の記録をもとに、その月を温かく振り返る「月次カルテ」を日本語で書いてください。\n` +
+        `読み手が1ヶ月を肯定的に振り返り、来月へ前向きになれる内容に。褒めるだけでなく、気づいた傾向や次月への小さな提案も添える。締めは問いかけにせず、励ましで終える。見出しを使って読みやすく。\n\n` +
+        `【学習】合計 ${hrs(totalSec)} ／ 勉強した日数 ${studyDays}日\n【科目別】\n${catLines}\n\n` +
+        `【日記】記録日数 ${monthDiaries.length}日 ／ 気分 ${moodLine}\n【日記の抜粋】\n${diaryExcerpts}\n\n` +
+        `構成の目安: 1)今月のハイライト 2)がんばれたこと 3)気づいた傾向 4)来月へのひとこと。`;
+
+      const reply = (await callGemini(prompt, apiKey)).trim();
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const now = Date.now();
+      await db.notes.add({
+        syncId: newSyncId(),
+        title: `📋 月次カルテ ${y}年${m}月`,
+        content: `<p>${reply.split('\n').map(esc).join('</p><p>')}</p>`,
+        type: 'text',
+        createdAt: now,
+        updatedAt: now,
+      });
+      setKarteState('done');
+      setKarteMsg(t('「月次カルテ {y}年{m}月」をメモに保存したよ📋', { y, m }));
+    } catch (e) {
+      setKarteState('error');
+      setKarteMsg(e instanceof Error ? e.message : t('AI 処理に失敗したよ'));
+    }
   };
 
   // Post the entry to Lily: she reads it and leaves a comment, stored on the
@@ -302,6 +374,23 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
               </button>
             );
           })}
+        </div>
+
+        {/* Monthly AI review (月次カルテ) */}
+        <div className="dy-karte">
+          <button
+            className="dy-karte-btn"
+            onClick={() => void generateMonthlyKarte()}
+            disabled={karteState === 'working'}
+          >
+            <Sparkles size={14} />
+            {karteState === 'working'
+              ? t('Lilyが振り返り中…')
+              : t('📋 {label}の振り返り（月次カルテ）を作る', { label: fmtMonthTitle(viewDate) })}
+          </button>
+          {karteMsg && (
+            <div className={`dy-karte-msg${karteState === 'error' ? ' err' : ''}`}>{karteMsg}</div>
+          )}
         </div>
 
         {/* Selected-day editor */}
@@ -516,6 +605,23 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         .dy-cell-mark.ph { color: transparent; }
 
         /* ── Editor ── */
+        .dy-karte { padding: 4px 14px 0; display: flex; flex-direction: column; gap: 8px; }
+        .dy-karte-btn {
+          width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px;
+          padding: 11px 14px; border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+          border-radius: 14px; cursor: pointer; font-family: inherit;
+          font-size: 0.86rem; font-weight: 800; color: var(--primary);
+          background: color-mix(in srgb, var(--primary) 9%, transparent);
+          transition: filter 0.14s, opacity 0.14s;
+        }
+        .dy-karte-btn:hover:not(:disabled) { filter: brightness(1.04); }
+        .dy-karte-btn:disabled { opacity: 0.6; cursor: default; }
+        .dy-karte-msg {
+          font-size: 0.8rem; line-height: 1.55; font-weight: 600; text-align: center;
+          color: #15803d; background: color-mix(in srgb, #22c55e 14%, transparent);
+          border-radius: 10px; padding: 8px 10px;
+        }
+        .dy-karte-msg.err { color: #dc2626; background: color-mix(in srgb, #ef4444 12%, transparent); }
         .dy-editor {
           flex: 1; display: flex; flex-direction: column;
           padding: 14px 14px 96px;
