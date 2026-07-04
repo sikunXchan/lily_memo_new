@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, ChevronLeft, ChevronRight, Check, Clock, ListTodo, Heart, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Check, ListTodo, Heart, RefreshCw } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
@@ -43,16 +43,6 @@ function fmtDayLabel(iso: string): string {
     ? `${WEEKDAYS_EN[d.getDay()]}, ${MONTHS_EN[d.getMonth()]} ${d.getDate()}`
     : `${d.getMonth() + 1}月${d.getDate()}日 (${WEEKDAYS_JA[d.getDay()]})`;
 }
-function fmtDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (getAppLang() === 'en') {
-    if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
-    return `${Math.max(m, 0)}m`;
-  }
-  if (h > 0) return m > 0 ? `${h}時間${m}分` : `${h}時間`;
-  return `${Math.max(m, 0)}分`;
-}
 
 function monthCells(viewDate: Date): { iso: string; inMonth: boolean }[] {
   const year = viewDate.getFullYear();
@@ -73,8 +63,7 @@ function monthCells(viewDate: Date): { iso: string; inMonth: boolean }[] {
 // message (not a one-liner). A complete, warm message lands like a letter you
 // received — it closes the loop, so it doesn't pull the user into a back-and-forth
 // chat and the diary stays a diary. Lily never ends with a question.
-function buildPostPrompt(lang: string, content: string, studySec: number, mood: string): string {
-  const studyStr = studySec > 0 ? fmtDuration(studySec) : (lang === 'en' ? 'none' : 'なし');
+function buildPostPrompt(lang: string, content: string, mood: string): string {
   const moodStr = mood || (lang === 'en' ? 'not set' : '未設定');
   const name = getUserName();
   const nameLine = name
@@ -95,7 +84,6 @@ How to write your comment:
 
 --- Today ---
 Mood: ${moodStr}
-Study time: ${studyStr}
 Diary post:
 ${content}`;
   }
@@ -111,7 +99,6 @@ ${content}`;
 
 --- 今日 ---
 気分: ${moodStr}
-学習時間: ${studyStr}
 日記の投稿:
 ${content}`;
 }
@@ -146,12 +133,6 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const current = byDate.get(selDay);
   const isToday = selDay === todayIso;
   const isPast = selDay < todayIso;
-
-  const selDayStudy = useLiveQuery(
-    () => db.studySessions.filter(s => s.date === selDay && !s.deletedAt).toArray(),
-    [selDay],
-  );
-  const totalStudySec = (selDayStudy ?? []).reduce((sum, s) => sum + (s.duration ?? 0), 0);
 
   const selDayDoneTodos = useLiveQuery(
     () => db.todos.filter(t => t.dueDate === selDay && t.done && !t.deletedAt).toArray(),
@@ -239,7 +220,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
     setAiLoading(true);
     setAiError('');
     try {
-      const prompt = buildPostPrompt(lang, draft, totalStudySec, mood);
+      const prompt = buildPostPrompt(lang, draft, mood);
       const reply = (await callGemini(prompt, apiKey)).trim();
       const entry = await db.diaries.where('date').equals(selDay).first();
       const now = Date.now();
@@ -332,25 +313,17 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
             ) : null}
           </div>
 
-          {/* Study time + done todos summary pills */}
-          {(totalStudySec > 0 || (selDayDoneTodos?.length ?? 0) > 0) && (
+          {/* Done todos summary pill */}
+          {(selDayDoneTodos?.length ?? 0) > 0 && (
             <div className="dy-stats">
-              {totalStudySec > 0 && (
-                <div className="dy-stat">
-                  <Clock size={12} strokeWidth={2.5} />
-                  <span>{lang === 'en' ? 'Study' : '学習'}: {fmtDuration(totalStudySec)}</span>
-                </div>
-              )}
-              {(selDayDoneTodos?.length ?? 0) > 0 && (
-                <div className="dy-stat">
-                  <ListTodo size={12} strokeWidth={2.5} />
-                  <span>
-                    {lang === 'en'
-                      ? `${selDayDoneTodos!.length} task${selDayDoneTodos!.length > 1 ? 's' : ''} done`
-                      : `${selDayDoneTodos!.length}件完了`}
-                  </span>
-                </div>
-              )}
+              <div className="dy-stat">
+                <ListTodo size={12} strokeWidth={2.5} />
+                <span>
+                  {lang === 'en'
+                    ? `${selDayDoneTodos!.length} task${selDayDoneTodos!.length > 1 ? 's' : ''} done`
+                    : `${selDayDoneTodos!.length}件完了`}
+                </span>
+              </div>
             </div>
           )}
 
