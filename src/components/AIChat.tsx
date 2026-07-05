@@ -38,6 +38,7 @@ import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
+import { useCharacterSkin } from '@/components/CharacterSkinContext';
 import {
   hasTokenBudget, deductTokens, getRemainingTokens, getPlan, PLAN_DAILY_TOKENS, PLAN_LABEL,
   getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode, formatTokens,
@@ -1384,7 +1385,8 @@ function LilyBubble({
   onQaCheck?: (blockId: string, indices: number[]) => void;
 }) {
   const t = useT();
-  const avatarSrc = '/9D507C9A-09F0-4B05-9F41-612FBD120675.png';
+  const { avatarSrc: skinAvatarSrc } = useCharacterSkin();
+  const avatarSrc = skinAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png');
   const avatarAlt = 'Lily';
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
@@ -1821,6 +1823,7 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
 
 export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, initialContext, onContextConsumed }: AIChatProps) {
   const t = useT();
+  const { avatarSrc: lilyAvatarSrc } = useCharacterSkin();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -2700,7 +2703,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         <div className="setup-screen">
           <div className="setup-lily-wrap">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/lily-character.png" alt="Lily" className="setup-lily" />
+            <img src={lilyAvatarSrc('/lily-character.png')} alt="Lily" className="setup-lily" />
           </div>
           <h2 className="setup-title">{t('やあ！Lily だよ 🐶')}</h2>
           <p className="setup-desc">
@@ -2736,7 +2739,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         <div className="header-left">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png"
+            src={lilyAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png')}
             alt="Lily"
             className="header-avatar"
           />
@@ -2920,7 +2923,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
             <div className="welcome-lily-stage">
               <span className="welcome-halo" />
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="welcome-lily" />
+              <img src={lilyAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png')} alt="Lily" className="welcome-lily" />
             </div>
             {economy && (
               <div className="welcome-mode-notice">

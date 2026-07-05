@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Outfit, M_PLUS_Rounded_1c } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeContext";
+import { CharacterSkinProvider } from "@/components/CharacterSkinContext";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -48,7 +49,9 @@ export default function RootLayout({
       <body className="antialiased">
         {/* テーマをReact hydration前に適用してFOUC防止 */}
         <script dangerouslySetInnerHTML={{ __html: `try{var id=localStorage.getItem('lily-memo-theme');if(!id){var l=localStorage.getItem('theme');if(l==='dark')id='night';}var dark=(id==='night'||id==='starry'||id==='fireworks'||id==='library');document.body.setAttribute('data-theme',dark?'dark':'light');if(id)document.body.setAttribute('data-theme-id',id);if(id==='starry')document.body.setAttribute('data-starfield','true');if(id==='fireworks')document.body.setAttribute('data-fireworks','true');}catch(e){}` }} />
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <CharacterSkinProvider>{children}</CharacterSkinProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

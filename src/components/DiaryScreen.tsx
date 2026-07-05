@@ -8,6 +8,7 @@ import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
 import { useT } from '@/lib/i18n';
 import { getAppLang, getUserName } from '@/lib/appLang';
+import { useCharacterSkin } from '@/components/CharacterSkinContext';
 
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -109,6 +110,7 @@ interface DiaryScreenProps {
 
 export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const t = useT();
+  const { avatarSrc: lilyAvatarSrc } = useCharacterSkin();
   const lang = getAppLang();
   const todayIso = isoOf(new Date());
   const [viewDate, setViewDate] = useState<Date>(() => new Date());
@@ -241,8 +243,8 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const LilyAvatar = () => (
     avatarOk
       // eslint-disable-next-line @next/next/no-img-element
-      ? <img src="/lilygirls.PNG" alt="Lily" className="dy-ava"
-          style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid rgba(245,158,11,.35)' }}
+      ? <img src={lilyAvatarSrc('/lilygirls.PNG')} alt="Lily" className="dy-ava"
+          style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top center', flexShrink: 0, border: '2px solid rgba(245,158,11,.35)' }}
           onError={() => setAvatarOk(false)} />
       : <span className="dy-ava dy-ava-fallback">🐕</span>
   );
