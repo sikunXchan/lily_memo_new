@@ -638,7 +638,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
           background: var(--accent); border: 1px solid var(--border);
           border-radius: 4px 16px 16px 16px; padding: 11px 14px;
         }
-        .dy-comment-body.has-corners { padding: 36px 50px; }
+        .dy-comment-body.has-corners { padding: 40px 15px; }
         .dy-comment-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
         .dy-comment-name { font-size: .82rem; font-weight: 800; color: var(--foreground); }
         .dy-comment-handle { font-size: .7rem; color: var(--fg-faint); }

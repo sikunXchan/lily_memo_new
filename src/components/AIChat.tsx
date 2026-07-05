@@ -1552,7 +1552,7 @@ function LilyBubble({
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
         .lily-bubble { position: relative; background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
-        .lily-bubble.has-corners { padding: 36px 50px; }
+        .lily-bubble.has-corners { padding: 40px 15px; }
         .inline-block-wrap { margin: 8px 0; }
         .inline-block-wrap:first-child { margin-top: 0; }
         .inline-block-wrap:last-child { margin-bottom: 0; }
