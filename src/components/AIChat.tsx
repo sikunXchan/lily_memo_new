@@ -1712,10 +1712,10 @@ const BOXING_FRAMES = [
 const BOXING_FRAME_MS = 165;
 
 function TypingIndicator() {
-  const { bubbleStyle, dotColor } = useCharacterSkin();
+  const { tintStyle, dotColor } = useCharacterSkin();
   return (
     <div className="typing-row">
-      <div className="typing-bubble" style={bubbleStyle}>
+      <div className="typing-bubble" style={tintStyle}>
         <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
         <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
         <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
