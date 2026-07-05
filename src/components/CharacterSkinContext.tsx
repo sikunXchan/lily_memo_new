@@ -10,13 +10,16 @@ interface CharacterSkinContextValue {
   setSkinId: (id: string) => void;
   // Returns the active skin's image path, or `fallback` when no skin is set.
   avatarSrc: (fallback: string) => string;
-  // For large, variable-height bubbles (Lily's chat replies, diary comment
-  // card): the skin's illustrated 9-slice frame if it has one, else a plain
-  // color tint, else undefined (callers fall back to their default CSS).
+  // Background/border color tint for Lily's chat bubble, the diary comment
+  // card, and the typing indicator; undefined when no skin is set (callers
+  // fall back to their default CSS).
   bubbleStyle?: CSSProperties;
-  // For small, fixed-size accents (e.g. the typing indicator) where a full
-  // illustrated frame would overwhelm the element: a plain color tint only.
+  // Same tint (kept as a separate name for callers that only ever want the
+  // plain tint, never the corner stickers below).
   tintStyle?: CSSProperties;
+  // Resolved corner-sticker image paths for BubbleCornerDecor, if the active
+  // skin has illustrated bubble art; undefined otherwise.
+  bubbleCorners?: { tl: string; tr: string; bl: string; br: string };
   // "Thinking" dot/accent color tinted for the active skin, or undefined.
   dotColor?: string;
 }
@@ -60,34 +63,24 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
 
   const activeSkin = CHARACTER_SKINS.find(s => s.id === skinId);
   const accent = activeSkin?.accent;
-  const frame = activeSkin?.bubbleFrame;
+  const corners = activeSkin?.bubbleCorners;
 
   const tintStyle = useMemo<CSSProperties | undefined>(() => accent ? {
     background: `color-mix(in srgb, ${accent} 22%, var(--accent))`,
     borderColor: `color-mix(in srgb, ${accent} 45%, var(--border))`,
   } : undefined, [accent]);
 
-  const bubbleStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!frame) return tintStyle;
-    const [st, sr, sb, sl] = frame.slice;
-    const [wt, wr, wb, wl] = frame.width;
-    return {
-      borderRadius: 0,
-      borderStyle: 'solid',
-      borderColor: 'transparent',
-      borderWidth: `${wt}px ${wr}px ${wb}px ${wl}px`,
-      borderImageSource: `url(${SKIN_BASE_PATH}${frame.file})`,
-      borderImageSlice: `${st} ${sr} ${sb} ${sl} fill`,
-      borderImageWidth: `${wt}px ${wr}px ${wb}px ${wl}px`,
-      borderImageRepeat: 'stretch',
-      background: 'transparent',
-    };
-  }, [frame, tintStyle]);
+  const bubbleCorners = useMemo(() => corners ? {
+    tl: `${SKIN_BASE_PATH}${corners.tl}`,
+    tr: `${SKIN_BASE_PATH}${corners.tr}`,
+    bl: `${SKIN_BASE_PATH}${corners.bl}`,
+    br: `${SKIN_BASE_PATH}${corners.br}`,
+  } : undefined, [corners]);
 
   const dotColor = useMemo(() => accent ? `color-mix(in srgb, ${accent} 45%, var(--primary))` : undefined, [accent]);
 
   return (
-    <CharacterSkinContext.Provider value={{ skinId, setSkinId, avatarSrc, bubbleStyle, tintStyle, dotColor }}>
+    <CharacterSkinContext.Provider value={{ skinId, setSkinId, avatarSrc, bubbleStyle: tintStyle, tintStyle, bubbleCorners, dotColor }}>
       {children}
     </CharacterSkinContext.Provider>
   );
@@ -95,4 +88,31 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
 
 export function useCharacterSkin() {
   return useContext(CharacterSkinContext);
+}
+
+// Illustrated corner stickers layered over a bubble that has `position:
+// relative`. Purely decorative and non-interactive; renders nothing when the
+// active skin has no bubble art yet.
+export function BubbleCornerDecor({ corners }: { corners?: { tl: string; tr: string; bl: string; br: string } }) {
+  if (!corners) return null;
+  return (
+    <div className="bcd-wrap" aria-hidden>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={corners.tl} alt="" className="bcd bcd-tl" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={corners.tr} alt="" className="bcd bcd-tr" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={corners.bl} alt="" className="bcd bcd-bl" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={corners.br} alt="" className="bcd bcd-br" />
+      <style jsx>{`
+        .bcd-wrap { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+        .bcd { position: absolute; height: 42px; width: auto; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.12)); }
+        .bcd-tl { top: -9px; left: -9px; }
+        .bcd-tr { top: -9px; right: -9px; }
+        .bcd-bl { bottom: -9px; left: -9px; }
+        .bcd-br { bottom: -9px; right: -9px; }
+      `}</style>
+    </div>
+  );
 }
