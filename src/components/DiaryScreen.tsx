@@ -110,7 +110,7 @@ interface DiaryScreenProps {
 
 export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const t = useT();
-  const { avatarSrc: lilyAvatarSrc } = useCharacterSkin();
+  const { avatarSrc: lilyAvatarSrc, bubbleStyle } = useCharacterSkin();
   const lang = getAppLang();
   const todayIso = isoOf(new Date());
   const [viewDate, setViewDate] = useState<Date>(() => new Date());
@@ -409,7 +409,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
           {current?.aiComment && (
             <div className="dy-comment">
               <LilyAvatar />
-              <div className="dy-comment-body">
+              <div className="dy-comment-body" style={bubbleStyle}>
                 <div className="dy-comment-head">
                   <span className="dy-comment-name">Lily</span>
                   <span className="dy-comment-handle">@lily</span>

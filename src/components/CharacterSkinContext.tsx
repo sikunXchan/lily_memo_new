@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import type { CSSProperties } from 'react';
 import { useTheme } from './ThemeContext';
 import { CHARACTER_SKINS, CHARACTER_SKIN_STORAGE_KEY, SKIN_BASE_PATH } from '@/lib/characterSkins';
 
@@ -9,6 +10,11 @@ interface CharacterSkinContextValue {
   setSkinId: (id: string) => void;
   // Returns the active skin's image path, or `fallback` when no skin is set.
   avatarSrc: (fallback: string) => string;
+  // Lily-bubble/comment-card background+border tint for the active skin, or
+  // undefined when no skin is set (callers fall back to their default CSS).
+  bubbleStyle?: CSSProperties;
+  // "Thinking" dot/accent color tinted for the active skin, or undefined.
+  dotColor?: string;
 }
 
 const CharacterSkinContext = createContext<CharacterSkinContextValue>({
@@ -48,8 +54,17 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
     return skin ? `${SKIN_BASE_PATH}${skin.file}` : fallback;
   }, [skinId]);
 
+  const accent = CHARACTER_SKINS.find(s => s.id === skinId)?.accent;
+
+  const bubbleStyle = useMemo<CSSProperties | undefined>(() => accent ? {
+    background: `color-mix(in srgb, ${accent} 22%, var(--accent))`,
+    borderColor: `color-mix(in srgb, ${accent} 45%, var(--border))`,
+  } : undefined, [accent]);
+
+  const dotColor = useMemo(() => accent ? `color-mix(in srgb, ${accent} 45%, var(--primary))` : undefined, [accent]);
+
   return (
-    <CharacterSkinContext.Provider value={{ skinId, setSkinId, avatarSrc }}>
+    <CharacterSkinContext.Provider value={{ skinId, setSkinId, avatarSrc, bubbleStyle, dotColor }}>
       {children}
     </CharacterSkinContext.Provider>
   );
