@@ -1,10 +1,12 @@
 'use client';
 
-import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge, Palette, Lock } from 'lucide-react';
+import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge, Palette, Lock, Shirt } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
+import { useCharacterSkin } from './CharacterSkinContext';
 import { FONT_OPTIONS, THEME_LIST, THEMES, SEASONAL_SKINS } from '@/lib/themes';
+import { CHARACTER_SKINS, SKIN_BASE_PATH } from '@/lib/characterSkins';
 import { getUserName, setUserName } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
 import PlanModal from '@/components/PlanModal';
@@ -32,6 +34,14 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const submitSkinCode = () => {
     if (unlockSkins(skinCode)) { setSkinCode(''); setSkinCodeError(false); setShowSkinUnlock(false); }
     else setSkinCodeError(true);
+  };
+  const { skinId: charSkinId, setSkinId: setCharSkinId } = useCharacterSkin();
+  const [charSkinCode, setCharSkinCode] = useState('');
+  const [charSkinCodeError, setCharSkinCodeError] = useState(false);
+  const [showCharSkinUnlock, setShowCharSkinUnlock] = useState(false);
+  const submitCharSkinCode = () => {
+    if (unlockSkins(charSkinCode)) { setCharSkinCode(''); setCharSkinCodeError(false); setShowCharSkinUnlock(false); }
+    else setCharSkinCodeError(true);
   };
   const [geminiKey, setGeminiKey] = useState('');
   const [keySaved, setKeySaved] = useState(false);
@@ -243,10 +253,10 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         <section className="settings-section">
           <div className="section-title">
             <Palette size={20} />
-            <h3>{t('テーマ・スキン')}</h3>
+            <h3>{t('テーマ')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">{t('アプリ全体の配色を選べます。🔒 のスキンは解放コードで開放できます。')}</p>
+            <p className="desc">{t('アプリ全体の配色を選べます。🔒 のテーマは解放コードで開放できます。')}</p>
             <div className="skin-grid">
               {THEME_LIST.map(id => {
                 const th = THEMES[id];
@@ -278,13 +288,72 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     value={skinCode}
                     onChange={e => { setSkinCode(e.target.value); setSkinCodeError(false); }}
                     onKeyDown={e => { if (e.key === 'Enter') submitSkinCode(); }}
-                    placeholder={t('スキン解放コード')}
+                    placeholder={t('解放コード')}
                   />
                   <button className="btn-action" onClick={submitSkinCode}>{t('解放')}</button>
                   {skinCodeError && <span className="skin-code-err">{t('コードが違うみたい')}</span>}
                 </div>
               ) : (
                 <button className="skin-unlock-open" onClick={() => setShowSkinUnlock(true)}>
+                  <Lock size={13} /> {t('テーマを解放する')}
+                </button>
+              )
+            )}
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Shirt size={20} />
+            <h3>{t('キャラクタースキン')}</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">{t('チャットや各画面のLilyの見た目を着せ替えられます。🔒 は解放コードで開放できます。')}</p>
+            <div className="skin-grid">
+              <button
+                className={`skin-card charskin-card ${charSkinId === '' ? 'selected' : ''}`}
+                onClick={() => setCharSkinId('')}
+              >
+                <span className="charskin-thumb-wrap">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="" className="charskin-thumb" />
+                </span>
+                <span className="skin-name">{t('デフォルト')}</span>
+              </button>
+              {CHARACTER_SKINS.map(sk => {
+                const locked = !skinsUnlocked;
+                return (
+                  <button
+                    key={sk.id}
+                    className={`skin-card charskin-card ${charSkinId === sk.id ? 'selected' : ''} ${locked ? 'locked' : ''}`}
+                    onClick={() => locked ? setShowCharSkinUnlock(true) : setCharSkinId(sk.id)}
+                  >
+                    <span className="charskin-thumb-wrap">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`${SKIN_BASE_PATH}${sk.file}`} alt="" className="charskin-thumb" loading="lazy" />
+                      {locked && <span className="skin-lock"><Lock size={13} /></span>}
+                    </span>
+                    <span className="skin-name">{t(sk.name)}</span>
+                    {sk.seasonal && <span className="skin-season">{t(sk.seasonal)}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {!skinsUnlocked && (
+              showCharSkinUnlock ? (
+                <div className="skin-unlock">
+                  <input
+                    className="skin-code-input"
+                    value={charSkinCode}
+                    onChange={e => { setCharSkinCode(e.target.value); setCharSkinCodeError(false); }}
+                    onKeyDown={e => { if (e.key === 'Enter') submitCharSkinCode(); }}
+                    placeholder={t('解放コード')}
+                  />
+                  <button className="btn-action" onClick={submitCharSkinCode}>{t('解放')}</button>
+                  {charSkinCodeError && <span className="skin-code-err">{t('コードが違うみたい')}</span>}
+                </div>
+              ) : (
+                <button className="skin-unlock-open" onClick={() => setShowCharSkinUnlock(true)}>
                   <Lock size={13} /> {t('スキンを解放する')}
                 </button>
               )
@@ -584,6 +653,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         .skin-swatch { position: relative; height: 44px; border-radius: 8px; border: 1px solid; display: flex; align-items: center; justify-content: center; gap: 5px; }
         .skin-dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
         .skin-lock { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.34); color: #fff; border-radius: 8px; }
+        .charskin-thumb-wrap { position: relative; height: 96px; border-radius: 8px; overflow: hidden; background: var(--accent, #fff0f5); }
+        .charskin-thumb { width: 100%; height: 100%; object-fit: contain; object-position: bottom center; }
         .skin-name { font-size: 0.76rem; font-weight: 700; color: var(--foreground); text-align: center; }
         .skin-season { font-size: 0.6rem; font-weight: 800; color: #d97706; background: color-mix(in srgb, #f59e0b 20%, transparent); border-radius: 999px; padding: 1px 6px; align-self: center; }
         .skin-unlock { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }

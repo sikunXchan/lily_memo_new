@@ -28,6 +28,7 @@ import { getTicketsLeft, consumeTicket } from '@/lib/points';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
+import { useCharacterSkin } from '@/components/CharacterSkinContext';
 import mermaid from 'mermaid';
 import { initMermaid } from '@/lib/mermaidConfig';
 
@@ -359,6 +360,7 @@ How to run the lesson (strict):
 }
 
 export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenProps) {
+  const { avatarSrc: lilyAvatarSrc } = useCharacterSkin();
   const en = getAppLang() === 'en';
 
   const sets = useLiveQuery<ProblemSet[]>(
@@ -1330,7 +1332,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               {lessonLoading ? (
                 <div className="ps-slide-card thinking">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/lilygirls.PNG" alt="Lily" className="ps-slide-ava" />
+                  <img src={lilyAvatarSrc('/lilygirls.PNG')} alt="Lily" className="ps-slide-ava" />
                   <div className="ps-class-typing"><span /><span /><span /></div>
                   <p className="ps-slide-thinking-txt">
                     {en ? 'Lily is preparing the next part…' : 'Lilyが次の内容を準備中…'}
@@ -1347,7 +1349,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 <div className="ps-slide-card" key={cardIdx}>
                   <div className="ps-slide-card-head">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src="/lilygirls.PNG" alt="Lily" className="ps-slide-ava" />
+                    <img src={lilyAvatarSrc('/lilygirls.PNG')} alt="Lily" className="ps-slide-ava" />
                     <span className="ps-slide-num">
                       {lessonCards[cardIdx]!.userQ
                         ? (en ? 'Answer' : '回答')
@@ -1683,7 +1685,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
           {sets.length === 0 ? (
             <div className="ps-empty">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="ps-empty-img" />
+              <img src={lilyAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png')} alt="Lily" className="ps-empty-img" />
               <p>{en ? 'No sets yet.' : 'まだ問題セットがないよ'}</p>
               <p className="ps-empty-sub">{en ? 'Ask Lily above to make one!' : '上のフォームから作ってみてね！'}</p>
             </div>
@@ -1744,7 +1746,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       {genLoading && typeof document !== 'undefined' && createPortal(
         <div className="ps-genload">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/9D507C9A-09F0-4B05-9F41-612FBD120675.png" alt="Lily" className="ps-genload-img" />
+          <img src={lilyAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png')} alt="Lily" className="ps-genload-img" />
           <div className="ps-genload-spinner"><Loader2 size={26} className="ps-spin" /></div>
           <p className="ps-genload-title">{en ? 'Lily is creating your problems…' : 'Lilyが問題を作ってるよ…'}</p>
           <p className="ps-genload-sub">{en ? 'This can take a little while' : '少し時間がかかることがあるよ'}</p>
@@ -2067,7 +2069,7 @@ function PracticeStyles() {
   @keyframes ps-slide-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
   .ps-slide-card.thinking { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 36px 16px; }
   .ps-slide-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; }
-  .ps-slide-ava { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1.5px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); }
+  .ps-slide-ava { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; object-position: top center; flex-shrink: 0; border: 1.5px solid color-mix(in srgb, #8b5cf6 30%, var(--border)); }
   .ps-slide-num { font-size: 0.72rem; font-weight: 800; letter-spacing: .04em; color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, var(--accent)); padding: 3px 11px; border-radius: 999px; }
   .ps-slide-qchip { font-size: 0.78rem; color: var(--fg-muted); background: var(--accent); border-left: 3px solid #ec4899; border-radius: 6px; padding: 7px 10px; margin-bottom: 13px; line-height: 1.55; word-break: break-word; }
   .ps-slide-body { font-size: 0.92rem; line-height: 1.75; color: var(--foreground); word-break: break-word; }
