@@ -106,12 +106,16 @@ export function BubbleCornerDecor({ corners }: { corners?: { tl: string; tr: str
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={corners.br} alt="" className="bcd bcd-br" />
       <style jsx>{`
+        /* Decorations straddle the corners and hang OUTSIDE the bubble edge,
+           like ornaments clipped onto the frame — not sitting inside over the
+           text. z-index keeps them above the bubble but pointer-events:none so
+           taps still reach the content underneath. */
         .bcd-wrap { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
-        .bcd { position: absolute; height: 42px; width: auto; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.12)); }
-        .bcd-tl { top: -9px; left: -9px; }
-        .bcd-tr { top: -9px; right: -9px; }
-        .bcd-bl { bottom: -9px; left: -9px; }
-        .bcd-br { bottom: -9px; right: -9px; }
+        .bcd { position: absolute; height: 52px; width: auto; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.16)); }
+        .bcd-tl { top: -26px; left: -14px; }
+        .bcd-tr { top: -26px; right: -14px; }
+        .bcd-bl { bottom: -26px; left: -14px; }
+        .bcd-br { bottom: -26px; right: -14px; }
       `}</style>
     </div>
   );
