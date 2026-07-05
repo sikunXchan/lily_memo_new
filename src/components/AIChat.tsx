@@ -8,7 +8,7 @@ import {
   Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, ArrowLeft,
   Save, History, Trash2, Wrench, MoreVertical, PencilLine,
-  NotebookText, Check,
+  NotebookText, Check, Maximize2,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -39,6 +39,7 @@ import {
 } from '@/lib/fileGen';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
 import { useCharacterSkin, BubbleCornerDecor } from '@/components/CharacterSkinContext';
+import { FigureLightbox } from '@/components/FigureLightbox';
 import {
   hasTokenBudget, deductTokens, getRemainingTokens, getPlan, PLAN_DAILY_TOKENS, PLAN_LABEL,
   getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode, formatTokens,
@@ -684,6 +685,7 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
   const t = useT();
   const [svg, setSvg] = useState('');
   const [err, setErr] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -716,7 +718,10 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
   );
   return (
     <div>
-      <div className="mmd-prev" dangerouslySetInnerHTML={{ __html: svg }} />
+      <div className="mmd-prev-wrap" onClick={() => svg && setZoomed(true)} title={t('タップで拡大')}>
+        <div className="mmd-prev" dangerouslySetInnerHTML={{ __html: svg }} />
+        {svg && <span className="fig-zoom-badge"><Maximize2 size={12} /> {t('拡大')}</span>}
+      </div>
       <ImageSaveBar>
         <button onClick={() => downloadSvgAsPng(svg, `${baseName}.png`)} disabled={!svg}>
           <Download size={13} /> {t('PNG保存')}
@@ -725,9 +730,12 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
           <Download size={13} /> {t('SVG保存')}
         </button>
       </ImageSaveBar>
+      {zoomed && <FigureLightbox svg={svg} onClose={() => setZoomed(false)} />}
       <style jsx>{`
+        .mmd-prev-wrap { position: relative; cursor: zoom-in; }
         .mmd-prev { background: #fff; border-radius: 8px; padding: 12px; overflow: auto; }
         .mmd-prev :global(svg) { max-width: 100%; height: auto; }
+        .fig-zoom-badge { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; gap: 3px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 20px; padding: 3px 8px; font-size: 0.68rem; font-weight: 600; pointer-events: none; }
       `}</style>
     </div>
   );
@@ -772,13 +780,17 @@ function ChartPreview({ code, baseName }: { code: string; baseName: string }) {
 
 function GeometryPreview({ code, baseName }: { code: string; baseName: string }) {
   const t = useT();
+  const [zoomed, setZoomed] = useState(false);
   const svg = useMemo(() => {
     try { return renderGeometrySvg(parseGeometry(code)); } catch { return ''; }
   }, [code]);
   if (!svg) return <div className="prev-err">{t('図のプレビューを表示できなかったよ💦')}</div>;
   return (
     <div>
-      <div className="geo-prev" dangerouslySetInnerHTML={{ __html: svg }} />
+      <div className="geo-prev-wrap" onClick={() => setZoomed(true)} title={t('タップで拡大')}>
+        <div className="geo-prev" dangerouslySetInnerHTML={{ __html: svg }} />
+        <span className="fig-zoom-badge"><Maximize2 size={12} /> {t('拡大')}</span>
+      </div>
       <ImageSaveBar>
         <button onClick={() => downloadSvgAsPng(svg, `${baseName}.png`)}>
           <Download size={13} /> {t('PNG保存')}
@@ -787,9 +799,12 @@ function GeometryPreview({ code, baseName }: { code: string; baseName: string })
           <Download size={13} /> {t('SVG保存')}
         </button>
       </ImageSaveBar>
+      {zoomed && <FigureLightbox svg={svg} onClose={() => setZoomed(false)} />}
       <style jsx>{`
+        .geo-prev-wrap { position: relative; cursor: zoom-in; }
         .geo-prev { background: #fff; border-radius: 8px; padding: 8px; overflow: auto; text-align: center; }
         .geo-prev :global(svg) { max-width: 100%; height: auto; }
+        .fig-zoom-badge { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; gap: 3px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 20px; padding: 3px 8px; font-size: 0.68rem; font-weight: 600; pointer-events: none; }
       `}</style>
     </div>
   );
