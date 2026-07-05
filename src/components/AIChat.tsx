@@ -1385,7 +1385,7 @@ function LilyBubble({
   onQaCheck?: (blockId: string, indices: number[]) => void;
 }) {
   const t = useT();
-  const { avatarSrc: skinAvatarSrc } = useCharacterSkin();
+  const { avatarSrc: skinAvatarSrc, bubbleStyle } = useCharacterSkin();
   const avatarSrc = skinAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png');
   const avatarAlt = 'Lily';
   const [thinkingOpen, setThinkingOpen] = useState(false);
@@ -1487,7 +1487,7 @@ function LilyBubble({
         <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div className="lily-bubble" onClick={handleBubbleClick}>
+        <div className="lily-bubble" style={bubbleStyle} onClick={handleBubbleClick}>
           {inlineParts.map((p, i) =>
             p.kind === 'text' ? (
               <div
@@ -1712,10 +1712,13 @@ const BOXING_FRAMES = [
 const BOXING_FRAME_MS = 165;
 
 function TypingIndicator() {
+  const { bubbleStyle, dotColor } = useCharacterSkin();
   return (
     <div className="typing-row">
-      <div className="typing-bubble">
-        <span className="dot" /><span className="dot" /><span className="dot" />
+      <div className="typing-bubble" style={bubbleStyle}>
+        <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
+        <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
+        <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
       </div>
       <style jsx>{`
         .typing-row { display: flex; align-items: center; gap: 8px; align-self: flex-start; }
