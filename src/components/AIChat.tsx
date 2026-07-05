@@ -38,7 +38,7 @@ import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
-import { useCharacterSkin } from '@/components/CharacterSkinContext';
+import { useCharacterSkin, BubbleCornerDecor } from '@/components/CharacterSkinContext';
 import {
   hasTokenBudget, deductTokens, getRemainingTokens, getPlan, PLAN_DAILY_TOKENS, PLAN_LABEL,
   getTicketLimit, getTicketsLeft, consumeTicket, type TicketMode, formatTokens,
@@ -1385,7 +1385,7 @@ function LilyBubble({
   onQaCheck?: (blockId: string, indices: number[]) => void;
 }) {
   const t = useT();
-  const { avatarSrc: skinAvatarSrc, bubbleStyle } = useCharacterSkin();
+  const { avatarSrc: skinAvatarSrc, bubbleStyle, bubbleCorners } = useCharacterSkin();
   const avatarSrc = skinAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png');
   const avatarAlt = 'Lily';
   const [thinkingOpen, setThinkingOpen] = useState(false);
@@ -1487,7 +1487,8 @@ function LilyBubble({
         <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div className="lily-bubble" style={bubbleStyle} onClick={handleBubbleClick}>
+        <div className={`lily-bubble${bubbleCorners ? ' has-corners' : ''}`} style={bubbleStyle} onClick={handleBubbleClick}>
+          <BubbleCornerDecor corners={bubbleCorners} />
           {inlineParts.map((p, i) =>
             p.kind === 'text' ? (
               <div
@@ -1550,7 +1551,8 @@ function LilyBubble({
         .lily-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--accent); border: 2px solid var(--border); }
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
-        .lily-bubble { background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
+        .lily-bubble { position: relative; background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
+        .lily-bubble.has-corners { padding: 36px 50px; }
         .inline-block-wrap { margin: 8px 0; }
         .inline-block-wrap:first-child { margin-top: 0; }
         .inline-block-wrap:last-child { margin-bottom: 0; }
