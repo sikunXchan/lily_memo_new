@@ -89,12 +89,17 @@ function LessonMermaid({ code }: { code: string }) {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
+      const id = `lm-${Math.random().toString(36).slice(2, 9)}`;
       try {
-        const id = `lm-${Math.random().toString(36).slice(2, 9)}`;
         const { svg: rendered } = await mermaid.render(id, code.trim());
         if (!cancelled) { setSvg(rendered); setErr(false); }
       } catch {
         if (!cancelled) setErr(true);
+      } finally {
+        // Remove any temp/error node mermaid may leave in <body> on failure
+        // (mindmaps can dump a "Syntax error" bomb at the page bottom).
+        document.getElementById('d' + id)?.remove();
+        document.getElementById(id)?.remove();
       }
     };
     void run();
