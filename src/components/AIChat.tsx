@@ -696,20 +696,6 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
   const [svg, setSvg] = useState('');
   const [err, setErr] = useState(false);
   const [zoomed, setZoomed] = useState(false);
-  const prevRef = useRef<HTMLDivElement>(null);
-  // Render the diagram at its NATURAL size and let the card scroll horizontally,
-  // instead of shrinking a wide diagram down to bubble width (which made the
-  // text unreadably small). mermaid stamps the natural width onto the svg's
-  // inline style.maxWidth; promote that to an explicit width.
-  useEffect(() => {
-    const el = prevRef.current?.querySelector('svg') as SVGSVGElement | null;
-    if (!el) return;
-    const natural = el.style.maxWidth; // e.g. "679px"
-    if (natural && natural !== 'none') {
-      el.style.width = natural;
-      el.style.maxWidth = 'none';
-    }
-  }, [svg]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -743,7 +729,7 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
   return (
     <div>
       <div className="mmd-prev-wrap">
-        <div className="mmd-prev" ref={prevRef} dangerouslySetInnerHTML={{ __html: svg }} />
+        <div className="mmd-prev" dangerouslySetInnerHTML={{ __html: svg }} />
         {svg && (
           <button className="fig-zoom-badge" onClick={() => setZoomed(true)} title={t('全画面で見る')}>
             <Maximize2 size={12} /> {t('拡大')}
@@ -761,8 +747,8 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
       {zoomed && <FigureLightbox svg={svg} onClose={() => setZoomed(false)} />}
       <style jsx>{`
         .mmd-prev-wrap { position: relative; }
-        .mmd-prev { background: #fff; border-radius: 8px; padding: 12px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
-        .mmd-prev :global(svg) { height: auto; display: block; }
+        .mmd-prev { background: #fff; border-radius: 8px; padding: 12px; overflow: hidden; }
+        .mmd-prev :global(svg) { max-width: 100%; height: auto; display: block; }
         .fig-zoom-badge { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; gap: 3px; background: rgba(0,0,0,0.55); color: #fff; border: none; border-radius: 20px; padding: 4px 9px; font-size: 0.68rem; font-weight: 600; cursor: pointer; z-index: 1; }
       `}</style>
     </div>
