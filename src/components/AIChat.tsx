@@ -743,11 +743,8 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
       {zoomed && <FigureLightbox svg={svg} onClose={() => setZoomed(false)} />}
       <style jsx>{`
         .mmd-prev-wrap { position: relative; cursor: zoom-in; }
-        .mmd-prev { background: #fff; border-radius: 8px; padding: 10px; overflow: auto; }
-        /* Fill the container width. mermaid stamps an inline max-width equal to
-           the diagram's intrinsic size, which keeps small flowcharts tiny —
-           override it so figures use the full bubble width by default. */
-        .mmd-prev :global(svg) { width: 100% !important; max-width: 100% !important; height: auto; }
+        .mmd-prev { background: #fff; border-radius: 8px; padding: 12px; overflow: auto; }
+        .mmd-prev :global(svg) { max-width: 100%; height: auto; }
         .fig-zoom-badge { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; gap: 3px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 20px; padding: 3px 8px; font-size: 0.68rem; font-weight: 600; pointer-events: none; }
       `}</style>
     </div>
@@ -816,7 +813,7 @@ function GeometryPreview({ code, baseName }: { code: string; baseName: string })
       <style jsx>{`
         .geo-prev-wrap { position: relative; cursor: zoom-in; }
         .geo-prev { background: #fff; border-radius: 8px; padding: 8px; overflow: auto; text-align: center; }
-        .geo-prev :global(svg) { width: 100% !important; max-width: 100% !important; height: auto; }
+        .geo-prev :global(svg) { max-width: 100%; height: auto; }
         .fig-zoom-badge { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; gap: 3px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 20px; padding: 3px 8px; font-size: 0.68rem; font-weight: 600; pointer-events: none; }
       `}</style>
     </div>
