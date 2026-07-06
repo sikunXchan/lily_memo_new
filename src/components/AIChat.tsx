@@ -728,9 +728,13 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
   );
   return (
     <div>
-      <div className="mmd-prev-wrap" onClick={() => svg && setZoomed(true)} title={t('タップで拡大')}>
+      <div className="mmd-prev-wrap">
         <div className="mmd-prev" dangerouslySetInnerHTML={{ __html: svg }} />
-        {svg && <span className="fig-zoom-badge"><Maximize2 size={12} /> {t('拡大')}</span>}
+        {svg && (
+          <button className="fig-zoom-badge" onClick={() => setZoomed(true)} title={t('全画面で見る')}>
+            <Maximize2 size={12} /> {t('拡大')}
+          </button>
+        )}
       </div>
       <ImageSaveBar>
         <button onClick={() => downloadSvgAsPng(svg, `${baseName}.png`)} disabled={!svg}>
@@ -742,10 +746,10 @@ function MermaidPreview({ code, baseName }: { code: string; baseName: string }) 
       </ImageSaveBar>
       {zoomed && <FigureLightbox svg={svg} onClose={() => setZoomed(false)} />}
       <style jsx>{`
-        .mmd-prev-wrap { position: relative; cursor: zoom-in; }
-        .mmd-prev { background: #fff; border-radius: 8px; padding: 12px; overflow: auto; }
-        .mmd-prev :global(svg) { max-width: 100%; height: auto; }
-        .fig-zoom-badge { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; gap: 3px; background: rgba(0,0,0,0.5); color: #fff; border-radius: 20px; padding: 3px 8px; font-size: 0.68rem; font-weight: 600; pointer-events: none; }
+        .mmd-prev-wrap { position: relative; }
+        .mmd-prev { background: #fff; border-radius: 8px; padding: 12px; overflow: hidden; }
+        .mmd-prev :global(svg) { max-width: 100%; height: auto; display: block; }
+        .fig-zoom-badge { position: absolute; top: 6px; right: 6px; display: inline-flex; align-items: center; gap: 3px; background: rgba(0,0,0,0.55); color: #fff; border: none; border-radius: 20px; padding: 4px 9px; font-size: 0.68rem; font-weight: 600; cursor: pointer; z-index: 1; }
       `}</style>
     </div>
   );
