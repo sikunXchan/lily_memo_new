@@ -38,7 +38,7 @@ import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
-import { useCharacterSkin, BubbleCornerDecor } from '@/components/CharacterSkinContext';
+import { useCharacterSkin } from '@/components/CharacterSkinContext';
 import { FigureLightbox } from '@/components/FigureLightbox';
 import {
   hasTokenBudget, deductTokens, getRemainingTokens, getPlan, PLAN_DAILY_TOKENS, PLAN_LABEL,
@@ -677,8 +677,18 @@ function ImageSaveBar({ children }: { children: React.ReactNode }) {
 
 async function tryRenderMermaid(source: string): Promise<string> {
   const id = `lily-mmd-${Math.random().toString(36).slice(2, 9)}`;
-  const { svg } = await mermaid.render(id, source);
-  return svg;
+  try {
+    const { svg } = await mermaid.render(id, source);
+    return svg;
+  } finally {
+    // mermaid appends a temporary measuring node (id = 'd' + id) to <body>
+    // during render. On some error paths — notably mindmaps, even with
+    // suppressErrorRendering — that node and/or an injected "Syntax error"
+    // bomb SVG are left behind, dumping the bomb at the bottom of the page.
+    // Remove any leftovers so a failed diagram never escapes its bubble.
+    document.getElementById('d' + id)?.remove();
+    document.getElementById(id)?.remove();
+  }
 }
 
 function MermaidPreview({ code, baseName }: { code: string; baseName: string }) {
@@ -1403,7 +1413,7 @@ function LilyBubble({
   onQaCheck?: (blockId: string, indices: number[]) => void;
 }) {
   const t = useT();
-  const { avatarSrc: skinAvatarSrc, bubbleStyle, bubbleCorners } = useCharacterSkin();
+  const { avatarSrc: skinAvatarSrc } = useCharacterSkin();
   const avatarSrc = skinAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png');
   const avatarAlt = 'Lily';
   const [thinkingOpen, setThinkingOpen] = useState(false);
@@ -1505,8 +1515,7 @@ function LilyBubble({
         <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
-        <div className={`lily-bubble${bubbleCorners ? ' has-corners' : ''}`} style={bubbleStyle} onClick={handleBubbleClick}>
-          <BubbleCornerDecor corners={bubbleCorners} />
+        <div className="lily-bubble" onClick={handleBubbleClick}>
           {inlineParts.map((p, i) =>
             p.kind === 'text' ? (
               <div
@@ -1570,7 +1579,6 @@ function LilyBubble({
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
         .lily-bubble { position: relative; background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
-        .lily-bubble.has-corners { padding: 22px 15px; }
         .inline-block-wrap { margin: 8px 0; }
         .inline-block-wrap:first-child { margin-top: 0; }
         .inline-block-wrap:last-child { margin-bottom: 0; }
@@ -1732,13 +1740,10 @@ const BOXING_FRAMES = [
 const BOXING_FRAME_MS = 165;
 
 function TypingIndicator() {
-  const { tintStyle, dotColor } = useCharacterSkin();
   return (
     <div className="typing-row">
-      <div className="typing-bubble" style={tintStyle}>
-        <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
-        <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
-        <span className="dot" style={dotColor ? { background: dotColor } : undefined} />
+      <div className="typing-bubble">
+        <span className="dot" /><span className="dot" /><span className="dot" />
       </div>
       <style jsx>{`
         .typing-row { display: flex; align-items: center; gap: 8px; align-self: flex-start; }

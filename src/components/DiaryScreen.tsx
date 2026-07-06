@@ -8,7 +8,7 @@ import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
 import { useT } from '@/lib/i18n';
 import { getAppLang, getUserName } from '@/lib/appLang';
-import { useCharacterSkin, BubbleCornerDecor } from '@/components/CharacterSkinContext';
+import { useCharacterSkin } from '@/components/CharacterSkinContext';
 
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -110,7 +110,7 @@ interface DiaryScreenProps {
 
 export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const t = useT();
-  const { avatarSrc: lilyAvatarSrc, bubbleStyle, bubbleCorners } = useCharacterSkin();
+  const { avatarSrc: lilyAvatarSrc } = useCharacterSkin();
   const lang = getAppLang();
   const todayIso = isoOf(new Date());
   const [viewDate, setViewDate] = useState<Date>(() => new Date());
@@ -409,8 +409,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
           {current?.aiComment && (
             <div className="dy-comment">
               <LilyAvatar />
-              <div className={`dy-comment-body${bubbleCorners ? ' has-corners' : ''}`} style={bubbleStyle}>
-                <BubbleCornerDecor corners={bubbleCorners} />
+              <div className="dy-comment-body">
                 <div className="dy-comment-head">
                   <span className="dy-comment-name">Lily</span>
                   <span className="dy-comment-handle">@lily</span>
@@ -633,12 +632,10 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         }
         .dy-ava-fallback { font-size: 1.3rem; }
         .dy-comment-body {
-          position: relative;
           flex: 1; min-width: 0;
           background: var(--accent); border: 1px solid var(--border);
           border-radius: 4px 16px 16px 16px; padding: 11px 14px;
         }
-        .dy-comment-body.has-corners { padding: 22px 15px; }
         .dy-comment-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
         .dy-comment-name { font-size: .82rem; font-weight: 800; color: var(--foreground); }
         .dy-comment-handle { font-size: .7rem; color: var(--fg-faint); }
