@@ -38,7 +38,7 @@ import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
 } from '@/lib/fileGen';
 import { getEffectiveApiKey, getAppLang, getUserName } from '@/lib/appLang';
-import { useCharacterSkin } from '@/components/CharacterSkinContext';
+import { useCharacterSkin, AvatarFrame } from '@/components/CharacterSkinContext';
 import { FigureLightbox } from '@/components/FigureLightbox';
 import {
   hasTokenBudget, deductTokens, getRemainingTokens, getPlan, PLAN_DAILY_TOKENS, PLAN_LABEL,
@@ -1852,7 +1852,7 @@ function ChatHistoryModal({ onClose, onLoad }: { onClose: () => void; onLoad: (c
 
 export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, initialContext, onContextConsumed }: AIChatProps) {
   const t = useT();
-  const { avatarSrc: lilyAvatarSrc } = useCharacterSkin();
+  const { avatarSrc: lilyAvatarSrc, backgroundSrc, avatarFrameSrc } = useCharacterSkin();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -2758,7 +2758,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   }
 
   return (
-    <div className="ai-chat-container">
+    <div
+      className="ai-chat-container"
+      style={backgroundSrc ? {
+        backgroundImage: `url(${backgroundSrc})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      } : undefined}
+    >
       <div className="chat-header">
         {onSwitchTab && (
           <button className="chat-back-btn" onClick={() => onSwitchTab('memos')} title={t('メモに戻る')}>
@@ -2766,12 +2773,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           </button>
         )}
         <div className="header-left">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={lilyAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png')}
-            alt="Lily"
-            className="header-avatar"
-          />
+          <AvatarFrame size={38} frameSrc={avatarFrameSrc}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={lilyAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png')}
+              alt="Lily"
+              className="header-avatar"
+            />
+          </AvatarFrame>
           <div>
             <div className="header-title">Lily</div>
             <div className="header-sub">{t('AIアシスタント ✨')}</div>
@@ -3391,17 +3400,20 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .welcome-mode-notice {
           max-width: 320px; margin: 0 14px; padding: 10px 14px; text-align: center;
           border-radius: 14px; font-size: 0.74rem; line-height: 1.6; font-weight: 600;
-          color: #92680b; background: color-mix(in srgb, #f59e0b 16%, transparent);
+          /* Mixed with var(--background) (always opaque), not transparent, so
+             this stays readable even when a skin's scenic background image
+             shows behind the container — not just the plain default color. */
+          color: #92680b; background: color-mix(in srgb, #f59e0b 22%, var(--background));
           border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent);
         }
         .welcome-mode-notice.legacy {
-          color: #4338ca; background: color-mix(in srgb, #6366f1 14%, transparent);
+          color: #4338ca; background: color-mix(in srgb, #6366f1 20%, var(--background));
           border-color: color-mix(in srgb, #6366f1 40%, transparent);
         }
         .welcome-mode-cta {
           display: flex; align-items: center; gap: 11px; text-align: left; cursor: pointer;
           max-width: 340px; margin: 0 14px; padding: 12px 15px; border-radius: 16px;
-          background: linear-gradient(120deg, color-mix(in srgb, #22c55e 16%, transparent), color-mix(in srgb, var(--primary) 16%, transparent));
+          background: linear-gradient(120deg, color-mix(in srgb, #22c55e 20%, var(--background)), color-mix(in srgb, var(--primary) 20%, var(--background)));
           border: 1px solid color-mix(in srgb, #22c55e 42%, transparent);
           transition: transform 0.12s ease, filter 0.15s ease;
         }
