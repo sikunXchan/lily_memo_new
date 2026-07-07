@@ -8,7 +8,7 @@ import {
   Paperclip, X, Search,
   FileDown, Wand2, Download, Pencil, ArrowLeft,
   Save, History, Trash2, Wrench, MoreVertical, PencilLine,
-  NotebookText, Check, Maximize2,
+  NotebookText, Check, Maximize2, Coins,
 } from 'lucide-react';
 import {
   Bar, Line, Pie, Scatter,
@@ -1418,6 +1418,7 @@ function LilyBubble({
   const avatarSrc = skinAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png');
   const avatarAlt = 'Lily';
   const [thinkingOpen, setThinkingOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
 
   // Interleave text segments and block components in the order Lily produced
   // them. Any block not referenced by a marker (e.g. older saved messages)
@@ -1563,9 +1564,14 @@ function LilyBubble({
               <span>{t('再生成')}</span>
             </button>
           )}
+          {message.usage && (
+            <button className={`msg-usage-btn${usageOpen ? ' open' : ''}`} onClick={() => setUsageOpen(v => !v)} title={t('トークン消費を見る')}>
+              <Coins size={13} />
+            </button>
+          )}
         </div>
-        {message.usage && (
-          <div className="msg-usage" style={{ fontSize: '0.68rem', color: message.usage.cached > 0 ? '#1a7a4d' : 'var(--fg-muted,#999)', marginTop: '4px', opacity: 0.85 }}>
+        {message.usage && usageOpen && (
+          <div className="msg-usage" style={{ color: message.usage.cached > 0 ? '#1a7a4d' : 'var(--fg-muted,#999)' }}>
             入力{message.usage.prompt.toLocaleString()}（うちキャッシュ{message.usage.cached.toLocaleString()}）/ 出力{message.usage.output.toLocaleString()}
             {message.usage.thoughts > 0 ? `（思考${message.usage.thoughts.toLocaleString()}）` : ''} = 計{message.usage.total.toLocaleString()}tok
             {message.billedTokens !== undefined && (
@@ -1585,6 +1591,9 @@ function LilyBubble({
         .inline-block-wrap:last-child { margin-bottom: 0; }
         .msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
         .msg-regen-btn { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted, #888); font-size: 0.78rem; cursor: pointer; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: background 0.14s, color 0.14s, border-color 0.14s; }
+        .msg-usage-btn { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted, #888); cursor: pointer; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: background 0.14s, color 0.14s, border-color 0.14s; }
+        .msg-usage-btn:hover, .msg-usage-btn.open { border-color: var(--primary); color: var(--primary); background: var(--accent); }
+        .msg-usage { font-size: 0.68rem; margin-top: 4px; opacity: 0.85; background: var(--background); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; display: inline-block; }
         .msg-regen-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--accent); }
         .rt-body :global(p) { margin: 0 0 0.75em; }
         .rt-body :global(p:last-child) { margin-bottom: 0; }
@@ -3382,7 +3391,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .messages-list { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 20px; }
         .welcome-lily-wrap { display: flex; flex-direction: column; align-items: center; padding: 32px 0 10px; gap: 20px; animation: welcome-in 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
         @keyframes welcome-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        .pt-gauge-wrap { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .pt-gauge-wrap {
+          position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
+          /* Fully opaque (was see-through, unreadable over a skin's background image). */
+          background: var(--background); border-radius: 22px; padding: 14px 24px 10px;
+          box-shadow: 0 8px 24px -10px rgba(0,0,0,0.18);
+        }
         .pt-gauge-svg { display: block; filter: drop-shadow(0 2px 8px color-mix(in srgb, var(--primary) 30%, transparent)); }
         .pt-gauge-inner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -52%); display: flex; flex-direction: column; align-items: center; line-height: 1; }
         .pt-gauge-num { font-size: 1.15rem; font-weight: 800; color: var(--text,#333); }

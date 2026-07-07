@@ -45,8 +45,10 @@ export const CHARACTER_SKINS: CharacterSkin[] = [
   },
   { id: 'ninja', name: '忍者', file: 'ninja.png', accent: '#7a1f2b' },
   {
+    // avatarFrame: 'frame-pirate.png' exists but overflowed the header bar
+    // and looked broken there — removed for now, pending a better spot/size.
     id: 'pirate', name: '海賊', file: 'pirate.png', accent: '#0e6e7a',
-    background: 'bg-pirate.jpg', avatarFrame: 'frame-pirate.png',
+    background: 'bg-pirate.jpg',
   },
   { id: 'police', name: '警察', file: 'police.png', accent: '#1d3f72' },
 ];
