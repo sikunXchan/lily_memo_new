@@ -16,7 +16,7 @@ import { getLevelInfo, fmtHoursShort } from '@/lib/level';
 import LevelIcon from './LevelIcon';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
-import { AmbientOverlay } from './CharacterSkinContext';
+import { AmbientOverlay, useCharacterSkin } from './CharacterSkinContext';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LS_KEY_START     = 'study_timer_start';
@@ -171,6 +171,7 @@ export interface StudyTrackerProps {
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus }: StudyTrackerProps) {
   const t = useT();
+  const { homeBackgroundSrc } = useCharacterSkin();
   const [view, setView] = useState<'timer' | 'stats' | 'total'>('timer');
   const [period, setPeriod]   = useState<'7d' | '30d' | '1y'>('7d');
   const [offset, setOffset]   = useState(0);
@@ -396,7 +397,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="st-container">
+    <div
+      className={`st-container${homeBackgroundSrc ? ' has-skin-bg' : ''}`}
+      style={homeBackgroundSrc
+        ? { backgroundImage: `url(${homeBackgroundSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+        : undefined}
+    >
       <AmbientOverlay />
       {/* Header */}
       <div className="st-header">
@@ -1025,6 +1031,16 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
         /* ── Bottom nav — hidden everywhere (mobile uses BackBubble) ── */
         .st-bottom-nav { display:none; }
+
+        /* スキン背景が敷かれているとき: 半透明チップを不透明にして可読性を保つ */
+        .st-container.has-skin-bg .today-card {
+          background: rgba(255, 252, 246, 0.92);
+          border-color: rgba(0, 0, 0, 0.08);
+        }
+        .st-container.has-skin-bg .pomo-chip.focus,
+        .st-container.has-skin-bg .pomo-chip.break {
+          background: rgba(255, 252, 246, 0.85);
+        }
       `}</style>
     </div>
   );

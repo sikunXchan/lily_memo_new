@@ -10,7 +10,7 @@ import { db } from '@/lib/db';
 import type { Todo } from '@/lib/db';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
-import { AmbientOverlay } from './CharacterSkinContext';
+import { AmbientOverlay, useCharacterSkin } from './CharacterSkinContext';
 
 const DEL_W = 80;
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
@@ -56,6 +56,7 @@ interface TodoScreenProps {
 
 export default function TodoScreen({ onGoBack }: TodoScreenProps) {
   const t = useT();
+  const { homeBackgroundSrc } = useCharacterSkin();
   const [newText, setNewText]   = useState('');
   const [swipedId, setSwipedId] = useState<number | null>(null);
   const touchStartX = useRef(0);
@@ -136,7 +137,12 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
   ].filter(s => s.list.length > 0);
 
   return (
-    <div className="td-root">
+    <div
+      className={`td-root${homeBackgroundSrc ? ' has-skin-bg' : ''}`}
+      style={homeBackgroundSrc
+        ? { backgroundImage: `url(${homeBackgroundSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+        : undefined}
+    >
       <AmbientOverlay />
 
       {/* Header */}
@@ -624,6 +630,14 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           display: flex; align-items: center; justify-content: center;
         }
         .td-del:active { background: #dc2626; }
+
+        /* スキン背景が敷かれているとき: 半透明チップを不透明にして可読性を保つ */
+        .td-root.has-skin-bg .td-empty {
+          background: rgba(255, 252, 246, 0.9); border-radius: 16px; padding: 44px 16px 8px;
+        }
+        .td-root.has-skin-bg .td-section-label {
+          background: rgba(255, 252, 246, 0.88); border-radius: 8px; padding: 4px 8px;
+        }
       `}</style>
     </div>
   );

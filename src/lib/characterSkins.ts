@@ -43,8 +43,7 @@ export const AVATAR_FRAME_SCALE = 2.12;
 
 export const CHARACTER_SKINS: CharacterSkin[] = [
   {
-    // キャラ着せ替え画像は未提供(file省略)。素材が来たら file: 'yukata.png' を足すだけ。
-    id: 'yukata', name: '浴衣', accent: '#e8590c', rarity: 'UR', seasonal: '夏 限定',
+    id: 'yukata', name: '浴衣', file: 'yukata.png', accent: '#e8590c', rarity: 'UR', seasonal: '夏 限定',
     background: 'bg-yukata.jpg',
     homeBackground: 'home-yukata.jpg',
     ambient: [
