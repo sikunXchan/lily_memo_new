@@ -10,6 +10,7 @@ import { db } from '@/lib/db';
 import type { Todo } from '@/lib/db';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
+import { AmbientOverlay } from './CharacterSkinContext';
 
 const DEL_W = 80;
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
@@ -136,6 +137,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
 
   return (
     <div className="td-root">
+      <AmbientOverlay />
 
       {/* Header */}
       <div className="td-header">
@@ -344,6 +346,7 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
         .td-root {
           flex: 1; display: flex; flex-direction: column;
           background: var(--background); overflow: hidden;
+          position: relative;
         }
 
         /* ── Header ── */

@@ -8,6 +8,7 @@ import {
 import { db, newSyncId } from '@/lib/db';
 import type { Folder as FolderType, Note } from '@/lib/db';
 import { useT, translate } from '@/lib/i18n';
+import { useCharacterSkin, AmbientOverlay } from './CharacterSkinContext';
 
 interface MemoTreeScreenProps {
   onSelectNote: (id: number) => void;
@@ -17,6 +18,7 @@ interface MemoTreeScreenProps {
 
 export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }: MemoTreeScreenProps) {
   const t = useT();
+  const { homeBackgroundSrc } = useCharacterSkin();
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -70,7 +72,13 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
     : notes.filter(n => !n.folderId);
 
   return (
-    <div className="mt-root">
+    <div
+      className={`mt-root${homeBackgroundSrc ? ' has-skin-bg' : ''}`}
+      style={homeBackgroundSrc
+        ? { backgroundImage: `url(${homeBackgroundSrc})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative' }
+        : undefined}
+    >
+      <AmbientOverlay />
       {/* Header */}
       <div className="mt-header">
         <button className="mt-back" onClick={onGoBack}>
@@ -302,6 +310,26 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           color: #fff; border: none; border-radius: 20px;
           padding: 10px 20px; font-size: .88rem; font-weight: 700;
           cursor: pointer; font-family: inherit;
+        }
+        /* スキン背景が敷かれているとき: 行を不透明チップにして文字の可読性を保つ */
+        .mt-root.has-skin-bg .mt-header {
+          background: rgba(255, 252, 246, 0.94); border-bottom: none;
+        }
+        .mt-root.has-skin-bg .mt-folder-row,
+        .mt-root.has-skin-bg .mt-note-row,
+        .mt-root.has-skin-bg .mt-loose-row {
+          background: rgba(255, 252, 246, 0.92);
+          box-shadow: 0 1px 5px rgba(0,0,0,0.12);
+          margin-bottom: 4px;
+        }
+        .mt-root.has-skin-bg .mt-section-label {
+          background: rgba(255, 252, 246, 0.88);
+          border-radius: 8px; display: inline-block; margin: 8px 0 4px;
+          color: #8a7880;
+        }
+        .mt-root.has-skin-bg .mt-folder-notes { border-left-color: rgba(255,252,246,0.85); }
+        .mt-root.has-skin-bg .mt-empty {
+          background: rgba(255, 252, 246, 0.9); border-radius: 16px; margin: 20px;
         }
       `}</style>
     </div>

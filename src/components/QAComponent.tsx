@@ -2,11 +2,9 @@
 
 import { NodeViewWrapper, type ReactNodeViewProps } from '@tiptap/react';
 import { useState } from 'react';
-import { Trash2, GripVertical, Sparkles } from 'lucide-react';
+import { Trash2, GripVertical } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 import { renderRich } from '@/lib/richText';
-import { callGemini } from '@/lib/gemini';
-import { getEffectiveApiKey } from '@/lib/appLang';
 
 // Render a string with KaTeX math. For inline use (inside flex/inline containers),
 // pass strip=true to remove the outer <p> wrapper that marked adds.
@@ -120,33 +118,6 @@ function QACard({
   const [fills, setFills] = useState<string[]>([]);
   const [ordSel, setOrdSel] = useState<number[]>([]);
   const [submitted, setSubmitted] = useState(false);
-  // 記述採点AI（qa/記述式のみ）: ユーザーの答えをLilyが採点・講評する
-  const [myAnswer, setMyAnswer] = useState('');
-  const [grading, setGrading] = useState(false);
-  const [gradeResult, setGradeResult] = useState<string | null>(null);
-  const [gradeError, setGradeError] = useState('');
-
-  const gradeMyAnswer = async () => {
-    const ans = myAnswer.trim();
-    if (!ans || grading) return;
-    const apiKey = getEffectiveApiKey();
-    if (!apiKey) { setGradeError(t('設定画面で Gemini API キーを登録してね')); return; }
-    setGrading(true); setGradeError(''); setGradeResult(null);
-    try {
-      const prompt =
-        `あなたは学習者の記述解答を採点する優しく厳格な採点者です。以下を読み、日本語で簡潔に採点してください。\n` +
-        `【問題】\n${pair.q}\n\n【模範解答】\n${pair.a}\n\n【学習者の解答】\n${ans}\n\n` +
-        `次の形式で出力（前置き・余計な文章は不要）:\n` +
-        `点数: ○/100\n` +
-        `講評: 良い点と不足・誤りを2〜3文で。模範解答と照らして具体的に。甘い評価はせず、合っていれば正しく評価する。`;
-      const reply = (await callGemini(prompt, apiKey)).trim();
-      setGradeResult(reply);
-    } catch (e) {
-      setGradeError(e instanceof Error ? e.message : t('AI 処理に失敗したよ'));
-    } finally {
-      setGrading(false);
-    }
-  };
 
   const show = revealAll || revealed || submitted;
 
@@ -402,35 +373,10 @@ function QACard({
     );
   }
 
-  // ── default qa: 記述採点AI + reveal ──
+  // ── default qa: tap to reveal ──
   return (
     <div className={`qa-card ${pair.checked ? 'qa-card-checked' : ''}`}>
       {header}
-      {!revealAll && (
-        <div className="qa-grade">
-          <textarea
-            className="qa-grade-input"
-            value={myAnswer}
-            onChange={e => setMyAnswer(e.target.value)}
-            placeholder={t('自分の答えを書いてLilyに採点してもらおう…')}
-            rows={2}
-          />
-          <div className="qa-grade-row">
-            <button
-              className="qa-grade-btn"
-              onClick={() => void gradeMyAnswer()}
-              disabled={grading || !myAnswer.trim()}
-            >
-              <Sparkles size={13} />
-              {grading ? t('採点中…') : t('採点してもらう')}
-            </button>
-          </div>
-          {gradeError && <div className="qa-grade-error">{gradeError}</div>}
-          {gradeResult && (
-            <div className="qa-grade-result"><R src={gradeResult} /></div>
-          )}
-        </div>
-      )}
       {show ? (
         <div className="qa-answer-reveal">
           <span className="qa-ans-body"><R src={pair.a} /></span>
@@ -466,15 +412,6 @@ function CardStyles() {
       .qa-question-text { color: var(--foreground); font-weight: 600; padding-top: 1px; }
       .qa-answer-btn { width: 100%; padding: 13px 16px; border: none; border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--primary); font-size: 0.9rem; font-weight: 700; text-align: left; cursor: pointer; transition: background 0.15s; font-family: inherit; line-height: 1.6; }
       .qa-answer-btn:hover { background: var(--accent); }
-      .qa-grade { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); padding: 11px 14px 12px; display: flex; flex-direction: column; gap: 8px; }
-      .qa-grade-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 40px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: 10px; background: var(--background); color: var(--foreground); font-family: inherit; font-size: 0.86rem; line-height: 1.55; outline: none; }
-      .qa-grade-input:focus { border-color: var(--primary); }
-      .qa-grade-row { display: flex; justify-content: flex-end; }
-      .qa-grade-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 13px; border: none; border-radius: 999px; background: var(--primary); color: #fff; font-size: 0.8rem; font-weight: 800; cursor: pointer; font-family: inherit; transition: filter 0.14s, opacity 0.14s; }
-      .qa-grade-btn:hover:not(:disabled) { filter: brightness(1.06); }
-      .qa-grade-btn:disabled { opacity: 0.5; cursor: default; }
-      .qa-grade-error { font-size: 0.78rem; color: #dc2626; font-weight: 600; }
-      .qa-grade-result { background: color-mix(in srgb, var(--primary) 9%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent); border-radius: 10px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.65; color: var(--foreground); white-space: pre-wrap; }
       .qa-answer-reveal { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); background: var(--accent); padding: 13px 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
       .qa-ans-body { flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--foreground); line-height: 1.6; white-space: pre-wrap; }
       .qa-hide-btn { flex-shrink: 0; padding: 3px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); background: transparent; color: var(--fg-muted, #999); font-size: 0.75rem; cursor: pointer; font-family: inherit; transition: background 0.14s; }

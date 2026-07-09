@@ -2,12 +2,12 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId, softDeleteNotes, softDeleteFolder } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Sun, Moon, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
-import { useTheme } from './ThemeContext';
 import { useT, translate } from '@/lib/i18n';
+import { useCharacterSkin, AmbientOverlay } from './CharacterSkinContext';
 
 // Heavy: pulls in react-force-graph-2d + d3 + canvas-confetti shaders.
 // Only needed when the user switches to the graph view.
@@ -51,8 +51,8 @@ export default function Sidebar({
   isMobileOpen, onToggleMobile, onActiveNoteDeleted, onBackToHome,
   viewModeProp, onViewModeChangeProp, highlightFolderReq,
 }: SidebarProps) {
-  const { theme, cycleTheme, nextThemeName } = useTheme();
   const t = useT();
+  const { homeBackgroundSrc } = useCharacterSkin();
   const [searchQuery, setSearchQuery] = useState('');
 
   const folders = useLiveQuery(() =>
@@ -170,7 +170,13 @@ export default function Sidebar({
 
   return (
     <>
-      <aside className="sidebar glass" style={{ overflow: 'hidden' }}>
+      <aside
+        className={`sidebar glass${homeBackgroundSrc ? ' has-skin-bg' : ''}`}
+        style={homeBackgroundSrc
+          ? { overflow: 'hidden', backgroundImage: `url(${homeBackgroundSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+          : { overflow: 'hidden' }}
+      >
+        {homeBackgroundSrc && <AmbientOverlay />}
         <div className="sidebar-header">
           <div className="logo-area">
             {onBackToHome && (
@@ -181,10 +187,6 @@ export default function Sidebar({
             <Image src="/logo.png" alt="Lily Memo Logo" width={36} height={36} className="logo-img" />
             <h1 className="title">Lily Memo</h1>
           </div>
-          <button className="theme-toggle" onClick={cycleTheme} title={t('テーマ切替（次: {name}）', { name: nextThemeName })}>
-            <Palette size={16} />
-            {theme.dark ? <Moon size={14} /> : <Sun size={14} />}
-          </button>
         </div>
 
         <div className="search-container">
@@ -365,6 +367,29 @@ export default function Sidebar({
               padding: 16px;
             }
           }
+          /* スキン背景が敷かれているとき: 文字は不透明チップの上に載せて可読性を保つ */
+          .sidebar.has-skin-bg { position: relative; }
+          .sidebar.has-skin-bg .logo-area {
+            background: rgba(255, 252, 246, 0.92);
+            border-radius: 12px; padding: 4px 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+          }
+          .sidebar.has-skin-bg :global(.folder-item),
+          .sidebar.has-skin-bg :global(.note-item) {
+            background: rgba(255, 252, 246, 0.92);
+            box-shadow: 0 1px 5px rgba(0,0,0,0.12);
+          }
+          .sidebar.has-skin-bg :global(.folder-item) { margin-bottom: 4px; }
+          .sidebar.has-skin-bg :global(.note-item.active) {
+            background: rgba(255, 240, 245, 0.96);
+          }
+          .sidebar.has-skin-bg :global(.section-label),
+          .sidebar.has-skin-bg :global(.empty-hint) {
+            background: rgba(255, 252, 246, 0.88);
+            border-radius: 8px; padding: 3px 8px; display: inline-block;
+            color: var(--fg-muted);
+          }
+          .sidebar.has-skin-bg :global(.nested-notes) { border-left-color: rgba(255,252,246,0.8); }
           .sidebar-header {
             display: flex;
             align-items: center;
@@ -400,21 +425,6 @@ export default function Sidebar({
             font-weight: 800;
             color: var(--primary);
             letter-spacing: -0.3px;
-          }
-          .theme-toggle {
-            background: var(--accent);
-            color: var(--foreground);
-            padding: 8px 10px;
-            border-radius: 10px;
-            opacity: 0.8;
-            transition: opacity 0.2s, background 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-          }
-          .theme-toggle:hover {
-            opacity: 1;
-            background: var(--border);
           }
           .search-container {
             position: relative;

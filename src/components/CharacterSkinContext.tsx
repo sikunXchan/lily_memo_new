@@ -7,15 +7,17 @@ import { CHARACTER_SKINS, CHARACTER_SKIN_STORAGE_KEY, SKIN_BASE_PATH, AVATAR_FRA
 interface CharacterSkinContextValue {
   skinId: string; // '' = default (unmodified mascot)
   setSkinId: (id: string) => void;
-  // Returns the active skin's image path, or `fallback` when no skin is set.
-  // Only Lily's avatar/costume changes per skin — the chat/diary bubbles keep
-  // their default look (bubble decoration was reverted; it read as "weird").
+  // Returns the active skin's costume image path, or `fallback` when no skin
+  // is set (or the skin has no costume art yet).
   avatarSrc: (fallback: string) => string;
-  // Resolved chat-screen background image path for the active skin, or
-  // undefined when the skin has no background art yet.
+  // Resolved chat-screen background image path (R以上), or undefined.
   backgroundSrc?: string;
-  // Resolved decorative avatar-frame-ring image path for the active skin, or
-  // undefined when the skin has no frame art yet.
+  // Resolved background for home / memo tree / other screens (R以上).
+  // UR skins use their dedicated homeBackground; R skins reuse the chat one.
+  homeBackgroundSrc?: string;
+  // Resolved floating-particle image paths for the UR ambient effect.
+  ambientSrcs?: string[];
+  // Resolved decorative avatar-frame-ring image path, or undefined.
   avatarFrameSrc?: string;
 }
 
@@ -53,7 +55,7 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
 
   const avatarSrc = useCallback((fallback: string) => {
     const skin = CHARACTER_SKINS.find(s => s.id === skinId);
-    return skin ? `${SKIN_BASE_PATH}${skin.file}` : fallback;
+    return skin?.file ? `${SKIN_BASE_PATH}${skin.file}` : fallback;
   }, [skinId]);
 
   const activeSkin = CHARACTER_SKINS.find(s => s.id === skinId);
@@ -62,13 +64,23 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
     () => activeSkin?.background ? `${SKIN_BASE_PATH}${activeSkin.background}` : undefined,
     [activeSkin],
   );
+  // UR = dedicated home art; R = same image as the chat background.
+  const homeBackgroundSrc = useMemo(() => {
+    if (!activeSkin) return undefined;
+    const file = activeSkin.homeBackground ?? activeSkin.background;
+    return file ? `${SKIN_BASE_PATH}${file}` : undefined;
+  }, [activeSkin]);
+  const ambientSrcs = useMemo(
+    () => activeSkin?.ambient?.length ? activeSkin.ambient.map(f => `${SKIN_BASE_PATH}${f}`) : undefined,
+    [activeSkin],
+  );
   const avatarFrameSrc = useMemo(
     () => activeSkin?.avatarFrame ? `${SKIN_BASE_PATH}${activeSkin.avatarFrame}` : undefined,
     [activeSkin],
   );
 
   return (
-    <CharacterSkinContext.Provider value={{ skinId, setSkinId, avatarSrc, backgroundSrc, avatarFrameSrc }}>
+    <CharacterSkinContext.Provider value={{ skinId, setSkinId, avatarSrc, backgroundSrc, homeBackgroundSrc, ambientSrcs, avatarFrameSrc }}>
       {children}
     </CharacterSkinContext.Provider>
   );
@@ -98,6 +110,73 @@ export function AvatarFrame({ size, frameSrc, children }: { size: number; frameS
       <style jsx>{`
         .avatar-frame-wrap { position: relative; flex-shrink: 0; }
         .avatar-frame-ring { position: absolute; pointer-events: none; }
+      `}</style>
+    </div>
+  );
+}
+
+// UR ambient effect — a handful of festival trinkets drifting slowly up the
+// screen. Mount inside any `position: relative`/fixed-size screen container;
+// renders nothing unless the active skin has ambient art. pointer-events:none
+// so it never blocks taps.
+export function AmbientOverlay() {
+  const { ambientSrcs } = useCharacterSkin();
+  // Deterministic pseudo-random layout so SSR/CSR match and re-renders don't shuffle.
+  const items = useMemo(() => {
+    if (!ambientSrcs?.length) return [];
+    const out: Array<{ src: string; left: number; size: number; delay: number; dur: number; sway: number }> = [];
+    const N = 10;
+    for (let i = 0; i < N; i++) {
+      const src = ambientSrcs[i % ambientSrcs.length];
+      // golden-ratio low-discrepancy sequence for even horizontal spread
+      const left = ((i * 0.618033988749895) % 1) * 92 + 2;
+      out.push({
+        src,
+        left,
+        size: 26 + ((i * 7) % 22),
+        delay: -(i * 3.1) % 24,
+        dur: 20 + ((i * 5) % 12),
+        sway: (i % 2 === 0 ? 1 : -1) * (8 + (i % 3) * 5),
+      });
+    }
+    return out;
+  }, [ambientSrcs]);
+  if (items.length === 0) return null;
+  return (
+    <div className="amb-wrap" aria-hidden>
+      {items.map((p, i) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={i}
+          src={p.src}
+          alt=""
+          className="amb-item"
+          style={{
+            left: `${p.left}%`,
+            width: p.size,
+            animationDelay: `${p.delay}s`,
+            animationDuration: `${p.dur}s`,
+            ['--sway' as string]: `${p.sway}px`,
+          }}
+        />
+      ))}
+      <style jsx>{`
+        .amb-wrap { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 3; }
+        .amb-item {
+          position: absolute; bottom: -60px; height: auto; opacity: 0;
+          filter: drop-shadow(0 1px 3px rgba(0,0,0,0.18));
+          animation-name: amb-float; animation-timing-function: linear; animation-iteration-count: infinite;
+        }
+        @keyframes amb-float {
+          0% { transform: translateY(0) translateX(0) rotate(-4deg); opacity: 0; }
+          8% { opacity: 0.85; }
+          50% { transform: translateY(-55vh) translateX(var(--sway)) rotate(5deg); opacity: 0.85; }
+          92% { opacity: 0.6; }
+          100% { transform: translateY(-108vh) translateX(calc(var(--sway) * -0.6)) rotate(-3deg); opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .amb-item { display: none; }
+        }
       `}</style>
     </div>
   );

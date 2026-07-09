@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Todo, AlbumPhoto } from '@/lib/db';
-import { useTheme } from './ThemeContext';
+import { useCharacterSkin, AmbientOverlay } from './CharacterSkinContext';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
 
@@ -85,7 +85,7 @@ interface BubbleHomeProps {
 }
 
 export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps) {
-  const { cycleTheme, nextThemeName } = useTheme();
+  const { homeBackgroundSrc } = useCharacterSkin();
   const t = useT();
 
   const pinnedTodos = useLiveQuery<Todo[]>(() =>
@@ -173,10 +173,16 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
   };
 
   return (
-    <div className="bh-root" style={{ background: SKY[tod] }}>
+    <div
+      className="bh-root"
+      style={homeBackgroundSrc
+        ? { backgroundImage: `url(${homeBackgroundSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+        : { background: SKY[tod] }}
+    >
+      <AmbientOverlay />
 
       {/* Stars */}
-      {isNight && (
+      {!homeBackgroundSrc && isNight && (
         <svg className="bh-stars" viewBox="0 0 100 65" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
           {STARS.map((s, i) => (
             <circle key={i} cx={s.cx} cy={s.cy} r={s.r} fill="white"
@@ -186,7 +192,7 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
       )}
 
       {/* Clouds */}
-      {isLight && (
+      {!homeBackgroundSrc && isLight && (
         <div className="bh-clouds" aria-hidden="true">
           <div className="bh-cloud bh-cloud-1" />
           <div className="bh-cloud bh-cloud-2" />
@@ -196,18 +202,10 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
 
       {/* Header */}
       <div className="bh-header">
-        <div>
-          <div className="bh-date" style={{ color: dateColor }}>{dateLabel}</div>
+        <div className={homeBackgroundSrc ? 'bh-header-chip' : undefined}>
+          <div className="bh-date" style={{ color: homeBackgroundSrc ? '#c79aa8' : dateColor }}>{dateLabel}</div>
           <div className="bh-title">Lily Memo</div>
         </div>
-        <button className="bh-theme-btn" onClick={cycleTheme}
-          title={t('テーマ切替（次: {name}）', { name: nextThemeName })}
-          style={{
-            background: isLight ? 'rgba(255,255,255,.75)' : 'rgba(255,255,255,.1)',
-            borderColor: isLight ? '#ffe0e8' : 'rgba(255,255,255,.2)',
-          }}>
-          <Sparkles size={14} color={isLight ? '#ff8da1' : '#e2e8f0'} />
-        </button>
       </div>
 
       {/* Pinned ToDo ticker */}
@@ -244,7 +242,10 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
                 <span className="bh-spec" />
                 <span className="bh-rim" />
               </span>
-              <span className="bh-label" style={{ color: b.isNew ? '#ff8da1' : labelColor }}>
+              <span
+                className={`bh-label${homeBackgroundSrc ? ' bh-label-chip' : ''}`}
+                style={{ color: homeBackgroundSrc ? '#3a2d32' : (b.isNew ? '#ff8da1' : labelColor) }}
+              >
                 {t(b.label)}
               </span>
             </button>
@@ -388,12 +389,14 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
           background: linear-gradient(120deg, #ff8da1, #93c5fd);
           -webkit-background-clip: text; background-clip: text; color: transparent;
         }
-        .bh-theme-btn {
-          width: 32px; height: 32px; border-radius: 99px; border: 1px solid;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; flex-shrink: 0; margin-top: 14px;
-          box-shadow: 0 2px 10px rgba(0,0,0,.15);
-          transition: background .3s, border-color .3s;
+        /* Opaque chips keep text readable over a skin's background image. */
+        .bh-header-chip {
+          background: rgba(255, 252, 246, 0.92); border-radius: 14px;
+          padding: 6px 14px 8px; box-shadow: 0 3px 14px rgba(0,0,0,.18);
+        }
+        :global(.bh-label-chip) {
+          background: rgba(255, 252, 246, 0.92); border-radius: 10px;
+          padding: 2px 8px; box-shadow: 0 2px 8px rgba(0,0,0,.16);
         }
 
         /* ── Cluster ── */

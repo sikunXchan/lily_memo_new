@@ -16,6 +16,7 @@ import { getLevelInfo, fmtHoursShort } from '@/lib/level';
 import LevelIcon from './LevelIcon';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
+import { AmbientOverlay } from './CharacterSkinContext';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LS_KEY_START     = 'study_timer_start';
@@ -396,6 +397,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="st-container">
+      <AmbientOverlay />
       {/* Header */}
       <div className="st-header">
         {onSwitchTab && (
@@ -847,7 +849,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {showProfile && <StudyProfileModal onClose={() => setShowProfile(false)} />}
 
       <style jsx>{`
-        .st-container { display:flex; flex-direction:column; height:100%; background:var(--background); overflow:hidden; }
+        .st-container { display:flex; flex-direction:column; height:100%; background:var(--background); overflow:hidden; position:relative; }
         .st-header { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border); background:var(--glass-tint,rgba(255,255,255,0.9)); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); flex-shrink:0; }
         .st-back { width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:10px; background:var(--accent); border:1px solid var(--border); color:var(--foreground); cursor:pointer; flex-shrink:0; }
         .st-back:hover { opacity:.75; }
