@@ -198,8 +198,10 @@ const searchInputRef = useRef<HTMLInputElement>(null);
     content: '',
     immediatelyRender: false,
     editorProps: {
-      scrollThreshold: 0,
-      scrollMargin: 0,
+      // Give ProseMirror's native scroll-into-view a little breathing room so
+      // the caret doesn't hug the exact edge (which read as jitter on mobile).
+      scrollMargin: 24,
+      scrollThreshold: 24,
     },
     onUpdate: ({ editor }) => {
       if (noteIdRef.current && !isLoadingContentRef.current) {
@@ -310,113 +312,58 @@ const searchInputRef = useRef<HTMLInputElement>(null);
     };
   }, [editor]);
 
-  // --- Google Docs Style Viewport, Scroll & Cursor Tracking ---
+  // --- Mobile caret-into-view (minimal) ---
+  // Previous impl re-wrote a `transform: translateY(visualViewport.offsetTop)`
+  // on the fixed header on every `visualViewport` scroll event (iOS fires those
+  // rapidly → the header visibly shook) AND smooth-scrolled the caret on every
+  // selectionchange, fighting ProseMirror's own scroll-into-view (→ the caret
+  // appeared to lag / mismatch). We now do the minimum: nudge the caret above
+  // the keyboard with an INSTANT scroll, only when it's actually hidden, and
+  // only on selection changes / keyboard open. No header transform.
   useEffect(() => {
-    if (!isMobileView) return;
+    if (!isMobileView || !editor) return;
+    let rafId = 0;
 
-    let rafId: number;
-    const lastBottomOffset = -1;
-
-    const adjustScrollForCursor = () => {
-      if (!isEditMode || !scrollerRef.current) return;
-
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
-
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-
-      // カーソルが「見えない」座標（高さ0など）の場合はスキップ
-      if (rect.height === 0) return;
-
+    const bringCaretIntoView = () => {
+      if (!isEditMode) return;
       const scroller = scrollerRef.current;
+      if (!scroller) return;
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (rect.height === 0 && rect.top === 0) return; // caret not measurable yet
+
       const header = headerRef.current;
       const vv = window.visualViewport;
-      if (!vv) return;
+      const safeTop = (header ? header.getBoundingClientRect().bottom : 60) + 8;
+      const safeBottom = (vv ? vv.height : window.innerHeight) - 12;
 
-      // 見える領域の定義 (上がヘッダー、下はビジュアルビューポートの底)
-      const safeTop = header ? header.getBoundingClientRect().bottom + 10 : 80;
-      const safeBottom = vv.height - 10;
-
-      // 判定とスクロール実行
-      if (rect.top < safeTop) {
-        // 上に隠れた場合
-        const scrollAmount = safeTop - rect.top + 40; // 少し余裕を持って戻す
-        scroller.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
-      } else if (rect.bottom > safeBottom) {
-        // 下（またはキーボードの裏）に隠れた場合
-        const scrollAmount = rect.bottom - safeBottom + 40;
-        scroller.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+      // Instant (not smooth) — smooth animations stack across keystrokes and
+      // are the main source of the "jitter".
+      if (rect.bottom > safeBottom) {
+        scroller.scrollBy({ top: rect.bottom - safeBottom + 24 });
+      } else if (rect.top < safeTop) {
+        scroller.scrollBy({ top: rect.top - safeTop - 24 });
       }
     };
 
-    const updateControls = (source?: string) => {
-      // カーソル追従 (入力時や選択変更時)
-      if (source === 'selection' || source === 'input' || source === 'vv-resize') {
-        adjustScrollForCursor();
-      }
-    };
-
-    const handleSelectionChange = () => {
-      // 選択変更時は少し待ってから判定（描画更新を待つ）
+    const onSelectionChange = () => {
       if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => updateControls('selection'));
+      rafId = requestAnimationFrame(bringCaretIntoView);
     };
-
-    const handleInput = () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => updateControls('input'));
-    };
-
-    const handleVVResize = () => {
-      // iOS Safariのキーボード安定待ち
-      setTimeout(() => {
-        updateControls('vv-resize');
-      }, 100);
-    };
+    // On keyboard open/close the layout settles ~after the resize; wait a beat.
+    const onVVResize = () => { window.setTimeout(bringCaretIntoView, 120); };
 
     const vv = window.visualViewport;
-    const updateHeaderPos = () => {
-      if (!headerRef.current || !vv) return;
-      // ビジュアルビューポートのオフセットに合わせてヘッダーを移動
-      const offset = vv.offsetTop;
-      headerRef.current.style.transform = `translateY(${Math.max(0, offset)}px)`;
-    };
-
-    const listeners: [EventTarget | undefined | null, string, EventListenerOrEventListenerObject][] = [
-      [vv, 'resize', handleVVResize],
-      [vv, 'scroll', () => {
-        updateControls('vv-scroll');
-        updateHeaderPos();
-      }],
-      [window, 'orientationchange', () => updateControls('orientation')],
-      [document, 'focusin', () => updateControls('focus')],
-      [document, 'focusout', () => updateControls('focus')],
-      [document, 'selectionchange', handleSelectionChange]
-    ];
-
-    if (vv) {
-      vv.addEventListener('resize', updateHeaderPos);
-    }
-
-    // エディタ本体のDOMにinputイベントを張る
-    const editorDom = editor?.view.dom;
-    if (editorDom) {
-      editorDom.addEventListener('input', handleInput);
-    }
-
-    listeners.forEach(([target, event, cb]) => {
-      target?.addEventListener(event, cb);
-    });
+    document.addEventListener('selectionchange', onSelectionChange);
+    vv?.addEventListener('resize', onVVResize);
 
     return () => {
-      listeners.forEach(([target, event, cb]) => {
-        target?.removeEventListener(event, cb);
-      });
-      if (editorDom) {
-        editorDom.removeEventListener('input', handleInput);
-      }
+      document.removeEventListener('selectionchange', onSelectionChange);
+      vv?.removeEventListener('resize', onVVResize);
       if (rafId) cancelAnimationFrame(rafId);
+      // Clear any stale transform a previous build may have left on the header.
+      if (headerRef.current) headerRef.current.style.transform = '';
     };
   }, [isMobileView, isEditMode, editor]);
 

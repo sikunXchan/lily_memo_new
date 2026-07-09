@@ -1,12 +1,12 @@
 'use client';
 
-import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge, Palette, Lock, Shirt } from 'lucide-react';
+import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge, Lock, Shirt } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
 import { useCharacterSkin } from './CharacterSkinContext';
-import { FONT_OPTIONS, THEME_LIST, THEMES, SEASONAL_SKINS } from '@/lib/themes';
-import { CHARACTER_SKINS, SKIN_BASE_PATH } from '@/lib/characterSkins';
+import { FONT_OPTIONS } from '@/lib/themes';
+import { CHARACTER_SKINS_BY_RARITY, SKIN_BASE_PATH } from '@/lib/characterSkins';
 import { getUserName, setUserName } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
 import PlanModal from '@/components/PlanModal';
@@ -27,14 +27,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [planLabel, setPlanLabel] = useState('');
   const [planRemaining, setPlanRemaining] = useState(0);
   const [planDaily, setPlanDaily] = useState(0);
-  const { fontId, setFontId, themeId, setThemeId, skinsUnlocked, unlockSkins, isSkinLocked } = useTheme();
-  const [skinCode, setSkinCode] = useState('');
-  const [skinCodeError, setSkinCodeError] = useState(false);
-  const [showSkinUnlock, setShowSkinUnlock] = useState(false);
-  const submitSkinCode = () => {
-    if (unlockSkins(skinCode)) { setSkinCode(''); setSkinCodeError(false); setShowSkinUnlock(false); }
-    else setSkinCodeError(true);
-  };
+  const { fontId, setFontId, skinsUnlocked, unlockSkins } = useTheme();
   const { skinId: charSkinId, setSkinId: setCharSkinId } = useCharacterSkin();
   const [charSkinCode, setCharSkinCode] = useState('');
   const [charSkinCodeError, setCharSkinCodeError] = useState(false);
@@ -252,58 +245,6 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
         <section className="settings-section">
           <div className="section-title">
-            <Palette size={20} />
-            <h3>{t('テーマ')}</h3>
-          </div>
-          <div className="section-content">
-            <p className="desc">{t('アプリ全体の配色を選べます。🔒 のテーマは解放コードで開放できます。')}</p>
-            <div className="skin-grid">
-              {THEME_LIST.map(id => {
-                const th = THEMES[id];
-                const locked = isSkinLocked(id);
-                const season = SEASONAL_SKINS[id];
-                return (
-                  <button
-                    key={id}
-                    className={`skin-card ${themeId === id ? 'selected' : ''} ${locked ? 'locked' : ''}`}
-                    onClick={() => locked ? setShowSkinUnlock(true) : setThemeId(id)}
-                  >
-                    <span className="skin-swatch" style={{ background: th.bg, borderColor: th.border }}>
-                      <span className="skin-dot" style={{ background: th.primary }} />
-                      <span className="skin-dot" style={{ background: th.folders.blue }} />
-                      <span className="skin-dot" style={{ background: th.folders.green }} />
-                      {locked && <span className="skin-lock"><Lock size={13} /></span>}
-                    </span>
-                    <span className="skin-name">{t(th.name)}</span>
-                    {season && <span className="skin-season">{t(season)}</span>}
-                  </button>
-                );
-              })}
-            </div>
-            {!skinsUnlocked && (
-              showSkinUnlock ? (
-                <div className="skin-unlock">
-                  <input
-                    className="skin-code-input"
-                    value={skinCode}
-                    onChange={e => { setSkinCode(e.target.value); setSkinCodeError(false); }}
-                    onKeyDown={e => { if (e.key === 'Enter') submitSkinCode(); }}
-                    placeholder={t('解放コード')}
-                  />
-                  <button className="btn-action" onClick={submitSkinCode}>{t('解放')}</button>
-                  {skinCodeError && <span className="skin-code-err">{t('コードが違うみたい')}</span>}
-                </div>
-              ) : (
-                <button className="skin-unlock-open" onClick={() => setShowSkinUnlock(true)}>
-                  <Lock size={13} /> {t('テーマを解放する')}
-                </button>
-              )
-            )}
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <div className="section-title">
             <Shirt size={20} />
             <h3>{t('キャラクタースキン')}</h3>
           </div>
@@ -320,17 +261,22 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                 </span>
                 <span className="skin-name">{t('デフォルト')}</span>
               </button>
-              {CHARACTER_SKINS.map(sk => {
+              {CHARACTER_SKINS_BY_RARITY.map(sk => {
                 const locked = !skinsUnlocked;
+                const rarityClass = sk.rarity === 'UR' ? 'rarity-ur' : sk.rarity === 'R' ? 'rarity-r' : '';
                 return (
                   <button
                     key={sk.id}
-                    className={`skin-card charskin-card ${charSkinId === sk.id ? 'selected' : ''} ${locked ? 'locked' : ''}`}
+                    className={`skin-card charskin-card ${rarityClass} ${charSkinId === sk.id ? 'selected' : ''} ${locked ? 'locked' : ''}`}
                     onClick={() => locked ? setShowCharSkinUnlock(true) : setCharSkinId(sk.id)}
                   >
+                    {sk.rarity !== 'N' && <span className={`rarity-badge ${rarityClass}`}>{sk.rarity}</span>}
                     <span className="charskin-thumb-wrap">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={`${SKIN_BASE_PATH}${sk.file}`} alt="" className="charskin-thumb" loading="lazy" />
+                      <img
+                        src={sk.file ? `${SKIN_BASE_PATH}${sk.file}` : (sk.background ? `${SKIN_BASE_PATH}${sk.background}` : '/9D507C9A-09F0-4B05-9F41-612FBD120675.png')}
+                        alt="" className="charskin-thumb" loading="lazy"
+                      />
                       {locked && <span className="skin-lock"><Lock size={13} /></span>}
                     </span>
                     <span className="skin-name">{t(sk.name)}</span>
@@ -647,9 +593,38 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
         }
         .skin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; }
-        .skin-card { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 6px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface, var(--background)); cursor: pointer; font-family: inherit; transition: border-color 0.14s, box-shadow 0.14s; }
+        .skin-card { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 6px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface, var(--background)); cursor: pointer; font-family: inherit; transition: border-color 0.14s, box-shadow 0.14s; }
         .skin-card.selected { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
         .skin-card.locked { opacity: 0.85; }
+        /* R: 金属光沢のゴールド。光の帯が周期的に走る */
+        .skin-card.rarity-r {
+          border-color: #d4a017;
+          background: linear-gradient(110deg, #f7e08a 0%, #e8bf4a 18%, #fff3c4 38%, #d9a625 55%, #f7e08a 72%, #e8bf4a 100%);
+          background-size: 250% 250%;
+          animation: rarity-shine 3.2s linear infinite;
+        }
+        /* UR: 虹色版 */
+        .skin-card.rarity-ur {
+          border-color: #b26ef5;
+          background: linear-gradient(110deg, #ffb3ba 0%, #ffdfba 15%, #ffffba 30%, #baffc9 45%, #bae1ff 60%, #d6baff 75%, #ffb3ba 100%);
+          background-size: 250% 250%;
+          animation: rarity-shine 4s linear infinite;
+        }
+        @keyframes rarity-shine {
+          0% { background-position: 0% 50%; }
+          100% { background-position: 250% 50%; }
+        }
+        .rarity-badge {
+          position: absolute; top: -7px; left: -6px; z-index: 2;
+          font-size: 0.62rem; font-weight: 900; letter-spacing: 0.06em; color: #fff;
+          padding: 2px 8px; border-radius: 999px; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+        }
+        .rarity-badge.rarity-r { background: linear-gradient(120deg, #d9a625, #b8860b); }
+        .rarity-badge.rarity-ur { background: linear-gradient(120deg, #e254c2, #7c5cf0, #2fb4e8); }
+        /* 光沢カード上でも名前が読めるように */
+        .skin-card.rarity-r .skin-name, .skin-card.rarity-ur .skin-name {
+          background: rgba(255,255,255,0.85); border-radius: 6px; padding: 1px 4px;
+        }
         .skin-swatch { position: relative; height: 44px; border-radius: 8px; border: 1px solid; display: flex; align-items: center; justify-content: center; gap: 5px; }
         .skin-dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
         .skin-lock { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.34); color: #fff; border-radius: 8px; }

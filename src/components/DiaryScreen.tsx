@@ -8,7 +8,7 @@ import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
 import { useT } from '@/lib/i18n';
 import { getAppLang, getUserName } from '@/lib/appLang';
-import { useCharacterSkin } from '@/components/CharacterSkinContext';
+import { useCharacterSkin, AmbientOverlay } from '@/components/CharacterSkinContext';
 
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -251,6 +251,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
 
   return (
     <div className="dy-root">
+      <AmbientOverlay />
       {/* Header */}
       <div className="dy-header">
         <button
@@ -435,6 +436,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         .dy-root {
           flex: 1; display: flex; flex-direction: column;
           background: var(--background); overflow: hidden;
+          position: relative;
         }
         .dy-header {
           display: flex; align-items: center; gap: 10px;

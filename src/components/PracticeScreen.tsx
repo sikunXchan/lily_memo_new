@@ -634,6 +634,10 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [textAns, setTextAns] = useState('');
   const [textAnsArray, setTextAnsArray] = useState<string[]>([]);
   const [revealed, setRevealed] = useState(false);
+  // 記述採点AI — Lily grades the user's written/fill answer against the model answer.
+  const [aiGrading, setAiGrading] = useState(false);
+  const [aiGradeResult, setAiGradeResult] = useState<string | null>(null);
+  const [aiGradeError, setAiGradeError] = useState('');
   // Exam countdown — null when not a timed exam attempt.
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
 
@@ -777,6 +781,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setTextAns('');
     setTextAnsArray([]);
     setRevealed(false);
+    setAiGradeResult(null);
+    setAiGradeError('');
     // Run the countdown only for a full timed-exam attempt (not a wrong-only review).
     const timed = !only && !!set.examMode && !!set.timeLimitSec;
     setRemainingSec(timed ? set.timeLimitSec! : null);
@@ -807,6 +813,31 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     setResults(r => ({ ...r, [current.id]: ok }));
   };
 
+  // Lily grades the user's written/fill answer against the model answer.
+  const gradeWithLily = async () => {
+    if (!current || aiGrading) return;
+    const ans = textAns.trim();
+    if (!ans) return;
+    const apiKey = getEffectiveApiKey();
+    if (!apiKey) { setAiGradeError(en ? 'Register a Gemini API key in Settings first.' : '設定画面で Gemini API キーを登録してね'); return; }
+    setAiGrading(true); setAiGradeError(''); setAiGradeResult(null);
+    try {
+      const prompt =
+        `あなたは学習者の記述解答を採点する優しく厳格な採点者です。以下を読み、${en ? '英語' : '日本語'}で簡潔に採点してください。\n` +
+        `【問題】\n${current.prompt}\n\n【模範解答】\n${current.answer ?? ''}\n\n【学習者の解答】\n${ans}\n\n` +
+        `次の形式で出力（前置き・余計な文章は不要）:\n` +
+        `点数: ○/100\n` +
+        `講評: 良い点と不足・誤りを2〜3文で。模範解答と照らして具体的に。甘い評価はせず、合っていれば正しく評価する。`;
+      const history: ChatTurn[] = [{ role: 'user', text: prompt }];
+      const reply = (await callGeminiChat(history, '', apiKey)).trim();
+      setAiGradeResult(reply);
+    } catch (e) {
+      setAiGradeError(e instanceof Error ? e.message : (en ? 'AI grading failed' : 'AI 採点に失敗したよ'));
+    } finally {
+      setAiGrading(false);
+    }
+  };
+
   const finishAttempt = useCallback(async () => {
     const correct = Object.values(results).filter(Boolean).length;
     if (activeSet?.id) await recordAttempt(activeSet.id, correct);
@@ -821,6 +852,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       setTextAns('');
       setTextAnsArray([]);
       setRevealed(false);
+      setAiGradeResult(null);
+      setAiGradeError('');
     } else {
       await finishAttempt();
     }
@@ -1109,6 +1142,22 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                     <button className={`psv-sg-btn ng ${isCorrect === false ? 'on' : ''}`} onClick={() => selfGrade(false)}>
                       <X size={15} /> {en ? 'Missed' : 'できなかった'}
                     </button>
+                  </div>
+                )}
+                {(current.type === 'written' || current.type === 'fill') && (
+                  <div className="psv-aigrade">
+                    <button
+                      className="psv-aigrade-btn"
+                      onClick={() => void gradeWithLily()}
+                      disabled={aiGrading || !textAns.trim()}
+                    >
+                      <Sparkles size={14} />
+                      {aiGrading ? (en ? 'Grading…' : '採点中…') : (en ? 'Grade with Lily' : 'Lilyに採点してもらう')}
+                    </button>
+                    {aiGradeError && <div className="psv-aigrade-error">{aiGradeError}</div>}
+                    {aiGradeResult && (
+                      <div className="psv-aigrade-result"><Rich src={aiGradeResult} className="rich" /></div>
+                    )}
                   </div>
                 )}
                 {onOpenAI && (
@@ -1982,6 +2031,12 @@ function PracticeStyles() {
   .psv-sg-btn.ng.on { background: #ef4444; color: #fff; border-color: #ef4444; }
   .psv-lily-btn { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 99px; border: 1.5px solid color-mix(in srgb, #8b5cf6 40%, var(--border)); background: color-mix(in srgb, #8b5cf6 8%, var(--background)); color: #8b5cf6; font-size: 0.8rem; font-weight: 700; cursor: pointer; transition: all .15s; }
   .psv-lily-btn:hover { background: color-mix(in srgb, #8b5cf6 16%, var(--background)); }
+  .psv-aigrade { display: flex; flex-direction: column; gap: 9px; }
+  .psv-aigrade-btn { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 99px; border: none; background: var(--primary); color: #fff; font-size: 0.82rem; font-weight: 800; cursor: pointer; font-family: inherit; transition: filter .14s, opacity .14s; }
+  .psv-aigrade-btn:hover:not(:disabled) { filter: brightness(1.06); }
+  .psv-aigrade-btn:disabled { opacity: 0.5; cursor: default; }
+  .psv-aigrade-error { font-size: 0.8rem; color: #dc2626; font-weight: 600; }
+  .psv-aigrade-result { background: color-mix(in srgb, var(--primary) 9%, transparent); border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent); border-radius: 12px; padding: 11px 13px; font-size: 0.88rem; line-height: 1.7; color: var(--foreground); white-space: pre-wrap; }
 
   .psv-bottom { flex-shrink: 0; padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--background); }
   .psv-action { width: 100%; max-width: 680px; margin: 0 auto; height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 14px; border: none; background: var(--foreground); color: var(--background); font-size: 1rem; font-weight: 800; cursor: pointer; transition: all .15s; }
