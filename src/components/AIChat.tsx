@@ -1517,6 +1517,7 @@ function LilyBubble({
         <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
       </div>
       <div className="lily-bubble-wrap">
+        <div className="lily-name-row"><span className="lily-name-dot" />Lily</div>
         <div className="lily-bubble" onClick={handleBubbleClick}>
           {inlineParts.map((p, i) =>
             p.kind === 'text' ? (
@@ -1585,7 +1586,30 @@ function LilyBubble({
         .lily-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--accent); border: 2px solid var(--border); }
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
-        .lily-bubble { position: relative; background: var(--accent); border: 1px solid var(--border); border-radius: 4px 16px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word; }
+        .lily-name-row { display: flex; align-items: center; gap: 6px; margin: 0 0 4px 2px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; color: var(--fg-muted, #888); }
+        .lily-name-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--skin-accent, var(--primary)); flex-shrink: 0; }
+        .lily-bubble {
+          position: relative; background: var(--card-bg, var(--surface, var(--background)));
+          border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px 12px 18px;
+          font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+        }
+        .lily-bubble::before {
+          content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+          border-radius: 14px 0 0 14px; background: var(--skin-accent, var(--primary));
+        }
+        :global(body[data-skin-rarity="R"]) .lily-bubble {
+          box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px color-mix(in srgb, var(--skin-accent) 28%, transparent);
+        }
+        :global(body[data-skin-rarity="UR"]) .lily-bubble::before {
+          background: linear-gradient(180deg, #e254c2, #7c5cf0, #2fb4e8, #e254c2);
+          background-size: 100% 300%;
+          animation: skin-shimmer 3s linear infinite;
+        }
+        :global(body[data-skin-rarity="UR"]) .lily-bubble {
+          box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px color-mix(in srgb, #7c5cf0 30%, transparent);
+        }
+        @keyframes skin-shimmer { 0% { background-position: 0 0%; } 100% { background-position: 0 300%; } }
         .inline-block-wrap { margin: 8px 0; }
         .inline-block-wrap:first-child { margin-top: 0; }
         .inline-block-wrap:last-child { margin-bottom: 0; }
@@ -1724,7 +1748,7 @@ function UserBubble({ message }: { message: ChatMessage }) {
       <style jsx>{`
         .user-bubble-row { display: flex; justify-content: flex-end; align-items: flex-start; gap: 6px; align-self: flex-end; max-width: 80%; }
         .user-bubble-row:hover :global(.copy-btn) { opacity: 1; }
-        .user-bubble { background: var(--primary); color: white; border-radius: 16px 4px 16px 16px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; word-break: break-word; }
+        .user-bubble { background: var(--primary); color: white; border-radius: 14px; padding: 10px 14px; font-size: 0.9rem; line-height: 1.65; word-break: break-word; box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06); }
         .att-preview { margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
         .att-img-wrap { position: relative; display: inline-block; }
         .att-img { max-width: 140px; max-height: 140px; border-radius: 10px; display: block; }

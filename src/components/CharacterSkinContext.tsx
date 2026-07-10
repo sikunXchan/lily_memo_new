@@ -1,12 +1,17 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { useTheme } from './ThemeContext';
-import { CHARACTER_SKINS, CHARACTER_SKIN_STORAGE_KEY, SKIN_BASE_PATH, AVATAR_FRAME_SCALE } from '@/lib/characterSkins';
+import { CHARACTER_SKINS, CHARACTER_SKIN_STORAGE_KEY, SKIN_BASE_PATH, AVATAR_FRAME_SCALE, type SkinRarity } from '@/lib/characterSkins';
+import { getOwnedSkinIds } from '@/lib/gacha';
 
 interface CharacterSkinContextValue {
   skinId: string; // '' = default (unmodified mascot)
   setSkinId: (id: string) => void;
+  // Skins currently owned (won from the gacha, or granted by the old
+  // all-at-once unlock code). Selecting an unowned skin is a no-op.
+  ownedSkinIds: string[];
+  // Re-reads owned skins from storage — call after a gacha pull grants one.
+  refreshOwnedSkins: () => void;
   // Returns the active skin's costume image path, or `fallback` when no skin
   // is set (or the skin has no costume art yet).
   avatarSrc: (fallback: string) => string;
@@ -19,17 +24,27 @@ interface CharacterSkinContextValue {
   ambientSrcs?: string[];
   // Resolved decorative avatar-frame-ring image path, or undefined.
   avatarFrameSrc?: string;
+  // Active skin's accent color / rarity, for CSS-driven chat theming
+  // (no bubble-decoration images — see AIChat.tsx's .lily-bubble/.user-bubble).
+  chatAccent?: string;
+  chatRarity?: SkinRarity;
 }
 
 const CharacterSkinContext = createContext<CharacterSkinContextValue>({
   skinId: '',
   setSkinId: () => {},
+  ownedSkinIds: [],
+  refreshOwnedSkins: () => {},
   avatarSrc: (fallback) => fallback,
 });
 
 export function CharacterSkinProvider({ children }: { children: React.ReactNode }) {
-  const { skinsUnlocked } = useTheme();
   const [skinId, setSkinIdState] = useState('');
+  const [ownedSkinIds, setOwnedSkinIds] = useState<string[]>([]);
+
+  const refreshOwnedSkins = useCallback(() => {
+    setOwnedSkinIds(getOwnedSkinIds());
+  }, []);
 
   useEffect(() => {
     try {
@@ -39,19 +54,20 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
         setSkinIdState(saved);
       }
     } catch { /* localStorage unavailable */ }
-  }, []);
+    refreshOwnedSkins();
+  }, [refreshOwnedSkins]);
 
-  // If skins somehow become locked again (shouldn't normally happen since
-  // unlocking is permanent), don't leave a broken/inaccessible skin selected.
+  // If a skin somehow becomes unowned (shouldn't normally happen since
+  // gacha wins are permanent), don't leave a broken/inaccessible skin selected.
   useEffect(() => {
-    if (skinId && !skinsUnlocked) setSkinIdState('');
-  }, [skinId, skinsUnlocked]);
+    if (skinId && !ownedSkinIds.includes(skinId)) setSkinIdState('');
+  }, [skinId, ownedSkinIds]);
 
   const setSkinId = useCallback((id: string) => {
-    if (id && (!CHARACTER_SKINS.some(s => s.id === id) || !skinsUnlocked)) return;
+    if (id && (!CHARACTER_SKINS.some(s => s.id === id) || !ownedSkinIds.includes(id))) return;
     setSkinIdState(id);
     try { localStorage.setItem(CHARACTER_SKIN_STORAGE_KEY, id); } catch { /* unavailable */ }
-  }, [skinsUnlocked]);
+  }, [ownedSkinIds]);
 
   const avatarSrc = useCallback((fallback: string) => {
     const skin = CHARACTER_SKINS.find(s => s.id === skinId);
@@ -79,8 +95,24 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
     [activeSkin],
   );
 
+  // Expose the active skin as a CSS var + data attribute on <body> so any
+  // component's styled-jsx can reskin off it (chat bubbles, etc.) without
+  // prop-drilling — mirrors ThemeContext's data-theme-id pattern.
+  useEffect(() => {
+    const body = document.body;
+    if (activeSkin?.accent) body.style.setProperty('--skin-accent', activeSkin.accent);
+    else body.style.removeProperty('--skin-accent');
+    if (activeSkin?.rarity) body.setAttribute('data-skin-rarity', activeSkin.rarity);
+    else body.removeAttribute('data-skin-rarity');
+  }, [activeSkin]);
+
   return (
-    <CharacterSkinContext.Provider value={{ skinId, setSkinId, avatarSrc, backgroundSrc, homeBackgroundSrc, ambientSrcs, avatarFrameSrc }}>
+    <CharacterSkinContext.Provider
+      value={{
+        skinId, setSkinId, ownedSkinIds, refreshOwnedSkins, avatarSrc, backgroundSrc, homeBackgroundSrc, ambientSrcs, avatarFrameSrc,
+        chatAccent: activeSkin?.accent, chatRarity: activeSkin?.rarity,
+      }}
+    >
       {children}
     </CharacterSkinContext.Provider>
   );

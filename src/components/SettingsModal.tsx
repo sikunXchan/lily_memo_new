@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge, Lock, Shirt } from 'lucide-react';
+import { Download, Upload, Type, Sparkles, Wifi, User, Home, Gauge, Lock, Shirt, Dices } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { buildBackupJson, restoreBackupFromJson, buildSyncJson, restoreSyncFromJson } from '@/lib/backup';
 import { useTheme } from './ThemeContext';
@@ -11,6 +11,7 @@ import { getUserName, setUserName } from '@/lib/appLang';
 import { useT } from '@/lib/i18n';
 import PlanModal from '@/components/PlanModal';
 import { getPlan, getRemainingTokens, PLAN_LABEL, PLAN_DAILY_TOKENS, formatTokens } from '@/lib/points';
+import { pullGacha, getGachaPullsLeft, getGachaPullLimit, isAllSkinsOwned, type GachaResult } from '@/lib/gacha';
 
 function randCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -27,14 +28,30 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [planLabel, setPlanLabel] = useState('');
   const [planRemaining, setPlanRemaining] = useState(0);
   const [planDaily, setPlanDaily] = useState(0);
-  const { fontId, setFontId, skinsUnlocked, unlockSkins } = useTheme();
-  const { skinId: charSkinId, setSkinId: setCharSkinId } = useCharacterSkin();
-  const [charSkinCode, setCharSkinCode] = useState('');
-  const [charSkinCodeError, setCharSkinCodeError] = useState(false);
-  const [showCharSkinUnlock, setShowCharSkinUnlock] = useState(false);
-  const submitCharSkinCode = () => {
-    if (unlockSkins(charSkinCode)) { setCharSkinCode(''); setCharSkinCodeError(false); setShowCharSkinUnlock(false); }
-    else setCharSkinCodeError(true);
+  const { fontId, setFontId } = useTheme();
+  const { skinId: charSkinId, setSkinId: setCharSkinId, ownedSkinIds, refreshOwnedSkins } = useCharacterSkin();
+  const [gachaPullsLeft, setGachaPullsLeft] = useState(0);
+  const [gachaPullLimit, setGachaPullLimit] = useState(0);
+  const [gachaAllOwned, setGachaAllOwned] = useState(false);
+  const [gachaRolling, setGachaRolling] = useState(false);
+  const [gachaResult, setGachaResult] = useState<GachaResult | null>(null);
+  const refreshGachaState = useCallback(() => {
+    setGachaPullsLeft(getGachaPullsLeft());
+    setGachaPullLimit(getGachaPullLimit());
+    setGachaAllOwned(isAllSkinsOwned());
+  }, []);
+  const handlePullGacha = () => {
+    if (gachaRolling || gachaPullsLeft <= 0 || gachaAllOwned) return;
+    setGachaRolling(true);
+    setGachaResult(null);
+    // Small delay so the roll feels like something happened, not an instant swap.
+    setTimeout(() => {
+      const result = pullGacha();
+      setGachaResult(result);
+      if (result.kind === 'hit') refreshOwnedSkins();
+      refreshGachaState();
+      setGachaRolling(false);
+    }, 650);
   };
   const [geminiKey, setGeminiKey] = useState('');
   const [keySaved, setKeySaved] = useState(false);
@@ -71,6 +88,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     setPlanLabel(PLAN_LABEL[plan]);
     setPlanRemaining(getRemainingTokens());
     setPlanDaily(PLAN_DAILY_TOKENS[plan]);
+    refreshGachaState();
     // 武士モードは廃止。旧設定が残っていればタメ口に移行する。
     const savedTone = localStorage.getItem('lily_sikun_tone');
     if (savedTone && savedTone !== 'bushi') {
@@ -249,7 +267,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             <h3>{t('キャラクタースキン')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">{t('チャットや各画面のLilyの見た目を着せ替えられます。🔒 は解放コードで開放できます。')}</p>
+            <p className="desc">{t('チャットや各画面のLilyの見た目を着せ替えられます。🔒 は毎日のガチャで手に入るよ。')}</p>
             <div className="skin-grid">
               <button
                 className={`skin-card charskin-card ${charSkinId === '' ? 'selected' : ''}`}
@@ -262,13 +280,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                 <span className="skin-name">{t('デフォルト')}</span>
               </button>
               {CHARACTER_SKINS_BY_RARITY.map(sk => {
-                const locked = !skinsUnlocked;
+                const locked = !ownedSkinIds.includes(sk.id);
                 const rarityClass = sk.rarity === 'UR' ? 'rarity-ur' : sk.rarity === 'R' ? 'rarity-r' : '';
                 return (
                   <button
                     key={sk.id}
                     className={`skin-card charskin-card ${rarityClass} ${charSkinId === sk.id ? 'selected' : ''} ${locked ? 'locked' : ''}`}
-                    onClick={() => locked ? setShowCharSkinUnlock(true) : setCharSkinId(sk.id)}
+                    onClick={() => { if (!locked) setCharSkinId(sk.id); }}
                   >
                     {sk.rarity !== 'N' && <span className={`rarity-badge ${rarityClass}`}>{sk.rarity}</span>}
                     <span className="charskin-thumb-wrap">
@@ -285,25 +303,35 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                 );
               })}
             </div>
-            {!skinsUnlocked && (
-              showCharSkinUnlock ? (
-                <div className="skin-unlock">
-                  <input
-                    className="skin-code-input"
-                    value={charSkinCode}
-                    onChange={e => { setCharSkinCode(e.target.value); setCharSkinCodeError(false); }}
-                    onKeyDown={e => { if (e.key === 'Enter') submitCharSkinCode(); }}
-                    placeholder={t('解放コード')}
-                  />
-                  <button className="btn-action" onClick={submitCharSkinCode}>{t('解放')}</button>
-                  {charSkinCodeError && <span className="skin-code-err">{t('コードが違うみたい')}</span>}
-                </div>
+
+            <div className="gacha-panel">
+              <div className="gacha-info">
+                <Dices size={16} />
+                <span>{t('本日のガチャ残り {left}/{limit} 回', { left: gachaPullsLeft, limit: gachaPullLimit })}</span>
+              </div>
+              {gachaAllOwned ? (
+                <div className="gacha-complete">🎉 {t('全スキンをコンプリートしました！')}</div>
               ) : (
-                <button className="skin-unlock-open" onClick={() => setShowCharSkinUnlock(true)}>
-                  <Lock size={13} /> {t('スキンを解放する')}
+                <button
+                  className={`gacha-btn${gachaRolling ? ' rolling' : ''}`}
+                  onClick={handlePullGacha}
+                  disabled={gachaRolling || gachaPullsLeft <= 0}
+                >
+                  <Dices size={15} className={gachaRolling ? 'spin' : ''} />
+                  {gachaRolling ? t('抽選中…') : gachaPullsLeft <= 0 ? t('本日はもう引けません') : t('ガチャを引く')}
                 </button>
-              )
-            )}
+              )}
+              {gachaResult && !gachaRolling && (
+                <div className={`gacha-result gacha-${gachaResult.kind}`}>
+                  {gachaResult.kind === 'hit' && (() => {
+                    const won = CHARACTER_SKINS_BY_RARITY.find(s => s.id === gachaResult.skinId);
+                    return won ? <>🎉 {t('新しいスキン「{name}」をゲット！', { name: t(won.name) })}</> : null;
+                  })()}
+                  {gachaResult.kind === 'miss' && <>{t('😢 ハズレ…また明日挑戦してね')}</>}
+                  {gachaResult.kind === 'blocked' && <>{t('本日はもう引けません')}</>}
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
@@ -632,12 +660,20 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         .charskin-thumb { width: 100%; height: 100%; object-fit: contain; object-position: bottom center; }
         .skin-name { font-size: 0.76rem; font-weight: 700; color: var(--foreground); text-align: center; }
         .skin-season { font-size: 0.6rem; font-weight: 800; color: #d97706; background: color-mix(in srgb, #f59e0b 20%, transparent); border-radius: 999px; padding: 1px 6px; align-self: center; }
-        .skin-unlock { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-        .skin-code-input { flex: 1; min-width: 140px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--background); color: var(--foreground); font-family: inherit; font-size: 0.9rem; outline: none; }
-        .skin-code-input:focus { border-color: var(--primary); }
-        .skin-code-err { font-size: 0.78rem; color: #dc2626; font-weight: 600; width: 100%; }
-        .skin-unlock-open { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--fg-muted, #888); font-size: 0.82rem; font-weight: 700; cursor: pointer; font-family: inherit; }
-        .skin-unlock-open:hover { border-color: var(--primary); color: var(--primary); }
+        .gacha-panel { margin-top: 14px; padding: 12px 14px; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--surface, var(--background)); display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
+        .gacha-info { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 700; color: var(--fg-muted, #888); }
+        .gacha-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px; border: none; border-radius: 999px; background: linear-gradient(120deg, #e254c2, #7c5cf0, #2fb4e8); background-size: 200% 200%; color: #fff; font-family: inherit; font-size: 0.88rem; font-weight: 800; cursor: pointer; box-shadow: 0 3px 10px rgba(124,92,240,0.35); transition: transform 0.12s, opacity 0.15s; animation: gacha-btn-shine 3.5s linear infinite; }
+        .gacha-btn:hover:not(:disabled) { transform: translateY(-1px); }
+        .gacha-btn:disabled { cursor: default; opacity: 0.55; animation: none; box-shadow: none; }
+        .gacha-btn :global(.spin) { animation: gacha-spin 0.5s linear infinite; }
+        @keyframes gacha-btn-shine { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+        @keyframes gacha-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .gacha-complete { font-size: 0.86rem; font-weight: 700; color: var(--primary); }
+        .gacha-result { font-size: 0.82rem; font-weight: 700; padding: 6px 10px; border-radius: 8px; animation: gacha-result-in 0.2s ease; }
+        .gacha-result.gacha-hit { color: #b8860b; background: color-mix(in srgb, #f7e08a 35%, transparent); }
+        .gacha-result.gacha-miss { color: var(--fg-muted, #888); background: var(--background); }
+        .gacha-result.gacha-blocked { color: var(--fg-muted, #888); }
+        @keyframes gacha-result-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
         .swatch {
           width: 100%;
           height: 38px;
