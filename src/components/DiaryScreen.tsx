@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, ChevronLeft, ChevronRight, Check, ListTodo, Heart, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Check, ListTodo, Heart, RefreshCw, CalendarDays, X } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
@@ -43,6 +43,27 @@ function fmtDayLabel(iso: string): string {
   return getAppLang() === 'en'
     ? `${WEEKDAYS_EN[d.getDay()]}, ${MONTHS_EN[d.getMonth()]} ${d.getDate()}`
     : `${d.getMonth() + 1}月${d.getDate()}日 (${WEEKDAYS_JA[d.getDay()]})`;
+}
+function addDays(iso: string, n: number): string {
+  const d = parseIso(iso);
+  d.setDate(d.getDate() + n);
+  return isoOf(d);
+}
+function fmtClock(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// Story-tray "seen" state (has this past day's story been opened yet) — a
+// plain localStorage set, mirroring AnnouncementModal's dismiss-tracking
+// pattern. There's no server sync for this; it's a light UI nicety only.
+const SEEN_KEY = 'diary-seen-days';
+function loadSeenDays(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]')); } catch { return new Set(); }
+}
+function saveSeenDays(days: Set<string>): void {
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify([...days])); } catch { /* unavailable */ }
 }
 
 function monthCells(viewDate: Date): { iso: string; inMonth: boolean }[] {
@@ -124,6 +145,12 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const [avatarOk, setAvatarOk] = useState(true);
   const [liked, setLiked] = useState(false);
 
+  // Story view (default) vs. the classic month-calendar (for jumping to an
+  // arbitrary past date). Both share all the state/persist logic above.
+  const [viewMode, setViewMode] = useState<'story' | 'calendar'>('story');
+  const [seenDays, setSeenDays] = useState<Set<string>>(() => loadSeenDays());
+  const storyTouchX = useRef<number | null>(null);
+
   const diaries = useLiveQuery<Diary[]>(() =>
     db.diaries.filter(d => !d.deletedAt).toArray()
   );
@@ -203,6 +230,36 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const cells = monthCells(viewDate);
   const monthTouchX = useRef(0);
 
+  // Last 7 days ending today, for the story tray. Always shown regardless of
+  // whether an entry exists yet — matches a real IG-story day strip.
+  const trayDays = useMemo(() => {
+    const days: string[] = [];
+    for (let i = 6; i >= 0; i--) days.push(addDays(todayIso, -i));
+    return days;
+  }, [todayIso]);
+
+  const goPrevDay = () => selectDay(addDays(selDay, -1));
+  const goNextDay = () => { if (selDay < todayIso) selectDay(addDays(selDay, 1)); };
+
+  // A past day counts as "seen" once its story has been opened at least once.
+  useEffect(() => {
+    if (selDay === todayIso || seenDays.has(selDay)) return;
+    setSeenDays(prev => {
+      const next = new Set(prev).add(selDay);
+      saveSeenDays(next);
+      return next;
+    });
+  }, [selDay, todayIso, seenDays]);
+
+  const handleStoryTouchStart = (e: React.PointerEvent) => { storyTouchX.current = e.clientX; };
+  const handleStoryTouchEnd = (e: React.PointerEvent) => {
+    if (storyTouchX.current === null) return;
+    const dx = e.clientX - storyTouchX.current;
+    storyTouchX.current = null;
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) goNextDay(); else goPrevDay();
+  };
+
   const moodTint = (m?: string): string | undefined => {
     if (!m) return undefined;
     const idx = MOODS.indexOf(m);
@@ -264,9 +321,139 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         <div className="dy-header-mid">
           <span className="dy-title">{t('日記')}</span>
         </div>
+        <button
+          className={`dy-view-toggle${viewMode === 'calendar' ? ' on' : ''}`}
+          onClick={() => setViewMode(v => v === 'story' ? 'calendar' : 'story')}
+          aria-label={t('カレンダー')}
+          title={t('カレンダー')}
+        >
+          <CalendarDays size={17} />
+        </button>
       </div>
 
       <div className="dy-scroll">
+        {viewMode === 'story' ? (
+        <div className="dy-story-view">
+          {/* Day tray */}
+          <div className="dy-tray">
+            {trayDays.map(iso => {
+              const entry = byDate.get(iso);
+              const isToday_ = iso === todayIso;
+              const seen = seenDays.has(iso);
+              const d = parseIso(iso);
+              return (
+                <button
+                  key={iso}
+                  className={`dy-tray-item${isToday_ ? ' today' : ''}${!isToday_ && seen ? ' seen' : ''}${iso === selDay ? ' active' : ''}`}
+                  onClick={() => selectDay(iso)}
+                >
+                  <span className="dy-tray-ring">
+                    <span className="dy-tray-in">{entry?.mood || (isToday_ ? '＋' : '')}</span>
+                  </span>
+                  <span className="dy-tray-label">{isToday_ ? t('今日') : WEEKDAYS_JA[d.getDay()]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Story stage */}
+          <div
+            className="dy-stage"
+            onPointerDown={handleStoryTouchStart}
+            onPointerUp={handleStoryTouchEnd}
+            onPointerCancel={() => { storyTouchX.current = null; }}
+          >
+            <div className="dy-stage-segbar">
+              {trayDays.map(iso => (
+                <span key={iso} className={`seg${iso <= selDay ? ' done' : ''}`} />
+              ))}
+            </div>
+            <div className="dy-stage-topbar">
+              <LilyAvatar />
+              <span className="dy-stage-who">{fmtDayLabel(selDay)}</span>
+              {current && <span className="dy-stage-when">・{fmtClock(current.updatedAt)}</span>}
+              <button className="dy-stage-close" onClick={() => setViewMode('calendar')} aria-label={t('カレンダー')}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {isToday ? (
+              <div className="dy-stage-compose">
+                <div className="dy-stage-mood-row">
+                  {MOODS.map(m => (
+                    <button
+                      key={m}
+                      className={`dy-stage-mood-btn${mood === m ? ' on' : ''}`}
+                      onClick={() => { const next = mood === m ? '' : m; setMood(next); scheduleSave(draft, next); }}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  className="dy-stage-textarea"
+                  value={draft}
+                  placeholder={t('今日はどんな一日だった？')}
+                  onChange={e => { setDraft(e.target.value); scheduleSave(e.target.value, mood); }}
+                  onBlur={() => { flushSave(); void persist(selDay, draft, mood); }}
+                />
+              </div>
+            ) : current ? (
+              <>
+                <div className="dy-stage-sticker">{current.mood || '📔'}</div>
+                <div className="dy-stage-scrim" />
+                <div className="dy-stage-caption">
+                  <span className="dy-stage-tag">✏️ {fmtDayLabel(selDay)}</span>
+                  <p>{current.content}</p>
+                </div>
+              </>
+            ) : (
+              <div className="dy-stage-empty">
+                <p>{lang === 'en' ? 'No entry for this day.' : 'この日の記録はありません。'}</p>
+              </div>
+            )}
+          </div>
+
+          {isToday && (
+            <button
+              className={`dy-post-btn${aiLoading ? ' loading' : ''}`}
+              onClick={() => void postToLily()}
+              disabled={!canPost}
+            >
+              {aiLoading
+                ? (lang === 'en' ? 'Lily is reading…' : 'Lilyが読んでいる…')
+                : hasComment
+                  ? (<><RefreshCw size={14} strokeWidth={2.5} /> {lang === 'en' ? 'Ask Lily again' : 'もう一度Lilyに見せる'}</>)
+                  : (lang === 'en' ? 'Show Lily' : 'Lilyに見せる')}
+            </button>
+          )}
+          {aiError && <div className="dy-ai-error">{aiError}</div>}
+
+          {current?.aiComment && (
+            <div className="dy-reply-row">
+              <LilyAvatar />
+              <div className="dy-reply-bubble">
+                <div className="dy-reply-lbl">{lang === 'en' ? "Lily's reply" : 'Lily からの返信'}</div>
+                <p>{current.aiComment}</p>
+              </div>
+              {isToday && (
+                <button
+                  className={`dy-heart-btn${liked ? ' on' : ''}`}
+                  onClick={() => setLiked(v => !v)}
+                  aria-label={lang === 'en' ? 'Like' : 'いいね'}
+                >
+                  <Heart size={15} strokeWidth={2.5} fill={liked ? 'currentColor' : 'none'} />
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="dy-swipe-hint">
+            <ChevronLeft size={12} /> {lang === 'en' ? 'Swipe for the previous day' : 'スワイプで前の日の記録へ'}
+          </div>
+        </div>
+        ) : (
+        <>
         {/* Month nav */}
         <div className="dy-cal-head">
           <button className="dy-cal-nav" onClick={prevMonth} aria-label={t('前の月')}><ChevronLeft size={18} /></button>
@@ -430,6 +617,8 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
 
       <style jsx>{`
@@ -654,6 +843,134 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         }
         .dy-like:active { transform: scale(.92); }
         .dy-like.on { color: #fb7185; border-color: rgba(251,113,133,.5); background: rgba(251,113,133,.08); }
+
+        /* ── Header view toggle ── */
+        .dy-view-toggle {
+          width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+          border: 1px solid var(--border); background: var(--accent);
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; color: var(--fg-muted);
+        }
+        .dy-view-toggle.on { color: #fb7185; border-color: rgba(251,113,133,.5); background: rgba(251,113,133,.1); }
+        .dy-view-toggle:active { opacity: .6; }
+
+        /* ── Story view ── */
+        .dy-story-view {
+          display: flex; flex-direction: column; gap: 16px;
+          padding: 14px 14px calc(24px + env(safe-area-inset-bottom));
+        }
+        .dy-tray { display: flex; gap: 12px; overflow-x: auto; padding: 2px 2px 4px; -webkit-overflow-scrolling: touch; }
+        .dy-tray-item {
+          display: flex; flex-direction: column; align-items: center; gap: 5px; flex-shrink: 0;
+          background: none; border: none; cursor: pointer; font-family: inherit; padding: 0;
+        }
+        .dy-tray-ring {
+          width: 46px; height: 46px; border-radius: 50%; padding: 2.5px;
+          background: linear-gradient(135deg, #f59e0b, #fb7185);
+          display: flex; align-items: center; justify-content: center;
+        }
+        .dy-tray-item.seen .dy-tray-ring { background: var(--border); }
+        .dy-tray-item.active .dy-tray-ring { box-shadow: 0 0 0 2px var(--background), 0 0 0 3.5px #fb7185; }
+        .dy-tray-in {
+          width: 100%; height: 100%; border-radius: 50%; background: var(--background);
+          display: flex; align-items: center; justify-content: center; font-size: 17px; color: var(--fg-muted);
+        }
+        .dy-tray-label { font-size: .6rem; font-weight: 700; color: var(--fg-muted); }
+        .dy-tray-item.today .dy-tray-label { color: #fb7185; }
+
+        .dy-stage {
+          position: relative; border-radius: 22px; overflow: hidden;
+          aspect-ratio: 9/13.5; max-height: 62vh;
+          background: linear-gradient(165deg, #fb923c, #fb7185 55%, #9d174d);
+          box-shadow: 0 16px 40px -14px rgba(140,40,60,.45);
+          touch-action: pan-y;
+        }
+        .dy-stage-segbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 4px; z-index: 3; }
+        .dy-stage-segbar .seg { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.35); overflow: hidden; }
+        .dy-stage-segbar .seg.done { background: #fff; }
+        .dy-stage-topbar {
+          position: absolute; top: 20px; left: 14px; right: 14px; z-index: 3;
+          display: flex; align-items: center; gap: 8px;
+        }
+        .dy-stage-topbar :global(.dy-ava) { width: 26px !important; height: 26px !important; border: 1.5px solid rgba(255,255,255,.8) !important; }
+        .dy-stage-who { font-size: 11.5px; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dy-stage-when { font-size: 10px; color: rgba(255,255,255,.75); flex-shrink: 0; }
+        .dy-stage-close {
+          margin-left: auto; flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+          border: none; background: rgba(0,0,0,.18); color: rgba(255,255,255,.9);
+          display: flex; align-items: center; justify-content: center; cursor: pointer;
+        }
+        .dy-stage-sticker {
+          position: absolute; top: 38%; left: 50%; transform: translate(-50%,-50%) rotate(-6deg);
+          width: 74px; height: 74px; border-radius: 50%; background: #fff;
+          display: flex; align-items: center; justify-content: center; font-size: 34px;
+          box-shadow: 0 10px 22px rgba(60,20,30,.3); z-index: 2;
+        }
+        .dy-stage-scrim {
+          position: absolute; left: 0; right: 0; bottom: 0; height: 58%; z-index: 1;
+          background: linear-gradient(180deg, transparent, rgba(60,20,30,.75) 55%, rgba(40,14,22,.88));
+        }
+        .dy-stage-caption { position: absolute; left: 18px; right: 18px; bottom: 22px; z-index: 3; }
+        .dy-stage-tag {
+          display: inline-flex; font-size: 10px; font-weight: 800; color: #ffe1e6;
+          background: rgba(255,255,255,.18); padding: 4px 10px; border-radius: 999px;
+          margin-bottom: 9px; backdrop-filter: blur(4px);
+        }
+        .dy-stage-caption p {
+          font-family: 'Georgia', 'Noto Serif JP', serif; font-style: italic;
+          font-size: 16px; line-height: 1.55; color: #fff; margin: 0;
+          text-shadow: 0 2px 10px rgba(0,0,0,.25); white-space: pre-wrap;
+        }
+        .dy-stage-empty {
+          position: absolute; inset: 0; z-index: 2;
+          display: flex; align-items: center; justify-content: center; padding: 24px;
+        }
+        .dy-stage-empty p { color: rgba(255,255,255,.85); font-size: .85rem; text-align: center; }
+
+        /* Today: compose mode inside the stage */
+        .dy-stage-compose {
+          position: absolute; inset: 0; z-index: 2;
+          display: flex; flex-direction: column; justify-content: flex-end; gap: 12px;
+          padding: 60px 16px 16px;
+        }
+        .dy-stage-mood-row { display: flex; gap: 6px; justify-content: center; }
+        .dy-stage-mood-btn {
+          width: 36px; height: 36px; border-radius: 11px; font-size: 1.1rem;
+          border: 1.5px solid rgba(255,255,255,.35); background: rgba(255,255,255,.14);
+          cursor: pointer; display: flex; align-items: center; justify-content: center;
+          filter: grayscale(.5); opacity: .75; transition: transform .1s, opacity .12s, filter .12s;
+        }
+        .dy-stage-mood-btn:active { transform: scale(.88); }
+        .dy-stage-mood-btn.on { background: #fff; filter: none; opacity: 1; }
+        .dy-stage-textarea {
+          width: 100%; min-height: 96px; resize: none;
+          background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.3); border-radius: 14px;
+          padding: 12px 14px; color: #fff; font-family: 'Georgia', 'Noto Serif JP', serif; font-style: italic;
+          font-size: .95rem; line-height: 1.6; outline: none;
+        }
+        .dy-stage-textarea::placeholder { color: rgba(255,255,255,.65); }
+
+        /* ── Reply row ── */
+        .dy-reply-row { display: flex; align-items: center; gap: 10px; }
+        .dy-reply-row :global(.dy-ava) { width: 32px !important; height: 32px !important; }
+        .dy-reply-bubble {
+          flex: 1; min-width: 0; background: var(--accent); border: 1px solid var(--border);
+          border-radius: 4px 16px 16px 16px; padding: 11px 14px;
+        }
+        .dy-reply-lbl { font-size: 10px; font-weight: 800; color: #fb7185; margin-bottom: 3px; }
+        .dy-reply-bubble p { font-size: .82rem; line-height: 1.6; color: var(--foreground); margin: 0; white-space: pre-wrap; }
+        .dy-heart-btn {
+          width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
+          border: 1px solid var(--border); background: var(--background);
+          display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--fg-muted);
+        }
+        .dy-heart-btn.on { color: #fb7185; border-color: rgba(251,113,133,.5); background: rgba(251,113,133,.08); }
+        .dy-heart-btn:active { transform: scale(.92); }
+
+        .dy-swipe-hint {
+          display: flex; align-items: center; justify-content: center; gap: 3px;
+          font-size: .7rem; color: var(--fg-faint); text-align: center;
+        }
       `}</style>
     </div>
   );
