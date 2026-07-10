@@ -135,7 +135,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           const folderNotes = notes.filter(n => n.folderId === f.id);
           const expanded = !!expandedFolders[f.id!];
           return (
-            <div key={f.id} className="mt-folder-group">
+            <div key={f.id} className="mt-folder-card">
               <button className="mt-folder-row" onClick={() => toggleFolder(f.id!)}>
                 <ChevronRight size={15} color="#c7b8be" className={`mt-chev ${expanded ? 'open' : ''}`} />
                 <Folder size={16} color="#ffb6c1" />
@@ -161,7 +161,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
         })}
 
         {looseNotes.length > 0 && !searchQuery && (
-          <div className="mt-section-label">{t('フォルダなし')}</div>
+          <span className="mt-section-label">{t('フォルダなし')}</span>
         )}
         {looseNotes.map(n => (
           <button key={n.id} className="mt-loose-row" onClick={() => onSelectNote(n.id!)}>
@@ -192,9 +192,8 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
         .mt-header {
           display: flex; align-items: center; gap: 8px;
           padding: 12px 16px;
-          border-bottom: 1px solid #ffe6ec;
-          background: rgba(255,255,255,.85);
-          backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+          background: rgba(255,253,246,.72);
+          backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
           flex-shrink: 0;
         }
         .mt-back {
@@ -253,53 +252,65 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
 
         .mt-scroll {
           flex: 1; overflow-y: auto; padding: 12px 14px;
+          display: flex; flex-direction: column; gap: 10px;
           -webkit-overflow-scrolling: touch;
         }
-        .mt-folder-group { margin-bottom: 2px; }
+        .mt-folder-card {
+          background: rgba(255,253,246,.86);
+          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+          border-radius: 15px; box-shadow: 0 3px 14px rgba(30,35,25,.1);
+          overflow: hidden;
+        }
         .mt-folder-row {
           display: flex; align-items: center; gap: 8px;
-          width: 100%; padding: 9px 8px;
+          width: 100%; padding: 12px 14px;
           background: none; border: none; cursor: pointer;
-          border-radius: 12px; text-align: left;
+          text-align: left;
         }
-        .mt-folder-row:active { background: rgba(255,182,193,.12); }
+        .mt-folder-row:active { background: rgba(255,182,193,.14); }
         .mt-chev { transition: transform .15s; flex-shrink: 0; }
         .mt-chev.open { transform: rotate(90deg); }
         .mt-fname {
-          flex: 1; font-size: .9rem; font-weight: 700; color: #4a4045;
+          flex: 1; font-size: .9rem; font-weight: 700; color: #2c2620;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
         .mt-fcount {
-          font-size: .72rem; font-weight: 700; color: #c7b3bb;
-          background: #fff0f4; padding: 2px 8px; border-radius: 99px;
+          font-size: .72rem; font-weight: 700; color: #a08a72;
+          background: #f1ece1; padding: 2px 8px; border-radius: 99px;
         }
         .mt-folder-notes {
-          margin-left: 24px; border-left: 2px solid #ffe6ec;
-          padding-left: 10px; margin-bottom: 6px;
+          padding: 0 14px 10px 40px;
+          display: flex; flex-direction: column; gap: 2px;
         }
         .mt-note-row {
           display: flex; align-items: center; gap: 8px;
-          width: 100%; padding: 8px 6px;
+          width: 100%; padding: 7px 0;
           background: none; border: none; cursor: pointer;
-          border-radius: 10px; text-align: left; font-family: inherit;
+          text-align: left; font-family: inherit;
         }
-        .mt-note-row:active { background: rgba(255,182,193,.12); }
         .mt-note-title {
-          font-size: .85rem; color: #6b5a61;
+          font-size: .85rem; color: #52483f;
           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
         }
         .mt-add-note span { color: #ff8da1; font-size: .82rem; font-weight: 600; }
         .mt-section-label {
-          font-size: .7rem; font-weight: 700; color: #c7b8be;
-          letter-spacing: .1em; text-transform: uppercase; padding: 10px 8px 4px;
+          font-size: .68rem; font-weight: 700; color: #fff;
+          letter-spacing: .08em; text-transform: uppercase;
+          background: rgba(30,30,25,.32);
+          backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+          display: inline-block; padding: 5px 11px; border-radius: 999px;
+          align-self: flex-start; margin-top: 2px;
         }
         .mt-loose-row {
           display: flex; align-items: center; gap: 10px;
-          width: 100%; padding: 10px 8px;
-          background: none; border: none; cursor: pointer;
-          border-radius: 12px; text-align: left; font-family: inherit;
+          width: 100%; padding: 10px 13px;
+          background: rgba(255,253,246,.86);
+          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+          border: none; cursor: pointer;
+          border-radius: 13px; text-align: left; font-family: inherit;
+          box-shadow: 0 2px 10px rgba(30,35,25,.08);
         }
-        .mt-loose-row:active { background: rgba(255,182,193,.12); }
+        .mt-loose-row:active { background: rgba(255,253,246,.7); }
         .mt-empty {
           display: flex; flex-direction: column; align-items: center; gap: 14px;
           padding: 40px 0; color: #c7b8be; font-size: .88rem; text-align: center;
@@ -310,26 +321,6 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           color: #fff; border: none; border-radius: 20px;
           padding: 10px 20px; font-size: .88rem; font-weight: 700;
           cursor: pointer; font-family: inherit;
-        }
-        /* スキン背景が敷かれているとき: 行を不透明チップにして文字の可読性を保つ */
-        .mt-root.has-skin-bg .mt-header {
-          background: rgba(255, 252, 246, 0.94); border-bottom: none;
-        }
-        .mt-root.has-skin-bg .mt-folder-row,
-        .mt-root.has-skin-bg .mt-note-row,
-        .mt-root.has-skin-bg .mt-loose-row {
-          background: rgba(255, 252, 246, 0.92);
-          box-shadow: 0 1px 5px rgba(0,0,0,0.12);
-          margin-bottom: 4px;
-        }
-        .mt-root.has-skin-bg .mt-section-label {
-          background: rgba(255, 252, 246, 0.88);
-          border-radius: 8px; display: inline-block; margin: 8px 0 4px;
-          color: #8a7880;
-        }
-        .mt-root.has-skin-bg .mt-folder-notes { border-left-color: rgba(255,252,246,0.85); }
-        .mt-root.has-skin-bg .mt-empty {
-          background: rgba(255, 252, 246, 0.9); border-radius: 16px; margin: 20px;
         }
       `}</style>
     </div>

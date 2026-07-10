@@ -12,6 +12,7 @@ import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { registerPdfProvider, registerPdfAnnotator, type SikunAnnotation } from '@/lib/pdfBridge';
 import { pdfPagesToMarkdown } from '@/lib/pdfToMarkdown';
+import { summarizePdfPage, askAboutPdfPage } from '@/lib/pdfPageSummary';
 import { downloadTextFile } from '@/lib/fileGen';
 import { db, newSyncId } from '@/lib/db';
 import { useT } from '@/lib/i18n';
@@ -241,6 +242,18 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   // closed/replaced PDF can't surface its (now irrelevant) result.
   const mdRunIdRef = useRef(0);
 
+  // Lily dock — auto-summary of the currently shown page + ad-hoc Q&A.
+  const [dockSummary, setDockSummary] = useState('');
+  const [dockTerms, setDockTerms] = useState<string[]>([]);
+  const [dockLoading, setDockLoading] = useState(false);
+  const [dockError, setDockError] = useState('');
+  const [dockQuestion, setDockQuestion] = useState('');
+  const [dockAnswer, setDockAnswer] = useState('');
+  const [dockAsking, setDockAsking] = useState(false);
+  // Bumped on every page change so a slow summary/answer for a page the user
+  // already left can't overwrite the dock with stale content.
+  const dockRunIdRef = useRef(0);
+
   // Canvas & DOM refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -276,6 +289,29 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   penColorRef.current = PEN_COLORS[penColorIdx];
   penWidthRef.current = PEN_WIDTHS[penWidthIdx];
   const hasPDF = pdfDoc !== null;
+
+  // Re-encodes the already-rendered on-screen canvas as a downscaled JPEG —
+  // cheap, no re-render. Shared by the sikun PDF bridge and the Lily dock.
+  const capturePageImage = useCallback((): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width === 0) return null;
+    try {
+      const maxEdge = 1600;
+      const longEdge = Math.max(canvas.width, canvas.height);
+      let src: HTMLCanvasElement = canvas;
+      if (longEdge > maxEdge) {
+        const r = maxEdge / longEdge;
+        const tmp = document.createElement('canvas');
+        tmp.width = Math.round(canvas.width * r);
+        tmp.height = Math.round(canvas.height * r);
+        tmp.getContext('2d')!.drawImage(canvas, 0, 0, tmp.width, tmp.height);
+        src = tmp;
+      }
+      return src.toDataURL('image/jpeg', 0.85).split(',')[1];
+    } catch {
+      return null;
+    }
+  }, []);
 
   const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
   const zoomByStep = (dir: 1 | -1) =>
@@ -605,28 +641,8 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     if (!hasPDF) { registerPdfProvider(null); return; }
 
     const getCurrentPage = () => {
-      const canvas = canvasRef.current;
-      if (!canvas || canvas.width === 0) return null;
-      try {
-        const maxEdge = 1600;
-        const longEdge = Math.max(canvas.width, canvas.height);
-        let src: HTMLCanvasElement = canvas;
-        if (longEdge > maxEdge) {
-          const r = maxEdge / longEdge;
-          const tmp = document.createElement('canvas');
-          tmp.width = Math.round(canvas.width * r);
-          tmp.height = Math.round(canvas.height * r);
-          tmp.getContext('2d')!.drawImage(canvas, 0, 0, tmp.width, tmp.height);
-          src = tmp;
-        }
-        return {
-          imageBase64: src.toDataURL('image/jpeg', 0.85).split(',')[1],
-          page: currentPageRef.current,
-          total: totalPages,
-        };
-      } catch {
-        return null;
-      }
+      const imageBase64 = capturePageImage();
+      return imageBase64 ? { imageBase64, page: currentPageRef.current, total: totalPages } : null;
     };
 
     const getAllPages = async (maxPages: number) => {
@@ -659,7 +675,59 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     registerPdfProvider(getCurrentPage, getAllPages);
     registerPdfAnnotator(annotator);
     return () => { registerPdfProvider(null); registerPdfAnnotator(null); };
-  }, [hasPDF, totalPages]);
+  }, [hasPDF, totalPages, capturePageImage]);
+
+  // Lily dock — auto-summarize the page shortly after it settles (debounced
+  // so flipping through pages quickly doesn't fire a request per page).
+  useEffect(() => {
+    setDockAnswer('');
+    setDockQuestion('');
+    setDockError('');
+    if (!hasPDF) { setDockSummary(''); setDockTerms([]); return; }
+    const runId = ++dockRunIdRef.current;
+    setDockLoading(true);
+    const timer = setTimeout(() => {
+      const image = capturePageImage();
+      if (!image) { setDockLoading(false); return; }
+      summarizePdfPage(image)
+        .then(({ summary, terms }) => {
+          if (dockRunIdRef.current !== runId) return;
+          setDockSummary(summary);
+          setDockTerms(terms);
+        })
+        .catch((e: unknown) => {
+          if (dockRunIdRef.current !== runId) return;
+          setDockError(e instanceof Error ? e.message : 'ページの要約に失敗しちゃった');
+        })
+        .finally(() => {
+          if (dockRunIdRef.current === runId) setDockLoading(false);
+        });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [hasPDF, currentPage, capturePageImage]);
+
+  const handleAskDock = useCallback(() => {
+    const question = dockQuestion.trim();
+    if (!question || dockAsking) return;
+    const image = capturePageImage();
+    if (!image) return;
+    const runId = ++dockRunIdRef.current;
+    setDockAsking(true);
+    setDockError('');
+    askAboutPdfPage(image, question)
+      .then(answer => {
+        if (dockRunIdRef.current !== runId) return;
+        setDockAnswer(answer);
+        setDockQuestion('');
+      })
+      .catch((e: unknown) => {
+        if (dockRunIdRef.current !== runId) return;
+        setDockError(e instanceof Error ? e.message : '質問に失敗しちゃった');
+      })
+      .finally(() => {
+        if (dockRunIdRef.current === runId) setDockAsking(false);
+      });
+  }, [dockQuestion, dockAsking, capturePageImage]);
 
   // Overlay redraw when annotations or page version changes
   useEffect(() => { drawOverlay(); }, [overlayVersion, annotations, sikunAnnotations, drawOverlay]);
@@ -1326,6 +1394,51 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           )}
         </div>
 
+        {/* Lily dock — page summary + ask-about-this-page */}
+        {hasPDF && !isLoading && !error && !isAppFullscreen && (
+          <div className="lily-dock">
+            <div className="dock-row">
+              <div className="dock-ava" />
+              <span className="dock-lbl">🔎 {t('このページの要点')}</span>
+            </div>
+            {dockLoading ? (
+              <p className="dock-text dock-loading">{t('読んでいるよ…')}</p>
+            ) : dockError ? (
+              <p className="dock-text dock-error">{dockError}</p>
+            ) : dockSummary ? (
+              <p className="dock-text">
+                {dockSummary}
+                {dockTerms.map(term => (
+                  <span key={term} className="dock-term-chip">{term}</span>
+                ))}
+              </p>
+            ) : null}
+            {dockAnswer && (
+              <div className="dock-answer">
+                <p className="dock-text">{dockAnswer}</p>
+              </div>
+            )}
+            <div className="dock-ask-row">
+              <input
+                className="dock-ask-input"
+                value={dockQuestion}
+                onChange={e => setDockQuestion(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAskDock(); }}
+                placeholder={t('このページについて質問する…')}
+                disabled={dockAsking}
+              />
+              <button
+                className="dock-ask-send"
+                onClick={handleAskDock}
+                disabled={dockAsking || !dockQuestion.trim()}
+                title={t('質問する')}
+              >
+                {dockAsking ? '…' : '↑'}
+              </button>
+            </div>
+          </div>
+        )}
+
         <style jsx>{`
           .pdf-fullscreen {
             position: fixed; top:0; left:0; right:0; bottom:0;
@@ -1689,6 +1802,40 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           }
           .md-btn.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
           .md-btn:disabled { opacity:0.55; cursor:default; }
+
+          .lily-dock {
+            margin: 0 14px 14px; flex-shrink: 0;
+            background: #fff; border-radius: 16px; padding: 13px 14px;
+            box-shadow: 0 4px 18px rgba(40,30,20,.16);
+            display: flex; flex-direction: column; gap: 9px;
+          }
+          .dock-row { display: flex; align-items: center; gap: 8px; }
+          .dock-ava {
+            width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+            background: linear-gradient(135deg,#e08394,#c25c70);
+          }
+          .dock-lbl { font-size: 11px; font-weight: 800; color: #c25c70; }
+          .dock-text { font-size: 12px; color: #463f36; line-height: 1.55; margin: 0; }
+          .dock-loading { color: #a8a08f; }
+          .dock-error { color: #c0392b; }
+          .dock-term-chip {
+            display: inline-flex; font-size: 10.5px; font-weight: 700; color: #3d6f9c;
+            background: #eaf2fa; padding: 2px 8px; border-radius: 999px; margin-left: 5px;
+          }
+          .dock-answer { border-top: 1px solid #f1ece1; padding-top: 8px; }
+          .dock-ask-row { display: flex; gap: 8px; }
+          .dock-ask-input {
+            flex: 1; background: #f1ece1; border: none; border-radius: 999px;
+            padding: 8px 14px; font-size: 11.5px; color: #463f36; outline: none; font-family: inherit;
+          }
+          .dock-ask-input::placeholder { color: #a8a08f; }
+          .dock-ask-input:disabled { opacity: .6; }
+          .dock-ask-send {
+            width: 30px; height: 30px; border-radius: 50%; border: none; flex-shrink: 0;
+            background: #e08394; color: #fff; display: flex; align-items: center; justify-content: center;
+            font-size: 12px; cursor: pointer;
+          }
+          .dock-ask-send:disabled { opacity: .5; cursor: default; }
         `}</style>
       </div>
     );
