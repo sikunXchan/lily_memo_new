@@ -1598,18 +1598,9 @@ function LilyBubble({
           content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
           border-radius: 14px 0 0 14px; background: var(--skin-accent, var(--primary));
         }
-        :global(body[data-skin-rarity="R"]) .lily-bubble {
-          box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px color-mix(in srgb, var(--skin-accent) 28%, transparent);
-        }
         :global(body[data-skin-rarity="UR"]) .lily-bubble::before {
-          background: linear-gradient(180deg, #e254c2, #7c5cf0, #2fb4e8, #e254c2);
-          background-size: 100% 300%;
-          animation: skin-shimmer 3s linear infinite;
+          background: linear-gradient(180deg, #e254c2, #7c5cf0, #2fb4e8);
         }
-        :global(body[data-skin-rarity="UR"]) .lily-bubble {
-          box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px color-mix(in srgb, #7c5cf0 30%, transparent);
-        }
-        @keyframes skin-shimmer { 0% { background-position: 0 0%; } 100% { background-position: 0 300%; } }
         .inline-block-wrap { margin: 8px 0; }
         .inline-block-wrap:first-child { margin-top: 0; }
         .inline-block-wrap:last-child { margin-bottom: 0; }
