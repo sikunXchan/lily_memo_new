@@ -1890,6 +1890,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   const [loadedFromChatId, setLoadedFromChatId] = useState<number | null>(null);
   const [showToolbox, setShowToolbox] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [activeSkillId, setActiveSkillId] = useState<number | null>(null);
   // Practice context passed from PracticeScreen via page.tsx
   const [practiceCtxUI, setPracticeCtxUI] = useState<string | null>(null);
@@ -1984,12 +1985,21 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     };
     refreshKey();
     refreshEconomy();
+    try { setToolsCollapsed(localStorage.getItem('lily_chat_tools_collapsed') === '1'); } catch {}
     window.addEventListener('lily-lang-changed', refreshKey);
     window.addEventListener('lily-settings-changed', refreshEconomy);
     return () => {
       window.removeEventListener('lily-lang-changed', refreshKey);
       window.removeEventListener('lily-settings-changed', refreshEconomy);
     };
+  }, []);
+
+  const toggleToolsCollapsed = useCallback(() => {
+    setToolsCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('lily_chat_tools_collapsed', next ? '1' : '0'); } catch {}
+      return next;
+    });
   }, []);
 
   // Response mode is a single choice among the four toggles below — selecting
@@ -2720,6 +2730,9 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
   }, [isLoading, messages, allNotes, lilyAllNotes, lilyNoteIds, lilyThinking, lilyUltraThinking, lilyLegacy, activeMode, economy, apiKey, webSearch, activeSkill, selectResponseMode]);
 
   const lilyDefaultNoteId = lilyNoteIds[0];
+  const hasCollapsibleTools = skills.length > 0 || enabledTones.length > 0
+    || lilyAllNotes || lilyNoteIds.length > 0
+    || (getAppLang() !== 'en' && shortcuts.length > 0);
   const thinkingTicketLimit = getTicketLimit('thinking');
   const thinkingTicketsLeft = getTicketsLeft('thinking');
   const ultraTicketLimit = getTicketLimit('ultra');
@@ -3083,20 +3096,33 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           <Wrench size={12} />
           <span>{t('ツール')}</span>
         </button>
-        <span className="qa-label">{t('スキル')}</span>
-        {skills.map(sk => (
+        {!toolsCollapsed && (
+          <>
+            <span className="qa-label">{t('スキル')}</span>
+            {skills.map(sk => (
+              <button
+                key={sk.id}
+                className={`quick-chip skill-chip${activeSkillId === sk.id ? ' on' : ''}`}
+                onClick={() => setActiveSkillId(p => (p === sk.id ? null : sk.id!))}
+                title={sk.instructions.slice(0, 80)}
+              >
+                {sk.emoji} {sk.name}{sk.references.length > 0 ? ' 📎' : ''}{activeSkillId === sk.id ? ' ✓' : ''}
+              </button>
+            ))}
+          </>
+        )}
+        {hasCollapsibleTools && (
           <button
-            key={sk.id}
-            className={`quick-chip skill-chip${activeSkillId === sk.id ? ' on' : ''}`}
-            onClick={() => setActiveSkillId(p => (p === sk.id ? null : sk.id!))}
-            title={sk.instructions.slice(0, 80)}
+            className="qa-collapse-btn"
+            onClick={toggleToolsCollapsed}
+            title={toolsCollapsed ? t('ツールを展開') : t('ツールを畳む')}
           >
-            {sk.emoji} {sk.name}{sk.references.length > 0 ? ' 📎' : ''}{activeSkillId === sk.id ? ' ✓' : ''}
+            {toolsCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
           </button>
-        ))}
+        )}
       </div>
 
-      {enabledTones.length > 0 && (
+      {!toolsCollapsed && enabledTones.length > 0 && (
         <div className="quick-actions mode-row skill-row">
           <span className="qa-label">{t('トーン')}</span>
           {TONES.filter(mo => enabledTones.includes(mo.id)).map(mo => (
@@ -3113,7 +3139,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       )}
 
       {/* Notebook bar: NotebookLM-style generation actions when notes are selected */}
-      {(lilyAllNotes || lilyNoteIds.length > 0) && (
+      {!toolsCollapsed && (lilyAllNotes || lilyNoteIds.length > 0) && (
         <div className="quick-actions nb-bar">
           <span className="nb-bar-label">📓</span>
           {([
@@ -3131,7 +3157,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       )}
 
       {/* Shortcuts: one-tap canned prompts (user-editable). Hidden in EN mode or when none added. */}
-      {getAppLang() !== 'en' && shortcuts.length > 0 && (
+      {!toolsCollapsed && getAppLang() !== 'en' && shortcuts.length > 0 && (
         <div className="quick-actions">
           <Wand2 size={14} className="qa-wand" />
           {shortcuts.map(sc => (
@@ -3477,6 +3503,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         .skill-chip.on { background: var(--primary); color: #fff; border-color: var(--primary); }
         .qa-toolbox-btn { flex-shrink: 0; display: flex; align-items: center; gap: 4px; background: var(--background); border: 1px solid var(--primary); border-radius: 16px; padding: 5px 10px; font-size: 0.72rem; font-weight: 700; color: var(--primary); cursor: pointer; white-space: nowrap; }
         .qa-toolbox-btn:hover { background: var(--primary); color: #fff; }
+        .qa-collapse-btn { flex-shrink: 0; margin-left: auto; display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; background: transparent; border: 1px solid var(--border); border-radius: 50%; color: var(--fg-muted); cursor: pointer; }
+        .qa-collapse-btn:hover { border-color: var(--primary); color: var(--primary); }
         .nb-bar { border-top: 1.5px solid color-mix(in srgb, var(--primary) 25%, var(--border)); background: color-mix(in srgb, var(--primary) 5%, var(--accent)); }
         .nb-bar-label { flex-shrink: 0; font-size: 0.75rem; font-weight: 700; color: var(--fg-muted); }
         .nb-btn { flex-shrink: 0; background: var(--background); border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border)); border-radius: 16px; padding: 5px 11px; font-size: 0.73rem; font-weight: 600; color: var(--primary); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
