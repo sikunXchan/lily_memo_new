@@ -9,21 +9,16 @@ import {
   THEMES, DEFAULT_THEME_ID,
   FONT_OPTIONS, FONT_STORAGE_KEY, DEFAULT_FONT_ID,
   themeCssVars,
-  SKIN_UNLOCK_CODE, SKINS_STORAGE_KEY,
 } from '@/lib/themes';
 
 interface ThemeContextValue {
   fontId: string;
   setFontId: (id: string) => void;
-  skinsUnlocked: boolean;
-  unlockSkins: (code: string) => boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   fontId: DEFAULT_FONT_ID,
   setFontId: () => {},
-  skinsUnlocked: false,
-  unlockSkins: () => false,
 });
 
 function applyFont(fontId: string) {
@@ -49,7 +44,6 @@ function applyCreamTheme() {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [fontId, setFontIdState] = useState<string>(DEFAULT_FONT_ID);
-  const [skinsUnlocked, setSkinsUnlocked] = useState(false);
 
   useEffect(() => {
     let initialFont = DEFAULT_FONT_ID;
@@ -59,22 +53,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* localStorage unavailable */
     }
-    let unlocked = false;
-    try { unlocked = localStorage.getItem(SKINS_STORAGE_KEY) === '1'; } catch { /* unavailable */ }
     // Read persisted prefs only after mount so server and client render
     // the same default (avoids a hydration mismatch).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFontIdState(initialFont);
-    setSkinsUnlocked(unlocked);
     applyCreamTheme();
     applyFont(initialFont);
-  }, []);
-
-  const unlockSkins = useCallback((code: string): boolean => {
-    if (code.trim() !== SKIN_UNLOCK_CODE) return false;
-    setSkinsUnlocked(true);
-    try { localStorage.setItem(SKINS_STORAGE_KEY, '1'); } catch { /* unavailable */ }
-    return true;
   }, []);
 
   const setFontId = useCallback((id: string) => {
@@ -89,7 +73,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ fontId, setFontId, skinsUnlocked, unlockSkins }}>
+    <ThemeContext.Provider value={{ fontId, setFontId }}>
       {children}
     </ThemeContext.Provider>
   );

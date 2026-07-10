@@ -215,7 +215,9 @@ export const THEME_LIST = ['cream', 'paper', 'clean', 'night', 'starry', 'firewo
 // additionally carry a 期間限定 badge.
 export const PREMIUM_SKINS = new Set<string>(['starry', 'fireworks', 'flower', 'library']);
 export const SEASONAL_SKINS: Record<string, string> = { flower: '春 限定', fireworks: '夏 限定' };
-export const SKIN_UNLOCK_CODE = 'sikun0120493';
+// Legacy character-skin unlock flag — pre-gacha, unlocked every skin at once
+// via a single code. No longer settable, but still checked (lib/gacha.ts) so
+// anyone who already unlocked with it keeps full access.
 export const SKINS_STORAGE_KEY = 'lily-skins-unlocked';
 
 export function isPremiumSkin(id: string): boolean {

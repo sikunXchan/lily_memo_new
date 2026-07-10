@@ -79,7 +79,7 @@ const KEY_DEV_DAY = 'lily-plan-dev-day'; // 'YYYY-MM-DD' Developer was last unlo
 const KEY_DATE = 'lily-pts-date';
 const KEY_USED = 'lily-pts-used';
 
-function todayStr(): string {
+export function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
