@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { CHARACTER_SKINS, CHARACTER_SKIN_STORAGE_KEY, SKIN_BASE_PATH, AVATAR_FRAME_SCALE, type SkinRarity } from '@/lib/characterSkins';
+import { CHARACTER_SKINS, CHARACTER_SKIN_STORAGE_KEY, SKIN_BASE_PATH, AVATAR_FRAME_SCALE } from '@/lib/characterSkins';
 import { getOwnedSkinIds } from '@/lib/gacha';
 
 interface CharacterSkinContextValue {
@@ -24,10 +24,6 @@ interface CharacterSkinContextValue {
   ambientSrcs?: string[];
   // Resolved decorative avatar-frame-ring image path, or undefined.
   avatarFrameSrc?: string;
-  // Active skin's accent color / rarity, for CSS-driven chat theming
-  // (no bubble-decoration images — see AIChat.tsx's .lily-bubble/.user-bubble).
-  chatAccent?: string;
-  chatRarity?: SkinRarity;
 }
 
 const CharacterSkinContext = createContext<CharacterSkinContextValue>({
@@ -95,23 +91,18 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
     [activeSkin],
   );
 
-  // Expose the active skin as a CSS var + data attribute on <body> so any
-  // component's styled-jsx can reskin off it (chat bubbles, etc.) without
+  // Expose the active skin's accent as a CSS var on <body> so any component's
+  // styled-jsx can reskin off it (e.g. the Lily name-dot in chat) without
   // prop-drilling — mirrors ThemeContext's data-theme-id pattern.
   useEffect(() => {
     const body = document.body;
     if (activeSkin?.accent) body.style.setProperty('--skin-accent', activeSkin.accent);
     else body.style.removeProperty('--skin-accent');
-    if (activeSkin?.rarity) body.setAttribute('data-skin-rarity', activeSkin.rarity);
-    else body.removeAttribute('data-skin-rarity');
   }, [activeSkin]);
 
   return (
     <CharacterSkinContext.Provider
-      value={{
-        skinId, setSkinId, ownedSkinIds, refreshOwnedSkins, avatarSrc, backgroundSrc, homeBackgroundSrc, ambientSrcs, avatarFrameSrc,
-        chatAccent: activeSkin?.accent, chatRarity: activeSkin?.rarity,
-      }}
+      value={{ skinId, setSkinId, ownedSkinIds, refreshOwnedSkins, avatarSrc, backgroundSrc, homeBackgroundSrc, ambientSrcs, avatarFrameSrc }}
     >
       {children}
     </CharacterSkinContext.Provider>

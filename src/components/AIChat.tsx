@@ -1994,16 +1994,9 @@ function LilyBubble({
         .lily-name-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--skin-accent, var(--primary)); flex-shrink: 0; }
         .lily-bubble {
           position: relative; background: var(--card-bg, var(--surface, var(--background)));
-          border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px 12px 18px;
+          border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px;
           font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word;
           box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
-        }
-        .lily-bubble::before {
-          content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-          border-radius: 14px 0 0 14px; background: var(--skin-accent, var(--primary));
-        }
-        :global(body[data-skin-rarity="UR"]) .lily-bubble::before {
-          background: linear-gradient(180deg, #e254c2, #7c5cf0, #2fb4e8);
         }
         .inline-block-wrap { margin: 8px 0; }
         .inline-block-wrap:first-child { margin-top: 0; }
