@@ -80,6 +80,13 @@ interface AttachmentMeta {
   uploading?: boolean;        // true while async processing is in progress
 }
 
+// 'light' = casual bubble, no cards. 'medium' = casual bubble + inline term/gloss.
+// 'heavy' = full explanation-card template (see lib/gemini.ts's weight-tier prompt
+// section and the lily-explain-top/accordion/lily-step/lily-compare/lily-explain-bottom
+// block types below). Undefined = older saved messages predating tiering; falls
+// back to the plain bubble.
+type MessageWeight = 'light' | 'medium' | 'heavy';
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'lily';
@@ -92,11 +99,36 @@ interface ChatMessage {
   qaChecked?: Record<string, number[]>; // block.id → checked indices
   usage?: { prompt: number; cached: number; output: number; thoughts: number; total: number }; // temp token diagnostic
   billedTokens?: number; // actual tokens deducted from the daily budget (usage.total × mode multiplier)
+  weight?: MessageWeight;
+}
+
+interface LilyExplainTop {
+  map: string;
+  conclusion: string;
+  simple: string;
+  analogy?: { text: string; diff?: string };
+}
+
+interface LilyExplainBottom {
+  warn?: string;
+  ref?: string;
+  check: { question: string; answer: string };
+}
+
+interface LilyStepData {
+  title: string;
+  body: string;
+  simplified?: boolean;
+}
+
+interface LilyCompareData {
+  columns: [{ title: string; items: string[] }, { title: string; items: string[] }];
 }
 
 interface InsertableBlock {
   id: string;
-  type: 'mermaid' | 'chart' | 'qa' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'folder_create' | 'note_move' | 'table';
+  type: 'mermaid' | 'chart' | 'qa' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'folder_create' | 'note_move' | 'table'
+    | 'lily-explain-top' | 'lily-explain-bottom' | 'lily-accordion-open' | 'lily-accordion-close' | 'lily-step' | 'lily-compare';
   rawCode: string;
   previewLabel: string;
   fileName?: string;
@@ -354,9 +386,22 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
   textContent: string;
   blocks: InsertableBlock[];
   questions: ClarifyQuestion[];
+  weight?: MessageWeight;
 } {
   const blocks: InsertableBlock[] = [];
   const questions: ClarifyQuestion[] = [];
+
+  // Internal weight-tier tag (see gemini.ts's 【会話の重さと解説テンプレート】) — always
+  // the first thing Lily emits, never shown to the user. Strip it before any
+  // other parsing.
+  let weight: MessageWeight | undefined;
+  const WEIGHT_RE = /```lily-weight\s*([\s\S]*?)```/;
+  const weightMatch = text.match(WEIGHT_RE);
+  if (weightMatch) {
+    const val = weightMatch[1].trim().toLowerCase();
+    if (val === 'light' || val === 'medium' || val === 'heavy') weight = val;
+    text = text.replace(WEIGHT_RE, '');
+  }
 
   // Clarifying-question blocks first.
   const ASK_RE = /```ask\s*([\s\S]*?)```/g;
@@ -411,12 +456,52 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     }
   });
 
-  const FENCE_RE = /```(mermaid|chart|qa|geometry|memo_create|memo_overwrite|folder_create|note_move|table)([\s\S]*?)```/g;
+  const FENCE_RE = /```(mermaid|chart|qa|geometry|memo_create|memo_overwrite|folder_create|note_move|table|lily-explain-top|lily-explain-bottom|lily-accordion-open|lily-accordion-close|lily-step|lily-compare)([\s\S]*?)```/g;
   const textContent = work2.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
     if (type === 'mermaid') {
       blocks.push({ id, type: 'mermaid', rawCode: trimmed, previewLabel: detectMermaidLabel(trimmed) });
+      return blockMarker(id);
+    }
+    if (type === 'lily-explain-top') {
+      try {
+        const parsed = JSON.parse(trimmed) as LilyExplainTop;
+        if (!parsed.conclusion) throw new Error('missing conclusion');
+      } catch { return ''; }
+      blocks.push({ id, type: 'lily-explain-top', rawCode: trimmed, previewLabel: translate('解説') });
+      return blockMarker(id);
+    }
+    if (type === 'lily-explain-bottom') {
+      try {
+        const parsed = JSON.parse(trimmed) as LilyExplainBottom;
+        if (!parsed.check?.question) throw new Error('missing check');
+      } catch { return ''; }
+      blocks.push({ id, type: 'lily-explain-bottom', rawCode: trimmed, previewLabel: translate('理解確認') });
+      return blockMarker(id);
+    }
+    if (type === 'lily-accordion-open') {
+      blocks.push({ id, type: 'lily-accordion-open', rawCode: trimmed || translate('しくみを詳しく見る'), previewLabel: translate('しくみを詳しく見る') });
+      return blockMarker(id);
+    }
+    if (type === 'lily-accordion-close') {
+      blocks.push({ id, type: 'lily-accordion-close', rawCode: '', previewLabel: '' });
+      return blockMarker(id);
+    }
+    if (type === 'lily-step') {
+      try {
+        const parsed = JSON.parse(trimmed) as LilyStepData;
+        if (!parsed.title) throw new Error('missing title');
+      } catch { return ''; }
+      blocks.push({ id, type: 'lily-step', rawCode: trimmed, previewLabel: translate('ステップ') });
+      return blockMarker(id);
+    }
+    if (type === 'lily-compare') {
+      try {
+        const parsed = JSON.parse(trimmed) as LilyCompareData;
+        if (!Array.isArray(parsed.columns) || parsed.columns.length !== 2) throw new Error('bad columns');
+      } catch { return ''; }
+      blocks.push({ id, type: 'lily-compare', rawCode: trimmed, previewLabel: translate('比較') });
       return blockMarker(id);
     }
     if (type === 'chart') {
@@ -535,7 +620,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     .replace(/§§FENCE(\d+)§§/g, (_m, i: string) => fences[Number(i)] ?? '')
     .trim();
 
-  return { textContent: cleanText, blocks, questions };
+  return { textContent: cleanText, blocks, questions, weight };
 }
 
 const CHART_PALETTE = [
@@ -1402,6 +1487,309 @@ function stripBlockMarkers(text: string): string {
   return text.replace(LBLK_RE, '\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// 「重い」解説テンプレート — 結論→たとえ→しくみ(開閉式)→確認の8ブロック構成。
+// 見た目の設計は design_handoff_ai_explanation_cards（ハンドオフ資料）に準拠。
+// 色・角丸はハンドオフのhi-fi値をそのまま使用（アプリのテーマ変数には連動しない）。
+// ─────────────────────────────────────────────────────────────────────────
+
+function MapRow({ flow }: { flow: string }) {
+  const t = useT();
+  return (
+    <div className="lh-map-row">
+      <span className="lh-map-chip">🧭 {t('3分でわかる')}</span>
+      {flow && <span className="lh-map-chip">{flow}</span>}
+      <style jsx>{`
+        .lh-map-row { display: flex; gap: 6px; flex-wrap: wrap; }
+        .lh-map-chip { font-size: 10.5px; font-weight: 700; color: #8a7d6d; background: #f3ede0; padding: 4px 10px; border-radius: 999px; }
+      `}</style>
+    </div>
+  );
+}
+
+function ConclusionCard({ text }: { text: string }) {
+  const t = useT();
+  return (
+    <div className="lh-conclusion">
+      <div className="lbl">{t('結論')}</div>
+      <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
+      <style jsx>{`
+        .lh-conclusion { background: #fff; border: 1.5px solid #e08394; border-radius: 16px; padding: 14px 16px; }
+        .lbl { font-size: 10px; font-weight: 800; color: #c25c70; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+        .lh-prose { font-size: 14px; font-weight: 700; line-height: 1.65; color: #2c2620; }
+      `}</style>
+    </div>
+  );
+}
+
+function SimpleCard({ text }: { text: string }) {
+  const t = useT();
+  return (
+    <>
+      <div className="lh-sec-title">📝 {t('かんたん解説')}</div>
+      <div className="lh-card">
+        <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
+      </div>
+      <style jsx>{`
+        .lh-sec-title { font-size: 13.5px; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #2c2620; }
+        .lh-card { background: #fff; border-radius: 16px; padding: 15px 15px 13px; box-shadow: 0 2px 10px rgba(60,40,20,.07); }
+        .lh-prose { font-size: 12.5px; color: #463f36; line-height: 1.75; }
+      `}</style>
+    </>
+  );
+}
+
+function AnalogyCard({ text, diff }: { text: string; diff?: string }) {
+  const t = useT();
+  return (
+    <div className="lh-callout lh-analogy">
+      <div className="icon">🔗</div>
+      <div className="body">
+        <div className="lbl">{t('たとえるなら')}</div>
+        <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
+        {diff && <div className="diff">※{diff}</div>}
+      </div>
+      <style jsx>{`
+        .lh-callout { border-radius: 14px; padding: 12px 14px; display: flex; gap: 10px; }
+        .lh-analogy { background: #f3edfb; }
+        .icon { font-size: 16px; flex-shrink: 0; }
+        .lbl { font-size: 10.5px; font-weight: 800; color: #6d4aa8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+        .lh-prose { font-size: 12px; color: #40325c; line-height: 1.6; }
+        .diff { margin-top: 9px; padding-top: 9px; border-top: 1px dashed #d9c4ee; font-size: 11.5px; color: #6d4aa8; line-height: 1.6; }
+      `}</style>
+    </div>
+  );
+}
+
+function WarnCard({ text }: { text: string }) {
+  const t = useT();
+  return (
+    <div className="lh-callout lh-warn">
+      <div className="icon">⚠️</div>
+      <div className="body">
+        <div className="lbl">{t('よくある誤解')}</div>
+        <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
+      </div>
+      <style jsx>{`
+        .lh-callout { border-radius: 14px; padding: 12px 14px; display: flex; gap: 10px; }
+        .lh-warn { background: #fdf1e4; }
+        .icon { font-size: 16px; flex-shrink: 0; }
+        .lbl { font-size: 10.5px; font-weight: 800; color: #a3641a; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+        .lh-prose { font-size: 12px; color: #4a3a24; line-height: 1.6; }
+      `}</style>
+    </div>
+  );
+}
+
+function RefBox({ text }: { text: string }) {
+  const t = useT();
+  return (
+    <div className="lh-ref">
+      <div className="lbl">{t('参考・発展')}</div>
+      <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
+      <style jsx>{`
+        .lh-ref { border: 1px dashed #d8cbb3; border-radius: 12px; padding: 10px 13px; }
+        .lbl { font-size: 9.5px; font-weight: 800; color: #a08a72; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+        .lh-prose { font-size: 11px; color: #8a7d6d; line-height: 1.6; }
+      `}</style>
+    </div>
+  );
+}
+
+function CheckBox({ question, answer }: { question: string; answer: string }) {
+  const t = useT();
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="lh-check">
+      <div className="q">❓ {question}</div>
+      {revealed ? (
+        <div className="lh-prose lh-answer" dangerouslySetInnerHTML={{ __html: renderRich(answer) }} />
+      ) : (
+        <button type="button" className="reveal-btn" onClick={() => setRevealed(true)}>
+          💬 {t('自分の言葉で考えてから答えを見る')}
+        </button>
+      )}
+      <style jsx>{`
+        .lh-check { background: #2c2620; border-radius: 16px; padding: 14px 15px; }
+        .q { font-size: 12.5px; font-weight: 700; color: #f3ede0; margin: 0 0 10px; display: flex; gap: 6px; line-height: 1.5; }
+        .reveal-btn { font-size: 11px; font-weight: 700; color: #2c2620; background: #e0b8bf; padding: 6px 13px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; border: none; cursor: pointer; font-family: inherit; }
+        .lh-answer { font-size: 12px; color: #f3ede0; line-height: 1.7; background: rgba(255,255,255,0.08); border-radius: 10px; padding: 10px 12px; }
+      `}</style>
+    </div>
+  );
+}
+
+function StepCard({ index, title, body, simplified }: { index: number; title: string; body: string; simplified?: boolean }) {
+  const t = useT();
+  const color = index % 2 === 1 ? '#3d6f9c' : '#3c7a45';
+  return (
+    <div className="lh-step">
+      <div className="num" style={{ background: color }}>{index}</div>
+      <div className="body">
+        <h3>{title}{simplified && <span className="simplify-tag">{t('簡略化')}</span>}</h3>
+        <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(body) }} />
+      </div>
+      <style jsx>{`
+        .lh-step { display: flex; gap: 12px; align-items: flex-start; }
+        .num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 9px; color: #fff; font-weight: 800; font-size: 12.5px; display: flex; align-items: center; justify-content: center; }
+        .body { min-width: 0; flex: 1; }
+        .body h3 { font-size: 13px; font-weight: 800; margin: 0 0 4px; color: #2c2620; }
+        .lh-prose { font-size: 12px; color: #6b6357; line-height: 1.65; }
+        .simplify-tag { font-size: 9px; font-weight: 800; color: #a3781c; background: #faf1de; padding: 2px 6px; border-radius: 5px; margin-left: 5px; white-space: nowrap; vertical-align: middle; }
+      `}</style>
+    </div>
+  );
+}
+
+function CompareCard({ columns }: { columns: LilyCompareData['columns'] }) {
+  return (
+    <div className="lh-compare">
+      {columns.map((col, i) => (
+        <div className="col" key={i}>
+          <h4>{col.title}</h4>
+          <ul>{col.items.map((it, j) => <li key={j}>{it}</li>)}</ul>
+        </div>
+      ))}
+      <style jsx>{`
+        .lh-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .col { background: #faf7f2; border-radius: 12px; padding: 10px 12px; min-width: 0; }
+        .col h4 { font-size: 11.5px; font-weight: 800; margin: 0 0 6px; color: #c25c70; }
+        .col ul { margin: 0; padding-left: 15px; font-size: 11px; line-height: 1.7; color: #463f36; }
+      `}</style>
+    </div>
+  );
+}
+
+function Accordion({ title, children }: { title: string; children: React.ReactNode }) {
+  const t = useT();
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="lh-accordion">
+      <button type="button" className="lh-accordion-head" onClick={() => setOpen(o => !o)}>
+        <span className="ttl">🔬 {title}</span>
+        <span className="chev">{open ? `▲ ${t('開いています')}` : `▼ ${t('閉じています')}`}</span>
+      </button>
+      {open && <div className="lh-accordion-body">{children}</div>}
+      <style jsx>{`
+        .lh-accordion { background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 10px rgba(60,40,20,.07); }
+        .lh-accordion-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 15px; background: #faf7f2; border: none; cursor: pointer; font-family: inherit; text-align: left; }
+        .ttl { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #2c2620; }
+        .chev { font-size: 10.5px; color: #a08a72; font-weight: 700; flex-shrink: 0; }
+        .lh-accordion-body { padding: 14px 15px 15px; display: flex; flex-direction: column; gap: 12px; }
+      `}</style>
+    </div>
+  );
+}
+
+// Walks the flat inlineParts/blocks list and groups it into the fixed heavy
+// template: lily-explain-top decomposes into map/conclusion/simple/analogy;
+// everything between lily-accordion-open/close nests inside an <Accordion>
+// (including ordinary mermaid/chart/qa/table blocks, rendered via the same
+// renderBlock LilyBubble uses elsewhere); lily-explain-bottom decomposes into
+// warn/ref/check.
+function HeavyExplanation({
+  inlineParts, blockMap, renderBlock,
+}: {
+  inlineParts: Array<{ kind: 'text'; value: string } | { kind: 'block'; id: string }>;
+  blockMap: Map<string, InsertableBlock>;
+  renderBlock: (block: InsertableBlock) => React.ReactNode;
+}) {
+  const t = useT();
+  const nodes: React.ReactNode[] = [];
+  let accordionBuffer: React.ReactNode[] | null = null;
+  let accordionTitle = t('しくみを詳しく見る');
+  let stepIndex = 0;
+  let key = 0;
+
+  const pushNode = (node: React.ReactNode) => {
+    if (accordionBuffer) accordionBuffer.push(node);
+    else nodes.push(node);
+  };
+
+  for (const part of inlineParts) {
+    if (part.kind === 'text') {
+      const trimmed = part.value.trim();
+      if (!trimmed) continue;
+      pushNode(
+        <div key={`t-${key++}`} className="lh-loose-text lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(trimmed) }} />
+      );
+      continue;
+    }
+    const block = blockMap.get(part.id);
+    if (!block) continue;
+
+    if (block.type === 'lily-explain-top') {
+      let data: LilyExplainTop | null = null;
+      try { data = JSON.parse(block.rawCode) as LilyExplainTop; } catch { /* skip malformed block */ }
+      if (!data) continue;
+      pushNode(<MapRow key={block.id} flow={data.map} />);
+      pushNode(<ConclusionCard key={`${block.id}-c`} text={data.conclusion} />);
+      pushNode(<SimpleCard key={`${block.id}-s`} text={data.simple} />);
+      if (data.analogy?.text) pushNode(<AnalogyCard key={`${block.id}-a`} text={data.analogy.text} diff={data.analogy.diff} />);
+      continue;
+    }
+    if (block.type === 'lily-explain-bottom') {
+      let data: LilyExplainBottom | null = null;
+      try { data = JSON.parse(block.rawCode) as LilyExplainBottom; } catch { /* skip malformed block */ }
+      if (!data) continue;
+      if (data.warn) pushNode(<WarnCard key={`${block.id}-w`} text={data.warn} />);
+      if (data.ref) pushNode(<RefBox key={`${block.id}-r`} text={data.ref} />);
+      if (data.check?.question) pushNode(<CheckBox key={`${block.id}-q`} question={data.check.question} answer={data.check.answer} />);
+      continue;
+    }
+    if (block.type === 'lily-accordion-open') {
+      accordionBuffer = [];
+      accordionTitle = block.rawCode || t('しくみを詳しく見る');
+      stepIndex = 0;
+      continue;
+    }
+    if (block.type === 'lily-accordion-close') {
+      if (accordionBuffer) nodes.push(<Accordion key={`acc-${key++}`} title={accordionTitle}>{accordionBuffer}</Accordion>);
+      accordionBuffer = null;
+      continue;
+    }
+    if (block.type === 'lily-step') {
+      let data: LilyStepData | null = null;
+      try { data = JSON.parse(block.rawCode) as LilyStepData; } catch { /* skip malformed block */ }
+      if (!data) continue;
+      stepIndex += 1;
+      pushNode(<StepCard key={block.id} index={stepIndex} title={data.title} body={data.body} simplified={data.simplified} />);
+      continue;
+    }
+    if (block.type === 'lily-compare') {
+      let data: LilyCompareData | null = null;
+      try { data = JSON.parse(block.rawCode) as LilyCompareData; } catch { /* skip malformed block */ }
+      if (!data) continue;
+      pushNode(<CompareCard key={block.id} columns={data.columns} />);
+      continue;
+    }
+    // Any other block type (mermaid/chart/geometry/qa/table/...) — render via
+    // the normal insertable-block pipeline, wherever it falls in the stream.
+    pushNode(<div key={block.id} className="lh-embedded-block">{renderBlock(block)}</div>);
+  }
+  // Defensive: an accordion opened but never closed (parse edge case) still renders.
+  if (accordionBuffer) nodes.push(<Accordion key={`acc-${key++}`} title={accordionTitle}>{accordionBuffer}</Accordion>);
+
+  return (
+    <div className="lh-stack">
+      {nodes}
+      <style jsx global>{`
+        .lh-prose p { margin: 0 0 0.5em; }
+        .lh-prose p:last-child { margin-bottom: 0; }
+        .lh-prose strong { font-weight: 800; }
+        .lh-prose em { font-style: italic; }
+        .lh-prose .rt-term { font-weight: 800; color: #3d6f9c; }
+        .lh-prose .rt-gloss { color: #8a7d6d; font-weight: 500; }
+        .lh-prose code.rt-code { background: rgba(0,0,0,.06); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
+      `}</style>
+      <style jsx>{`
+        .lh-stack { display: flex; flex-direction: column; gap: 12px; }
+        .lh-loose-text { font-size: 12.5px; line-height: 1.75; color: #463f36; }
+      `}</style>
+    </div>
+  );
+}
+
 function LilyBubble({
   message, allNotes, selectedNoteId, model, onNoteCreated, onRegenerate, onQaCheck,
 }: {
@@ -1440,9 +1828,15 @@ function LilyBubble({
       }
     });
   }
-  const orphanBlocks = allBlocks.filter(b => !consumed.has(b.id));
+  // The heavy explanation template owns rendering of its own block types —
+  // never let them fall through to the generic orphan-block list.
+  const HEAVY_BLOCK_TYPES = new Set<InsertableBlock['type']>([
+    'lily-explain-top', 'lily-explain-bottom', 'lily-accordion-open', 'lily-accordion-close', 'lily-step', 'lily-compare',
+  ]);
+  const orphanBlocks = allBlocks.filter(b => !consumed.has(b.id) && !HEAVY_BLOCK_TYPES.has(b.type));
   const fileBlocks = allBlocks.filter(b => b.type === 'file');
   const copyText = stripBlockMarkers(message.text);
+  const isHeavy = message.weight === 'heavy' && allBlocks.some(b => b.type === 'lily-explain-top');
 
   // Per-code-block and per-section copy. The rich text is injected as raw HTML,
   // so we use event delegation on the bubble. A `.code-copy-btn` copies its
@@ -1511,28 +1905,36 @@ function LilyBubble({
     );
 
   return (
-    <div className="lily-bubble-row">
-      <div className="lily-avatar">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
-      </div>
-      <div className="lily-bubble-wrap">
-        <div className="lily-name-row"><span className="lily-name-dot" />Lily</div>
-        <div className="lily-bubble" onClick={handleBubbleClick}>
-          {inlineParts.map((p, i) =>
-            p.kind === 'text' ? (
-              <div
-                key={`t-${i}`}
-                className="rt-body"
-                dangerouslySetInnerHTML={{ __html: renderRich(p.value) }}
-              />
-            ) : (
-              <div key={p.id} className="inline-block-wrap">
-                {renderBlock(blockMap.get(p.id)!)}
-              </div>
-            )
-          )}
+    <div className={isHeavy ? 'lily-heavy-row' : 'lily-bubble-row'}>
+      {!isHeavy && (
+        <div className="lily-avatar">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
         </div>
+      )}
+      <div className={isHeavy ? 'lily-heavy-wrap' : 'lily-bubble-wrap'} onClick={handleBubbleClick}>
+        {isHeavy ? (
+          <HeavyExplanation inlineParts={inlineParts} blockMap={blockMap} renderBlock={renderBlock} />
+        ) : (
+          <>
+            <div className="lily-name-row"><span className="lily-name-dot" />Lily</div>
+            <div className="lily-bubble">
+              {inlineParts.map((p, i) =>
+                p.kind === 'text' ? (
+                  <div
+                    key={`t-${i}`}
+                    className="rt-body"
+                    dangerouslySetInnerHTML={{ __html: renderRich(p.value) }}
+                  />
+                ) : (
+                  <div key={p.id} className="inline-block-wrap">
+                    {renderBlock(blockMap.get(p.id)!)}
+                  </div>
+                )
+              )}
+            </div>
+          </>
+        )}
         {message.questions && message.questions.length > 0 && (
           <div className="ask-asked-hint">{t('❓ {n}件の質問をしたよ', { n: message.questions.length })}</div>
         )}
@@ -1583,9 +1985,11 @@ function LilyBubble({
       </div>
       <style jsx>{`
         .lily-bubble-row { display: flex; align-items: flex-start; gap: 10px; align-self: flex-start; max-width: 85%; }
+        .lily-heavy-row { align-self: stretch; width: 100%; }
         .lily-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--accent); border: 2px solid var(--border); }
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
+        .lily-heavy-wrap { width: 100%; }
         .lily-name-row { display: flex; align-items: center; gap: 6px; margin: 0 0 4px 2px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; color: var(--fg-muted, #888); }
         .lily-name-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--skin-accent, var(--primary)); flex-shrink: 0; }
         .lily-bubble {
@@ -1626,6 +2030,8 @@ function LilyBubble({
         .rt-body :global(li) { line-height: 1.7; }
         .rt-body :global(strong) { font-weight: 800; color: color-mix(in srgb, var(--primary) 65%, var(--foreground)); }
         .rt-body :global(em) { font-style: italic; opacity: 0.9; }
+        .rt-body :global(.rt-term) { font-weight: 800; color: #3d6f9c; }
+        .rt-body :global(.rt-gloss) { color: #8a7d6d; font-weight: 500; }
         .rt-body :global(del) { text-decoration: line-through; opacity: 0.55; }
         .rt-body :global(a) { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; transition: opacity 0.12s; }
         .rt-body :global(a:hover) { opacity: 0.72; }
@@ -2492,7 +2898,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           temperature: accuracy ? 0.35 : undefined,
         });
       }
-      const { textContent, blocks, questions } = parseAIResponse(aiText, true);
+      const { textContent, blocks, questions, weight } = parseAIResponse(aiText, true);
       const capturedThinking = pendingThinkingRef.current;
       pendingThinkingRef.current = '';
 
@@ -2510,6 +2916,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         ),
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
+        weight,
         questions: questions.length > 0 ? questions : undefined,
         thinking: capturedThinking || undefined,
         usage: finalUsage ?? undefined,
@@ -2693,7 +3100,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         });
       }
 
-      const { textContent, blocks, questions } = parseAIResponse(aiText, true);
+      const { textContent, blocks, questions, weight } = parseAIResponse(aiText, true);
       const capturedThinking = pendingThinkingRef.current;
       pendingThinkingRef.current = '';
 
@@ -2707,6 +3114,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         text: textContent || (questions.length > 0 ? `${questions.map(q => q.question).join('\n')}\n\n${t('下のフォームから回答してください')}` : '...'),
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
+        weight,
         questions: questions.length > 0 ? questions : undefined,
         thinking: capturedThinking || undefined,
         usage: regenUsage ?? undefined,

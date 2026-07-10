@@ -208,6 +208,12 @@ export function renderRich(src: string): string {
   s = s.replace(/==([^=\n]+)==/g, (_m, t: string) =>
     stashInline(`<mark class="rt-mark">${t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</mark>`));
 
+  // 3b. Term / gloss highlighting for casual (light/medium) replies:
+  // {{t:用語}} → bold term, {{g:補足}} → muted inline gloss.
+  const escHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  s = s.replace(/\{\{t:([^{}\n]+)\}\}/g, (_m, t: string) => stashInline(`<span class="rt-term">${escHtml(t)}</span>`));
+  s = s.replace(/\{\{g:([^{}\n]+)\}\}/g, (_m, t: string) => stashInline(`<span class="rt-gloss">${escHtml(t)}</span>`));
+
   // 4. Block math: $$...$$ and \[...\]
   s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_m, t: string) => stashBlock(renderMath(t.trim(), true)));
   s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_m, t: string) => stashBlock(renderMath(t.trim(), true)));
