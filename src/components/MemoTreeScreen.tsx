@@ -260,6 +260,12 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
           border-radius: 15px; box-shadow: 0 3px 14px rgba(30,35,25,.1);
           overflow: hidden;
+          /* .mt-scroll is a column flex container, so without this a card
+             with many notes (its content taller than the scroll viewport)
+             gets flex-shrunk to fit instead of the list scrolling — the
+             overflow:hidden above then silently clips the bottom rows
+             (including "メモを追加") instead of them ever appearing. */
+          flex-shrink: 0;
         }
         .mt-folder-row {
           display: flex; align-items: center; gap: 8px;
@@ -300,6 +306,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
           display: inline-block; padding: 5px 11px; border-radius: 999px;
           align-self: flex-start; margin-top: 2px;
+          flex-shrink: 0;
         }
         .mt-loose-row {
           display: flex; align-items: center; gap: 10px;
@@ -309,6 +316,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           border: none; cursor: pointer;
           border-radius: 13px; text-align: left; font-family: inherit;
           box-shadow: 0 2px 10px rgba(30,35,25,.08);
+          flex-shrink: 0;
         }
         .mt-loose-row:active { background: rgba(255,253,246,.7); }
         .mt-empty {

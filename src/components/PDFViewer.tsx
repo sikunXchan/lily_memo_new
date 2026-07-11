@@ -4,15 +4,15 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X, Upload, FileText, Link as LinkIcon, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
-  Play, Pause, RotateCcw, RotateCw, Highlighter, Trash2,
+  Play, Pause, RotateCcw, RotateCw,
   Image as ImageIcon, Plus, Maximize2, Minimize2,
-  Minus, MessageSquare, ChevronDown, ChevronUp, FileDown, Home,
+  FileDown, Home,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { registerPdfProvider, registerPdfAnnotator, type SikunAnnotation } from '@/lib/pdfBridge';
+import { registerPdfProvider } from '@/lib/pdfBridge';
 import { pdfPagesToMarkdown } from '@/lib/pdfToMarkdown';
-import { summarizePdfPage, askAboutPdfPage } from '@/lib/pdfPageSummary';
+import { summarizePdfPage } from '@/lib/pdfPageSummary';
 import { downloadTextFile } from '@/lib/fileGen';
 import { db, newSyncId } from '@/lib/db';
 import { useT } from '@/lib/i18n';
@@ -27,36 +27,7 @@ const MIN_SCALE = 0.5;
 const MAX_SCALE = 2.5;
 const DEFAULT_SCALE = 1.5;
 const ZOOM_BTN_STEP = 1.25; // +/- button multiplier
-const HL_COLORS = ['#ffeb3b80', '#86efac80', '#fda4af80', '#93c5fd80'];
-const PEN_COLORS = ['#ef4444', '#1d4ed8', '#16a34a', '#f97316', '#7c3aed', '#000000'];
-const PEN_WIDTHS = [1.5, 3, 6]; // PDF units
 const MAX_IMG_DIM = 2048;
-
-type HighlightAnn = {
-  id: string; type: 'highlight';
-  x: number; y: number; w: number; h: number; color: string;
-};
-type PenAnn = {
-  id: string; type: 'pen';
-  points: Array<{ x: number; y: number }>; color: string; lineWidth: number;
-};
-type LineAnn = {
-  id: string; type: 'line';
-  x1: number; y1: number; x2: number; y2: number;
-  color: string; lineWidth: number;
-};
-// TextAnn coordinates are stored in "logical CSS px at scale=1.0"
-type TextAnn = {
-  id: string; type: 'text';
-  x: number; y: number; text: string; color: string;
-};
-type MaskAnn = {
-  id: string; type: 'mask';
-  x: number; y: number; w: number; h: number;
-  revealed: boolean;
-};
-type AnnotationItem = HighlightAnn | PenAnn | LineAnn | TextAnn | MaskAnn;
-type AnnMode = 'none' | 'highlight' | 'pen' | 'line' | 'text' | 'mask';
 
 // ---- PDF builder from JPEG images ----
 function buildPDFBlob(pages: Array<{ jpegBytes: Uint8Array; w: number; h: number }>): Blob {
@@ -148,19 +119,6 @@ async function imagesToPDFUrl(files: File[], rotations: number[] = []): Promise<
   return URL.createObjectURL(buildPDFBlob(pages));
 }
 
-// ---- Smooth curve drawing helper ----
-function drawSmoothPath(ctx: CanvasRenderingContext2D, pts: Array<{x:number;y:number}>, sc: number) {
-  if (pts.length < 2) return;
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x * sc, pts[0].y * sc);
-  for (let i = 1; i < pts.length - 1; i++) {
-    const mx = ((pts[i].x + pts[i+1].x) / 2) * sc;
-    const my = ((pts[i].y + pts[i+1].y) / 2) * sc;
-    ctx.quadraticCurveTo(pts[i].x * sc, pts[i].y * sc, mx, my);
-  }
-  ctx.lineTo(pts[pts.length-1].x * sc, pts[pts.length-1].y * sc);
-}
-
 // ---- Timer beep ----
 function playBeep() {
   try {
@@ -206,23 +164,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const [timerInput, setTimerInput] = useState(25);
   const [timerAlert, setTimerAlert] = useState(false);
 
-  // Annotations
-  const [annotationMode, setAnnotationMode] = useState<AnnMode>('none');
-  const [hlColorIdx, setHlColorIdx] = useState(0);
-  const [penColorIdx, setPenColorIdx] = useState(5); // black
-  const [penWidthIdx, setPenWidthIdx] = useState(1); // medium
-  const [annotations, setAnnotations] = useState<Record<number, AnnotationItem[]>>({});
-  const [overlayVersion, setOverlayVersion] = useState(0);
-  // Text annotation input
-  const [textInputPos, setTextInputPos] = useState<{ x: number; y: number; screenX: number; screenY: number } | null>(null);
-  const [textInputValue, setTextInputValue] = useState('');
-  const [showComments, setShowComments] = useState(false);
-
-  // Sikun AI annotations (keyed by page, separate from user annotations)
-  const [sikunAnnotations, setSikunAnnotations] = useState<Record<number, SikunAnnotation[]>>({});
-  const sikunAnnotationsRef = useRef<Record<number, SikunAnnotation[]>>({});
-  sikunAnnotationsRef.current = sikunAnnotations;
-
   // App-level fullscreen (hides the top bar to maximize canvas area)
   const [isAppFullscreen, setIsAppFullscreen] = useState(false);
 
@@ -242,52 +183,43 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   // closed/replaced PDF can't surface its (now irrelevant) result.
   const mdRunIdRef = useRef(0);
 
-  // Lily dock — auto-summary of the currently shown page + ad-hoc Q&A.
+  // Lily dock — manual summary of the currently shown page (button-triggered;
+  // no auto-fetch and no free-text Q&A here, that's what the floating sikun
+  // assistant is for).
   const [dockSummary, setDockSummary] = useState('');
   const [dockTerms, setDockTerms] = useState<string[]>([]);
   const [dockLoading, setDockLoading] = useState(false);
   const [dockError, setDockError] = useState('');
-  const [dockQuestion, setDockQuestion] = useState('');
-  const [dockAnswer, setDockAnswer] = useState('');
-  const [dockAsking, setDockAsking] = useState(false);
-  // Bumped on every page change so a slow summary/answer for a page the user
-  // already left can't overwrite the dock with stale content.
+  // Bumped on every page change so a slow summary for a page the user already
+  // left can't overwrite the dock with stale content.
   const dockRunIdRef = useRef(0);
 
   // Canvas & DOM refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
   pdfDocRef.current = pdfDoc;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const blobUrlRef = useRef('');
-  const drawingRef = useRef<{ x: number; y: number } | null>(null);
-  const currentPenPathRef = useRef<Array<{ x: number; y: number }>>([]);
   const photoThumbsRef = useRef<string[]>([]);
   photoThumbsRef.current = photoThumbs;
-  // Two-finger pinch-to-zoom (viewing only — disabled while an annotation
-  // tool is active so it doesn't fight with drawing pointer capture).
+  // Two-finger pinch-to-zoom (viewing only).
+  const pdfCanvasAreaRef = useRef<HTMLDivElement>(null);
   const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStartRef = useRef<{ dist: number; scale: number } | null>(null);
+  // Where on the page (as a fraction of the canvas box) the pinch grabbed,
+  // and the latest on-screen midpoint of the two fingers — used to keep that
+  // page point fixed under the fingers as the canvas is re-rendered at the
+  // new scale, instead of drifting toward the flex-centered layout origin.
+  const pinchAnchorRef = useRef<{ fracX: number; fracY: number } | null>(null);
+  const pinchMidRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Stable refs for overlay drawing callbacks
-  const annotationsRef = useRef(annotations);
   const scaleRef = useRef(DEFAULT_SCALE);
   const currentPageRef = useRef(1);
-  const annotationModeRef = useRef<AnnMode>('none');
-  const hlColorRef = useRef(HL_COLORS[0]);
-  const penColorRef = useRef(PEN_COLORS[5]);
-  const penWidthRef = useRef(PEN_WIDTHS[1]);
 
-  annotationsRef.current = annotations;
   scaleRef.current = scale;
   currentPageRef.current = currentPage;
-  annotationModeRef.current = annotationMode;
-  hlColorRef.current = HL_COLORS[hlColorIdx];
-  penColorRef.current = PEN_COLORS[penColorIdx];
-  penWidthRef.current = PEN_WIDTHS[penWidthIdx];
   const hasPDF = pdfDoc !== null;
 
   // Re-encodes the already-rendered on-screen canvas as a downscaled JPEG —
@@ -323,11 +255,20 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     Math.hypot(a.x - b.x, a.y - b.y);
 
   const handleWrapperPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (annotationModeRef.current !== 'none') return; // let drawing tools own the gesture
     pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchPointersRef.current.size === 2) {
       const [a, b] = [...pinchPointersRef.current.values()];
       pinchStartRef.current = { dist: pinchDist(a, b) || 1, scale: scaleRef.current };
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      pinchMidRef.current = mid;
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const r = canvas.getBoundingClientRect();
+        pinchAnchorRef.current = {
+          fracX: r.width > 0 ? (mid.x - r.left) / r.width : 0.5,
+          fracY: r.height > 0 ? (mid.y - r.top) / r.height : 0.5,
+        };
+      }
     }
   };
   const handleWrapperPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -336,12 +277,17 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     const pts = [...pinchPointersRef.current.values()];
     if (pts.length === 2 && pinchStartRef.current) {
       const d = pinchDist(pts[0], pts[1]);
+      pinchMidRef.current = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       setScale(clampScale(pinchStartRef.current.scale * (d / pinchStartRef.current.dist)));
     }
   };
   const endWrapperPointer = (e: React.PointerEvent<HTMLDivElement>) => {
     pinchPointersRef.current.delete(e.pointerId);
-    if (pinchPointersRef.current.size < 2) pinchStartRef.current = null;
+    if (pinchPointersRef.current.size < 2) {
+      pinchStartRef.current = null;
+      pinchAnchorRef.current = null;
+      pinchMidRef.current = null;
+    }
   };
 
   // ---- PDF loading ----
@@ -352,11 +298,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     setCurrentPage(1);
     setTotalPages(0);
     setOpenUrl(originalUrl);
-    // Load persisted annotations (includes masks) for this URL
-    try {
-      const saved = localStorage.getItem(`lily-pdf-ann-${originalUrl}`);
-      setAnnotations(saved ? JSON.parse(saved) : {});
-    } catch { setAnnotations({}); }
     if (renderTaskRef.current) { renderTaskRef.current.cancel(); renderTaskRef.current = null; }
     try {
       const doc = await pdfjs.getDocument(url).promise;
@@ -393,8 +334,7 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     renderTaskRef.current = null;
     setPdfDoc(null); setCurrentPage(1); setTotalPages(0);
     setError(''); setIsLoading(false); setTimerRunning(false);
-    setOpenUrl(''); setAnnotations({}); setAnnotationMode('none');
-    setTextInputPos(null); setShowComments(false); setSikunAnnotations({});
+    setOpenUrl('');
     mdRunIdRef.current++;
     setMdState('idle'); setMdProgress(''); setMdResult(''); setMdError(''); setMdSaved(false);
   };
@@ -475,130 +415,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     setMdState('idle'); setMdProgress(''); setMdResult(''); setMdError(''); setMdSaved(false);
   };
 
-  // ---- Overlay drawing ----
-  const drawOverlay = useCallback(() => {
-    const overlay = overlayCanvasRef.current;
-    const canvas = canvasRef.current;
-    if (!overlay || !canvas || canvas.width === 0) return;
-
-    overlay.width = canvas.width;
-    overlay.height = canvas.height;
-    const ctx = overlay.getContext('2d')!;
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-    const sc = scaleRef.current;
-    const page = currentPageRef.current;
-    const anns = annotationsRef.current[page] || [];
-
-    for (const ann of anns) {
-      if (ann.type === 'mask') {
-        if (ann.revealed) {
-          ctx.fillStyle = 'rgba(200,0,0,0.12)';
-          ctx.fillRect(ann.x * sc, ann.y * sc, ann.w * sc, ann.h * sc);
-          ctx.strokeStyle = 'rgba(200,0,0,0.55)';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(ann.x * sc + 1, ann.y * sc + 1, ann.w * sc - 2, ann.h * sc - 2);
-        } else {
-          ctx.fillStyle = 'rgba(175,0,0,0.9)';
-          ctx.fillRect(ann.x * sc, ann.y * sc, ann.w * sc, ann.h * sc);
-        }
-      } else if (ann.type === 'highlight') {
-        ctx.fillStyle = ann.color;
-        ctx.fillRect(ann.x * sc, ann.y * sc, ann.w * sc, ann.h * sc);
-      } else if (ann.type === 'pen') {
-        if (ann.points.length < 2) continue;
-        drawSmoothPath(ctx, ann.points, sc);
-        ctx.strokeStyle = ann.color;
-        ctx.lineWidth = ann.lineWidth * sc;
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        ctx.stroke();
-      } else if (ann.type === 'line') {
-        ctx.beginPath();
-        ctx.moveTo(ann.x1 * sc, ann.y1 * sc);
-        ctx.lineTo(ann.x2 * sc, ann.y2 * sc);
-        ctx.strokeStyle = ann.color;
-        ctx.lineWidth = ann.lineWidth * sc;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-      }
-      // 'text' type is rendered as HTML overlay, not on canvas
-    }
-
-    // ── Sikun AI annotations ──────────────────────────────────────────────────
-    const sikunAnns = sikunAnnotationsRef.current[currentPageRef.current] || [];
-    const W = overlay.width;
-    const H = overlay.height;
-    const INDIGO = '#6366f1';
-    const INDIGO_HL = 'rgba(99,102,241,0.28)';
-
-    for (const ann of sikunAnns) {
-      const color = ann.color || INDIGO;
-      const x0 = ann.x0 * W;
-      const y0 = ann.y0 * H;
-      const x1 = (ann.x1 ?? ann.x0) * W;
-      const y1 = (ann.y1 ?? ann.y0) * H;
-
-      if (ann.type === 'highlight') {
-        ctx.fillStyle = ann.color ? ann.color + '55' : INDIGO_HL;
-        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-        // thin border so the box is visible
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-      } else if (ann.type === 'underline') {
-        ctx.beginPath();
-        ctx.moveTo(x0, y1);
-        ctx.lineTo(x1, y1);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-      } else if (ann.type === 'arrow') {
-        const dx = x1 - x0; const dy = y1 - y0;
-        const angle = Math.atan2(dy, dx);
-        const headLen = 14;
-        ctx.beginPath();
-        ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x1 - headLen * Math.cos(angle - 0.42), y1 - headLen * Math.sin(angle - 0.42));
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x1 - headLen * Math.cos(angle + 0.42), y1 - headLen * Math.sin(angle + 0.42));
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.stroke();
-      } else if (ann.type === 'text') {
-        // Draw a label bubble at (x0, y0)
-        const label = ann.text || '';
-        const fontSize = Math.max(12, Math.round(H * 0.022));
-        ctx.font = `700 ${fontSize}px -apple-system, sans-serif`;
-        const tw = ctx.measureText(label).width;
-        const padX = 8; const padY = 5;
-        const bw = tw + padX * 2; const bh = fontSize + padY * 2;
-        // position bubble so it doesn't fall off edges
-        const bx = Math.min(x0, W - bw - 4);
-        const by = Math.max(4, y0 - bh - 6);
-        // background
-        ctx.fillStyle = INDIGO;
-        ctx.beginPath();
-        ctx.roundRect?.(bx, by, bw, bh, 6);
-        ctx.fill();
-        // text
-        ctx.fillStyle = '#fff';
-        ctx.fillText(label, bx + padX, by + padY + fontSize * 0.82);
-        // tail triangle
-        ctx.beginPath();
-        ctx.moveTo(Math.min(x0 + 4, W - 4), by + bh);
-        ctx.lineTo(Math.min(x0 + 14, W - 4), by + bh);
-        ctx.lineTo(Math.min(x0 + 4, W - 4), by + bh + 8);
-        ctx.closePath();
-        ctx.fillStyle = INDIGO;
-        ctx.fill();
-      }
-    }
-  }, []);
-
   // ---- Page rendering ----
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
@@ -617,11 +433,23 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
         canvas.width = physicalViewport.width;
         canvas.height = physicalViewport.height;
         canvas.style.width = `${logicalViewport.width}px`;
+        // Keep the pinch-grabbed page point under the fingers instead of
+        // letting it drift toward the flex-centered layout origin as the
+        // canvas resizes to the new scale.
+        const anchor = pinchAnchorRef.current;
+        const mid = pinchMidRef.current;
+        const container = pdfCanvasAreaRef.current;
+        if (anchor && mid && container) {
+          const r = canvas.getBoundingClientRect();
+          const anchorClientX = r.left + anchor.fracX * r.width;
+          const anchorClientY = r.top + anchor.fracY * r.height;
+          container.scrollLeft += anchorClientX - mid.x;
+          container.scrollTop += anchorClientY - mid.y;
+        }
         const task = page.render({ canvasContext: ctx, viewport: physicalViewport });
         renderTaskRef.current = task;
         await task.promise;
         renderTaskRef.current = null;
-        if (!cancelled) setOverlayVersion(v => v + 1);
       } catch (e) {
         if ((e as Error)?.name !== 'RenderingCancelledException') console.error('render error:', e);
       }
@@ -664,73 +492,42 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
       return { images, total, truncated: n < total };
     };
 
-    const annotator = (anns: SikunAnnotation[], page: number) => {
-      setSikunAnnotations(prev => ({
-        ...prev,
-        [page]: [...(prev[page] || []), ...anns],
-      }));
-      setOverlayVersion(v => v + 1);
-    };
-
     registerPdfProvider(getCurrentPage, getAllPages);
-    registerPdfAnnotator(annotator);
-    return () => { registerPdfProvider(null); registerPdfAnnotator(null); };
+    return () => { registerPdfProvider(null); };
   }, [hasPDF, totalPages, capturePageImage]);
 
-  // Lily dock — auto-summarize the page shortly after it settles (debounced
-  // so flipping through pages quickly doesn't fire a request per page).
+  // Lily dock — reset any summary from the previous page so stale content
+  // can't linger; the actual summarize call is manual (button-triggered),
+  // see handleSummarizeDock.
   useEffect(() => {
-    setDockAnswer('');
-    setDockQuestion('');
+    setDockSummary('');
+    setDockTerms([]);
     setDockError('');
-    if (!hasPDF) { setDockSummary(''); setDockTerms([]); return; }
-    const runId = ++dockRunIdRef.current;
-    setDockLoading(true);
-    const timer = setTimeout(() => {
-      const image = capturePageImage();
-      if (!image) { setDockLoading(false); return; }
-      summarizePdfPage(image)
-        .then(({ summary, terms }) => {
-          if (dockRunIdRef.current !== runId) return;
-          setDockSummary(summary);
-          setDockTerms(terms);
-        })
-        .catch((e: unknown) => {
-          if (dockRunIdRef.current !== runId) return;
-          setDockError(e instanceof Error ? e.message : 'ページの要約に失敗しちゃった');
-        })
-        .finally(() => {
-          if (dockRunIdRef.current === runId) setDockLoading(false);
-        });
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [hasPDF, currentPage, capturePageImage]);
+    dockRunIdRef.current++;
+    setDockLoading(false);
+  }, [hasPDF, currentPage]);
 
-  const handleAskDock = useCallback(() => {
-    const question = dockQuestion.trim();
-    if (!question || dockAsking) return;
+  const handleSummarizeDock = useCallback(() => {
+    if (dockLoading) return;
     const image = capturePageImage();
     if (!image) return;
     const runId = ++dockRunIdRef.current;
-    setDockAsking(true);
+    setDockLoading(true);
     setDockError('');
-    askAboutPdfPage(image, question)
-      .then(answer => {
+    summarizePdfPage(image)
+      .then(({ summary, terms }) => {
         if (dockRunIdRef.current !== runId) return;
-        setDockAnswer(answer);
-        setDockQuestion('');
+        setDockSummary(summary);
+        setDockTerms(terms);
       })
       .catch((e: unknown) => {
         if (dockRunIdRef.current !== runId) return;
-        setDockError(e instanceof Error ? e.message : '質問に失敗しちゃった');
+        setDockError(e instanceof Error ? e.message : 'ページの要約に失敗しちゃった');
       })
       .finally(() => {
-        if (dockRunIdRef.current === runId) setDockAsking(false);
+        if (dockRunIdRef.current === runId) setDockLoading(false);
       });
-  }, [dockQuestion, dockAsking, capturePageImage]);
-
-  // Overlay redraw when annotations or page version changes
-  useEffect(() => { drawOverlay(); }, [overlayVersion, annotations, sikunAnnotations, drawOverlay]);
+  }, [dockLoading, capturePageImage]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -745,14 +542,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [hasPDF, totalPages]);
-
-  // Persist annotations (includes masks) to localStorage when they change
-  useEffect(() => {
-    if (!openUrl) return;
-    try {
-      localStorage.setItem(`lily-pdf-ann-${openUrl}`, JSON.stringify(annotations));
-    } catch { /* ignore quota errors */ }
-  }, [annotations, openUrl]);
 
   // Cleanup blob URLs
   useEffect(() => () => {
@@ -793,206 +582,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     setTimerAlert(false); setTimerCollapsed(true);
   };
   const resetTimer = () => { setTimerSeconds(0); setTimerRunning(false); setTimerAlert(false); };
-
-  // ---- Annotation pointer events ----
-  // Returns canvas physical pixel coords (for canvas drawing ops)
-  const getOverlayPos = (clientX: number, clientY: number) => {
-    const o = overlayCanvasRef.current!;
-    const r = o.getBoundingClientRect();
-    return {
-      x: (clientX - r.left) * (o.width / r.width),
-      y: (clientY - r.top)  * (o.height / r.height),
-    };
-  };
-  // Returns CSS pixel coords relative to canvas top-left (for HTML annotations)
-  const getOverlayCssPos = (clientX: number, clientY: number) => {
-    const o = overlayCanvasRef.current!;
-    const r = o.getBoundingClientRect();
-    return { x: clientX - r.left, y: clientY - r.top };
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const mode = annotationModeRef.current;
-    if (mode === 'none') return;
-
-    if (mode === 'text') {
-      const css = getOverlayCssPos(e.clientX, e.clientY);
-      const sc = scaleRef.current;
-      setTextInputPos({ x: css.x / sc, y: css.y / sc, screenX: css.x, screenY: css.y });
-      setTextInputValue('');
-      return;
-    }
-
-    if (mode === 'mask') {
-      const pos = getOverlayPos(e.clientX, e.clientY);
-      const sc = scaleRef.current;
-      const px = pos.x / sc, py = pos.y / sc;
-      const pg = currentPageRef.current;
-      // Check if tapping an existing mask → toggle revealed (search from top/last)
-      const pageMasks = annotationsRef.current[pg] || [];
-      const maskList = pageMasks.filter(
-        a => a.type === 'mask' && px >= (a as MaskAnn).x && px <= (a as MaskAnn).x + (a as MaskAnn).w
-          && py >= (a as MaskAnn).y && py <= (a as MaskAnn).y + (a as MaskAnn).h
-      );
-      const hit = maskList.length > 0 ? maskList[maskList.length - 1] as MaskAnn : undefined;
-      if (hit) {
-        setAnnotations(prev => ({
-          ...prev,
-          [pg]: (prev[pg] || []).map(a => a.id === hit.id ? { ...a, revealed: !(a as MaskAnn).revealed } : a),
-        }));
-        setOverlayVersion(v => v + 1);
-        return;
-      }
-      // Otherwise start drawing a new mask
-      (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
-      drawingRef.current = pos;
-      return;
-    }
-
-    (e.currentTarget as HTMLCanvasElement).setPointerCapture(e.pointerId);
-    const pos = getOverlayPos(e.clientX, e.clientY);
-    drawingRef.current = pos;
-    if (mode === 'pen') {
-      const sc = scaleRef.current;
-      currentPenPathRef.current = [{ x: pos.x / sc, y: pos.y / sc }];
-    }
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const mode = annotationModeRef.current;
-    if (!drawingRef.current || (mode !== 'highlight' && mode !== 'pen' && mode !== 'line' && mode !== 'mask')) return;
-    const pos = getOverlayPos(e.clientX, e.clientY);
-    const overlay = overlayCanvasRef.current!;
-    const ctx = overlay.getContext('2d')!;
-    const sc = scaleRef.current;
-
-    if (mode === 'mask') {
-      drawOverlay();
-      const { x: sx, y: sy } = drawingRef.current;
-      ctx.fillStyle = 'rgba(175,0,0,0.85)';
-      ctx.fillRect(sx, sy, pos.x - sx, pos.y - sy);
-      return;
-    }
-
-    if (mode === 'highlight') {
-      drawOverlay();
-      ctx.fillStyle = hlColorRef.current;
-      const { x: sx, y: sy } = drawingRef.current;
-      ctx.fillRect(sx, sy, pos.x - sx, pos.y - sy);
-    } else if (mode === 'pen') {
-      currentPenPathRef.current.push({ x: pos.x / sc, y: pos.y / sc });
-      drawOverlay();
-      const pts = currentPenPathRef.current;
-      if (pts.length >= 2) {
-        drawSmoothPath(ctx, pts, sc);
-        ctx.strokeStyle = penColorRef.current;
-        ctx.lineWidth = penWidthRef.current * sc;
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        ctx.stroke();
-      }
-    } else if (mode === 'line') {
-      drawOverlay();
-      const { x: sx, y: sy } = drawingRef.current;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.strokeStyle = penColorRef.current;
-      ctx.lineWidth = penWidthRef.current * sc;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-    }
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const mode = annotationModeRef.current;
-    if (!drawingRef.current || (mode !== 'highlight' && mode !== 'pen' && mode !== 'line' && mode !== 'mask')) return;
-    const pos = getOverlayPos(e.clientX, e.clientY);
-    const sc = scaleRef.current;
-    const pg = currentPageRef.current;
-
-    if (mode === 'mask') {
-      const { x: sx, y: sy } = drawingRef.current;
-      drawingRef.current = null;
-      const x = Math.min(sx, pos.x), y = Math.min(sy, pos.y);
-      const w = Math.abs(pos.x - sx), h = Math.abs(pos.y - sy);
-      if (w >= 10 && h >= 10) {
-        const ann: MaskAnn = { id: Date.now().toString(), type: 'mask',
-          x: x/sc, y: y/sc, w: w/sc, h: h/sc, revealed: false };
-        setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
-      } else { drawOverlay(); }
-      return;
-    }
-
-    if (mode === 'highlight') {
-      const { x: sx, y: sy } = drawingRef.current;
-      drawingRef.current = null;
-      const x = Math.min(sx, pos.x), y = Math.min(sy, pos.y);
-      const w = Math.abs(pos.x - sx), h = Math.abs(pos.y - sy);
-      if (w >= 5 && h >= 5) {
-        const ann: AnnotationItem = { id: Date.now().toString(), type: 'highlight',
-          x: x/sc, y: y/sc, w: w/sc, h: h/sc, color: hlColorRef.current };
-        setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
-      } else { drawOverlay(); }
-    } else if (mode === 'pen') {
-      drawingRef.current = null;
-      const pts = currentPenPathRef.current;
-      currentPenPathRef.current = [];
-      if (pts.length >= 2) {
-        const ann: AnnotationItem = { id: Date.now().toString(), type: 'pen',
-          points: pts, color: penColorRef.current, lineWidth: penWidthRef.current };
-        setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
-      } else { drawOverlay(); }
-    } else if (mode === 'line') {
-      const { x: sx, y: sy } = drawingRef.current;
-      drawingRef.current = null;
-      const dx = pos.x - sx, dy = pos.y - sy;
-      if (Math.sqrt(dx*dx + dy*dy) >= 8) {
-        const ann: AnnotationItem = { id: Date.now().toString(), type: 'line',
-          x1: sx/sc, y1: sy/sc, x2: pos.x/sc, y2: pos.y/sc,
-          color: penColorRef.current, lineWidth: penWidthRef.current };
-        setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
-      } else { drawOverlay(); }
-    }
-  };
-
-  const handlePointerCancel = () => {
-    drawingRef.current = null;
-    currentPenPathRef.current = [];
-    drawOverlay();
-  };
-
-  // ---- Text annotation helpers ----
-  const confirmTextAnnotation = () => {
-    if (!textInputPos || !textInputValue.trim()) { setTextInputPos(null); return; }
-    const pg = currentPageRef.current;
-    const ann: AnnotationItem = {
-      id: Date.now().toString(), type: 'text',
-      x: textInputPos.x, y: textInputPos.y,
-      text: textInputValue.trim(),
-      color: penColorRef.current,
-    };
-    setAnnotations(prev => ({ ...prev, [pg]: [...(prev[pg]||[]), ann] }));
-    setTextInputPos(null);
-    setTextInputValue('');
-  };
-  const cancelTextAnnotation = () => { setTextInputPos(null); setTextInputValue(''); };
-  const deleteAnnotation = (id: string) => {
-    const pg = currentPageRef.current;
-    setAnnotations(prev => ({ ...prev, [pg]: (prev[pg]||[]).filter(a => a.id !== id) }));
-  };
-
-  const clearPageAnnotations = () => {
-    setAnnotations(prev => { const n = {...prev}; delete n[currentPage]; return n; });
-  };
-
-  const undoLastAnnotation = () => {
-    setAnnotations(prev => {
-      const pg = currentPageRef.current;
-      const list = prev[pg] || [];
-      if (list.length === 0) return prev;
-      return { ...prev, [pg]: list.slice(0, -1) };
-    });
-  };
 
   // ---- Photo-to-PDF ----
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1066,12 +655,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
             </button>
           </div>
           <div className="pdf-bar-right">
-            <button className={`pdf-icon-btn${annotationMode === 'highlight' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'highlight' ? 'none' : 'highlight')} title={t('ハイライト')}>
-              <Highlighter size={18} />
-            </button>
-            <button className={`pdf-icon-btn mask-btn${annotationMode === 'mask' ? ' active' : ''}`} onClick={() => setAnnotationMode(m => m === 'mask' ? 'none' : 'mask')} title={t('赤シート（隠す/見せる）')}>
-              <span className="mask-icon-inner" />
-            </button>
             <button className={`pdf-icon-btn${mdState === 'working' ? ' active' : ''}`} onClick={() => void handlePdfToMarkdown()} disabled={!hasPDF || mdState === 'working'} title={t('PDFをMarkdown化')}>
               <FileDown size={18} />
             </button>
@@ -1114,107 +697,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
               </div>
             )}
           </>
-        )}
-
-        {/* Annotation toolbar */}
-        {annotationMode !== 'none' && (
-          <div className="annotation-bar">
-            {/* Tool selector */}
-            <div className="ann-tool-group">
-              <button className={`ann-tool-btn${annotationMode === 'highlight' ? ' active hl' : ''}`}
-                onClick={() => setAnnotationMode('highlight')} title={t('ハイライト')}>
-                <Highlighter size={14} />
-                <span>HL</span>
-              </button>
-              <button className={`ann-tool-btn${annotationMode === 'line' ? ' active pen' : ''}`}
-                onClick={() => setAnnotationMode('line')} title={t('直線')}>
-                <Minus size={14} />
-                <span>{t('直線')}</span>
-              </button>
-              <button className={`ann-tool-btn${annotationMode === 'text' ? ' active text' : ''}`}
-                onClick={() => setAnnotationMode('text')} title={t('テキストコメント')}>
-                <MessageSquare size={14} />
-                <span>{t('メモ')}</span>
-              </button>
-              <button className={`ann-tool-btn${annotationMode === 'mask' ? ' active mask' : ''}`}
-                onClick={() => setAnnotationMode('mask')} title={t('赤シート')}>
-                <span className="ann-mask-icon" />
-                <span>{t('赤シート')}</span>
-              </button>
-            </div>
-
-            {/* Color swatches (HL mode) */}
-            {annotationMode === 'highlight' && (
-              <div className="color-swatches">
-                {HL_COLORS.map((c, i) => (
-                  <button key={c} className={`color-swatch${hlColorIdx === i ? ' active' : ''}`}
-                    style={{ background: c.replace('80','dd') }} onClick={() => setHlColorIdx(i)} />
-                ))}
-              </div>
-            )}
-
-            {/* Color + width (pen / line / text modes) */}
-            {(annotationMode === 'pen' || annotationMode === 'line' || annotationMode === 'text') && (
-              <>
-                <div className="color-swatches">
-                  {PEN_COLORS.map((c, i) => (
-                    <button key={c} className={`color-swatch${penColorIdx === i ? ' active' : ''}`}
-                      style={{ background: c }} onClick={() => setPenColorIdx(i)} />
-                  ))}
-                </div>
-                {annotationMode !== 'text' && (
-                  <div className="pen-widths">
-                    {PEN_WIDTHS.map((w, i) => (
-                      <button key={w} className={`pen-width-btn${penWidthIdx === i ? ' active' : ''}`}
-                        onClick={() => setPenWidthIdx(i)} title={[t('細'),t('中'),t('太')][i]}>
-                        <span className="pen-dot" style={{ width: 4+i*4, height: 4+i*4, background: PEN_COLORS[penColorIdx] }} />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Text mode hint */}
-            {annotationMode === 'text' && (
-              <span className="ann-hint">📍 {t('PDFをタップしてメモを追加')}</span>
-            )}
-            {/* Mask mode hint */}
-            {annotationMode === 'mask' && (
-              <span className="ann-hint mask-hint">🟥 {t('ドラッグで隠す・タップで見せる')}</span>
-            )}
-
-            {/* Comments toggle */}
-            {(annotations[currentPage]||[]).some(a => a.type === 'text') && (
-              <button className="ann-comments-toggle" onClick={() => setShowComments(v => !v)}>
-                <MessageSquare size={13} />
-                {t('{n}件', { n: (annotations[currentPage]||[]).filter(a => a.type === 'text').length })}
-                {showComments ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              </button>
-            )}
-
-            <div className="ann-actions">
-              <button className="ann-action-btn undo-btn" onClick={undoLastAnnotation} title={t('元に戻す')}>↩</button>
-              <button className="ann-action-btn clear-btn" onClick={clearPageAnnotations} title={t('このページを消去')}>
-                <Trash2 size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Comments list panel */}
-        {showComments && annotationMode !== 'none' && (
-          <div className="comments-panel">
-            {(annotations[currentPage]||[]).filter((a): a is TextAnn => a.type === 'text').map(ann => (
-              <div key={ann.id} className="comment-item">
-                <span className="comment-dot" style={{ background: ann.color }} />
-                <span className="comment-text">{ann.text}</span>
-                <button className="comment-del" onClick={() => deleteAnnotation(ann.id)} title={t('削除')}>
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
         )}
 
         {/* Timer */}
@@ -1301,7 +783,7 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
         )}
 
         {/* Canvas area — stable centering */}
-        <div className="pdf-canvas-area">
+        <div className="pdf-canvas-area" ref={pdfCanvasAreaRef}>
           {isLoading && (
             <div className="pdf-status">
               <div className="pdf-spinner" /><span>{t('読み込み中...')}</span>
@@ -1323,83 +805,23 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
               onPointerCancel={endWrapperPointer}
             >
               <canvas ref={canvasRef} className="pdf-canvas" />
-              <canvas
-                ref={overlayCanvasRef}
-                className={`pdf-overlay${annotationMode !== 'none' ? ' drawing' : ''}${annotationMode === 'text' ? ' text-mode' : ''}`}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerCancel}
-              />
-
-              {/* HTML overlay: text annotation bubbles */}
-              <div className="text-ann-layer">
-                {(annotations[currentPage]||[]).filter((a): a is TextAnn => a.type === 'text').map(ann => (
-                  <div
-                    key={ann.id}
-                    className="text-ann-bubble"
-                    style={{ left: ann.x * scale, top: ann.y * scale }}
-                  >
-                    <div className="text-ann-inner" style={{ borderColor: ann.color, color: '#5c3d11' }}>
-                      {ann.text}
-                      <button className="text-ann-del" onClick={() => deleteAnnotation(ann.id)} title={t('削除')}>
-                        <X size={10} />
-                      </button>
-                    </div>
-                    <div className="text-ann-tail" style={{ borderTopColor: ann.color }} />
-                  </div>
-                ))}
-              </div>
-
-              {/* Text annotation input popup */}
-              {textInputPos && (
-                <div
-                  className="text-ann-input-popup"
-                  style={{
-                    left: Math.min(textInputPos.screenX, Math.max(0, (overlayCanvasRef.current?.getBoundingClientRect().width ?? 300) - 220)),
-                    top: Math.max(0, textInputPos.screenY - 120),
-                  }}
-                  onClick={e => e.stopPropagation()}
-                >
-                  <div className="text-ann-popup-header">
-                    <MessageSquare size={13} />
-                    <span>{t('コメントを追加')}</span>
-                  </div>
-                  <textarea
-                    className="text-ann-textarea"
-                    value={textInputValue}
-                    onChange={e => setTextInputValue(e.target.value)}
-                    placeholder={t('コメントを入力...')}
-                    rows={3}
-                    autoFocus
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmTextAnnotation(); }
-                      if (e.key === 'Escape') cancelTextAnnotation();
-                    }}
-                  />
-                  <div className="text-ann-popup-actions">
-                    <button className="text-ann-cancel" onClick={cancelTextAnnotation}>{t('キャンセル')}</button>
-                    <button
-                      className="text-ann-ok"
-                      onClick={confirmTextAnnotation}
-                      disabled={!textInputValue.trim()}
-                      style={{ background: penColorRef.current }}
-                    >
-                      {t('追加')}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
 
-        {/* Lily dock — page summary + ask-about-this-page */}
+        {/* Lily dock — manual page summary */}
         {hasPDF && !isLoading && !error && !isAppFullscreen && (
           <div className="lily-dock">
             <div className="dock-row">
               <div className="dock-ava" />
               <span className="dock-lbl">🔎 {t('このページの要点')}</span>
+              <button
+                className="dock-summarize-btn"
+                onClick={handleSummarizeDock}
+                disabled={dockLoading}
+              >
+                {dockLoading ? t('要約中…') : dockSummary ? t('もう一度要約') : t('要約する')}
+              </button>
             </div>
             {dockLoading ? (
               <p className="dock-text dock-loading">{t('読んでいるよ…')}</p>
@@ -1412,30 +834,9 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
                   <span key={term} className="dock-term-chip">{term}</span>
                 ))}
               </p>
-            ) : null}
-            {dockAnswer && (
-              <div className="dock-answer">
-                <p className="dock-text">{dockAnswer}</p>
-              </div>
+            ) : (
+              <p className="dock-text dock-hint">{t('ボタンを押すとLilyがこのページを要約するよ')}</p>
             )}
-            <div className="dock-ask-row">
-              <input
-                className="dock-ask-input"
-                value={dockQuestion}
-                onChange={e => setDockQuestion(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAskDock(); }}
-                placeholder={t('このページについて質問する…')}
-                disabled={dockAsking}
-              />
-              <button
-                className="dock-ask-send"
-                onClick={handleAskDock}
-                disabled={dockAsking || !dockQuestion.trim()}
-                title={t('質問する')}
-              >
-                {dockAsking ? '…' : '↑'}
-              </button>
-            </div>
           </div>
         )}
 
@@ -1483,15 +884,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           .pdf-icon-btn:hover { background:var(--accent); }
           .pdf-icon-btn:disabled { opacity:0.3; cursor:default; }
           .pdf-icon-btn.active { background:var(--primary); color:white; }
-          .pdf-icon-btn.mask-btn.active { background:#b91c1c; color:white; }
-          .mask-icon-inner {
-            display:inline-block; width:16px; height:16px;
-            background:#dc2626; border-radius:2px;
-            box-shadow:0 0 0 2px rgba(220,38,38,0.3);
-          }
-          .pdf-icon-btn.mask-btn.active .mask-icon-inner {
-            background:#fff; box-shadow:none;
-          }
           .pdf-nav-group, .pdf-zoom-group { display:flex; align-items:center; gap:2px; }
           .pdf-page-label, .pdf-zoom-label {
             font-size:0.8rem; font-weight:600; color:var(--foreground);
@@ -1525,154 +917,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           .pdf-fs-nav-btn:hover { background:rgba(255,255,255,0.15); }
           .pdf-fs-nav-btn:disabled { opacity:0.3; cursor:default; }
           .pdf-fs-nav-label { font-size:0.82rem; font-weight:600; min-width:36px; text-align:center; color:#fff; }
-          /* Annotation bar */
-          .annotation-bar {
-            background:var(--background); border-bottom:1px solid var(--border);
-            padding:6px 10px; display:flex; align-items:center;
-            gap:8px; flex-shrink:0; flex-wrap:wrap;
-          }
-          .ann-tool-group { display:flex; gap:3px; background:var(--accent); border-radius:10px; padding:3px; }
-          .ann-tool-btn {
-            display:flex; align-items:center; gap:3px;
-            padding:4px 9px; border-radius:7px;
-            font-size:0.72rem; font-weight:700;
-            background:transparent; color:#888; cursor:pointer; transition:all 0.15s;
-          }
-          .ann-tool-btn:hover { background:var(--background); color:var(--foreground); }
-          .ann-tool-btn.active.hl { background:#fef9c3; color:#854d0e; box-shadow:0 1px 4px rgba(0,0,0,.1); }
-          .ann-tool-btn.active.pen { background:var(--background); color:var(--primary); box-shadow:0 1px 4px rgba(0,0,0,.1); }
-          .ann-tool-btn.active.text { background:#eff6ff; color:#1d4ed8; box-shadow:0 1px 4px rgba(0,0,0,.1); }
-          .ann-tool-btn.active.mask { background:#fef2f2; color:#b91c1c; box-shadow:0 1px 4px rgba(0,0,0,.1); }
-          .ann-mask-icon {
-            display:inline-block; width:12px; height:12px;
-            background:#dc2626; border-radius:1px; flex-shrink:0;
-          }
-          .ann-tool-btn.active.mask .ann-mask-icon { background:#b91c1c; }
-          .ann-hint.mask-hint { color:#b91c1c; }
-          .color-swatches { display:flex; gap:5px; }
-          .color-swatch {
-            width:20px; height:20px; border-radius:50%;
-            border:2px solid transparent; cursor:pointer;
-            transition:transform 0.1s, border-color 0.1s;
-          }
-          .color-swatch:hover { transform:scale(1.15); }
-          .color-swatch.active { border-color:var(--foreground); transform:scale(1.1); }
-          .pen-widths { display:flex; gap:5px; align-items:center; }
-          .pen-width-btn {
-            width:28px; height:28px; display:flex; align-items:center;
-            justify-content:center; background:transparent;
-            border-radius:6px; cursor:pointer; transition:background 0.15s;
-          }
-          .pen-width-btn:hover { background:var(--accent); }
-          .pen-width-btn.active { background:var(--accent); box-shadow:0 0 0 2px var(--primary); }
-          .pen-dot { border-radius:50%; display:block; }
-          .ann-hint { font-size:0.73rem; color:var(--primary); font-weight:600; opacity:0.8; }
-          .ann-comments-toggle {
-            display:flex; align-items:center; gap:4px;
-            padding:4px 10px; border-radius:20px; font-size:0.74rem; font-weight:700;
-            background:rgba(59,130,246,.1); color:#1d4ed8; border:1px solid rgba(59,130,246,.25);
-            cursor:pointer; transition:all 0.15s;
-          }
-          .ann-comments-toggle:hover { background:rgba(59,130,246,.18); }
-          .ann-actions { margin-left:auto; display:flex; gap:4px; }
-          .ann-action-btn {
-            display:flex; align-items:center; justify-content:center;
-            padding:5px 8px; border-radius:7px; font-size:0.85rem;
-            font-weight:700; cursor:pointer; transition:background 0.15s;
-          }
-          .undo-btn { background:transparent; color:var(--foreground); border:1px solid var(--border); }
-          .undo-btn:hover { background:var(--accent); }
-          .clear-btn { background:transparent; color:#f87171; border:1px solid var(--border); }
-          .clear-btn:hover { background:rgba(248,113,113,0.1); }
-          /* Comments list panel */
-          .comments-panel {
-            background:var(--background); border-bottom:1px solid var(--border);
-            padding:6px 12px; display:flex; flex-direction:column; gap:5px;
-            max-height:140px; overflow-y:auto; flex-shrink:0;
-          }
-          .comment-item {
-            display:flex; align-items:flex-start; gap:7px;
-            padding:5px 8px; background:var(--accent); border-radius:8px;
-            border:1px solid var(--border);
-          }
-          .comment-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:4px; }
-          .comment-text { flex:1; font-size:0.78rem; color:var(--foreground); line-height:1.4; word-break:break-word; }
-          .comment-del {
-            flex-shrink:0; display:flex; align-items:center; justify-content:center;
-            width:18px; height:18px; border-radius:50%;
-            background:transparent; color:var(--fg-muted); cursor:pointer;
-            transition:background 0.1s, color 0.1s;
-          }
-          .comment-del:hover { background:#fecaca; color:#ef4444; }
-          /* Text annotation HTML layer */
-          .text-ann-layer {
-            position:absolute; top:0; left:0; width:100%; height:100%;
-            pointer-events:none; overflow:visible;
-          }
-          .text-ann-bubble {
-            position:absolute; pointer-events:auto; z-index:10;
-            transform:translate(4px, -100%);
-            filter:drop-shadow(0 2px 6px rgba(0,0,0,.2));
-          }
-          .text-ann-inner {
-            position:relative;
-            background:#fffde7;
-            border:2px solid;
-            border-radius:8px 8px 8px 2px;
-            padding:5px 24px 5px 8px;
-            font-size:0.75rem; line-height:1.45; font-weight:600;
-            max-width:180px; word-break:break-word;
-            box-shadow:2px 3px 0 rgba(0,0,0,.08);
-          }
-          .text-ann-del {
-            position:absolute; top:-7px; right:-7px;
-            width:17px; height:17px; border-radius:50%;
-            background:#ef4444; color:#fff;
-            display:flex; align-items:center; justify-content:center;
-            cursor:pointer; opacity:0; transition:opacity 0.15s;
-          }
-          .text-ann-bubble:hover .text-ann-del { opacity:1; }
-          .text-ann-tail {
-            width:0; height:0;
-            border-left:6px solid transparent;
-            border-right:6px solid transparent;
-            border-top:7px solid;
-            margin-left:8px;
-          }
-          /* Text annotation input popup */
-          .text-ann-input-popup {
-            position:absolute; z-index:20;
-            width:220px;
-            background:var(--background); border:1px solid var(--border);
-            border-radius:12px; padding:12px;
-            box-shadow:0 8px 24px rgba(0,0,0,.18);
-          }
-          .text-ann-popup-header {
-            display:flex; align-items:center; gap:6px;
-            font-size:0.78rem; font-weight:700; color:var(--primary);
-            margin-bottom:8px;
-          }
-          .text-ann-textarea {
-            width:100%; background:var(--accent); border:1px solid var(--border);
-            border-radius:8px; padding:7px 8px; font-size:0.82rem;
-            color:var(--foreground); outline:none; resize:none; line-height:1.45;
-            transition:border-color 0.15s;
-          }
-          .text-ann-textarea:focus { border-color:var(--primary); }
-          .text-ann-popup-actions { display:flex; gap:6px; margin-top:8px; justify-content:flex-end; }
-          .text-ann-cancel {
-            padding:5px 12px; border-radius:7px; font-size:0.78rem; font-weight:700;
-            background:var(--accent); color:var(--fg-muted); cursor:pointer; border:none;
-            transition:background 0.15s;
-          }
-          .text-ann-cancel:hover { background:var(--border); }
-          .text-ann-ok {
-            padding:5px 14px; border-radius:7px; font-size:0.78rem; font-weight:700;
-            color:#fff; cursor:pointer; border:none; transition:opacity 0.15s;
-          }
-          .text-ann-ok:disabled { opacity:0.45; cursor:default; }
-          /* Cursor for text mode */
-          .pdf-overlay.text-mode { cursor:text; }
           /* Timer */
           .timer-panel {
             background:var(--background); border-bottom:1px solid var(--border);
@@ -1751,12 +995,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
             height:auto;
             box-shadow:0 4px 20px rgba(0,0,0,0.4);
           }
-          .pdf-overlay {
-            position:absolute; top:0; left:0;
-            width:100%; height:100%;
-            pointer-events:none; touch-action:none;
-          }
-          .pdf-overlay.drawing { pointer-events:auto; cursor:crosshair; }
           .pdf-status {
             display:flex; flex-direction:column; align-items:center;
             justify-content:center; gap:16px; color:#ccc;
@@ -1815,27 +1053,20 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
             background: linear-gradient(135deg,#e08394,#c25c70);
           }
           .dock-lbl { font-size: 11px; font-weight: 800; color: #c25c70; }
+          .dock-summarize-btn {
+            margin-left: auto; flex-shrink: 0; border: none; border-radius: 999px;
+            background: #f1ece1; color: #c25c70; font-size: 11px; font-weight: 700;
+            padding: 6px 12px; cursor: pointer;
+          }
+          .dock-summarize-btn:disabled { opacity: .6; cursor: default; }
           .dock-text { font-size: 12px; color: #463f36; line-height: 1.55; margin: 0; }
           .dock-loading { color: #a8a08f; }
           .dock-error { color: #c0392b; }
+          .dock-hint { color: #a8a08f; }
           .dock-term-chip {
             display: inline-flex; font-size: 10.5px; font-weight: 700; color: #3d6f9c;
             background: #eaf2fa; padding: 2px 8px; border-radius: 999px; margin-left: 5px;
           }
-          .dock-answer { border-top: 1px solid #f1ece1; padding-top: 8px; }
-          .dock-ask-row { display: flex; gap: 8px; }
-          .dock-ask-input {
-            flex: 1; background: #f1ece1; border: none; border-radius: 999px;
-            padding: 8px 14px; font-size: 11.5px; color: #463f36; outline: none; font-family: inherit;
-          }
-          .dock-ask-input::placeholder { color: #a8a08f; }
-          .dock-ask-input:disabled { opacity: .6; }
-          .dock-ask-send {
-            width: 30px; height: 30px; border-radius: 50%; border: none; flex-shrink: 0;
-            background: #e08394; color: #fff; display: flex; align-items: center; justify-content: center;
-            font-size: 12px; cursor: pointer;
-          }
-          .dock-ask-send:disabled { opacity: .5; cursor: default; }
         `}</style>
       </div>
     );

@@ -131,7 +131,7 @@ interface DiaryScreenProps {
 
 export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   const t = useT();
-  const { avatarSrc: lilyAvatarSrc } = useCharacterSkin();
+  const { avatarSrc: lilyAvatarSrc, homeBackgroundSrc } = useCharacterSkin();
   const lang = getAppLang();
   const todayIso = isoOf(new Date());
   const [viewDate, setViewDate] = useState<Date>(() => new Date());
@@ -358,11 +358,17 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
 
           {/* Story stage */}
           <div
-            className="dy-stage"
+            className={`dy-stage${homeBackgroundSrc ? ' has-photo' : ''}`}
+            style={homeBackgroundSrc ? {
+              backgroundImage: `url(${homeBackgroundSrc})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            } : undefined}
             onPointerDown={handleStoryTouchStart}
             onPointerUp={handleStoryTouchEnd}
             onPointerCancel={() => { storyTouchX.current = null; }}
           >
+            {homeBackgroundSrc && <div className="dy-stage-topscrim" />}
             <div className="dy-stage-segbar">
               {trayDays.map(iso => (
                 <span key={iso} className={`seg${iso <= selDay ? ' done' : ''}`} />
@@ -401,7 +407,6 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
             ) : current ? (
               <>
                 <div className="dy-stage-sticker">{current.mood || '📔'}</div>
-                <div className="dy-stage-scrim" />
                 <div className="dy-stage-caption">
                   <span className="dy-stage-tag">✏️ {fmtDayLabel(selDay)}</span>
                   <p>{current.content}</p>
@@ -885,6 +890,11 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
           box-shadow: 0 16px 40px -14px rgba(140,40,60,.45);
           touch-action: pan-y;
         }
+        .dy-stage-topscrim {
+          position: absolute; top: 0; left: 0; right: 0; height: 110px; z-index: 1;
+          background: linear-gradient(180deg, rgba(0,0,0,.4), transparent);
+          pointer-events: none;
+        }
         .dy-stage-segbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 4px; z-index: 3; }
         .dy-stage-segbar .seg { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.35); overflow: hidden; }
         .dy-stage-segbar .seg.done { background: #fff; }
@@ -906,20 +916,26 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
           display: flex; align-items: center; justify-content: center; font-size: 34px;
           box-shadow: 0 10px 22px rgba(60,20,30,.3); z-index: 2;
         }
-        .dy-stage-scrim {
-          position: absolute; left: 0; right: 0; bottom: 0; height: 58%; z-index: 1;
-          background: linear-gradient(180deg, transparent, rgba(60,20,30,.75) 55%, rgba(40,14,22,.88));
+        /* Caption is a distinct card floated over the stage, not blended
+           into the background image — its own opaque/frosted surface so
+           the photo behind it stays readable as a photo. */
+        .dy-stage-caption {
+          position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 3;
+          max-height: 46%; overflow-y: auto;
+          background: rgba(24,12,18,.7); backdrop-filter: blur(14px);
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 16px; padding: 13px 16px;
+          box-shadow: 0 10px 30px -8px rgba(0,0,0,.5);
         }
-        .dy-stage-caption { position: absolute; left: 18px; right: 18px; bottom: 22px; z-index: 3; }
         .dy-stage-tag {
           display: inline-flex; font-size: 10px; font-weight: 800; color: #ffe1e6;
           background: rgba(255,255,255,.18); padding: 4px 10px; border-radius: 999px;
-          margin-bottom: 9px; backdrop-filter: blur(4px);
+          margin-bottom: 9px;
         }
         .dy-stage-caption p {
           font-family: 'Georgia', 'Noto Serif JP', serif; font-style: italic;
           font-size: 16px; line-height: 1.55; color: #fff; margin: 0;
-          text-shadow: 0 2px 10px rgba(0,0,0,.25); white-space: pre-wrap;
+          white-space: pre-wrap;
         }
         .dy-stage-empty {
           position: absolute; inset: 0; z-index: 2;
@@ -944,7 +960,8 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         .dy-stage-mood-btn.on { background: #fff; filter: none; opacity: 1; }
         .dy-stage-textarea {
           width: 100%; min-height: 96px; resize: none;
-          background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.3); border-radius: 14px;
+          background: rgba(0,0,0,.4); backdrop-filter: blur(10px);
+          border: 1px solid rgba(255,255,255,.3); border-radius: 14px;
           padding: 12px 14px; color: #fff; font-family: 'Georgia', 'Noto Serif JP', serif; font-style: italic;
           font-size: .95rem; line-height: 1.6; outline: none;
         }
