@@ -1,203 +1,34 @@
 'use client';
 
-// First-open modal — two modes:
-//   • NOTICE set  → important notice (⚠️). Bump NOTICE_VERSION to re-show.
-//   • NOTICE null → today's rotating tip (💡). Auto-rotates daily; no bump needed.
-//
-// "今日はもう表示しない" suppresses for the rest of the day.
-// The caution section is fixed policy text and normally stays as-is.
+// First-ever-open modal — shows a one-time "Lily Memoへようこそ" welcome
+// screen on the very first app launch. It never appears again afterwards.
 
 import { useEffect, useState } from 'react';
-import TutorialModal, { tutorialDone } from './TutorialModal';
 
-// ── Important notice ─────────────────────────────────────────────────────────
-// Set NOTICE to show a notice; set to null to fall back to daily tips.
-// Bump NOTICE_VERSION when publishing a new notice so it re-appears for users
-// who had already dismissed the previous one.
-const NOTICE_VERSION = '2026-07-10-maintenance';
-const NOTICE: { emoji: string; title: string; body: string } | null = {
-  emoji: '🚧',
-  title: '大型メンテナンスのお知らせ',
-  body: '7月10日〜20日の間、大型メンテナンスを実施します。この期間中はサービスが一時停止または不安定になる場合があります。',
-};
-
-// ── Daily tips (add / edit freely — rotates automatically each day) ──────────
-const TIPS: { emoji: string; title: string; body: string }[] = [
-  {
-    emoji: '⌨️',
-    title: 'キーボードショートカット',
-    body: 'Ctrl+K（Mac: ⌘K）でメモを素早く検索できます。',
-  },
-  {
-    emoji: '⚡',
-    title: 'ポイントを節約しよう',
-    body: '簡単な質問は「軽量」モードを選ぶと消費ポイントを抑えられます。',
-  },
-  {
-    emoji: '📄',
-    title: 'PDFにそのまま質問',
-    body: 'PDFビューワーでファイルを開いた状態でLilyに質問すると、PDF内容を踏まえて回答します。',
-  },
-  {
-    emoji: '🎯',
-    title: 'フォーカスモードで集中',
-    body: 'スタディトラッカー内のフォーカスモードを使うと、勉強中の余計な操作を防げます。',
-  },
-  {
-    emoji: '💾',
-    title: '端末間でデータを移す',
-    body: '設定画面の「バックアップをダウンロード」→ 別端末で「復元ファイルをアップロード」でメモを移行できます。',
-  },
-  {
-    emoji: '🧠',
-    title: '演習問題を生成',
-    body: 'AIチャットの「演習」モードで、ノートの内容から練習問題を自動生成できます。',
-  },
-  {
-    emoji: '🕸️',
-    title: 'メモの繋がりを見る',
-    body: 'サイドバー上部のグラフアイコンでメモ同士のリンク関係をグラフ表示できます。',
-  },
-  {
-    emoji: '📝',
-    title: '毎日の日記',
-    body: '日記タブで毎日の学習・気づきを記録しておくと、振り返りに役立ちます。',
-  },
-  {
-    emoji: '🏆',
-    title: 'トロフィーを集めよう',
-    body: '学習を続けるとトロフィーが解放されます。モチベーション維持に活用してみてください。',
-  },
-  {
-    emoji: '🔗',
-    title: 'メモ間リンク',
-    body: 'ノートエディタで [[メモ名]] と書くとメモ同士をリンクできます。グラフ表示でも可視化されます。',
-  },
-];
-// ─────────────────────────────────────────────────────────────────────────────
-
-const KEY_HIDE = 'lily-news-hide';
-const SESSION_KEY = 'lily-news-shown';
 const KEY_FIRST_RUN = 'lily-first-run'; // set on the very first app open
-
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getTodaysTip(): { emoji: string; title: string; body: string } {
-  const d = new Date();
-  const start = new Date(d.getFullYear(), 0, 0);
-  const dayOfYear = Math.floor((d.getTime() - start.getTime()) / 86400000);
-  return TIPS[dayOfYear % TIPS.length];
-}
 
 export default function AnnouncementModal() {
   const [open, setOpen] = useState(false);
-  const [hideToday, setHideToday] = useState(false);
-  const [showTutorial, setShowTutorial] = useState(false);
-  const [isNewUser, setIsNewUser] = useState(false);
 
   useEffect(() => {
-    setIsNewUser(!tutorialDone());
-    // First-ever launch → guide brand-new users straight into the tutorial
-    // instead of the news modal (only once; the news shows on later opens).
     if (!localStorage.getItem(KEY_FIRST_RUN)) {
-      try { localStorage.setItem(KEY_FIRST_RUN, todayStr()); } catch {}
-      if (!tutorialDone()) { setShowTutorial(true); return; }
+      try { localStorage.setItem(KEY_FIRST_RUN, '1'); } catch {}
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOpen(true);
     }
-    if (sessionStorage.getItem(SESSION_KEY)) return;
-    const version = NOTICE ? NOTICE_VERSION : todayStr();
-    if (localStorage.getItem(KEY_HIDE) === `${version}|${todayStr()}`) return;
-    setOpen(true);
   }, []);
-
-  const dismiss = () => {
-    sessionStorage.setItem(SESSION_KEY, '1');
-    const version = NOTICE ? NOTICE_VERSION : todayStr();
-    if (hideToday) localStorage.setItem(KEY_HIDE, `${version}|${todayStr()}`);
-    setOpen(false);
-  };
-
-  const startTutorial = () => {
-    sessionStorage.setItem(SESSION_KEY, '1');
-    setOpen(false);
-    setShowTutorial(true);
-  };
-
-  if (showTutorial) {
-    return <TutorialModal onClose={() => { setShowTutorial(false); setIsNewUser(false); }} />;
-  }
 
   if (!open) return null;
 
-  const tip = getTodaysTip();
-
   return (
-    <div className="am-backdrop" onClick={dismiss} role="dialog" aria-modal="true" aria-label="お知らせ">
-      <div className="am-card" onClick={(e) => e.stopPropagation()}>
-        <button className={`am-tutorial${isNewUser ? ' pulse' : ''}`} onClick={startTutorial}>
-          <span className="am-tutorial-emoji">🐶</span>
-          <span className="am-tutorial-text">
-            <span className="am-tutorial-eyebrow">{isNewUser ? 'はじめての方へ' : '使い方ガイド'}</span>
-            <span className="am-tutorial-title">チュートリアルをはじめる</span>
-            <span className="am-tutorial-sub">1分でLily Memoの使い方が分かります ▶</span>
-          </span>
-        </button>
-
-        {NOTICE && (
-          <>
-            <div className="am-header">
-              <span className="am-badge am-badge-notice">⚠️ 重要なお知らせ</span>
-            </div>
-            <div className="am-items" style={{ marginBottom: 14 }}>
-              <div className="am-item am-item-notice">
-                <span className="am-item-emoji">{NOTICE.emoji}</span>
-                <div className="am-item-text">
-                  <div className="am-item-title">{NOTICE.title}</div>
-                  <div className="am-item-body">{NOTICE.body}</div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="am-header">
-          <span className="am-badge">💡 今日のヒント</span>
-        </div>
-
-        <div className="am-items">
-          <div className="am-item">
-            <span className="am-item-emoji">{tip.emoji}</span>
-            <div className="am-item-text">
-              <div className="am-item-title">{tip.title}</div>
-              <div className="am-item-body">{tip.body}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="am-caution">
-          <div className="am-caution-head">⚠️ ご利用にあたっての注意</div>
-          <ul className="am-caution-list">
-            <li>
-              通常のチャットや簡単な質問は、<strong>軽量モード</strong>、または他のAI（Gemini・ChatGPT・Claude）サービスのご利用を推奨します。
-            </li>
-            <li>
-              <strong>Freeプラン以上のご利用は、認められたユーザーのみ</strong>利用可能です。
-            </li>
-          </ul>
-        </div>
-
-        <label className="am-checkbox">
-          <input
-            type="checkbox"
-            checked={hideToday}
-            onChange={(e) => setHideToday(e.target.checked)}
-          />
-          <span>今日はもう表示しない</span>
-        </label>
-
-        <button className="am-close" onClick={dismiss}>はじめる</button>
+    <div className="am-backdrop" role="dialog" aria-modal="true" aria-label="ようこそ">
+      <div className="am-card">
+        <span className="am-welcome-emoji">🐶</span>
+        <h2 className="am-welcome-title">Lily Memoへようこそ</h2>
+        <p className="am-welcome-body">
+          メモ・学習記録・AIアシスタントが1つになった勉強アプリです。さっそく使ってみましょう。
+        </p>
+        <button className="am-close" onClick={() => setOpen(false)}>はじめる</button>
       </div>
 
       <style jsx>{`
@@ -210,85 +41,26 @@ export default function AnnouncementModal() {
           animation: amFade 0.25s ease both;
         }
         .am-card {
-          width: 100%; max-width: 420px;
-          max-height: 86vh; overflow-y: auto;
+          width: 100%; max-width: 380px;
           background: var(--background, #fffafa);
           color: var(--foreground, #3d3d3d);
           border: 1px solid var(--border, #ffe0e8);
           border-radius: 20px;
-          padding: 22px 22px 20px;
+          padding: 32px 26px 26px;
+          text-align: center;
           box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
           animation: amPop 0.32s cubic-bezier(0.16, 1.3, 0.4, 1) both;
         }
-        .am-tutorial {
-          width: 100%; display: flex; align-items: center; gap: 14px; cursor: pointer;
-          text-align: left; margin-bottom: 18px; padding: 15px 16px; border-radius: 16px;
-          color: #fff; border: none;
-          background: linear-gradient(120deg, #ff8da1 0%, #ffa76b 100%);
-          box-shadow: 0 10px 26px -8px rgba(255, 141, 161, 0.7);
-          transition: transform 0.12s ease, filter 0.15s ease;
+        .am-welcome-emoji { font-size: 52px; line-height: 1; display: block; margin-bottom: 14px; }
+        .am-welcome-title {
+          font-size: 22px; font-weight: 900; margin: 0 0 12px;
+          color: var(--foreground, #3d3d3d);
         }
-        .am-tutorial:hover { filter: brightness(1.05); transform: translateY(-1px); }
-        .am-tutorial:active { transform: scale(0.99); }
-        .am-tutorial.pulse { animation: amTutPulse 1.9s ease-in-out infinite; }
-        .am-tutorial-emoji {
-          font-size: 34px; line-height: 1; flex-shrink: 0;
-          width: 52px; height: 52px; display: flex; align-items: center; justify-content: center;
-          background: rgba(255, 255, 255, 0.24); border-radius: 14px;
+        .am-welcome-body {
+          font-size: 14px; line-height: 1.7;
+          color: color-mix(in srgb, var(--foreground, #3d3d3d) 70%, transparent);
+          margin: 0 0 24px;
         }
-        .am-tutorial-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-        .am-tutorial-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.05em; opacity: 0.92; }
-        .am-tutorial-title { font-size: 18px; font-weight: 900; letter-spacing: 0.01em; }
-        .am-tutorial-sub { font-size: 12px; font-weight: 600; opacity: 0.92; }
-        @keyframes amTutPulse {
-          0%, 100% { box-shadow: 0 10px 26px -8px rgba(255, 141, 161, 0.7); }
-          50% { box-shadow: 0 10px 30px -4px rgba(255, 141, 161, 0.95); }
-        }
-        @media (prefers-reduced-motion: reduce) { .am-tutorial.pulse { animation: none; } }
-
-        .am-header { display: flex; justify-content: center; margin-bottom: 16px; }
-        .am-badge {
-          font-size: 13px; font-weight: 800; letter-spacing: 0.02em;
-          color: var(--primary-dark, #ff8da1);
-          background: color-mix(in srgb, var(--primary, #ffb6c1) 22%, transparent);
-          padding: 5px 14px; border-radius: 999px;
-        }
-        .am-badge-notice {
-          color: #e8a200;
-          background: color-mix(in srgb, #ffb300 22%, transparent);
-        }
-        .am-items { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
-        .am-item {
-          display: flex; gap: 11px; align-items: flex-start;
-          background: var(--accent, #fff0f5);
-          border: 1px solid var(--border, #ffe0e8);
-          border-radius: 14px; padding: 12px 13px;
-        }
-        .am-item-notice {
-          background: color-mix(in srgb, #ffb300 12%, transparent);
-          border-color: color-mix(in srgb, #e8a200 40%, transparent);
-        }
-        .am-item-emoji { font-size: 20px; line-height: 1.3; flex-shrink: 0; }
-        .am-item-text { min-width: 0; }
-        .am-item-title { font-size: 14px; font-weight: 700; margin-bottom: 3px; color: var(--foreground, #3d3d3d); }
-        .am-item-body { font-size: 13px; line-height: 1.6; color: color-mix(in srgb, var(--foreground, #3d3d3d) 65%, transparent); }
-
-        .am-caution {
-          border: 1px solid color-mix(in srgb, #e8a200 50%, transparent);
-          background: color-mix(in srgb, #ffb300 16%, transparent);
-          border-radius: 14px; padding: 12px 14px; margin-bottom: 18px;
-        }
-        .am-caution-head { font-size: 13px; font-weight: 800; color: #e8a200; margin-bottom: 7px; }
-        .am-caution-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
-        .am-caution-list li { font-size: 12.5px; line-height: 1.65; color: var(--foreground, #4a4a4a); }
-        .am-caution-list strong { color: #e8a200; font-weight: 800; }
-
-        .am-checkbox {
-          display: flex; align-items: center; gap: 8px;
-          font-size: 13px; color: color-mix(in srgb, var(--foreground, #3d3d3d) 70%, transparent);
-          margin-bottom: 16px; cursor: pointer; user-select: none;
-        }
-        .am-checkbox input { width: 16px; height: 16px; accent-color: var(--primary-dark, #ff8da1); cursor: pointer; }
 
         .am-close {
           width: 100%; border: none; cursor: pointer;
