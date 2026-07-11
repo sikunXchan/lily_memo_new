@@ -5,7 +5,7 @@ import { X, Send } from 'lucide-react';
 import { db } from '@/lib/db';
 import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat, type ChatTurn } from '@/lib/gemini';
-import { getPdfSnapshot, getPdfAllPages, addPdfAnnotation, type SikunAnnotation } from '@/lib/pdfBridge';
+import { getPdfSnapshot, getPdfAllPages } from '@/lib/pdfBridge';
 import {
   capSikunHistory, toChatTurns,
   type SikunMessage,
@@ -26,7 +26,6 @@ interface DoSendOpts {
   attachPdf?: boolean;   // attach the current PDF page image
   attachPdfAll?: boolean; // attach every PDF page image (capped)
   heavy?: boolean;       // allow long, detailed output
-  annotatePdf?: boolean; // ask Sikun to write annotations onto the PDF
 }
 
 const POS_KEY = 'lily_instance_sikun_pos';
@@ -166,36 +165,6 @@ Friendly, warm, and concise — like a helpful study buddy. A light emoji now an
 function sikunBaseSystem(en: boolean): string {
   return en ? INSTANCE_SIKUN_SYSTEM_EN : INSTANCE_SIKUN_SYSTEM.replace('__TONE__', currentTonePrompt());
 }
-
-// Appended to system prompt when Sikun is asked to annotate a PDF page.
-const PDF_ANNOTATE_ADDON = `
-
-# PDFへの書き込み指示（重要）
-ユーザーがPDFへの書き込み・注釈を依頼している。
-以下の手順で回答せよ:
-1. まず通常の解説テキストを日本語で書く（短くてよい。要点と注釈の意図を説明する）。
-2. 解説の後に、次の形式で注釈ブロックを出力する（必須）:
-
-[PDF_WRITE]
-[{"type":"highlight","x0":0.05,"y0":0.12,"x1":0.95,"y1":0.18},{"type":"text","x0":0.05,"y0":0.20,"text":"ここが重要！"},{"type":"underline","x0":0.10,"y0":0.35,"x1":0.65,"y1":0.40},{"type":"arrow","x0":0.30,"y0":0.50,"x1":0.55,"y1":0.45}]
-[/PDF_WRITE]
-
-## 座標の仕様
-- すべての座標は 0.0〜1.0 の正規化座標（0=左端・上端、1=右端・下端）。
-- ページ画像を目で読み取って、実際の内容の位置に合わせて座標を指定すること。
-- x0,y0 が左上、x1,y1 が右下（arrowの場合は始点・終点）。
-
-## 注釈タイプ
-- highlight: 矩形ハイライト（x0,y0,x1,y1 必須）
-- underline: 下線（x0,y0=行の左端, x1,y1=行の右端）
-- text: ラベル吹き出し（x0,y0=吹き出し位置, text=ラベル文字列）
-- arrow: 矢印（x0,y0=始点, x1,y1=終点）
-
-## 注意
-- JSONの配列はそのまま出力（コードフェンス不要）。
-- 1ページにつき注釈は最大8個まで。
-- highlight は太い帯にならないよう y1-y0 は 0.04〜0.10 程度に。
-- text のラベルは10文字以内の簡潔な日本語で。`;
 
 interface Pos { x: number; y: number }
 
@@ -757,11 +726,9 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           : '\n\n# 今回は重要な解析依頼\n出力の長さ制限は気にせず、必要なだけ詳しく丁寧に長文で回答してよい。段落や「・」の箇条書きで構造化してよい（mermaid/QAブロック等の特殊ブロックは作らない）。')
       : '';
 
-    const annotateNote = opts?.annotatePdf ? PDF_ANNOTATE_ADDON : '';
-
     try {
       const baseSystem = sikunBaseSystem(en);
-      const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote + annotateNote;
+      const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote;
       const modelList = ['gemini-3.1-flash-lite'];
       // sikun never searches — it answers from its own knowledge or tells the
       // user to ask Lily in the AI tab (see the system prompt's search rule).
@@ -774,20 +741,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         modelList,
         false,
       );
-      // Extract and apply PDF annotation blocks before showing reply text
-      let replyForDisplay = reply;
-      const annMatch = reply.match(/\[PDF_WRITE\]\s*([\s\S]*?)\s*\[\/PDF_WRITE\]/);
-      if (annMatch) {
-        replyForDisplay = reply.replace(/\[PDF_WRITE\][\s\S]*?\[\/PDF_WRITE\]/g, '').trim();
-        try {
-          const parsed = JSON.parse(annMatch[1]) as SikunAnnotation[];
-          const snap = getPdfSnapshot();
-          const page = snap?.page ?? 1;
-          addPdfAnnotation(parsed, page);
-        } catch { /* ignore malformed JSON */ }
-      }
-
-      const replyClean = replyForDisplay.trim() || '...';
+      const replyClean = reply.trim() || '...';
       setLastReply(replyClean);
       setBubbleVisible(true);
       const sikunMsg: SikunMessage = { id: `s${Date.now()}`, role: 'sikun', text: replyClean, ts: Date.now() };
@@ -815,7 +769,6 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   if (isPdfTab) {
     // PDF tab → analyze the current page or the whole document
     radialItems.push({ key: 'pdfx', emoji: '📄', label: en ? 'Explain page' : 'ページ解説', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Explain the content of this PDF page clearly, in a way a beginner can follow.' : 'このPDFページの内容を、初学者にも分かるよう丁寧に解説して。', { attachPdf: true, heavy: true }); } });
-    radialItems.push({ key: 'pdfwrite', emoji: '✍️', label: en ? 'AI markup' : 'AI書き込み', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Mark up the important parts of this PDF page with highlights, arrows and labels, and explain it clearly.' : 'このPDFページの重要箇所にハイライト・矢印・ラベルで書き込みをして、分かりやすく解説して。', { attachPdf: true, annotatePdf: true, heavy: true }); } });
     radialItems.push({ key: 'pdfall', emoji: '📚', label: en ? 'Explain all' : 'PDF全文解説', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Explain the whole PDF carefully, with section structure and key points.' : 'このPDF全体の内容を、章立て・ポイントを押さえて丁寧に解説して。', { attachPdfAll: true, heavy: true }); } });
     radialItems.push({ key: 'pdft', emoji: '🔤', label: en ? 'Translate' : '翻訳', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Translate this PDF page into English.' : 'このPDFページを日本語に翻訳して。', { attachPdf: true }); } });
   } else if (activeNoteId !== undefined) {
