@@ -185,7 +185,7 @@ export default function Sidebar({
               </button>
             )}
             <Image src="/logo.png" alt="Lily Memo Logo" width={36} height={36} className="logo-img" />
-            <h1 className="title">Lily Memo</h1>
+            <h1 className="title">Lily Memo 3.0</h1>
           </div>
         </div>
 

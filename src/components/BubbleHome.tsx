@@ -204,7 +204,7 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
       <div className="bh-header">
         <div className={homeBackgroundSrc ? 'bh-header-chip' : undefined}>
           <div className="bh-date" style={{ color: homeBackgroundSrc ? '#c79aa8' : dateColor }}>{dateLabel}</div>
-          <div className="bh-title">Lily Memo</div>
+          <div className="bh-title">Lily Memo 3.0</div>
         </div>
       </div>
 
