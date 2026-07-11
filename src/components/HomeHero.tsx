@@ -119,7 +119,7 @@ export default function HomeHero({
           <div className="hero-top">
             <div>
               <div className="hero-date">{dateLabel}</div>
-              <div className="hero-title">Lily Memo</div>
+              <div className="hero-title">Lily Memo 3.0</div>
             </div>
           </div>
           <button className="hero-action" onClick={() => createNote()}>

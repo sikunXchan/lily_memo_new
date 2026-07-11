@@ -453,7 +453,8 @@ export default function TodoScreen({ onGoBack }: TodoScreenProps) {
           border: 1.5px solid transparent; background: var(--accent);
           transition: background .12s, border-color .12s;
         }
-        .td-wday.today { background: rgba(52,211,153,.14); }
+        .td-wday.today { background: rgba(52,211,153,.22); border-color: rgba(52,211,153,.6); }
+        .td-wday.today .td-wday-num { color: #059669; }
         .td-wday.sel {
           border-color: #34d399;
           background: linear-gradient(135deg, rgba(52,211,153,.18), rgba(34,211,238,.18));
