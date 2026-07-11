@@ -98,6 +98,7 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
 
   const [albumUrls, setAlbumUrls] = useState<string[]>([]);
   const [deleteOverlayId, setDeleteOverlayId] = useState<number | null>(null);
+  const [hideAlbum, setHideAlbum] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -108,6 +109,13 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
       urls.forEach(u => URL.revokeObjectURL(u));
     };
   }, [albumPhotos]);
+
+  useEffect(() => {
+    const readSetting = () => setHideAlbum(localStorage.getItem('lily_hide_home_album') === '1');
+    readSetting();
+    window.addEventListener('lily-settings-changed', readSetting);
+    return () => window.removeEventListener('lily-settings-changed', readSetting);
+  }, []);
 
   const handleAddPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -255,6 +263,7 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
       </div>
 
       {/* Album strip */}
+      {!hideAlbum && (
       <div className="bh-album" aria-hidden={albumPhotos.length === 0 ? 'true' : undefined}>
         {/* Hidden file input */}
         <input
@@ -313,6 +322,7 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
           }
         </div>
       </div>
+      )}
 
       <style jsx>{`
         .bh-root {
@@ -386,8 +396,21 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
         .bh-title {
           font-family: 'Outfit', sans-serif; font-size: 25px; font-weight: 800;
           letter-spacing: -.02em; margin-top: 2px;
-          background: linear-gradient(120deg, #ff8da1, #93c5fd);
+          background: linear-gradient(120deg, #ff8da1, #93c5fd, #ffb6c1, #ff8da1);
+          background-size: 300% auto;
           -webkit-background-clip: text; background-clip: text; color: transparent;
+          animation: bh-title-in .6s cubic-bezier(.16,1.3,.4,1) both,
+                     bh-title-shine 5s linear .6s infinite;
+        }
+        @keyframes bh-title-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes bh-title-shine {
+          to { background-position: -300% center; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .bh-title { animation: none; }
         }
         /* Opaque chips keep text readable over a skin's background image. */
         .bh-header-chip {

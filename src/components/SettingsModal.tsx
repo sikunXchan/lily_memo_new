@@ -57,6 +57,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [keySaved, setKeySaved] = useState(false);
   const [defaultResponseMode, setDefaultResponseModeState] = useState<'lite' | 'stable'>('lite');
   const [sikunEnabled, setSikunEnabled] = useState(false);
+  const [hideHomeAlbum, setHideHomeAlbum] = useState(false);
   const [sikunTone, setSikunTone] = useState('tame');
   const [userName, setUserNameState] = useState('');
   const [nameSaved, setNameSaved] = useState(false);
@@ -83,6 +84,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     setLiveKey(localStorage.getItem('lily_livesync_key') || '');
     setLiveEnabled(localStorage.getItem('lily_livesync_enabled') === '1');
     setSikunEnabled(localStorage.getItem('lily_instance_sikun_enabled') === '1');
+    setHideHomeAlbum(localStorage.getItem('lily_hide_home_album') === '1');
     setDefaultResponseModeState(localStorage.getItem('lily_economy_mode') === '0' ? 'stable' : 'lite');
     const plan = getPlan();
     setPlanLabel(PLAN_LABEL[plan]);
@@ -102,6 +104,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const changeDefaultResponseMode = (mode: 'lite' | 'stable') => {
     setDefaultResponseModeState(mode);
     localStorage.setItem('lily_economy_mode', mode === 'lite' ? '1' : '0');
+    window.dispatchEvent(new Event('lily-settings-changed'));
+  };
+
+  const toggleHideHomeAlbum = () => {
+    const next = !hideHomeAlbum;
+    setHideHomeAlbum(next);
+    localStorage.setItem('lily_hide_home_album', next ? '1' : '0');
     window.dispatchEvent(new Event('lily-settings-changed'));
   };
 
@@ -258,6 +267,28 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             <button className={`btn-action ${nameSaved ? 'saved' : ''}`} onClick={saveUserName}>
               {nameSaved ? t('✓ 保存しました') : t('保存する')}
             </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <div className="section-title">
+            <Home size={20} />
+            <h3>{t('ホーム画面')}</h3>
+          </div>
+          <div className="section-content">
+            <p className="desc">{t('ホーム画面の下に表示される、写真が流れるアニメーションを非表示にできます。')}</p>
+            <div className="toggle-row">
+              <span className="toggle-state">{hideHomeAlbum ? t('非表示') : t('表示')}</span>
+              <button
+                className={`toggle-switch ${hideHomeAlbum ? 'on' : ''}`}
+                onClick={toggleHideHomeAlbum}
+                role="switch"
+                aria-checked={hideHomeAlbum}
+                aria-label={t('ホーム画面の画像アニメーション')}
+              >
+                <span className="toggle-knob" />
+              </button>
+            </div>
           </div>
         </section>
 

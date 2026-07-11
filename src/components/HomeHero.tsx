@@ -335,7 +335,24 @@ export default function HomeHero({
         .hero-inner { position: absolute; inset: 0; padding: 18px; display: flex; flex-direction: column; justify-content: space-between; color: #fff; }
         .hero-top { display: flex; justify-content: space-between; align-items: flex-start; }
         .hero-date { font-family: var(--font-latin); font-size: 10px; font-weight: 700; letter-spacing: 0.22em; opacity: 0.85; }
-        .hero-title { font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; }
+        .hero-title {
+          font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px;
+          background: linear-gradient(120deg, #fff, #ffd1dc, #fff, #ffd1dc);
+          background-size: 300% auto;
+          -webkit-background-clip: text; background-clip: text; color: transparent;
+          animation: hero-title-in .6s cubic-bezier(.16,1.3,.4,1) both,
+                     hero-title-shine 5s linear .6s infinite;
+        }
+        @keyframes hero-title-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes hero-title-shine {
+          to { background-position: -300% center; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .hero-title { animation: none; }
+        }
         .hero-theme-btn { height: 32px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,0.18); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
         .hero-action { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: rgba(255,255,255,0.92); border-radius: 999px; width: 100%; text-align: left; }
         .hero-action-label { flex: 1; font-weight: 700; font-size: 13px; color: #2c2620; }
