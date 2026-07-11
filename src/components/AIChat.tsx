@@ -1675,7 +1675,7 @@ function Accordion({ title, children }: { title: string; children: React.ReactNo
         .lh-accordion-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 15px; background: #faf7f2; border: none; cursor: pointer; font-family: inherit; text-align: left; }
         .ttl { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #2c2620; }
         .chev { font-size: 10.5px; color: #a08a72; font-weight: 700; flex-shrink: 0; }
-        .lh-accordion-body { padding: 14px 15px 15px; display: flex; flex-direction: column; gap: 12px; }
+        .lh-accordion-body { padding: 14px 15px 15px; display: flex; flex-direction: column; gap: 0; }
       `}</style>
     </div>
   );
@@ -1783,7 +1783,7 @@ function HeavyExplanation({
         .lh-prose code.rt-code { background: rgba(0,0,0,.06); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
       `}</style>
       <style jsx>{`
-        .lh-stack { display: flex; flex-direction: column; gap: 12px; }
+        .lh-stack { display: flex; flex-direction: column; gap: 0; }
         .lh-loose-text { font-size: 12.5px; line-height: 1.75; color: #463f36; }
       `}</style>
     </div>
