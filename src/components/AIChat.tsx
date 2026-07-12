@@ -33,6 +33,7 @@ import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
+import { markdownToTiptapHtml } from '@/lib/markdownToTiptap';
 import { sanitizeMindmap, recoverMermaid } from '@/lib/mermaidSanitize';
 import {
   downloadTextFile, downloadSvg, downloadSvgAsPng, downloadCanvasAsPng,
@@ -134,6 +135,9 @@ interface InsertableBlock {
   fileName?: string;
   memoTitle?: string;
   memoId?: number;
+  // For memo_overwrite: a title/name the AI used instead of a numeric ID, so we
+  // can still resolve the target note by name when the ID didn't parse.
+  memoTitleHint?: string;
   folderName?: string;
   folderColor?: string;
   targetFolderName?: string;
@@ -531,10 +535,29 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     }
     if (type === 'memo_overwrite' && allowMemoBlocks) {
       const firstLine = trimmed.split('\n')[0] || '';
-      const idMatch = firstLine.match(/^@@memo_overwrite\s*:\s*(\d+)/);
-      const memoId = idMatch ? Number(idMatch[1]) : undefined;
-      const content = trimmed.split('\n').slice(1).join('\n').trim();
-      blocks.push({ id, type: 'memo_overwrite', rawCode: content, previewLabel: translate('メモ上書き: ID {id}', { id: memoId ?? '?' }), memoId });
+      const dirMatch = firstLine.match(/^@@memo_overwrite\s*:\s*(.*)$/i);
+      let memoId: number | undefined;
+      let memoTitleHint: string | undefined;
+      let content: string;
+      if (dirMatch) {
+        const target = (dirMatch[1] || '').trim();
+        // Accept "15", "ID:15", "ID 15", "#15", "15番" as a pure ID reference.
+        const idOnly = target.match(/^(?:id[:：#\s]*)?(\d+)\s*番?$/i);
+        memoId = idOnly ? Number(idOnly[1]) : undefined;
+        // Anything else (e.g. a title) becomes a name hint we resolve later.
+        if (!idOnly && target) memoTitleHint = target.replace(/^["'「『]+|["'」』]+$/g, '').trim();
+        content = trimmed.split('\n').slice(1).join('\n').trim();
+      } else {
+        // Directive missing entirely — keep the whole block as content and let
+        // the user pick the target note in the confirm dialog.
+        content = trimmed;
+      }
+      const label = memoId != null
+        ? translate('メモ上書き: ID {id}', { id: memoId })
+        : memoTitleHint
+          ? translate('メモ上書き: {title}', { title: memoTitleHint })
+          : translate('メモを上書き');
+      blocks.push({ id, type: 'memo_overwrite', rawCode: content, previewLabel: label, memoId, memoTitleHint });
       return blockMarker(id);
     }
     if (type === 'folder_create') {
@@ -680,7 +703,9 @@ function blockToHtml(block: InsertableBlock): string {
     return `<pre><code>${escHtmlAttr(block.rawCode)}</code></pre>`;
   }
   if (block.type === 'memo_create') {
-    return `<p>${block.rawCode.split('\n').map(escHtmlAttr).join('</p><p>')}</p>`;
+    // Render the Markdown Lily wrote into real headings / lists / math, not
+    // literal `#` and `$…$` characters.
+    return markdownToTiptapHtml(block.rawCode);
   }
   if (block.type === 'table') {
     return markdownTableToHtml(block.rawCode);
@@ -986,6 +1011,22 @@ function QAPreview({ code, initialChecked, onCheckChange }: {
   );
 }
 
+// Find the note a memo_overwrite block targets: numeric ID first, then a
+// title/name hint (exact, then partial match). Returns undefined when nothing
+// matches, so the caller can ask the user to pick.
+function resolveOverwriteTarget(block: InsertableBlock, allNotes: Note[]): Note | undefined {
+  if (block.memoId != null) {
+    const byId = allNotes.find(n => n.id === block.memoId);
+    if (byId) return byId;
+  }
+  const hint = block.memoTitleHint?.trim().toLowerCase();
+  if (hint) {
+    return allNotes.find(n => (n.title || '').trim().toLowerCase() === hint)
+      ?? allNotes.find(n => (n.title || '').trim().toLowerCase().includes(hint));
+  }
+  return undefined;
+}
+
 function MemoPermissionModal({
   block,
   allNotes,
@@ -999,10 +1040,21 @@ function MemoPermissionModal({
 }) {
   const t = useT();
   const [status, setStatus] = useState<'idle' | 'loading' | 'done'>('idle');
-  const existingNote = block.memoId != null ? allNotes.find(n => n.id === block.memoId) : undefined;
+  // Resolve the overwrite target: numeric ID first, then a title/name hint, so
+  // an edit still lands even when Lily wrote the memo name instead of its ID.
+  const resolvedNote = block.type === 'memo_overwrite'
+    ? resolveOverwriteTarget(block, allNotes)
+    : undefined;
+  // The user can always confirm / correct the target note before saving, so an
+  // unresolved ID never becomes a silent no-op.
+  const [target, setTarget] = useState<string>(
+    resolvedNote?.id != null ? String(resolvedNote.id)
+      : (allNotes[0]?.id != null ? String(allNotes[0].id) : ''),
+  );
+
   const confirmMsg = block.type === 'memo_create'
     ? t('「{title}」という新しいメモを作っていい？', { title: block.memoTitle || t('新しいメモ') })
-    : t('「{title}」を書き換えていい？', { title: existingNote?.title || t('メモ ID:{id}', { id: String(block.memoId) }) });
+    : t('このメモを書き換えていい？');
 
   const handleOk = async () => {
     setStatus('loading');
@@ -1010,9 +1062,10 @@ function MemoPermissionModal({
       if (block.type === 'memo_create') {
         const id = await createNoteWithBlock(block, block.memoTitle || t('新しいメモ'));
         onNoteCreated?.(id as number);
-      } else if (block.type === 'memo_overwrite' && block.memoId != null) {
-        const html = `<p>${block.rawCode.split('\n').map(escHtmlAttr).join('</p><p>')}</p>`;
-        await db.notes.update(block.memoId, { content: html, updatedAt: Date.now() });
+      } else if (block.type === 'memo_overwrite') {
+        const targetId = Number(target);
+        if (!Number.isFinite(targetId) || targetId <= 0) { setStatus('idle'); return; }
+        await db.notes.update(targetId, { content: markdownToTiptapHtml(block.rawCode), updatedAt: Date.now() });
       }
       setStatus('done');
       setTimeout(onClose, 600);
@@ -1021,13 +1074,34 @@ function MemoPermissionModal({
     }
   };
 
+  const canSave = block.type === 'memo_create' || (!!target && status === 'idle');
+
   return (
     <div className="memo-modal-overlay" onClick={onClose}>
       <div className="memo-modal" onClick={e => e.stopPropagation()}>
         <p className="memo-modal-q">{confirmMsg}</p>
+        {block.type === 'memo_overwrite' && (
+          <label className="memo-modal-field">
+            <span className="memo-modal-label">{t('書き換えるメモ')}</span>
+            <select
+              className="memo-modal-select"
+              value={target}
+              onChange={e => setTarget(e.target.value)}
+              disabled={status !== 'idle'}
+            >
+              {allNotes.length === 0 && <option value="">{t('メモがありません')}</option>}
+              {allNotes.map(n => (
+                <option key={n.id} value={String(n.id)}>{n.title || t('無題のメモ')}</option>
+              ))}
+            </select>
+            {!resolvedNote && allNotes.length > 0 && (
+              <span className="memo-modal-hint">{t('対象のメモを選んでね')}</span>
+            )}
+          </label>
+        )}
         <div className="memo-modal-actions">
           <button className="memo-btn cancel" onClick={onClose} disabled={status === 'loading'}>{t('キャンセル')}</button>
-          <button className="memo-btn ok" onClick={handleOk} disabled={status !== 'idle'}>
+          <button className="memo-btn ok" onClick={handleOk} disabled={!canSave || status !== 'idle'}>
             {status === 'loading' ? t('保存中...') : status === 'done' ? t('✓ 完了') : t('OK')}
           </button>
         </div>
@@ -1035,7 +1109,12 @@ function MemoPermissionModal({
       <style jsx>{`
         .memo-modal-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
         .memo-modal { background: var(--background); border-radius: 16px; padding: 24px 20px; max-width: 340px; width: 100%; box-shadow: 0 8px 40px rgba(0,0,0,0.2); }
-        .memo-modal-q { font-size: 1rem; font-weight: 700; color: var(--foreground); margin: 0 0 20px; line-height: 1.5; }
+        .memo-modal-q { font-size: 1rem; font-weight: 700; color: var(--foreground); margin: 0 0 16px; line-height: 1.5; }
+        .memo-modal-field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 20px; }
+        .memo-modal-label { font-size: 0.78rem; font-weight: 700; color: var(--fg-muted); }
+        .memo-modal-select { width: 100%; padding: 9px 11px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--accent); color: var(--foreground); font-size: 0.88rem; font-family: inherit; outline: none; cursor: pointer; }
+        .memo-modal-select:focus { border-color: var(--primary); }
+        .memo-modal-hint { font-size: 0.72rem; color: var(--primary); font-weight: 600; }
         .memo-modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
         .memo-btn { border: none; border-radius: 10px; padding: 9px 20px; font-size: 0.9rem; font-weight: 700; cursor: pointer; }
         .memo-btn.cancel { background: var(--accent); color: var(--fg-muted); }
@@ -1488,20 +1567,44 @@ function stripBlockMarkers(text: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 「重い」解説テンプレート — 結論→たとえ→しくみ(開閉式)→確認の8ブロック構成。
-// 見た目の設計は design_handoff_ai_explanation_cards（ハンドオフ資料）に準拠。
-// 色・角丸はハンドオフのhi-fi値をそのまま使用（アプリのテーマ変数には連動しない）。
+// 「重い」解説カード — 結論→たとえ→しくみ(開閉式)→誤解→確認 の流れ。
+// わわわ説明術（結論先行・大きな地図・たとえ・適度な認知負荷・視覚的階層）に
+// 沿った設計。色は「意味」に対応させ、記憶に残る少数のアクセント色だけを使う:
+//   結論=ブランド色 / たとえ=バイオレット / 誤解=アンバー / 理解確認=濃ブランド。
+// 全色をテーマ変数＋color-mixで作るので、ライト/ダーク全テーマで自動的に整う。
 // ─────────────────────────────────────────────────────────────────────────
+
+// Learning-oriented accent hues. Kept as literals but always blended with the
+// theme's own --surface / --foreground via color-mix, so a fixed hue still
+// adapts its lightness to whichever theme (light or dark) is active.
+const HUE_ANALOGY = '#8b5cf6'; // violet — imagination / memory hooks
+const HUE_WARN = '#f59e0b';    // amber — attention, "watch out"
 
 function MapRow({ flow }: { flow: string }) {
   const t = useT();
+  const steps = flow
+    ? flow.split(/\s*(?:→|->|➡️?|⇒|＞|>)\s*/).map(s => s.trim()).filter(Boolean)
+    : [];
   return (
-    <div className="lh-map-row">
-      <span className="lh-map-chip">🧭 {t('3分でわかる')}</span>
-      {flow && <span className="lh-map-chip">{flow}</span>}
+    <div className="lh-map">
+      <span className="lh-map-ico" aria-hidden>🧭</span>
+      <span className="lh-map-flow">
+        {steps.length > 1
+          ? steps.map((s, i) => (
+              <span className="lh-map-step" key={i}>
+                <span className="lh-map-word">{s}</span>
+                {i < steps.length - 1 && <span className="lh-map-arrow" aria-hidden>→</span>}
+              </span>
+            ))
+          : <span className="lh-map-word">{flow || t('この説明の流れ')}</span>}
+      </span>
       <style jsx>{`
-        .lh-map-row { display: flex; gap: 6px; flex-wrap: wrap; }
-        .lh-map-chip { font-size: 10.5px; font-weight: 700; color: #8a7d6d; background: #f3ede0; padding: 4px 10px; border-radius: 999px; }
+        .lh-map { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 1px 2px; }
+        .lh-map-ico { font-size: 13px; line-height: 1; }
+        .lh-map-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; }
+        .lh-map-step { display: inline-flex; align-items: center; gap: 5px; }
+        .lh-map-word { font-size: 11px; font-weight: 700; color: var(--fg-muted); }
+        .lh-map-arrow { font-size: 11px; color: var(--fg-faint); font-weight: 700; }
       `}</style>
     </div>
   );
@@ -1511,31 +1614,35 @@ function ConclusionCard({ text }: { text: string }) {
   const t = useT();
   return (
     <div className="lh-conclusion">
-      <div className="lbl">{t('結論')}</div>
-      <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
+      <span className="lbl">{t('結論')}</span>
+      <div className="lh-prose lh-conclusion-body" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
       <style jsx>{`
-        .lh-conclusion { background: #fff; border: 1.5px solid #e08394; border-radius: 16px; padding: 14px 16px; }
-        .lbl { font-size: 10px; font-weight: 800; color: #c25c70; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
-        .lh-prose { font-size: 14px; font-weight: 700; line-height: 1.65; color: #2c2620; }
+        .lh-conclusion {
+          background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+          border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
+          border-left: 4px solid var(--primary);
+          border-radius: 14px; padding: 13px 16px;
+        }
+        .lbl {
+          display: inline-block; font-size: 10.5px; font-weight: 800;
+          color: var(--primary-deep, var(--primary));
+          letter-spacing: .08em; text-transform: uppercase; margin-bottom: 5px;
+        }
+        .lh-conclusion-body { font-size: 15px; font-weight: 700; line-height: 1.65; color: var(--foreground); }
       `}</style>
     </div>
   );
 }
 
 function SimpleCard({ text }: { text: string }) {
-  const t = useT();
   return (
-    <>
-      <div className="lh-sec-title">📝 {t('かんたん解説')}</div>
-      <div className="lh-card">
-        <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
-      </div>
+    <div className="lh-simple">
+      <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
       <style jsx>{`
-        .lh-sec-title { font-size: 13.5px; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #2c2620; }
-        .lh-card { background: #fff; border-radius: 16px; padding: 15px 15px 13px; box-shadow: 0 2px 10px rgba(60,40,20,.07); }
-        .lh-prose { font-size: 12.5px; color: #463f36; line-height: 1.75; }
+        .lh-simple { padding: 0 4px; }
+        .lh-prose { font-size: 13.5px; color: var(--foreground); line-height: 1.8; }
       `}</style>
-    </>
+    </div>
   );
 }
 
@@ -1543,19 +1650,31 @@ function AnalogyCard({ text, diff }: { text: string; diff?: string }) {
   const t = useT();
   return (
     <div className="lh-callout lh-analogy">
-      <div className="icon">🔗</div>
+      <span className="ico" aria-hidden>🔗</span>
       <div className="body">
-        <div className="lbl">{t('たとえるなら')}</div>
+        <span className="lbl">{t('たとえるなら')}</span>
         <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
-        {diff && <div className="diff">※{diff}</div>}
+        {diff && <div className="diff">{t('ただし')}：{diff}</div>}
       </div>
       <style jsx>{`
-        .lh-callout { border-radius: 14px; padding: 12px 14px; display: flex; gap: 10px; }
-        .lh-analogy { background: #f3edfb; }
-        .icon { font-size: 16px; flex-shrink: 0; }
-        .lbl { font-size: 10.5px; font-weight: 800; color: #6d4aa8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
-        .lh-prose { font-size: 12px; color: #40325c; line-height: 1.6; }
-        .diff { margin-top: 9px; padding-top: 9px; border-top: 1px dashed #d9c4ee; font-size: 11.5px; color: #6d4aa8; line-height: 1.6; }
+        .lh-callout { border-radius: 14px; padding: 13px 15px; display: flex; gap: 11px; }
+        .lh-analogy {
+          background: color-mix(in srgb, ${HUE_ANALOGY} 10%, var(--surface));
+          border: 1px solid color-mix(in srgb, ${HUE_ANALOGY} 26%, var(--border));
+        }
+        .ico { font-size: 15px; flex-shrink: 0; line-height: 1.6; }
+        .body { min-width: 0; flex: 1; }
+        .lbl {
+          display: block; font-size: 10.5px; font-weight: 800; margin-bottom: 4px;
+          color: color-mix(in srgb, ${HUE_ANALOGY} 70%, var(--foreground));
+          text-transform: uppercase; letter-spacing: .05em;
+        }
+        .lh-prose { font-size: 13px; color: var(--foreground); line-height: 1.7; }
+        .diff {
+          margin-top: 9px; padding-top: 9px;
+          border-top: 1px dashed color-mix(in srgb, ${HUE_ANALOGY} 30%, var(--border));
+          font-size: 12px; color: var(--fg-muted); line-height: 1.6;
+        }
       `}</style>
     </div>
   );
@@ -1565,17 +1684,25 @@ function WarnCard({ text }: { text: string }) {
   const t = useT();
   return (
     <div className="lh-callout lh-warn">
-      <div className="icon">⚠️</div>
+      <span className="ico" aria-hidden>⚠️</span>
       <div className="body">
-        <div className="lbl">{t('よくある誤解')}</div>
+        <span className="lbl">{t('よくある誤解')}</span>
         <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
       </div>
       <style jsx>{`
-        .lh-callout { border-radius: 14px; padding: 12px 14px; display: flex; gap: 10px; }
-        .lh-warn { background: #fdf1e4; }
-        .icon { font-size: 16px; flex-shrink: 0; }
-        .lbl { font-size: 10.5px; font-weight: 800; color: #a3641a; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
-        .lh-prose { font-size: 12px; color: #4a3a24; line-height: 1.6; }
+        .lh-callout { border-radius: 14px; padding: 13px 15px; display: flex; gap: 11px; }
+        .lh-warn {
+          background: color-mix(in srgb, ${HUE_WARN} 12%, var(--surface));
+          border: 1px solid color-mix(in srgb, ${HUE_WARN} 30%, var(--border));
+        }
+        .ico { font-size: 15px; flex-shrink: 0; line-height: 1.6; }
+        .body { min-width: 0; flex: 1; }
+        .lbl {
+          display: block; font-size: 10.5px; font-weight: 800; margin-bottom: 4px;
+          color: color-mix(in srgb, ${HUE_WARN} 64%, var(--foreground));
+          text-transform: uppercase; letter-spacing: .05em;
+        }
+        .lh-prose { font-size: 13px; color: var(--foreground); line-height: 1.7; }
       `}</style>
     </div>
   );
@@ -1585,12 +1712,19 @@ function RefBox({ text }: { text: string }) {
   const t = useT();
   return (
     <div className="lh-ref">
-      <div className="lbl">{t('参考・発展')}</div>
+      <span className="lbl">{t('参考・発展')}</span>
       <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
       <style jsx>{`
-        .lh-ref { border: 1px dashed #d8cbb3; border-radius: 12px; padding: 10px 13px; }
-        .lbl { font-size: 9.5px; font-weight: 800; color: #a08a72; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
-        .lh-prose { font-size: 11px; color: #8a7d6d; line-height: 1.6; }
+        .lh-ref {
+          border: 1px dashed var(--border-strong, var(--border));
+          border-radius: 12px; padding: 10px 13px;
+          background: color-mix(in srgb, var(--foreground) 3%, transparent);
+        }
+        .lbl {
+          display: block; font-size: 9.5px; font-weight: 800; color: var(--fg-faint);
+          text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px;
+        }
+        .lh-prose { font-size: 12px; color: var(--fg-muted); line-height: 1.65; }
       `}</style>
     </div>
   );
@@ -1601,7 +1735,7 @@ function CheckBox({ question, answer }: { question: string; answer: string }) {
   const [revealed, setRevealed] = useState(false);
   return (
     <div className="lh-check">
-      <div className="q">❓ {question}</div>
+      <div className="q"><span aria-hidden>❓</span> {question}</div>
       {revealed ? (
         <div className="lh-prose lh-answer" dangerouslySetInnerHTML={{ __html: renderRich(answer) }} />
       ) : (
@@ -1610,10 +1744,22 @@ function CheckBox({ question, answer }: { question: string; answer: string }) {
         </button>
       )}
       <style jsx>{`
-        .lh-check { background: #2c2620; border-radius: 16px; padding: 14px 15px; }
-        .q { font-size: 12.5px; font-weight: 700; color: #f3ede0; margin: 0 0 10px; display: flex; gap: 6px; line-height: 1.5; }
-        .reveal-btn { font-size: 11px; font-weight: 700; color: #2c2620; background: #e0b8bf; padding: 6px 13px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; border: none; cursor: pointer; font-family: inherit; }
-        .lh-answer { font-size: 12px; color: #f3ede0; line-height: 1.7; background: rgba(255,255,255,0.08); border-radius: 10px; padding: 10px 12px; }
+        .lh-check { background: var(--primary-deep, var(--primary)); border-radius: 16px; padding: 15px 16px; }
+        .q {
+          font-size: 13px; font-weight: 700; color: var(--primary-foreground, #fff);
+          margin: 0 0 11px; display: flex; gap: 6px; line-height: 1.55;
+        }
+        .reveal-btn {
+          font-size: 11.5px; font-weight: 800; color: var(--primary-deep, var(--primary));
+          background: var(--primary-foreground, #fff); padding: 7px 14px; border-radius: 999px;
+          display: inline-flex; align-items: center; gap: 5px; border: none; cursor: pointer; font-family: inherit;
+        }
+        .reveal-btn:hover { opacity: 0.92; }
+        .lh-answer {
+          font-size: 13px; color: var(--primary-foreground, #fff); line-height: 1.7;
+          background: color-mix(in srgb, var(--primary-foreground, #fff) 16%, transparent);
+          border-radius: 10px; padding: 11px 13px;
+        }
       `}</style>
     </div>
   );
@@ -1621,21 +1767,30 @@ function CheckBox({ question, answer }: { question: string; answer: string }) {
 
 function StepCard({ index, title, body, simplified }: { index: number; title: string; body: string; simplified?: boolean }) {
   const t = useT();
-  const color = index % 2 === 1 ? '#3d6f9c' : '#3c7a45';
   return (
     <div className="lh-step">
-      <div className="num" style={{ background: color }}>{index}</div>
+      <div className="num">{index}</div>
       <div className="body">
         <h3>{title}{simplified && <span className="simplify-tag">{t('簡略化')}</span>}</h3>
         <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(body) }} />
       </div>
       <style jsx>{`
         .lh-step { display: flex; gap: 12px; align-items: flex-start; }
-        .num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 9px; color: #fff; font-weight: 800; font-size: 12.5px; display: flex; align-items: center; justify-content: center; }
+        .num {
+          flex-shrink: 0; width: 26px; height: 26px; border-radius: 9px;
+          background: color-mix(in srgb, var(--foreground) 82%, var(--surface));
+          color: var(--surface); font-weight: 800; font-size: 12.5px;
+          display: flex; align-items: center; justify-content: center;
+        }
         .body { min-width: 0; flex: 1; }
-        .body h3 { font-size: 13px; font-weight: 800; margin: 0 0 4px; color: #2c2620; }
-        .lh-prose { font-size: 12px; color: #6b6357; line-height: 1.65; }
-        .simplify-tag { font-size: 9px; font-weight: 800; color: #a3781c; background: #faf1de; padding: 2px 6px; border-radius: 5px; margin-left: 5px; white-space: nowrap; vertical-align: middle; }
+        .body h3 { font-size: 13.5px; font-weight: 800; margin: 2px 0 4px; color: var(--foreground); }
+        .lh-prose { font-size: 12.5px; color: var(--fg-muted); line-height: 1.7; }
+        .simplify-tag {
+          font-size: 9px; font-weight: 800; margin-left: 6px; white-space: nowrap; vertical-align: middle;
+          color: color-mix(in srgb, ${HUE_WARN} 64%, var(--foreground));
+          background: color-mix(in srgb, ${HUE_WARN} 16%, var(--surface));
+          padding: 2px 6px; border-radius: 5px;
+        }
       `}</style>
     </div>
   );
@@ -1652,9 +1807,12 @@ function CompareCard({ columns }: { columns: LilyCompareData['columns'] }) {
       ))}
       <style jsx>{`
         .lh-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .col { background: #faf7f2; border-radius: 12px; padding: 10px 12px; min-width: 0; }
-        .col h4 { font-size: 11.5px; font-weight: 800; margin: 0 0 6px; color: #c25c70; }
-        .col ul { margin: 0; padding-left: 15px; font-size: 11px; line-height: 1.7; color: #463f36; }
+        .col {
+          background: var(--accent); border: 1px solid var(--border);
+          border-radius: 12px; padding: 11px 13px; min-width: 0;
+        }
+        .col h4 { font-size: 12px; font-weight: 800; margin: 0 0 6px; color: var(--primary-deep, var(--primary)); }
+        .col ul { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.75; color: var(--foreground); }
       `}</style>
     </div>
   );
@@ -1664,18 +1822,26 @@ function Accordion({ title, children }: { title: string; children: React.ReactNo
   const t = useT();
   const [open, setOpen] = useState(true);
   return (
-    <div className="lh-accordion">
+    <div className={`lh-accordion${open ? ' open' : ''}`}>
       <button type="button" className="lh-accordion-head" onClick={() => setOpen(o => !o)}>
-        <span className="ttl">🔬 {title}</span>
-        <span className="chev">{open ? `▲ ${t('開いています')}` : `▼ ${t('閉じています')}`}</span>
+        <span className="ttl"><span aria-hidden>🔬</span> {title}</span>
+        <span className="chev">{open ? t('閉じる') : t('開く')} {open ? '▲' : '▼'}</span>
       </button>
       {open && <div className="lh-accordion-body">{children}</div>}
       <style jsx>{`
-        .lh-accordion { background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 10px rgba(60,40,20,.07); }
-        .lh-accordion-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 15px; background: #faf7f2; border: none; cursor: pointer; font-family: inherit; text-align: left; }
-        .ttl { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #2c2620; }
-        .chev { font-size: 10.5px; color: #a08a72; font-weight: 700; flex-shrink: 0; }
-        .lh-accordion-body { padding: 14px 15px 15px; display: flex; flex-direction: column; gap: 0; }
+        .lh-accordion {
+          border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+          background: color-mix(in srgb, var(--foreground) 2.5%, var(--surface));
+        }
+        .lh-accordion-head {
+          width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+          padding: 12px 14px; background: transparent; border: none; cursor: pointer;
+          font-family: inherit; text-align: left;
+        }
+        .lh-accordion.open .lh-accordion-head { border-bottom: 1px solid var(--border); }
+        .ttl { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 6px; color: var(--foreground); }
+        .chev { font-size: 10.5px; color: var(--fg-muted); font-weight: 700; flex-shrink: 0; }
+        .lh-accordion-body { padding: 14px; display: flex; flex-direction: column; gap: 15px; }
       `}</style>
     </div>
   );
@@ -1774,17 +1940,31 @@ function HeavyExplanation({
     <div className="lh-stack">
       {nodes}
       <style jsx global>{`
-        .lh-prose p { margin: 0 0 0.5em; }
+        .lh-prose p { margin: 0 0 0.55em; }
         .lh-prose p:last-child { margin-bottom: 0; }
         .lh-prose strong { font-weight: 800; }
         .lh-prose em { font-style: italic; }
-        .lh-prose .rt-term { font-weight: 800; color: #3d6f9c; }
-        .lh-prose .rt-gloss { color: #8a7d6d; font-weight: 500; }
-        .lh-prose code.rt-code { background: rgba(0,0,0,.06); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
+        .lh-prose .rt-term { font-weight: 800; color: color-mix(in srgb, var(--primary) 55%, var(--foreground)); }
+        .lh-prose .rt-gloss { color: var(--fg-muted); font-weight: 500; }
+        .lh-prose code.rt-code { background: color-mix(in srgb, var(--foreground) 8%, transparent); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; font-family: var(--font-mono, monospace); }
+        .lh-prose a { color: var(--primary-deep, var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
+        .lh-prose ul, .lh-prose ol { margin: 0.3em 0 0.5em; padding-left: 1.35em; }
+        .lh-prose li { margin: 0.15em 0; }
       `}</style>
       <style jsx>{`
-        .lh-stack { display: flex; flex-direction: column; gap: 0; }
-        .lh-loose-text { font-size: 12.5px; line-height: 1.75; color: #463f36; }
+        /* One cohesive "study sheet": a single calm surface holds the whole
+           explanation, so it reads as one document instead of a stack of
+           competing boxes. Color is reserved for the few semantic accents. */
+        .lh-stack {
+          display: flex; flex-direction: column; gap: 12px;
+          background: var(--card-bg, var(--surface));
+          border: 1px solid var(--border);
+          border-radius: 18px;
+          padding: 15px;
+          box-shadow: var(--shadow-sm, 0 2px 10px rgba(0,0,0,.05));
+        }
+        .lh-loose-text { font-size: 13.5px; line-height: 1.8; color: var(--foreground); padding: 0 4px; }
+        .lh-embedded-block { margin: 2px 0; }
       `}</style>
     </div>
   );
@@ -2023,8 +2203,8 @@ function LilyBubble({
         .rt-body :global(li) { line-height: 1.7; }
         .rt-body :global(strong) { font-weight: 800; color: color-mix(in srgb, var(--primary) 65%, var(--foreground)); }
         .rt-body :global(em) { font-style: italic; opacity: 0.9; }
-        .rt-body :global(.rt-term) { font-weight: 800; color: #3d6f9c; }
-        .rt-body :global(.rt-gloss) { color: #8a7d6d; font-weight: 500; }
+        .rt-body :global(.rt-term) { font-weight: 800; color: color-mix(in srgb, var(--primary) 55%, var(--foreground)); }
+        .rt-body :global(.rt-gloss) { color: var(--fg-muted); font-weight: 500; }
         .rt-body :global(del) { text-decoration: line-through; opacity: 0.55; }
         .rt-body :global(a) { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; transition: opacity 0.12s; }
         .rt-body :global(a:hover) { opacity: 0.72; }
