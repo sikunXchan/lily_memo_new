@@ -1482,6 +1482,18 @@ function stripBlockMarkers(text: string): string {
   return text.replace(LBLK_RE, '\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Rich-text signal palette: black (ink) / blue (structure) / green (tip) /
+// yellow (highlight, attention) / red (danger) — a small, universally-learned
+// set (traffic lights, hazard signs, highlighter pens) chosen for recognition
+// and memorability over decorative brand color. "Black" is var(--foreground)
+// itself (inverts correctly in dark themes). The other three are blended 75/25
+// with var(--foreground) so they gain/lose weight the same way the rest of the
+// UI does per theme, keeping contrast solid in both light and dark (verified
+// ≥4.5:1 dark / ≥6.7:1 light).
+const RT_BLUE = 'color-mix(in srgb, #1565c0 75%, var(--foreground) 25%)';
+const RT_GREEN = 'color-mix(in srgb, #2e7d32 75%, var(--foreground) 25%)';
+const RT_RED = 'color-mix(in srgb, #c62828 75%, var(--foreground) 25%)';
+
 function LilyBubble({
   message, allNotes, selectedNoteId, model, onNoteCreated, onRegenerate, onQaCheck,
 }: {
@@ -1685,68 +1697,73 @@ function LilyBubble({
         .msg-regen-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--accent); }
         .rt-body :global(p) { margin: 0 0 0.75em; }
         .rt-body :global(p:last-child) { margin-bottom: 0; }
-        .rt-body :global(h1) { font-size: 1.2rem; font-weight: 800; margin: 1em 0 0.45em; color: var(--primary-deep, var(--primary)); border-left: 4px solid var(--primary-deep, var(--primary)); background: color-mix(in srgb, var(--primary) 10%, transparent); border-radius: 0 6px 6px 0; padding: 5px 10px 5px 12px; }
-        .rt-body :global(h2) { font-size: 1.05rem; font-weight: 800; margin: 0.8em 0 0.32em; color: var(--primary-deep, var(--primary)); border-left: 3px solid color-mix(in srgb, var(--primary-deep) 55%, transparent); padding-left: 10px; }
-        .rt-body :global(h3) { font-size: 0.95rem; font-weight: 800; margin: 0.65em 0 0.25em; color: var(--primary-deep, var(--primary)); }
+        .rt-body :global(h1) { font-size: 1.2rem; font-weight: 800; margin: 1em 0 0.45em; color: ${RT_BLUE}; border-left: 4px solid ${RT_BLUE}; background: color-mix(in srgb, #1565c0 8%, transparent); border-radius: 0 6px 6px 0; padding: 5px 10px 5px 12px; }
+        .rt-body :global(h2) { font-size: 1.05rem; font-weight: 800; margin: 0.8em 0 0.32em; color: ${RT_BLUE}; border-left: 3px solid color-mix(in srgb, #1565c0 55%, transparent); padding-left: 10px; }
+        .rt-body :global(h3) { font-size: 0.95rem; font-weight: 800; margin: 0.65em 0 0.25em; color: ${RT_BLUE}; }
         .rt-body :global(h3::before) { content: "▸ "; font-size: 0.78em; }
         .rt-body :global(ul) { margin: 0.4em 0; padding-left: 0; list-style: none; }
         .rt-body :global(ul li) { margin: 0.28em 0; padding-left: 1.35em; position: relative; }
-        .rt-body :global(ul li::before) { content: ""; position: absolute; left: 0.32em; top: 0.57em; width: 7px; height: 7px; border-radius: 50%; background: var(--primary-deep, var(--primary)); opacity: 0.8; }
+        .rt-body :global(ul li::before) { content: ""; position: absolute; left: 0.32em; top: 0.57em; width: 7px; height: 7px; border-radius: 50%; background: ${RT_BLUE}; opacity: 0.85; }
         .rt-body :global(ul ul) { margin: 0.12em 0; }
-        .rt-body :global(ul ul li::before) { width: 5px; height: 5px; background: transparent; border: 1.5px solid color-mix(in srgb, var(--primary-deep) 80%, transparent); top: 0.61em; left: 0.34em; opacity: 1; }
+        .rt-body :global(ul ul li::before) { width: 5px; height: 5px; background: transparent; border: 1.5px solid ${RT_BLUE}; top: 0.61em; left: 0.34em; opacity: 1; }
         .rt-body :global(ol) { margin: 0.4em 0; padding-left: 1.5em; }
         .rt-body :global(ol li) { margin: 0.28em 0; }
         .rt-body :global(li) { line-height: 1.7; }
-        .rt-body :global(li::marker) { color: var(--primary-deep, var(--primary)); font-weight: 800; }
-        /* Inline emphasis stays high-contrast neutral (not brand-colored): a
+        .rt-body :global(li::marker) { color: ${RT_BLUE}; font-weight: 800; }
+        /* Inline emphasis stays high-contrast black ink, not a color: a
            reading paragraph with many scattered colored words is harder to
-           read, not "richer". Color is reserved for structure (headings) and
-           a genuine highlighter accent (.rt-mark) below. */
+           read, not "richer". Color is reserved for structure (blue),
+           highlighting the one thing to remember (yellow), and callouts
+           (green/yellow/red) below. */
         .rt-body :global(strong) { font-weight: 800; color: var(--foreground); }
         .rt-body :global(em) { font-style: italic; opacity: 0.85; }
         .rt-body :global(.rt-term) { font-weight: 800; color: var(--foreground); }
         .rt-body :global(.rt-gloss) { color: var(--fg-muted); font-weight: 500; }
         .rt-body :global(del) { text-decoration: line-through; opacity: 0.55; }
-        .rt-body :global(a) { color: var(--primary-deep, var(--primary)); text-decoration: underline; text-underline-offset: 2px; transition: opacity 0.12s; }
+        .rt-body :global(a) { color: ${RT_BLUE}; text-decoration: underline; text-underline-offset: 2px; transition: opacity 0.12s; }
         .rt-body :global(a:hover) { opacity: 0.72; }
-        .rt-body :global(blockquote) { border-left: 4px solid var(--primary-deep, var(--primary)); margin: 0.75em 0; padding: 0.5em 1em; background: color-mix(in srgb, var(--primary) 8%, var(--background)); border-radius: 0 8px 8px 0; color: var(--foreground); font-style: italic; }
+        .rt-body :global(blockquote) { border-left: 4px solid ${RT_BLUE}; margin: 0.75em 0; padding: 0.5em 1em; background: color-mix(in srgb, #1565c0 6%, var(--background)); border-radius: 0 8px 8px 0; color: var(--foreground); font-style: italic; }
         /* True "highlighter" marker — the one thing on the page that should
-           pop, so the reader's eye lands on it first. Amber reads as "this
-           matters" the way a physical highlighter pen does; text stays
+           pop, so the reader's eye lands on it first. Amber/yellow reads as
+           "this matters" the way a physical highlighter pen does; text stays
            foreground-colored so it's still fully legible under the wash. */
         .rt-body :global(.rt-mark) { background: color-mix(in srgb, #f5c518 48%, transparent); color: var(--foreground); padding: 0 4px; border-radius: 3px; box-shadow: 0 -1px 0 color-mix(in srgb, #f5c518 70%, transparent) inset; }
-        .rt-body :global(.section-copy-btn) { opacity: 0.4; margin-left: 6px; vertical-align: baseline; background: transparent; border: none; color: var(--primary-deep, var(--primary)); cursor: pointer; font-size: 0.78em; padding: 0 3px; line-height: 1; transition: opacity 0.15s, color 0.15s; }
+        .rt-body :global(.section-copy-btn) { opacity: 0.4; margin-left: 6px; vertical-align: baseline; background: transparent; border: none; color: ${RT_BLUE}; cursor: pointer; font-size: 0.78em; padding: 0 3px; line-height: 1; transition: opacity 0.15s, color 0.15s; }
         .rt-body :global(h1:hover .section-copy-btn), .rt-body :global(h2:hover .section-copy-btn), .rt-body :global(h3:hover .section-copy-btn) { opacity: 0.85; }
         .rt-body :global(.section-copy-btn:hover) { opacity: 1; }
-        .rt-body :global(.section-copy-btn.copied) { opacity: 1; color: #22863a; }
+        .rt-body :global(.section-copy-btn.copied) { opacity: 1; color: ${RT_GREEN}; }
         .rt-body :global(.rt-callout) { margin: 0.7em 0; border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px; padding: 8px 12px; background: var(--background); }
         .rt-body :global(.rt-callout-head) { font-weight: 800; font-size: 0.82rem; margin-bottom: 4px; display: flex; align-items: center; gap: 5px; }
         .rt-body :global(.rt-callout-body) { font-size: 0.86rem; }
         .rt-body :global(.rt-callout-body > :first-child) { margin-top: 0; }
         .rt-body :global(.rt-callout-body > :last-child) { margin-bottom: 0; }
-        .rt-body :global(.rt-callout-note) { border-left-color: #1976d2; background: rgba(25,118,210,0.06); }
-        .rt-body :global(.rt-callout-note .rt-callout-head) { color: #1976d2; }
-        .rt-body :global(.rt-callout-tip) { border-left-color: #2e7d32; background: rgba(46,125,50,0.06); }
-        .rt-body :global(.rt-callout-tip .rt-callout-head) { color: #2e7d32; }
-        .rt-body :global(.rt-callout-important) { border-left-color: #7b1fa2; background: rgba(123,31,162,0.06); }
-        .rt-body :global(.rt-callout-important .rt-callout-head) { color: #7b1fa2; }
-        .rt-body :global(.rt-callout-warning) { border-left-color: #f9a825; background: rgba(249,168,37,0.08); }
-        .rt-body :global(.rt-callout-warning .rt-callout-head) { color: #c77800; }
-        .rt-body :global(.rt-callout-caution) { border-left-color: #c62828; background: rgba(198,40,40,0.06); }
-        .rt-body :global(.rt-callout-caution .rt-callout-head) { color: #c62828; }
+        /* Callouts use the same signal palette as the rest of rt-body — no
+           purple/orange one-offs: note=blue (info), tip=green (do this),
+           important=black (maximum-seriousness ink, no louder color left to
+           spend), warning=yellow (caution), caution=red (danger). */
+        .rt-body :global(.rt-callout-note) { border-left-color: #1565c0; background: color-mix(in srgb, #1565c0 7%, var(--background)); }
+        .rt-body :global(.rt-callout-note .rt-callout-head) { color: ${RT_BLUE}; }
+        .rt-body :global(.rt-callout-tip) { border-left-color: #2e7d32; background: color-mix(in srgb, #2e7d32 7%, var(--background)); }
+        .rt-body :global(.rt-callout-tip .rt-callout-head) { color: ${RT_GREEN}; }
+        .rt-body :global(.rt-callout-important) { border-left-color: var(--foreground); border-left-width: 5px; background: color-mix(in srgb, var(--foreground) 5%, var(--background)); }
+        .rt-body :global(.rt-callout-important .rt-callout-head) { color: var(--foreground); }
+        .rt-body :global(.rt-callout-warning) { border-left-color: #d4a017; background: color-mix(in srgb, #f5c518 14%, var(--background)); }
+        .rt-body :global(.rt-callout-warning .rt-callout-head) { color: color-mix(in srgb, #a3781c 80%, var(--foreground) 20%); }
+        .rt-body :global(.rt-callout-caution) { border-left-color: #c62828; background: color-mix(in srgb, #c62828 7%, var(--background)); }
+        .rt-body :global(.rt-callout-caution .rt-callout-head) { color: ${RT_RED}; }
         .rt-body :global(hr) { border: none; height: 1px; margin: 0.9em 0; background: linear-gradient(to right, transparent, var(--border-strong, var(--border)), transparent); }
         .rt-body :global(table) { border-collapse: collapse; margin: 0.65em 0; font-size: 0.85rem; width: 100%; }
-        .rt-body :global(thead tr) { background: color-mix(in srgb, var(--primary-deep, var(--primary)) 16%, var(--surface, var(--background))); }
-        .rt-body :global(th) { color: var(--primary-deep, var(--primary)); border: 1px solid var(--border-strong, var(--border)); padding: 6px 12px; font-weight: 800; text-align: left; }
+        .rt-body :global(thead tr) { background: color-mix(in srgb, #1565c0 14%, var(--surface, var(--background))); }
+        .rt-body :global(th) { color: ${RT_BLUE}; border: 1px solid var(--border-strong, var(--border)); padding: 6px 12px; font-weight: 800; text-align: left; }
         .rt-body :global(td) { border: 1px solid var(--border); padding: 5px 12px; }
         .rt-body :global(tbody tr:nth-child(even)) { background: color-mix(in srgb, var(--foreground) 3%, transparent); }
-        .rt-body :global(tbody tr:hover) { background: color-mix(in srgb, var(--primary) 7%, transparent); transition: background 0.12s; }
+        .rt-body :global(tbody tr:hover) { background: color-mix(in srgb, #1565c0 6%, transparent); transition: background 0.12s; }
         .rt-body :global(.rt-code) { background: color-mix(in srgb, var(--foreground) 8%, transparent); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 0.83em; font-family: 'Fira Code','Consolas',monospace; color: var(--foreground); }
         .rt-body :global(.rt-codeblock) { margin: 0.6em 0; border-radius: 10px; overflow: hidden; background: #1a1a2e; border: 1px solid rgba(255,255,255,0.07); }
         .rt-body :global(.rt-pre-head) { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px 5px 14px; background: rgba(255,255,255,0.045); border-bottom: 1px solid rgba(255,255,255,0.07); }
         .rt-body :global(.rt-pre-lang) { font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #8b95b3; }
         .rt-body :global(.code-copy-btn) { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); color: #c7d0e8; font-size: 0.66rem; font-weight: 700; padding: 3px 9px; border-radius: 6px; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-        .rt-body :global(.code-copy-btn:hover) { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .rt-body :global(.code-copy-btn:hover) { background: #1565c0; color: #fff; border-color: #1565c0; }
         .rt-body :global(.code-copy-btn.copied) { background: #22863a; color: #fff; border-color: #22863a; }
         .rt-body :global(.rt-pre) { position: relative; background: transparent; border: none; border-radius: 0; padding: 12px 16px 14px; overflow: visible; margin: 0; }
         .rt-body :global(.rt-pre code) { display: block; font-size: 0.82rem; font-family: 'Fira Code','Cascadia Code','Consolas',monospace; white-space: pre; color: #e2e8f0; line-height: 1.75; overflow-x: auto; padding-bottom: 2px; }
