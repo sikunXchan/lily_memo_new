@@ -23,7 +23,7 @@ import {
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
 
-import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension, HandwritingExtension } from '@/lib/extensions';
+import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension, HandwritingExtension, MathInlineExtension, MathBlockExtension } from '@/lib/extensions';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
@@ -183,6 +183,8 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       QAExtension,
       GeometryExtension,
       HandwritingExtension,
+      MathInlineExtension,
+      MathBlockExtension,
       Table.configure({ resizable: false }),
       TableRow,
       TableHeader,
@@ -629,6 +631,11 @@ const searchInputRef = useRef<HTMLInputElement>(null);
     });
   };
 
+  const insertMath = () => {
+    // Insert an empty display formula and open it for editing immediately.
+    insertWithoutFocus({ type: 'mathBlock', attrs: { latex: 'x^2 + y^2 = r^2' } });
+  };
+
 
 
 
@@ -682,6 +689,7 @@ const searchInputRef = useRef<HTMLInputElement>(null);
                         <button className="insert-sheet-item" onClick={() => { insertQA(); setShowInsertMenu(false); }}><BookOpen size={22} /><span>Q&A</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertGeometry(); setShowInsertMenu(false); }}><Compass size={22} /><span>{t('幾何')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={22} /><span>{t('表')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { insertMath(); setShowInsertMenu(false); }}><span className="insert-math-glyph" aria-hidden>√x</span><span>{t('数式')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertHandwriting(); setShowInsertMenu(false); }}><Pencil size={22} /><span>{t('手書き')}</span></button>
                       </div>
                     </div>
@@ -1162,6 +1170,7 @@ const searchInputRef = useRef<HTMLInputElement>(null);
           transition: background 0.14s;
         }
         .insert-sheet-item:hover, .insert-sheet-item:active { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: var(--primary); color: var(--primary); }
+        .insert-math-glyph { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; font-size: 17px; font-weight: 800; font-style: italic; font-family: var(--font-latin, serif); line-height: 1; }
 
         /* ===== AI クイック操作メニュー ===== */
         .ai-menu-wrap { position: relative; }

@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes, nodeInputRule } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import dynamic from 'next/dynamic';
 
@@ -8,6 +8,7 @@ const QAComponent = dynamic(() => import('@/components/QAComponent'), { ssr: fal
 const ResizableImageComponent = dynamic(() => import('@/components/ResizableImageComponent'), { ssr: false });
 const GeometryComponent = dynamic(() => import('@/components/GeometryComponent'), { ssr: false });
 const HandwritingBlockComponent = dynamic(() => import('@/components/HandwritingBlock'), { ssr: false });
+const MathComponent = dynamic(() => import('@/components/MathComponent'), { ssr: false });
 
 export const MermaidExtension = Node.create({
   name: 'mermaid',
@@ -195,5 +196,81 @@ export const HandwritingExtension = Node.create({
   },
   addNodeView() {
     return ReactNodeViewRenderer(HandwritingBlockComponent);
+  },
+});
+
+// ── Math (KaTeX) ─────────────────────────────────────────────────────────────
+// Two atom nodes: `mathInline` ($…$) lives inside a paragraph; `mathBlock`
+// ($$…$$) is its own block. Both store raw LaTeX in the `latex` attribute
+// (serialized as data-latex) and render via KaTeX in MathComponent. Input rules
+// let the user type `$x^2$` / `$$…$$` and have it convert on the closing `$`.
+
+const latexAttr = {
+  latex: {
+    default: '',
+    parseHTML: (el: HTMLElement) => el.getAttribute('data-latex') || '',
+    renderHTML: (attrs: Record<string, unknown>) => ({ 'data-latex': (attrs.latex as string) || '' }),
+  },
+};
+
+export const MathInlineExtension = Node.create({
+  name: 'mathInline',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return latexAttr;
+  },
+  parseHTML() {
+    return [{ tag: 'span[data-type="math-inline"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes, { 'data-type': 'math-inline' })];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(MathComponent);
+  },
+  addInputRules() {
+    return [
+      nodeInputRule({
+        // `$…$` — no whitespace right inside the delimiters, no nested `$`.
+        // Lookbehind (not a capture) so the char before `$` is not consumed,
+        // and so a preceding `$` (i.e. `$$`) never triggers inline math.
+        find: /(?<![\\$])\$([^$\n]+?)\$$/,
+        type: this.type,
+        getAttributes: match => ({ latex: (match[1] || '').trim() }),
+      }),
+    ];
+  },
+});
+
+export const MathBlockExtension = Node.create({
+  name: 'mathBlock',
+  group: 'block',
+  atom: true,
+  selectable: true,
+  draggable: true,
+  addAttributes() {
+    return latexAttr;
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-type="math-block"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'math-block' })];
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(MathComponent);
+  },
+  addInputRules() {
+    return [
+      nodeInputRule({
+        // `$$…$$` typed on a line converts to a display-math block.
+        find: /^\$\$([^$\n]+?)\$\$$/,
+        type: this.type,
+        getAttributes: match => ({ latex: (match[1] || '').trim() }),
+      }),
+    ];
   },
 });
