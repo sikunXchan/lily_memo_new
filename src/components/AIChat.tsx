@@ -28,6 +28,7 @@ import {
   streamSikunlilyChat,
   LILY_CHAT_SYSTEM_PROMPT,
   getLastUsage,
+  classifyDiagramNeeds, buildDiagramAddon,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -2438,6 +2439,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     setLoadedFromChatId(null); // new message → diverged from loaded chat, next save creates a new entry
 
     try {
+      // Kick off the diagram-type classification alongside note lookup (not
+      // after it) so its network latency overlaps with local IndexedDB reads
+      // instead of adding on top of them.
+      const diagramKeysPromise = classifyDiagramNeeds(userText, apiKey);
       const contextNotes: Note[] = [];
       if (lilyAllNotes) {
         contextNotes.push(...(allNotes ?? []));
@@ -2447,7 +2452,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           if (n) contextNotes.push(n);
         }
       }
-      const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+      const diagramKeys = await diagramKeysPromise;
+      const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + buildDiagramAddon(diagramKeys);
 
       const allMsgs = [...messages, userMsg];
       // Keep a generous window of recent turns. gemini-2.5-flash has a very
@@ -2717,6 +2723,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     setIsLoading(true);
 
     try {
+      const diagramKeysPromise = classifyDiagramNeeds(lastUserText, apiKey);
       const contextNotes: Note[] = [];
       if (lilyAllNotes) {
         contextNotes.push(...(allNotes ?? []));
@@ -2726,11 +2733,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           if (n) contextNotes.push(n);
         }
       }
+      const diagramAddon = buildDiagramAddon(await diagramKeysPromise);
 
       const accuracy = isAccuracyTask(lastUserText);
       let aiText: string;
       if (lilyUltraThinking && !economy) {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(t('⚡ Ultra思考中... 深く考えています'));
@@ -2757,7 +2765,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else if (lilyThinking && !economy) {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(t('🧠 思考中...'));
@@ -2784,7 +2792,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
         const regenUseLite = economy || regenAutoLite;
         // 古いモード（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {

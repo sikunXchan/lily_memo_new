@@ -376,6 +376,302 @@ export async function callGeminiChat(
   );
 }
 
+// ── Diagram repertoire (lazy-loaded syntax rules) ────────────────────────────
+// Every diagram type's detailed syntax rules used to live inline in the main
+// system prompt, sent on every single turn regardless of whether that reply
+// needed a diagram at all. That doesn't scale: each new type (state diagram,
+// timeline, quadrant chart, journey map...) would permanently grow every
+// request's input tokens, most of which go unused most of the time.
+//
+// Instead: classifyDiagramNeeds() makes one small, cheap call (flash-lite,
+// short prompt, tiny output) that picks 0+ relevant types from DIAGRAM_MENU
+// for the user's message. Only those types' detailed rules (DIAGRAM_DETAIL)
+// are appended to the main system prompt via buildDiagramAddon() — so the
+// common case (no diagram, or one type) stays small, and the repertoire can
+// keep growing without a per-turn cost for types that aren't used.
+export interface DiagramMenuItem { key: string; label: string; }
+
+export const DIAGRAM_MENU: DiagramMenuItem[] = [
+  { key: 'flowchart', label: '手順・プロセス・分岐のあるロジック' },
+  { key: 'sequence', label: '複数の主体間のやり取り・通信の順序' },
+  { key: 'mindmap', label: 'アイデア出し・階層的な分類・ブレスト' },
+  { key: 'class_diagram', label: 'クラス/オブジェクトの構造と関係' },
+  { key: 'er_diagram', label: 'データベースのエンティティ関係' },
+  { key: 'gantt', label: 'スケジュール・作業期間' },
+  { key: 'state', label: '状態・ステータスの移り変わり' },
+  { key: 'timeline', label: '出来事の時系列' },
+  { key: 'quadrant', label: '2軸での分類・優先度づけ（例: 緊急度×重要度）' },
+  { key: 'journey', label: '複数ステップの体験と満足度の推移' },
+  { key: 'geometry', label: '座標平面の図形・ベクトル・関数グラフ' },
+  { key: 'chart', label: '数値データの推移・比較（棒/折れ線/円/散布図）' },
+];
+
+const MERMAID_KEYS = new Set([
+  'flowchart', 'sequence', 'mindmap', 'class_diagram', 'er_diagram', 'gantt',
+  'state', 'timeline', 'quadrant', 'journey',
+]);
+
+// Rules shared by every Mermaid-family type — included once whenever any of
+// them is selected, instead of being repeated inside each type's block.
+const MERMAID_CORE = `【Mermaid図の共通ルール】
+必ず \`\`\`mermaid ... \`\`\` フェンスで囲む。図の種類によらず共通:
+- ノードID・participant IDなどの識別子は半角英数字とアンダースコアのみ（日本語ID禁止）
+- ラベルに日本語・記号・括弧が含まれる場合は必ずダブルクォートで囲む
+- 改行を入れたい時は \`<br/>\` を使う（生の改行は禁止）`;
+
+export const DIAGRAM_DETAIL: Record<string, string> = {
+  flowchart: `【フローチャート (graph TD / flowchart LR) の書き方】
+⚠️構文エラーを避ける鉄則:
+- ノードのラベルは必ずダブルクォートで囲む（例: \`A["開始（起動）"]\`、\`B{"条件分岐?"}\`）
+- エッジラベルもクォートする: \`A -->|"はい"| B\`
+- ラベル内に \`"\` を含めたい時は \`#quot;\` を使う
+- ノード定義と矢印を同じ行に混ぜない
+
+色をつける場合は \`classDef\` を使うと伝わりやすい:
+\`\`\`mermaid
+graph TD
+  A["開始"]:::start --> B["入力チェック"]:::process
+  B -->|"OK"| C["処理"]:::process
+  B -->|"NG"| D["エラー表示"]:::danger
+  classDef start fill:#fce4ec,stroke:#e84393,color:#1a1a1a,stroke-width:2px
+  classDef process fill:#e3f2fd,stroke:#1976d2,color:#1a1a1a,stroke-width:2px
+  classDef danger fill:#ffebee,stroke:#c62828,color:#1a1a1a,stroke-width:2px
+\`\`\`
+役割の例: start(開始/ピンク), process(処理/青), decision(分岐/黄), success(成功/緑), danger(エラー/赤)`,
+
+  sequence: `【シーケンス図 (sequenceDiagram) の書き方】
+フローチャートとは構文が全く違う。⚠️違反すると構文エラーになる:
+- 1行目は必ず \`sequenceDiagram\`
+- 登場者は最初に \`participant\` で宣言し、IDは半角英数字。日本語名は \`as "..."\` で付ける（例: \`participant U as "ユーザー"\`）
+- メッセージは \`ID 矢印 ID: 内容\` の形。矢印は \`->>\`（要求）, \`-->>\`（応答）, \`-x\`（失敗）。全角矢印→は禁止
+- 分岐は \`alt〜else〜end\`、繰り返しは \`loop〜end\`、注釈は \`Note over U,S: 内容\`。ブロックは必ず \`end\` で閉じる
+- 1行に1メッセージ、生の改行禁止
+例:
+\`\`\`mermaid
+sequenceDiagram
+  participant U as "ユーザー"
+  participant S as "サーバー"
+  U->>S: ログイン要求
+  alt 認証成功
+    S-->>U: トークンを発行
+  else 認証失敗
+    S-->>U: エラーを表示
+  end
+\`\`\``,
+
+  mindmap: `【マインドマップ (mindmap) の書き方】
+アイデア出し・ブレストで積極的に使う。⚠️違反するとレンダリングエラー:
+- インデントは半角スペース2個で統一（タブ禁止）。root直下の子ノードは2スペースインデント
+- \`( ) （ ） [ ] { }\` を含むテキストは必ず \`"..."\` でくくる。記号 \`# & < >\` もクォート必要（クォートは \`"\` のみ、\`'\`不可）
+- ノード内に改行を入れない
+例:
+\`\`\`mermaid
+mindmap
+  root((中心テーマ))
+    観点A
+      アイデア1
+      アイデア2
+    観点B
+      アイデア3
+\`\`\``,
+
+  class_diagram: `【クラス図 (classDiagram) の書き方】
+- 1行目は \`classDiagram\`
+- \`class 名前 { ... }\` でメンバーを定義。\`+\`public \`-\`private \`#\`protected の接頭辞が使える
+- 継承は \`<|--\`、実装は \`<|..\`、集約は \`o--\`、コンポジションは \`*--\`、関連は \`--\` または \`-->\`
+例:
+\`\`\`mermaid
+classDiagram
+  class 動物 {
+    +String 名前
+    +eat()
+  }
+  class 犬
+  動物 <|-- 犬
+\`\`\``,
+
+  er_diagram: `【ER図 (erDiagram) の書き方】
+- 1行目は \`erDiagram\`
+- エンティティ間の関係は \`記号--記号\` の形。\`||\`(1), \`o|\`(0または1), \`}o\`(0以上), \`}|\`(1以上) を左右に組み合わせる
+- ラベルはコロンの後に書く
+例:
+\`\`\`mermaid
+erDiagram
+  顧客 ||--o{ 注文 : 発注する
+  注文 ||--|{ 商品明細 : 含む
+\`\`\``,
+
+  gantt: `【ガントチャート (gantt) の書き方】
+- 1行目は \`gantt\`。\`title\` と \`dateFormat YYYY-MM-DD\` を続けて書く
+- \`section 見出し\` でフェーズを区切る
+- 各タスクは \`タスク名 :ID, 開始日(または after 前ID), 期間\` の形（期間は \`7d\` のように日数）
+例:
+\`\`\`mermaid
+gantt
+  title プロジェクト計画
+  dateFormat YYYY-MM-DD
+  section 設計
+  要件定義 :a1, 2024-01-01, 7d
+  section 開発
+  実装 :a2, after a1, 14d
+\`\`\``,
+
+  state: `【状態遷移図 (stateDiagram-v2) の書き方】
+- 1行目は \`stateDiagram-v2\`。開始・終了は \`[*]\` で表す
+- 遷移は \`状態名 --> 状態名: 遷移条件\` の形（コロンの後にラベル、省略可）
+- 状態名は半角英数字を推奨。日本語も使えるが記号・空白があれば注意
+例:
+\`\`\`mermaid
+stateDiagram-v2
+  [*] --> 未着手
+  未着手 --> 進行中: 着手
+  進行中 --> 完了: 承認
+  進行中 --> 差し戻し: 却下
+  差し戻し --> 進行中: 再着手
+  完了 --> [*]
+\`\`\``,
+
+  timeline: `【タイムライン (timeline) の書き方】
+- 1行目は \`timeline\`。2行目に \`title タイトル\`（省略可）
+- 各行は \`時点 : 出来事\` の形。同じ時点に複数あれば \`:\` で区切って並べる
+例:
+\`\`\`mermaid
+timeline
+  title プロジェクトの歩み
+  2024-01 : 企画開始
+  2024-03 : 開発開始 : プロトタイプ完成
+  2024-06 : リリース
+\`\`\``,
+
+  quadrant: `【優先度マトリクス (quadrantChart) の書き方】
+2軸での分類・優先度づけに使う（例: 緊急度×重要度）。
+- 1行目は \`quadrantChart\`。\`title\`、\`x-axis 低い --> 高い\`、\`y-axis 低い --> 高い\` を書く
+- \`quadrant-1〜4\` で各象限の名前（1=右上, 2=左上, 3=左下, 4=右下）
+- 項目は \`名前: [x, y]\` の形（x, yは0〜1）
+例:
+\`\`\`mermaid
+quadrantChart
+  title 優先度マトリクス
+  x-axis 低い緊急度 --> 高い緊急度
+  y-axis 低い重要度 --> 高い重要度
+  quadrant-1 今すぐやる
+  quadrant-2 計画する
+  quadrant-3 手放す
+  quadrant-4 任せる
+  タスクA: [0.8, 0.9]
+  タスクB: [0.3, 0.7]
+\`\`\``,
+
+  journey: `【ユーザージャーニー (journey) の書き方】
+複数ステップの体験と満足度の推移を示す。
+- 1行目は \`journey\`。2行目に \`title タイトル\`
+- \`section 見出し\` でフェーズを区切る
+- 各行は \`アクション: 満足度(1〜5の数字、高いほど良い): 担当者\` の形
+例:
+\`\`\`mermaid
+journey
+  title 通販での買い物体験
+  section 商品を探す
+    検索する: 5: ユーザー
+    比較する: 3: ユーザー
+  section 購入する
+    決済する: 2: ユーザー
+\`\`\``,
+
+  geometry: `【数学・幾何の図 (geometry) の書き方】
+⚠️必ず \`\`\`geometry ... \`\`\` フェンスで囲む。JSONをフェンスの外に書いてはならない。
+点・ベクトル・線分・直線・円・多角形・角・関数グラフ(y=f(x)) を座標平面に描ける。
+\`\`\`geometry
+{
+  "title": "図のタイトル",
+  "xRange": [-3, 3],
+  "yRange": [-3, 3],
+  "elements": [
+    { "type": "point", "x": 1, "y": 2, "label": "A", "color": "#e84393" },
+    { "type": "vector", "from": [0,0], "to": [2,1], "label": "OA" },
+    { "type": "segment", "from": [0,0], "to": [1,2], "label": "辺a", "dashed": true },
+    { "type": "line", "from": [0,0], "to": [1,1] },
+    { "type": "circle", "center": [0,0], "r": 2 },
+    { "type": "polygon", "points": [[0,0],[2,0],[1,2]], "fill": "rgba(232,67,147,0.1)" },
+    { "type": "angle", "at": [0,0], "from": [1,0], "to": [0,1], "label": "θ" },
+    { "type": "function", "expr": "x^2 - 1", "label": "y=x^2-1" },
+    { "type": "text", "x": 1, "y": 1, "text": "ここ" }
+  ]
+}
+\`\`\`
+expr で使えるもの: 変数x、演算子 + - * / ^（**も可）、括弧、暗黙の掛け算（例: 2x, 3sin(x)）。関数: sin cos tan asin acos atan sinh cosh tanh sqrt cbrt abs exp log ln log10 log2 sign floor ceil round。定数: pi e tau。
+⚠️情報量を多く描く: すべての点にlabelと座標が分かる配置を、線分・ベクトルには長さや名前をlabelに、角には角度をlabelに入れる。計算で求めた数値はtext要素で図中に書き込む。xRange/yRangeは全要素が余白を持って収まる範囲にする。`,
+
+  chart: `【グラフ (Chart.js) の書き方】
+以下の形式でJSONを出力。必ずこの形式を守る。
+\`\`\`chart
+{
+  "type": "bar",
+  "data": {
+    "labels": ["項目1", "項目2", "項目3"],
+    "datasets": [{
+      "label": "データ名",
+      "data": [10, 20, 30],
+      "backgroundColor": ["rgba(255,99,132,0.75)","rgba(54,162,235,0.75)","rgba(255,206,86,0.75)"]
+    }]
+  },
+  "options": { "plugins": { "title": { "display": true, "text": "グラフタイトル" } } }
+}
+\`\`\`
+type: bar, line, pie, scatter`,
+};
+
+// Assembles the system-prompt addon for the diagram types the classifier
+// selected. Empty input → empty string (no diagram capability offered that
+// turn, matching the classifier's judgement that none is needed).
+export function buildDiagramAddon(keys: string[]): string {
+  const valid = keys.filter(k => DIAGRAM_DETAIL[k]);
+  if (valid.length === 0) return '';
+  const needsMermaidCore = valid.some(k => MERMAID_KEYS.has(k));
+  const parts = [needsMermaidCore ? MERMAID_CORE : '', ...valid.map(k => DIAGRAM_DETAIL[k])];
+  return '\n\n' + parts.filter(Boolean).join('\n\n');
+}
+
+// One small, cheap, deterministic call that picks 0+ diagram types relevant
+// to the user's message from DIAGRAM_MENU. Runs on the fastest model tier
+// with a tiny output budget — this is a routing decision, not a reasoning
+// task. Errs toward including a borderline-relevant type (a little extra
+// prompt size beats silently missing a diagram opportunity); never blocks or
+// fails the main reply — a classification error falls back to the most
+// commonly useful types (see catch below) rather than none at all.
+export async function classifyDiagramNeeds(userMessage: string, apiKey: string): Promise<string[]> {
+  const trimmed = userMessage.trim();
+  if (!trimmed) return [];
+  const menuText = DIAGRAM_MENU.map(m => `- ${m.key}: ${m.label}`).join('\n');
+  const prompt = `次のユーザーの発言を読み、AIの返答の中で図解・グラフ・表が役立ちそうな場合、該当するタイプを下の選択肢から選んでください。迷ったら含める方を選ぶ。
+
+【選択肢】
+${menuText}
+
+該当するキーだけをカンマ区切りで返す（例: flowchart,chart）。図解が不要な内容（あいさつ・雑談・単純な一問一答など）なら none とだけ返す。説明・前置き・記号は一切書かない。
+
+【ユーザーの発言】
+${trimmed.slice(0, 2000)}`;
+
+  try {
+    const text = await callGeminiChat(
+      [{ role: 'user', text: prompt }],
+      '',
+      apiKey,
+      { models: ['gemini-3.1-flash-lite', 'gemini-3.5-flash'], maxOutputTokens: 60, temperature: 0 },
+    );
+    if (/^none$/i.test(text.trim())) return [];
+    const validKeys = new Set(DIAGRAM_MENU.map(m => m.key));
+    return [...new Set(
+      text.split(/[,、\n]/).map(s => s.trim().toLowerCase()).filter(k => validKeys.has(k))
+    )];
+  } catch {
+    // Soft optimization — a classification failure must never block the main
+    // reply. Fall back to the most commonly useful types rather than none.
+    return ['flowchart', 'chart', 'geometry'];
+  }
+}
+
 export const LILY_CHAT_SYSTEM_PROMPT = `
 あなたは「Lily」という名前の、Lily Memoアプリの専属AIアシスタントです。ピンクのパーカーを着た可愛い柴犬（犬）のキャラクターです。キツネではなく犬です。
 ユーザーのメモ作成・整理・分析を楽しくサポートします。
@@ -406,96 +702,13 @@ export const LILY_CHAT_SYSTEM_PROMPT = `
 Lily Memoの料金プラン・トークン予算・各モードの利用回数制限など、アプリの仕様や運営に関する質問には憶測で答えない。「その質問は開発者に直接聞いてね」とだけ伝える。
 
 【できること】
-メモの分析・要約、アイデア出し（Mermaid mindmap活用）、コード生成・解説、UML/フロー図(Mermaid)、数学・幾何の図(geometry)、グラフ(Chart.js)、Q&A・問題作成（6形式・最適な形式を自分で選ぶ）、表、画像/PDF解析、メール下書き、トーン調整、ブログ案、ネット検索（ON時）。各出力の作り方は下記の仕様に従う。
+メモの分析・要約、アイデア出し、コード生成・解説、図解（Mermaid図・数学幾何図・グラフ）、Q&A・問題作成（6形式・最適な形式を自分で選ぶ）、表、画像/PDF解析、メール下書き、トーン調整、ブログ案、ネット検索（ON時）。各出力の作り方は下記の仕様に従う。
 
 【重要】メモ本文に加え、メモ内の Mermaid図 / グラフ / Q&A の中身も [Mermaid図] [グラフ] [Q&A 問題集] という形でテキストとして渡されます。それらもしっかり読んで答えてください。
 
-【Mermaid図を作成する場合】
-必ず以下のフェンスで囲む。内容はMermaidの有効な構文にする。
-\`\`\`mermaid
-[Mermaidのコード]
-\`\`\`
-
-対応する図の種類:
-- フローチャート: graph TD / flowchart LR
-- シーケンス図: sequenceDiagram
-- クラス図: classDiagram
-- ER図: erDiagram
-- ガントチャート: gantt
-- マインドマップ: mindmap （アイデア出し・ブレストで活躍。根に中心テーマ、子にキーワードや関連アイデアをぶら下げる）
-
-⚠️【Mermaidの構文エラーを避ける鉄則 — 違反すると "構文エラー" になる】
-- **ノードのラベルは必ずダブルクォートで囲む**。日本語・全角括弧・記号があるなら絶対にクォートする。
-  - ❌ \`A[開始（プログラム起動）]\` / \`B{条件分岐?}\` / \`C(処理：データ読込)\`
-  - ✅ \`A["開始（プログラム起動）"]\` / \`B{"条件分岐?"}\` / \`C("処理：データ読込")\`
-- **ノードIDは半角英数字とアンダースコアのみ**（A, B, node1, step_2 など）。日本語IDは禁止。
-- **エッジラベルもクォートする**: \`A -->|"はい"| B\`、\`A -->|"OK"| B\`。
-- ラベル内に \` " \` を含めたい時は \`#quot;\` を使う（例: \`A["これは#quot;引用#quot;"]\`）。
-- 改行を入れたい時は \`<br/>\` を使う（例: \`A["1行目<br/>2行目"]\`）。生の改行は禁止。
-- ノード定義と矢印を同じ行に混ぜない。\`A["X"] --> B["Y"]\` のように一行に書くのはOKだが、改行を間に入れない。
-
-【色をつけて分かりやすく — classDef を活用】
-フローチャートを描く時は、ノードの役割に応じて色をつけると伝わりやすい。\`classDef\` で色クラスを定義し、各ノードに \`:::クラス名\` で適用する:
-\`\`\`mermaid
-graph TD
-  A["開始"]:::start --> B["入力チェック"]:::process
-  B -->|"OK"| C["処理"]:::process
-  B -->|"NG"| D["エラー表示"]:::danger
-  C --> E["完了"]:::success
-  classDef start fill:#fce4ec,stroke:#e84393,color:#1a1a1a,stroke-width:2px
-  classDef process fill:#e3f2fd,stroke:#1976d2,color:#1a1a1a,stroke-width:2px
-  classDef success fill:#e8f5e9,stroke:#2e7d32,color:#1a1a1a,stroke-width:2px
-  classDef danger fill:#ffebee,stroke:#c62828,color:#1a1a1a,stroke-width:2px
-\`\`\`
-役割の例: start（開始/ピンク）, process（処理/青）, decision（分岐/黄）, success（成功/緑）, danger（エラー/赤）, data（データ/紫）。ノード数が多い時も、色分けすると一目で構造が分かる。
-
-⚠️【シーケンス図 (sequenceDiagram) の鉄則 — 違反すると "構文エラー" になる】
-シーケンス図はフローチャートとは構文が全く違う。次を必ず守る:
-- 1行目は必ず \`sequenceDiagram\`。
-- **登場者は必ず最初に participant で宣言し、IDは半角英数字にする**。日本語名・スペース・括弧を含む表示名は \`as "..."\` で付ける:
-  - ❌ \`participant ユーザー管理(認証)\` / \`participant Web Server\`
-  - ✅ \`participant U as "ユーザー"\` / \`participant WS as "Web サーバー"\`
-- メッセージは \`ID 矢印 ID: 内容\` の形。矢印は \`->>\`（実線/要求）, \`-->>\`（破線/応答）, \`-x\`（失敗）を使う。全角矢印 → は禁止:
-  - ✅ \`U->>WS: ログイン要求\` / \`WS-->>U: トークン返却\`
-- 分岐は \`alt 〜 / else 〜 / end\`、繰り返しは \`loop 〜 / end\`、注釈は \`Note over U,WS: 内容\`。**ブロックは必ず end で閉じる**。
-- 1行に1メッセージ。生の改行を入れない。
-例:
-\`\`\`mermaid
-sequenceDiagram
-  participant U as "ユーザー"
-  participant S as "サーバー"
-  participant DB as "データベース"
-  U->>S: ログイン要求
-  S->>DB: 認証情報を照会
-  DB-->>S: 結果を返す
-  alt 認証成功
-    S-->>U: トークンを発行
-  else 認証失敗
-    S-->>U: エラーを表示
-  end
-\`\`\`
-
-【マインドマップの例】
-アイデア出し・ブレストを頼まれたら積極的にマインドマップを使う:
-\`\`\`mermaid
-mindmap
-  root((中心テーマ))
-    観点A
-      アイデア1
-      アイデア2
-    観点B
-      アイデア3
-\`\`\`
-
-⚠️【マインドマップ構文の厳守事項 — 違反するとレンダリングエラーになる】
-- インデントは **半角スペース2個** で統一する（タブ禁止）
-- ノードのテキストに ( ) （ ） [ ] { } が含まれる場合は **必ず "..." でくくる**
-  - 悪い例: 大化の改新（645年）
-  - 良い例: "大化の改新（645年）"
-- root 直下の子ノードは必ず2スペースインデント
-- ノード内に改行を入れない
-- 記号 # & < > もクォートが必要
-- クォートする場合は " のみ使用（' 不可）
+【図解・グラフを使う場合】
+図解が役立つ内容の時は、このメッセージの末尾に、実際に使える図の種類ごとの詳しい構文ルールが追加で渡されている（渡されていない種類は使えないので無理に使わない）。渡されたルールに厳密に従って \`\`\`mermaid\`\`\` / \`\`\`geometry\`\`\` / \`\`\`chart\`\`\` ブロックを書く。
+⚠️図解のルールが渡されているのに使わず文章だけで済ませるのは失敗。特に手順・プロセス・関係性・比較を説明する時は、文章だけでなく必ず図解も使う（詳細は後述【詳しい解説の書き方】）。
 
 【コードスニペットの書き方】
 コードを示す時は必ず言語付きフェンスで囲む。**インデント（半角スペース）はそのまま正確に保つ**こと。解説を求められたら、コードの後に「何をしているか」を箇条書きやステップで初心者にもわかるように説明する。
@@ -515,74 +728,20 @@ def greet(name):
 > [!TIP]
 > \`f-string\` を使うと変数を \`{}\` で埋め込めるよ。
 
-【グラフ (Chart.js) を作成する場合】
-以下の形式でJSONを出力。必ずこの形式を守る。
-\`\`\`chart
-{
-  "type": "bar",
-  "data": {
-    "labels": ["項目1", "項目2", "項目3"],
-    "datasets": [{
-      "label": "データ名",
-      "data": [10, 20, 30],
-      "backgroundColor": ["rgba(255,99,132,0.75)","rgba(54,162,235,0.75)","rgba(255,206,86,0.75)","rgba(75,192,192,0.75)","rgba(153,102,255,0.75)","rgba(255,159,64,0.75)"]
-    }]
-  },
-  "options": {
-    "plugins": { "title": { "display": true, "text": "グラフタイトル" } }
-  }
-}
-\`\`\`
-
 【数式の書き方】
 数式は必ずLaTeXで書く。文中のインライン数式は $ ... $ で、独立した式は $$ ... $$ で囲む。
 例: 内積は $\\vec{OA}\\cdot\\vec{OB}$ で、$$|\\vec{OA}+\\vec{OB}|^2 = |\\vec{OA}|^2 + 2\\,\\vec{OA}\\cdot\\vec{OB} + |\\vec{OB}|^2$$
 \\sqrt{} \\frac{}{} \\vec{} \\sum \\int 等を使い、√ や ^2 のような生テキストは使わない。
 
-【数学・幾何の図を作成する場合 (geometry)】
-⚠️ 重要: 幾何の図は必ず \`\`\`geometry ... \`\`\` フェンスで囲む。JSONをフェンスの外に書いてはならない。
-点・ベクトル・線分・直線・円・多角形・角・関数グラフ(y=f(x)) を座標平面に描ける。
-解説に図が役立つ時は積極的に描いて、本文で図を参照しながら説明する。例:
-\`\`\`geometry
-{
-  "title": "図のタイトル",
-  "xRange": [-3, 3],
-  "yRange": [-3, 3],
-  "elements": [
-    { "type": "point", "x": 1, "y": 2, "label": "A", "color": "#e84393" },
-    { "type": "vector", "from": [0,0], "to": [2,1], "label": "OA" },
-    { "type": "segment", "from": [0,0], "to": [1,2], "label": "辺a", "dashed": true },
-    { "type": "line", "from": [0,0], "to": [1,1] },
-    { "type": "circle", "center": [0,0], "r": 2 },
-    { "type": "polygon", "points": [[0,0],[2,0],[1,2]], "fill": "rgba(232,67,147,0.1)" },
-    { "type": "angle", "at": [0,0], "from": [1,0], "to": [0,1], "label": "θ" },
-    { "type": "function", "expr": "x^2 - 1", "label": "y=x^2-1" },
-    { "type": "text", "x": 1, "y": 1, "text": "ここ" }
-  ]
-}
-\`\`\`
-expr で使えるもの: 変数 x、演算子 + - * / ^（** も可）、括弧、暗黙の掛け算（例: 2x, 3sin(x), (x+1)(x-1)）。
-関数: sin cos tan asin acos atan sinh cosh tanh sqrt cbrt abs exp log ln log10 log2 sign floor ceil round。定数: pi e tau。
-※ geometry JSONはコードブロック(\`\`\`geometry ... \`\`\`)の中にだけ書く。絶対にフェンス外に生JSONを書かない。
-
-⚠️【図は必ず情報量を多く・参考になるように描く】参考にならない簡素な図は禁止。次を必ず守る:
-- すべての点に \`label\`（A, B, P など）と座標が分かる配置を付ける。原点・座標軸上の重要点も明示する。
-- 線分・ベクトルには長さや名前を \`label\` に入れる（例: "AB = 5", "OA"）。角には角度や記号を \`label\` に入れる（例: "θ=60°", "90°"）。
-- 計算で求めた具体的な数値（長さ・座標・交点・面積など）は \`text\` 要素で図中に書き込む。
-- \`xRange\`/\`yRange\` は図の全要素が余白を持って収まる範囲にする（要素がはみ出さない）。
-- 問題の図形・補助線・関連する点をすべて描き、本文の解説と図のラベルを一致させる。
-
-【「グラフ/図を使いながら解説して」と頼まれた時】解説文だけで終わらせない。必ず該当する \`\`\`geometry\`\`\`（図形・ベクトル・座標）または \`\`\`chart\`\`\`（データ・推移）ブロックを実際に出力し、本文でその図のラベルを参照しながら順を追って解説する。図を省略したり「図は省略」と書くのは禁止。途中で出力を止めず、図と解説を最後まで完成させる。長くなりすぎる場合は解説文を簡潔にし、図は必ず出す。
-
 【⚠️図の配置 — 必ず本文の該当箇所にインラインで挿入する】
 - 図やグラフは、回答の最後にまとめて並べず、解説本文の「その図に言及する直後」に1つずつ挿入する。複数の図を出す時も同じ：それぞれの図を、対応する説明文の直後に置く。
 - 図に番号を振る必要はない。「下の図を見てね」「次の図で確認しよう」のように、すぐ直後に出る図を自然に指し示す。
-- ❌絶対禁止: 「（図1 〇〇の例）」「（図2 △△の構成）」のような **プレースホルダだけのテキスト** を本文に書いて、肝心の \`\`\`mermaid / chart / geometry\`\`\` ブロックを出さないこと。図に言及するなら必ず実物のブロックを直後に出力する。元資料に図があってもAIには見えていないので、自分で再現できる図は積極的に \`\`\`mermaid\`\`\` 等で描き起こす。再現が無理な場合は「図は元資料を参照してね」と一言添えて、無意味な括弧書きは書かない。
+- ❌絶対禁止: 「（図1 〇〇の例）」「（図2 △△の構成）」のような **プレースホルダだけのテキスト** を本文に書いて、肝心のブロックを出さないこと。図に言及するなら必ず実物のブロックを直後に出力する。元資料に図があってもAIには見えていないので、自分で再現できる図は積極的に描き起こす。再現が無理な場合は「図は元資料を参照してね」と一言添えて、無意味な括弧書きは書かない。
 - 良い例:
   まず全体の流れを見てみよう。
   \`\`\`mermaid
   graph TD
-    A[入力] --> B[処理] --> C[出力]
+    A["入力"] --> B["処理"] --> C["出力"]
   \`\`\`
   次に処理部分の中身だよ。
   \`\`\`mermaid
@@ -702,10 +861,10 @@ A1: アプリ同士が機能をやり取りするための接点・仕様
 4. 手順・要素の列挙: 番号付きリスト（\`1.\` \`2.\`）や箇条書き（\`-\`）を使い、各項目の太字ラベルの後に説明を続ける（例: 「**明反応（チラコイド膜）**: 光を吸収し水を分解…」）
 5. よくある誤解: 誤解しやすい点があれば \`> [!WARNING]\` コールアウトで指摘する（なければ省略）
 6. ⚠️図解は「役立ちそうなら」ではなく、次に該当したら必ず使う（文章の壁だけで済ませるのは失敗）:
-   - **手順・プロセス・解き方**（「〜の3ステップ」「〜する流れ」等）→ 必ず \`\`\`mermaid\`\`\` の \`graph TD\` / \`graph LR\` でステップを矢印でつなぐフローチャートを描く。番号リストで書くだけでは不十分で、フローチャートと番号リストの**両方**を使う（フローチャートで全体像、リストで各ステップの詳細）
-   - **概念同士の関係・対応・ギャップ**（例: 「規程」と「現状」の差分を見る、原因と結果の対応）→ mermaidの図（関係を矢印や箱で図示）か表で可視化する
+   - **手順・プロセス・解き方**（「〜の3ステップ」「〜する流れ」等）→ 必ずフローチャートでステップを矢印でつなぐ（構文ルールが渡されていれば使う）。番号リストで書くだけでは不十分で、フローチャートと番号リストの**両方**を使う（フローチャートで全体像、リストで各ステップの詳細）
+   - **概念同士の関係・対応・ギャップ**（例: 「規程」と「現状」の差分を見る、原因と結果の対応）→ 図（関係を矢印や箱で図示）か表で可視化する
    - **複数項目の比較**（3つ以上の選択肢・分類）→ \`\`\`table\`\`\`
-   - **座標・図形が絡む内容**→ \`\`\`geometry\`\`\`、**数値の推移**→ \`\`\`chart\`\`\`
+   - **座標・図形が絡む内容**→ geometry、**数値の推移**→ chart、**状態の移り変わり**→ 状態遷移図、**時系列**→ タイムライン
    文章だけで十分に説明したつもりでも、上記に該当するなら図を省略しない。図は該当する説明箇所の直後に挿入する（【図の配置】のルールに従う）。
    例（「〜の解き方は3ステップです」のような手順の説明をする場合、必ずこう書く）:
    \`\`\`mermaid
