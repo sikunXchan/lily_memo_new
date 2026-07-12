@@ -1567,68 +1567,52 @@ function stripBlockMarkers(text: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 「重い」解説カード — 結論→たとえ→しくみ(開閉式)→誤解→確認 の流れ。
-// わわわ説明術（結論先行・大きな地図・たとえ・適度な認知負荷・視覚的階層）に
-// 沿った設計。色は「意味」に対応させ、記憶に残る少数のアクセント色だけを使う:
-//   結論=ブランド色 / たとえ=バイオレット / 誤解=アンバー / 理解確認=濃ブランド。
-// 全色をテーマ変数＋color-mixで作るので、ライト/ダーク全テーマで自動的に整う。
+// Lily の「重い」解説 — 結論→たとえ→しくみ(開閉式)→誤解→確認 の流れ(わわわ説明術)。
+// これらは Web ダッシュボード風の独立カードではなく、Lily の通常のチャット吹き出しの
+// 「中身」として会話的に積み上がる。装飾は最小限で、色は「意味」を示す少数のアクセント
+// だけ(たとえ=バイオレット / 誤解=アンバー / 結論・確認=ブランド色)。全色を color-mix +
+// テーマ変数で作るので、ライト/ダーク全テーマで自然に馴染む。
 // ─────────────────────────────────────────────────────────────────────────
 
-// Learning-oriented accent hues. Kept as literals but always blended with the
-// theme's own --surface / --foreground via color-mix, so a fixed hue still
-// adapts its lightness to whichever theme (light or dark) is active.
+// Accent hues used only as small semantic cues (never as big card backgrounds).
+// Always blended with the theme's --surface / --foreground via color-mix so a
+// fixed hue adapts to light or dark automatically.
 const HUE_ANALOGY = '#8b5cf6'; // violet — imagination / memory hooks
 const HUE_WARN = '#f59e0b';    // amber — attention, "watch out"
 
+// A faint one-line "where are we headed" breadcrumb (wawawa: show the big map
+// first). Hidden when there's no real multi-step flow.
 function MapRow({ flow }: { flow: string }) {
-  const t = useT();
   const steps = flow
     ? flow.split(/\s*(?:→|->|➡️?|⇒|＞|>)\s*/).map(s => s.trim()).filter(Boolean)
     : [];
+  if (steps.length < 2) return null;
   return (
     <div className="lh-map">
-      <span className="lh-map-ico" aria-hidden>🧭</span>
-      <span className="lh-map-flow">
-        {steps.length > 1
-          ? steps.map((s, i) => (
-              <span className="lh-map-step" key={i}>
-                <span className="lh-map-word">{s}</span>
-                {i < steps.length - 1 && <span className="lh-map-arrow" aria-hidden>→</span>}
-              </span>
-            ))
-          : <span className="lh-map-word">{flow || t('この説明の流れ')}</span>}
-      </span>
+      <span aria-hidden>🧭</span>
+      {steps.map((s, i) => (
+        <span className="lh-map-step" key={i}>
+          {s}{i < steps.length - 1 && <span className="lh-map-sep" aria-hidden>›</span>}
+        </span>
+      ))}
       <style jsx>{`
-        .lh-map { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 1px 2px; }
-        .lh-map-ico { font-size: 13px; line-height: 1; }
-        .lh-map-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 5px; }
-        .lh-map-step { display: inline-flex; align-items: center; gap: 5px; }
-        .lh-map-word { font-size: 11px; font-weight: 700; color: var(--fg-muted); }
-        .lh-map-arrow { font-size: 11px; color: var(--fg-faint); font-weight: 700; }
+        .lh-map { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; font-size: 10.5px; font-weight: 700; color: var(--fg-faint); }
+        .lh-map-step { display: inline-flex; align-items: center; gap: 6px; }
+        .lh-map-sep { color: var(--fg-faint); }
       `}</style>
     </div>
   );
 }
 
+// The conclusion is just Lily's emphasized opening line — bold lead text with a
+// slim brand accent, not a labelled box.
 function ConclusionCard({ text }: { text: string }) {
-  const t = useT();
   return (
     <div className="lh-conclusion">
-      <span className="lbl">{t('結論')}</span>
-      <div className="lh-prose lh-conclusion-body" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
+      <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
       <style jsx>{`
-        .lh-conclusion {
-          background: color-mix(in srgb, var(--primary) 10%, var(--surface));
-          border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
-          border-left: 4px solid var(--primary);
-          border-radius: 14px; padding: 13px 16px;
-        }
-        .lbl {
-          display: inline-block; font-size: 10.5px; font-weight: 800;
-          color: var(--primary-deep, var(--primary));
-          letter-spacing: .08em; text-transform: uppercase; margin-bottom: 5px;
-        }
-        .lh-conclusion-body { font-size: 15px; font-weight: 700; line-height: 1.65; color: var(--foreground); }
+        .lh-conclusion { border-left: 3px solid var(--primary); padding: 1px 0 1px 12px; }
+        .lh-prose { font-size: 15px; font-weight: 700; line-height: 1.7; color: var(--foreground); }
       `}</style>
     </div>
   );
@@ -1639,42 +1623,26 @@ function SimpleCard({ text }: { text: string }) {
     <div className="lh-simple">
       <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
       <style jsx>{`
-        .lh-simple { padding: 0 4px; }
-        .lh-prose { font-size: 13.5px; color: var(--foreground); line-height: 1.8; }
+        .lh-prose { font-size: 14px; color: var(--foreground); line-height: 1.85; }
       `}</style>
     </div>
   );
 }
 
+// Soft, borderless chat note — a light tinted line, not a framed card.
 function AnalogyCard({ text, diff }: { text: string; diff?: string }) {
   const t = useT();
   return (
-    <div className="lh-callout lh-analogy">
-      <span className="ico" aria-hidden>🔗</span>
-      <div className="body">
-        <span className="lbl">{t('たとえるなら')}</span>
-        <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
-        {diff && <div className="diff">{t('ただし')}：{diff}</div>}
-      </div>
+    <div className="lh-note lh-analogy">
+      <div className="lead"><span aria-hidden>💡</span> {t('たとえるなら')}</div>
+      <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
+      {diff && <div className="diff">{t('ただし')}：{diff}</div>}
       <style jsx>{`
-        .lh-callout { border-radius: 14px; padding: 13px 15px; display: flex; gap: 11px; }
-        .lh-analogy {
-          background: color-mix(in srgb, ${HUE_ANALOGY} 10%, var(--surface));
-          border: 1px solid color-mix(in srgb, ${HUE_ANALOGY} 26%, var(--border));
-        }
-        .ico { font-size: 15px; flex-shrink: 0; line-height: 1.6; }
-        .body { min-width: 0; flex: 1; }
-        .lbl {
-          display: block; font-size: 10.5px; font-weight: 800; margin-bottom: 4px;
-          color: color-mix(in srgb, ${HUE_ANALOGY} 70%, var(--foreground));
-          text-transform: uppercase; letter-spacing: .05em;
-        }
-        .lh-prose { font-size: 13px; color: var(--foreground); line-height: 1.7; }
-        .diff {
-          margin-top: 9px; padding-top: 9px;
-          border-top: 1px dashed color-mix(in srgb, ${HUE_ANALOGY} 30%, var(--border));
-          font-size: 12px; color: var(--fg-muted); line-height: 1.6;
-        }
+        .lh-note { border-radius: 12px; padding: 11px 13px; }
+        .lh-analogy { background: color-mix(in srgb, ${HUE_ANALOGY} 9%, var(--surface)); }
+        .lead { font-size: 12px; font-weight: 800; margin-bottom: 4px; color: color-mix(in srgb, ${HUE_ANALOGY} 66%, var(--foreground)); }
+        .lh-prose { font-size: 13.5px; color: var(--foreground); line-height: 1.7; }
+        .diff { margin-top: 8px; font-size: 12.5px; color: var(--fg-muted); line-height: 1.6; }
       `}</style>
     </div>
   );
@@ -1683,26 +1651,14 @@ function AnalogyCard({ text, diff }: { text: string; diff?: string }) {
 function WarnCard({ text }: { text: string }) {
   const t = useT();
   return (
-    <div className="lh-callout lh-warn">
-      <span className="ico" aria-hidden>⚠️</span>
-      <div className="body">
-        <span className="lbl">{t('よくある誤解')}</span>
-        <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
-      </div>
+    <div className="lh-note lh-warn">
+      <div className="lead"><span aria-hidden>⚠️</span> {t('よくある誤解')}</div>
+      <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
       <style jsx>{`
-        .lh-callout { border-radius: 14px; padding: 13px 15px; display: flex; gap: 11px; }
-        .lh-warn {
-          background: color-mix(in srgb, ${HUE_WARN} 12%, var(--surface));
-          border: 1px solid color-mix(in srgb, ${HUE_WARN} 30%, var(--border));
-        }
-        .ico { font-size: 15px; flex-shrink: 0; line-height: 1.6; }
-        .body { min-width: 0; flex: 1; }
-        .lbl {
-          display: block; font-size: 10.5px; font-weight: 800; margin-bottom: 4px;
-          color: color-mix(in srgb, ${HUE_WARN} 64%, var(--foreground));
-          text-transform: uppercase; letter-spacing: .05em;
-        }
-        .lh-prose { font-size: 13px; color: var(--foreground); line-height: 1.7; }
+        .lh-note { border-radius: 12px; padding: 11px 13px; }
+        .lh-warn { background: color-mix(in srgb, ${HUE_WARN} 11%, var(--surface)); }
+        .lead { font-size: 12px; font-weight: 800; margin-bottom: 4px; color: color-mix(in srgb, ${HUE_WARN} 60%, var(--foreground)); }
+        .lh-prose { font-size: 13.5px; color: var(--foreground); line-height: 1.7; }
       `}</style>
     </div>
   );
@@ -1712,24 +1668,18 @@ function RefBox({ text }: { text: string }) {
   const t = useT();
   return (
     <div className="lh-ref">
-      <span className="lbl">{t('参考・発展')}</span>
+      <span className="lead">{t('参考・発展')}</span>
       <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(text) }} />
       <style jsx>{`
-        .lh-ref {
-          border: 1px dashed var(--border-strong, var(--border));
-          border-radius: 12px; padding: 10px 13px;
-          background: color-mix(in srgb, var(--foreground) 3%, transparent);
-        }
-        .lbl {
-          display: block; font-size: 9.5px; font-weight: 800; color: var(--fg-faint);
-          text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px;
-        }
-        .lh-prose { font-size: 12px; color: var(--fg-muted); line-height: 1.65; }
+        .lh-ref { font-size: 12px; color: var(--fg-muted); line-height: 1.65; }
+        .lead { display: block; font-size: 11px; font-weight: 800; color: var(--fg-faint); margin-bottom: 2px; }
       `}</style>
     </div>
   );
 }
 
+// A warm, gentle recall prompt (wawawa: 分かった≠できる). Soft brand tint, not a
+// heavy dark panel.
 function CheckBox({ question, answer }: { question: string; answer: string }) {
   const t = useT();
   const [revealed, setRevealed] = useState(false);
@@ -1737,28 +1687,23 @@ function CheckBox({ question, answer }: { question: string; answer: string }) {
     <div className="lh-check">
       <div className="q"><span aria-hidden>❓</span> {question}</div>
       {revealed ? (
-        <div className="lh-prose lh-answer" dangerouslySetInnerHTML={{ __html: renderRich(answer) }} />
+        <div className="lh-prose ans" dangerouslySetInnerHTML={{ __html: renderRich(answer) }} />
       ) : (
         <button type="button" className="reveal-btn" onClick={() => setRevealed(true)}>
           💬 {t('自分の言葉で考えてから答えを見る')}
         </button>
       )}
       <style jsx>{`
-        .lh-check { background: var(--primary-deep, var(--primary)); border-radius: 16px; padding: 15px 16px; }
-        .q {
-          font-size: 13px; font-weight: 700; color: var(--primary-foreground, #fff);
-          margin: 0 0 11px; display: flex; gap: 6px; line-height: 1.55;
-        }
+        .lh-check { background: color-mix(in srgb, var(--primary) 8%, var(--surface)); border-radius: 13px; padding: 12px 14px; }
+        .q { font-size: 13.5px; font-weight: 700; color: var(--foreground); margin: 0 0 9px; line-height: 1.6; }
         .reveal-btn {
-          font-size: 11.5px; font-weight: 800; color: var(--primary-deep, var(--primary));
-          background: var(--primary-foreground, #fff); padding: 7px 14px; border-radius: 999px;
-          display: inline-flex; align-items: center; gap: 5px; border: none; cursor: pointer; font-family: inherit;
+          font-size: 12px; font-weight: 800; color: var(--primary-foreground, #fff); background: var(--primary);
+          padding: 7px 14px; border-radius: 999px; border: none; cursor: pointer; font-family: inherit;
         }
         .reveal-btn:hover { opacity: 0.92; }
-        .lh-answer {
-          font-size: 13px; color: var(--primary-foreground, #fff); line-height: 1.7;
-          background: color-mix(in srgb, var(--primary-foreground, #fff) 16%, transparent);
-          border-radius: 10px; padding: 11px 13px;
+        .ans {
+          font-size: 13.5px; color: var(--foreground); line-height: 1.75;
+          background: color-mix(in srgb, var(--primary) 7%, transparent); border-radius: 9px; padding: 9px 11px;
         }
       `}</style>
     </div>
@@ -1769,22 +1714,22 @@ function StepCard({ index, title, body, simplified }: { index: number; title: st
   const t = useT();
   return (
     <div className="lh-step">
-      <div className="num">{index}</div>
+      <span className="num">{index}</span>
       <div className="body">
-        <h3>{title}{simplified && <span className="simplify-tag">{t('簡略化')}</span>}</h3>
+        <div className="ttl">{title}{simplified && <span className="simplify-tag">{t('簡略化')}</span>}</div>
         <div className="lh-prose" dangerouslySetInnerHTML={{ __html: renderRich(body) }} />
       </div>
       <style jsx>{`
-        .lh-step { display: flex; gap: 12px; align-items: flex-start; }
+        .lh-step { display: flex; gap: 10px; align-items: flex-start; }
         .num {
-          flex-shrink: 0; width: 26px; height: 26px; border-radius: 9px;
-          background: color-mix(in srgb, var(--foreground) 82%, var(--surface));
-          color: var(--surface); font-weight: 800; font-size: 12.5px;
+          flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; margin-top: 1px;
+          background: color-mix(in srgb, var(--primary) 15%, var(--surface));
+          color: var(--primary-deep, var(--primary)); font-weight: 800; font-size: 11.5px;
           display: flex; align-items: center; justify-content: center;
         }
         .body { min-width: 0; flex: 1; }
-        .body h3 { font-size: 13.5px; font-weight: 800; margin: 2px 0 4px; color: var(--foreground); }
-        .lh-prose { font-size: 12.5px; color: var(--fg-muted); line-height: 1.7; }
+        .ttl { font-size: 13.5px; font-weight: 800; margin: 1px 0 3px; color: var(--foreground); }
+        .lh-prose { font-size: 13px; color: var(--fg-muted); line-height: 1.7; }
         .simplify-tag {
           font-size: 9px; font-weight: 800; margin-left: 6px; white-space: nowrap; vertical-align: middle;
           color: color-mix(in srgb, ${HUE_WARN} 64%, var(--foreground));
@@ -1801,47 +1746,43 @@ function CompareCard({ columns }: { columns: LilyCompareData['columns'] }) {
     <div className="lh-compare">
       {columns.map((col, i) => (
         <div className="col" key={i}>
-          <h4>{col.title}</h4>
+          <div className="col-h">{col.title}</div>
           <ul>{col.items.map((it, j) => <li key={j}>{it}</li>)}</ul>
         </div>
       ))}
       <style jsx>{`
-        .lh-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .col {
-          background: var(--accent); border: 1px solid var(--border);
-          border-radius: 12px; padding: 11px 13px; min-width: 0;
-        }
-        .col h4 { font-size: 12px; font-weight: 800; margin: 0 0 6px; color: var(--primary-deep, var(--primary)); }
-        .col ul { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.75; color: var(--foreground); }
+        .lh-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+        .col { background: color-mix(in srgb, var(--foreground) 3%, var(--surface)); border-radius: 11px; padding: 10px 12px; min-width: 0; }
+        .col-h { font-size: 12px; font-weight: 800; margin: 0 0 5px; color: var(--primary-deep, var(--primary)); }
+        .col ul { margin: 0; padding-left: 16px; font-size: 12.5px; line-height: 1.75; color: var(--foreground); }
       `}</style>
     </div>
   );
 }
 
+// Progressive disclosure as a plain chat-style toggle (collapsed by default so
+// the message stays short — tap to open the mechanism). Not a framed card.
 function Accordion({ title, children }: { title: string; children: React.ReactNode }) {
-  const t = useT();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   return (
-    <div className={`lh-accordion${open ? ' open' : ''}`}>
-      <button type="button" className="lh-accordion-head" onClick={() => setOpen(o => !o)}>
-        <span className="ttl"><span aria-hidden>🔬</span> {title}</span>
-        <span className="chev">{open ? t('閉じる') : t('開く')} {open ? '▲' : '▼'}</span>
+    <div className="lh-acc">
+      <button type="button" className="lh-acc-toggle" onClick={() => setOpen(o => !o)}>
+        <span className="chev" aria-hidden>{open ? '▾' : '▸'}</span>
+        <span aria-hidden>🔎</span> {title}
       </button>
-      {open && <div className="lh-accordion-body">{children}</div>}
+      {open && <div className="lh-acc-body">{children}</div>}
       <style jsx>{`
-        .lh-accordion {
-          border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
-          background: color-mix(in srgb, var(--foreground) 2.5%, var(--surface));
+        .lh-acc-toggle {
+          display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+          background: transparent; border: none; cursor: pointer; font-family: inherit; padding: 3px 0;
+          font-size: 13px; font-weight: 800; color: var(--primary-deep, var(--primary));
         }
-        .lh-accordion-head {
-          width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-          padding: 12px 14px; background: transparent; border: none; cursor: pointer;
-          font-family: inherit; text-align: left;
+        .lh-acc-toggle:hover { opacity: 0.85; }
+        .chev { font-size: 11px; }
+        .lh-acc-body {
+          margin-top: 10px; padding-left: 12px; border-left: 2px solid var(--border);
+          display: flex; flex-direction: column; gap: 13px;
         }
-        .lh-accordion.open .lh-accordion-head { border-bottom: 1px solid var(--border); }
-        .ttl { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 6px; color: var(--foreground); }
-        .chev { font-size: 10.5px; color: var(--fg-muted); font-weight: 700; flex-shrink: 0; }
-        .lh-accordion-body { padding: 14px; display: flex; flex-direction: column; gap: 15px; }
       `}</style>
     </div>
   );
@@ -1950,21 +1891,28 @@ function HeavyExplanation({
         .lh-prose a { color: var(--primary-deep, var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
         .lh-prose ul, .lh-prose ol { margin: 0.3em 0 0.5em; padding-left: 1.35em; }
         .lh-prose li { margin: 0.15em 0; }
+        .lh-prose h1, .lh-prose h2, .lh-prose h3 { font-weight: 800; color: var(--foreground); margin: 0.5em 0 0.3em; line-height: 1.4; }
+        .lh-prose h1 { font-size: 1.15em; } .lh-prose h2 { font-size: 1.08em; } .lh-prose h3 { font-size: 1em; }
+        .lh-prose .rt-mark { background: color-mix(in srgb, var(--primary) 22%, transparent); padding: 0 3px; border-radius: 3px; }
+        .lh-prose blockquote { border-left: 3px solid var(--primary); margin: 0.5em 0; padding: 0.35em 0.9em; background: color-mix(in srgb, var(--primary) 6%, transparent); border-radius: 0 8px 8px 0; }
+        .lh-prose .rt-codeblock { margin: 0.6em 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+        .lh-prose .rt-pre { margin: 0; padding: 10px 12px; overflow-x: auto; background: color-mix(in srgb, var(--foreground) 5%, var(--surface)); font-size: 0.85em; }
+        .lh-prose .rt-pre-head { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; background: color-mix(in srgb, var(--foreground) 8%, var(--surface)); font-size: 0.72em; color: var(--fg-muted); }
+        .lh-prose .rt-callout { margin: 0.6em 0; border: 1px solid var(--border); border-left-width: 3px; border-radius: 8px; padding: 8px 12px; background: color-mix(in srgb, var(--foreground) 3%, var(--surface)); }
+        .lh-prose .rt-callout-head { font-weight: 800; font-size: 0.85em; margin-bottom: 3px; }
+        .lh-prose table { border-collapse: collapse; width: 100%; margin: 0.6em 0; font-size: 0.9em; display: block; overflow-x: auto; }
+        .lh-prose th, .lh-prose td { border: 1px solid var(--border); padding: 5px 9px; text-align: left; }
+        .lh-prose th { background: var(--accent); font-weight: 700; }
+        .lh-prose .katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
       `}</style>
       <style jsx>{`
-        /* One cohesive "study sheet": a single calm surface holds the whole
-           explanation, so it reads as one document instead of a stack of
-           competing boxes. Color is reserved for the few semantic accents. */
-        .lh-stack {
-          display: flex; flex-direction: column; gap: 12px;
-          background: var(--card-bg, var(--surface));
-          border: 1px solid var(--border);
-          border-radius: 18px;
-          padding: 15px;
-          box-shadow: var(--shadow-sm, 0 2px 10px rgba(0,0,0,.05));
-        }
-        .lh-loose-text { font-size: 13.5px; line-height: 1.8; color: var(--foreground); padding: 0 4px; }
-        .lh-embedded-block { margin: 2px 0; }
+        /* Chat-native: the explanation lives INSIDE Lily's normal chat bubble,
+           so no outer card here — just a conversational vertical flow. The
+           wawawa pieces (conclusion / analogy / details / check) read like one
+           message, with only a few meaningful accents. */
+        .lh-stack { display: flex; flex-direction: column; gap: 11px; }
+        .lh-loose-text { font-size: 14px; line-height: 1.8; color: var(--foreground); }
+        .lh-embedded-block { margin: 1px 0; }
       `}</style>
     </div>
   );
@@ -2085,36 +2033,34 @@ function LilyBubble({
     );
 
   return (
-    <div className={isHeavy ? 'lily-heavy-row' : 'lily-bubble-row'}>
-      {!isHeavy && (
-        <div className="lily-avatar">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
+    <div className="lily-bubble-row">
+      <div className="lily-avatar">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={avatarSrc} alt={avatarAlt} className="avatar-img" />
+      </div>
+      <div className="lily-bubble-wrap" onClick={handleBubbleClick}>
+        <div className="lily-name-row"><span className="lily-name-dot" />Lily</div>
+        {/* Heavy explanations live inside the SAME chat bubble as every other
+            Lily message (chat-native), just with the wawawa flow embedded. */}
+        <div className={`lily-bubble${isHeavy ? ' lily-bubble-heavy' : ''}`}>
+          {isHeavy ? (
+            <HeavyExplanation inlineParts={inlineParts} blockMap={blockMap} renderBlock={renderBlock} />
+          ) : (
+            inlineParts.map((p, i) =>
+              p.kind === 'text' ? (
+                <div
+                  key={`t-${i}`}
+                  className="rt-body"
+                  dangerouslySetInnerHTML={{ __html: renderRich(p.value) }}
+                />
+              ) : (
+                <div key={p.id} className="inline-block-wrap">
+                  {renderBlock(blockMap.get(p.id)!)}
+                </div>
+              )
+            )
+          )}
         </div>
-      )}
-      <div className={isHeavy ? 'lily-heavy-wrap' : 'lily-bubble-wrap'} onClick={handleBubbleClick}>
-        {isHeavy ? (
-          <HeavyExplanation inlineParts={inlineParts} blockMap={blockMap} renderBlock={renderBlock} />
-        ) : (
-          <>
-            <div className="lily-name-row"><span className="lily-name-dot" />Lily</div>
-            <div className="lily-bubble">
-              {inlineParts.map((p, i) =>
-                p.kind === 'text' ? (
-                  <div
-                    key={`t-${i}`}
-                    className="rt-body"
-                    dangerouslySetInnerHTML={{ __html: renderRich(p.value) }}
-                  />
-                ) : (
-                  <div key={p.id} className="inline-block-wrap">
-                    {renderBlock(blockMap.get(p.id)!)}
-                  </div>
-                )
-              )}
-            </div>
-          </>
-        )}
         {message.questions && message.questions.length > 0 && (
           <div className="ask-asked-hint">{t('❓ {n}件の質問をしたよ', { n: message.questions.length })}</div>
         )}
@@ -2165,11 +2111,11 @@ function LilyBubble({
       </div>
       <style jsx>{`
         .lily-bubble-row { display: flex; align-items: flex-start; gap: 10px; align-self: flex-start; max-width: 85%; }
-        .lily-heavy-row { align-self: stretch; width: 100%; }
+        /* Explanations stay chat bubbles, just a touch wider so diagrams/steps breathe. */
+        .lily-bubble-row:has(.lily-bubble-heavy) { max-width: 94%; }
         .lily-avatar { flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%; overflow: hidden; background: var(--accent); border: 2px solid var(--border); }
         .avatar-img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
         .lily-bubble-wrap { flex: 1; min-width: 0; }
-        .lily-heavy-wrap { width: 100%; }
         .lily-name-row { display: flex; align-items: center; gap: 6px; margin: 0 0 4px 2px; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; color: var(--fg-muted, #888); }
         .lily-name-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--skin-accent, var(--primary)); flex-shrink: 0; }
         .lily-bubble {
@@ -2178,6 +2124,7 @@ function LilyBubble({
           font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word;
           box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
         }
+        .lily-bubble-heavy { padding: 14px 16px; }
         .inline-block-wrap { margin: 8px 0; }
         .inline-block-wrap:first-child { margin-top: 0; }
         .inline-block-wrap:last-child { margin-bottom: 0; }
