@@ -99,14 +99,15 @@ interface ChatMessage {
 
 interface InsertableBlock {
   id: string;
-  type: 'mermaid' | 'chart' | 'qa' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'folder_create' | 'note_move' | 'table';
+  type: 'mermaid' | 'chart' | 'qa' | 'file' | 'geometry' | 'memo_create' | 'memo_overwrite' | 'memo_append' | 'folder_create' | 'note_move' | 'table';
   rawCode: string;
   previewLabel: string;
   fileName?: string;
   memoTitle?: string;
   memoId?: number;
-  // For memo_overwrite: a title/name the AI used instead of a numeric ID, so we
-  // can still resolve the target note by name when the ID didn't parse.
+  // For memo_overwrite/memo_append: a title/name the AI used instead of a
+  // numeric ID, so we can still resolve the target note by name when the ID
+  // didn't parse.
   memoTitleHint?: string;
   folderName?: string;
   folderColor?: string;
@@ -417,7 +418,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     }
   });
 
-  const FENCE_RE = /```(mermaid|chart|qa|geometry|memo_create|memo_overwrite|folder_create|note_move|table)([\s\S]*?)```/g;
+  const FENCE_RE = /```(mermaid|chart|qa|geometry|memo_create|memo_overwrite|memo_append|folder_create|note_move|table)([\s\S]*?)```/g;
   const textContent = work2.replace(FENCE_RE, (_full, type, code) => {
     const trimmed = code.trim();
     const id = crypto.randomUUID();
@@ -475,6 +476,33 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
           ? translate('メモ上書き: {title}', { title: memoTitleHint })
           : translate('メモを上書き');
       blocks.push({ id, type: 'memo_overwrite', rawCode: content, previewLabel: label, memoId, memoTitleHint });
+      return blockMarker(id);
+    }
+    if (type === 'memo_append' && allowMemoBlocks) {
+      const firstLine = trimmed.split('\n')[0] || '';
+      const dirMatch = firstLine.match(/^@@memo_append\s*:\s*(.*)$/i);
+      let memoId: number | undefined;
+      let memoTitleHint: string | undefined;
+      let content: string;
+      if (dirMatch) {
+        const target = (dirMatch[1] || '').trim();
+        // Accept "15", "ID:15", "ID 15", "#15", "15番" as a pure ID reference.
+        const idOnly = target.match(/^(?:id[:：#\s]*)?(\d+)\s*番?$/i);
+        memoId = idOnly ? Number(idOnly[1]) : undefined;
+        // Anything else (e.g. a title) becomes a name hint we resolve later.
+        if (!idOnly && target) memoTitleHint = target.replace(/^["'「『]+|["'」』]+$/g, '').trim();
+        content = trimmed.split('\n').slice(1).join('\n').trim();
+      } else {
+        // Directive missing entirely — keep the whole block as content and let
+        // the user pick the target note in the confirm dialog.
+        content = trimmed;
+      }
+      const label = memoId != null
+        ? translate('メモに追記: ID {id}', { id: memoId })
+        : memoTitleHint
+          ? translate('メモに追記: {title}', { title: memoTitleHint })
+          : translate('メモに追記');
+      blocks.push({ id, type: 'memo_append', rawCode: content, previewLabel: label, memoId, memoTitleHint });
       return blockMarker(id);
     }
     if (type === 'folder_create') {
@@ -928,9 +956,9 @@ function QAPreview({ code, initialChecked, onCheckChange }: {
   );
 }
 
-// Find the note a memo_overwrite block targets: numeric ID first, then a
-// title/name hint (exact, then partial match). Returns undefined when nothing
-// matches, so the caller can ask the user to pick.
+// Find the note a memo_overwrite/memo_append block targets: numeric ID
+// first, then a title/name hint (exact, then partial match). Returns
+// undefined when nothing matches, so the caller can ask the user to pick.
 function resolveOverwriteTarget(block: InsertableBlock, allNotes: Note[]): Note | undefined {
   if (block.memoId != null) {
     const byId = allNotes.find(n => n.id === block.memoId);
@@ -957,11 +985,13 @@ function MemoPermissionModal({
 }) {
   const t = useT();
   const [status, setStatus] = useState<'idle' | 'loading' | 'done'>('idle');
-  // Resolve the overwrite target: numeric ID first, then a title/name hint, so
-  // an edit still lands even when Lily wrote the memo name instead of its ID.
-  const resolvedNote = block.type === 'memo_overwrite'
-    ? resolveOverwriteTarget(block, allNotes)
-    : undefined;
+  const isEditBlock = block.type === 'memo_overwrite' || block.type === 'memo_append';
+  // The AI's chosen mode is only a default — the user can always switch it
+  // below before saving, so a wrong guess never locks them in.
+  const [mode, setMode] = useState<'overwrite' | 'append'>(block.type === 'memo_append' ? 'append' : 'overwrite');
+  // Resolve the target note: numeric ID first, then a title/name hint, so an
+  // edit still lands even when Lily wrote the memo name instead of its ID.
+  const resolvedNote = isEditBlock ? resolveOverwriteTarget(block, allNotes) : undefined;
   // The user can always confirm / correct the target note before saving, so an
   // unresolved ID never becomes a silent no-op.
   const [target, setTarget] = useState<string>(
@@ -971,7 +1001,9 @@ function MemoPermissionModal({
 
   const confirmMsg = block.type === 'memo_create'
     ? t('「{title}」という新しいメモを作っていい？', { title: block.memoTitle || t('新しいメモ') })
-    : t('このメモを書き換えていい？');
+    : mode === 'append'
+      ? t('このメモに追記していい？')
+      : t('このメモを書き換えていい？');
 
   const handleOk = async () => {
     setStatus('loading');
@@ -979,10 +1011,16 @@ function MemoPermissionModal({
       if (block.type === 'memo_create') {
         const id = await createNoteWithBlock(block, block.memoTitle || t('新しいメモ'));
         onNoteCreated?.(id as number);
-      } else if (block.type === 'memo_overwrite') {
+      } else if (isEditBlock) {
         const targetId = Number(target);
         if (!Number.isFinite(targetId) || targetId <= 0) { setStatus('idle'); return; }
-        await db.notes.update(targetId, { content: markdownToTiptapHtml(block.rawCode), updatedAt: Date.now() });
+        const newHtml = markdownToTiptapHtml(block.rawCode);
+        if (mode === 'append') {
+          const targetNote = await db.notes.get(targetId);
+          await db.notes.update(targetId, { content: (targetNote?.content || '') + newHtml, updatedAt: Date.now() });
+        } else {
+          await db.notes.update(targetId, { content: newHtml, updatedAt: Date.now() });
+        }
       }
       setStatus('done');
       setTimeout(onClose, 600);
@@ -997,9 +1035,34 @@ function MemoPermissionModal({
     <div className="memo-modal-overlay" onClick={onClose}>
       <div className="memo-modal" onClick={e => e.stopPropagation()}>
         <p className="memo-modal-q">{confirmMsg}</p>
-        {block.type === 'memo_overwrite' && (
+        {isEditBlock && (
+          <div className="memo-modal-mode-wrap">
+            <div className="memo-modal-mode" role="group" aria-label={t('編集方法')}>
+              <button
+                type="button"
+                className={`mode-btn ${mode === 'overwrite' ? 'active' : ''}`}
+                onClick={() => setMode('overwrite')}
+                disabled={status !== 'idle'}
+              >
+                {t('📝 上書き')}
+              </button>
+              <button
+                type="button"
+                className={`mode-btn ${mode === 'append' ? 'active' : ''}`}
+                onClick={() => setMode('append')}
+                disabled={status !== 'idle'}
+              >
+                {t('➕ 追加')}
+              </button>
+            </div>
+            <p className="memo-modal-mode-hint">
+              {mode === 'append' ? t('今の内容はそのまま残り、下に追加されます') : t('今の内容が新しい内容に置き換わります')}
+            </p>
+          </div>
+        )}
+        {isEditBlock && (
           <label className="memo-modal-field">
-            <span className="memo-modal-label">{t('書き換えるメモ')}</span>
+            <span className="memo-modal-label">{mode === 'append' ? t('追記するメモ') : t('書き換えるメモ')}</span>
             <select
               className="memo-modal-select"
               value={target}
@@ -1027,6 +1090,12 @@ function MemoPermissionModal({
         .memo-modal-overlay { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
         .memo-modal { background: var(--background); border-radius: 16px; padding: 24px 20px; max-width: 340px; width: 100%; box-shadow: 0 8px 40px rgba(0,0,0,0.2); }
         .memo-modal-q { font-size: 1rem; font-weight: 700; color: var(--foreground); margin: 0 0 16px; line-height: 1.5; }
+        .memo-modal-mode-wrap { margin: 0 0 18px; }
+        .memo-modal-mode { display: flex; gap: 8px; }
+        .mode-btn { flex: 1; padding: 9px 8px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--accent); color: var(--fg-muted); font-size: 0.86rem; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+        .mode-btn.active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+        .mode-btn:disabled { opacity: 0.6; cursor: default; }
+        .memo-modal-mode-hint { font-size: 0.72rem; color: var(--fg-muted); margin: 6px 2px 0; }
         .memo-modal-field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 20px; }
         .memo-modal-label { font-size: 0.78rem; font-weight: 700; color: var(--fg-muted); }
         .memo-modal-select { width: 100%; padding: 9px 11px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--accent); color: var(--foreground); font-size: 0.88rem; font-family: inherit; outline: none; cursor: pointer; }
@@ -1186,12 +1255,14 @@ function InsertableBlockCard({
   const [showMemoModal, setShowMemoModal] = useState(false);
 
   const baseName = `lily-${block.type}-${block.id.slice(0, 6)}`;
+  const isMemoEditBlock = block.type === 'memo_create' || block.type === 'memo_overwrite' || block.type === 'memo_append';
   const typeEmoji = block.type === 'mermaid' ? '🌊'
     : block.type === 'chart' ? '📊'
     : block.type === 'geometry' ? '📐'
     : block.type === 'file' ? '📄'
     : block.type === 'memo_create' ? '✏️'
-    : block.type === 'memo_overwrite' ? '📝' : '📚';
+    : block.type === 'memo_overwrite' ? '📝'
+    : block.type === 'memo_append' ? '➕' : '📚';
 
   const handleInsert = async () => {
     if (status === 'loading') return;
@@ -1228,15 +1299,17 @@ function InsertableBlockCard({
         {block.type === 'table' && (
           <div className="table-preview" dangerouslySetInnerHTML={{ __html: markdownTableToHtml(block.rawCode) }} />
         )}
-        {(block.type === 'memo_create' || block.type === 'memo_overwrite') && (
+        {isMemoEditBlock && (
           <pre className="memo-block-preview">{block.rawCode.slice(0, 200)}{block.rawCode.length > 200 ? '\n…' : ''}</pre>
         )}
       </div>
 
-      {(block.type === 'memo_create' || block.type === 'memo_overwrite') ? (
+      {isMemoEditBlock ? (
         <>
           <button className="memo-confirm-btn" onClick={() => setShowMemoModal(true)}>
-            {block.type === 'memo_create' ? t('✏️ このメモを作成する') : t('📝 上書きを確認する')}
+            {block.type === 'memo_create' ? t('✏️ このメモを作成する')
+              : block.type === 'memo_append' ? t('➕ 追記を確認する')
+              : t('📝 上書きを確認する')}
           </button>
           {showMemoModal && (
             <MemoPermissionModal

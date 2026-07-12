@@ -2,6 +2,7 @@
 
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
+import type { ChainedCommands } from '@tiptap/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -10,6 +11,9 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import Highlight from '@tiptap/extension-highlight';
 import { common, createLowlight } from 'lowlight';
 import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react';
 import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING, softDeleteNote } from '@/lib/db';
@@ -19,6 +23,7 @@ import {
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
   Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2,
+  Baseline, Highlighter,
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
@@ -116,6 +121,30 @@ const CustomTaskItem = TaskItem.extend({
   },
 });
 
+// Text (font) color swatches. Each mixes a saturated hue with the current
+// theme's foreground color, so the same value reads correctly — and stays
+// well above WCAG AA contrast — in both light and dark mode without a
+// separate dark-mode palette (mirrors the RT_* palette used for Lily's own
+// rich-text explanations in AIChat.tsx).
+const TEXT_COLORS = [
+  { name: '赤', value: 'color-mix(in srgb, #c62828 75%, var(--foreground) 25%)' },
+  { name: 'オレンジ', value: 'color-mix(in srgb, #c96f00 60%, var(--foreground) 40%)' },
+  { name: '緑', value: 'color-mix(in srgb, #2e7d32 75%, var(--foreground) 25%)' },
+  { name: '青', value: 'color-mix(in srgb, #1565c0 75%, var(--foreground) 25%)' },
+  { name: '紫', value: 'color-mix(in srgb, #7b1fa2 60%, var(--foreground) 40%)' },
+];
+
+// Marker/highlight swatches: a soft wash mixed toward transparent (not the
+// foreground color), so it sits as a tint over whatever background is
+// underneath — the text itself stays the reader's normal color.
+const HIGHLIGHT_COLORS = [
+  { name: '黄', value: 'color-mix(in srgb, #f5c518 48%, transparent)' },
+  { name: '緑', value: 'color-mix(in srgb, #4caf50 40%, transparent)' },
+  { name: '青', value: 'color-mix(in srgb, #42a5f5 40%, transparent)' },
+  { name: 'ピンク', value: 'color-mix(in srgb, #ec407a 35%, transparent)' },
+  { name: '紫', value: 'color-mix(in srgb, #ab47bc 35%, transparent)' },
+];
+
 interface NoteEditorProps {
   noteId: number;
   onClose?: () => void;
@@ -141,6 +170,15 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [showInsertMenu, setShowInsertMenu] = useState(false);
+  const [showColorMenu, setShowColorMenu] = useState(false);
+  // The selection at the moment the color sheet opens. Opening the sheet
+  // moves DOM focus to a toolbar button outside the editor, and by the time
+  // a swatch is tapped, ProseMirror's selection has been observed to drift
+  // back to a stale collapsed position (a focus/selectionchange race with
+  // the portal-rendered sheet) — so each swatch explicitly restores this
+  // saved range before applying its color instead of trusting whatever
+  // editor.state.selection happens to be at click time.
+  const colorSelectionRef = useRef<{ from: number; to: number } | null>(null);
 const searchInputRef = useRef<HTMLInputElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // true で初期化: エディタ作成直後の onUpdate による空コンテンツ保存を防ぐ
@@ -193,6 +231,9 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       CustomTaskItem.configure({ nested: true }),
       ResizableImageExtension,
       Link,
+      TextStyle,
+      Color,
+      Highlight.configure({ multicolor: true }),
       Placeholder.configure({ placeholder: t('アイデアを書き留めましょう...') }),
       InMemoSearchExtension,
       NoteLinkExtension,
@@ -636,6 +677,17 @@ const searchInputRef = useRef<HTMLInputElement>(null);
     insertWithoutFocus({ type: 'mathBlock', attrs: { latex: 'x^2 + y^2 = r^2' } });
   };
 
+  // Runs a text-color/highlight command against the selection saved when the
+  // color sheet opened (see colorSelectionRef), instead of the editor's
+  // current selection — see the comment on colorSelectionRef for why.
+  const applyColorCommand = (fn: (chain: ChainedCommands) => ChainedCommands) => {
+    if (!editor) return;
+    const sel = colorSelectionRef.current;
+    const base = editor.chain().focus();
+    fn(sel ? base.setTextSelection(sel) : base).run();
+    setShowColorMenu(false);
+  };
+
 
 
 
@@ -669,6 +721,83 @@ const searchInputRef = useRef<HTMLInputElement>(null);
                 <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title={t('大見出し')}><Type size={18} /></button>
 <button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')}><SquareCheck size={18} /></button>
                 <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title={t('コード')}><Binary size={18} /></button>
+                <button
+                  className={`btn-tool${showColorMenu ? ' active' : ''}`}
+                  // Prevent the button from taking DOM focus away from the
+                  // editor on mousedown — that's what was letting the
+                  // selection drift/collapse before the click handler below
+                  // ever runs. See the colorSelectionRef comment.
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    if (!showColorMenu) {
+                      const { from, to } = editor.state.selection;
+                      colorSelectionRef.current = { from, to };
+                    }
+                    setShowColorMenu(p => !p);
+                  }}
+                  title={t('文字色・マーカー')}
+                >
+                  <Baseline size={18} />
+                </button>
+                {showColorMenu && typeof document !== 'undefined' && createPortal(
+                  <div className="insert-sheet-backdrop" onClick={() => setShowColorMenu(false)}>
+                    <div className="insert-sheet" onClick={e => e.stopPropagation()}>
+                      <div className="insert-sheet-handle" />
+                      <div className="insert-sheet-title">{t('色を選ぶ')}</div>
+                      <div className="color-sheet-section">
+                        <div className="color-sheet-label"><Baseline size={14} />{t('文字の色')}</div>
+                        <div className="color-sheet-row">
+                          <button
+                            className="color-swatch color-swatch-reset"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => applyColorCommand(chain => chain.unsetColor())}
+                            title={t('リセット')}
+                          >
+                            <X size={16} />
+                          </button>
+                          {TEXT_COLORS.map(c => (
+                            <button
+                              key={c.name}
+                              className={`color-swatch ${editor.isActive('textStyle', { color: c.value }) ? 'active' : ''}`}
+                              style={{ color: c.value }}
+                              onMouseDown={e => e.preventDefault()}
+                              onClick={() => applyColorCommand(chain => chain.setColor(c.value))}
+                              title={t(c.name)}
+                            >
+                              A
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="color-sheet-section">
+                        <div className="color-sheet-label"><Highlighter size={14} />{t('マーカー')}</div>
+                        <div className="color-sheet-row">
+                          <button
+                            className="color-swatch color-swatch-reset"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => applyColorCommand(chain => chain.unsetHighlight())}
+                            title={t('リセット')}
+                          >
+                            <X size={16} />
+                          </button>
+                          {HIGHLIGHT_COLORS.map(c => (
+                            <button
+                              key={c.name}
+                              className={`color-swatch ${editor.isActive('highlight', { color: c.value }) ? 'active' : ''}`}
+                              style={{ background: c.value }}
+                              onMouseDown={e => e.preventDefault()}
+                              onClick={() => applyColorCommand(chain => chain.setHighlight({ color: c.value }))}
+                              title={t(c.name)}
+                            >
+                              A
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
                 <div className="header-divider" />
                 <button
                   className={`btn-tool${showInsertMenu ? ' active' : ''}`}
@@ -1171,6 +1300,25 @@ const searchInputRef = useRef<HTMLInputElement>(null);
         }
         .insert-sheet-item:hover, .insert-sheet-item:active { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: var(--primary); color: var(--primary); }
         .insert-math-glyph { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; font-size: 17px; font-weight: 800; font-style: italic; font-family: var(--font-latin, serif); line-height: 1; }
+
+        /* ===== 文字色・マーカー選択シート ===== */
+        .color-sheet-section { margin-bottom: 18px; }
+        .color-sheet-section:last-child { margin-bottom: 0; }
+        .color-sheet-label { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 700; color: var(--fg-muted); margin-bottom: 10px; }
+        .color-sheet-row { display: flex; flex-wrap: wrap; gap: 10px; }
+        .color-swatch {
+          width: 40px; height: 40px;
+          border-radius: 50%;
+          border: 1.5px solid var(--border);
+          background: var(--accent);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 1.05rem; font-weight: 800;
+          cursor: pointer;
+          transition: transform 0.12s, border-color 0.12s;
+        }
+        .color-swatch:active { transform: scale(0.92); }
+        .color-swatch.active { border-color: var(--primary); border-width: 2px; }
+        .color-swatch-reset { color: var(--fg-muted); }
 
         /* ===== AI クイック操作メニュー ===== */
         .ai-menu-wrap { position: relative; }
