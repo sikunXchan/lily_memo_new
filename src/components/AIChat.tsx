@@ -28,6 +28,7 @@ import {
   streamSikunlilyChat,
   LILY_CHAT_SYSTEM_PROMPT,
   getLastUsage,
+  classifyDiagramNeeds, buildDiagramAddon,
 } from '@/lib/gemini';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -1482,16 +1483,17 @@ function stripBlockMarkers(text: string): string {
   return text.replace(LBLK_RE, '\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// Rich-text signal palette: black (ink) / blue (structure) / green (tip) /
-// yellow (highlight, attention) / red (danger) — a small, universally-learned
-// set (traffic lights, hazard signs, highlighter pens) chosen for recognition
-// and memorability over decorative brand color. "Black" is var(--foreground)
-// itself (inverts correctly in dark themes). The other three are blended 75/25
-// with var(--foreground) so they gain/lose weight the same way the rest of the
-// UI does per theme, keeping contrast solid in both light and dark (verified
-// ≥4.5:1 dark / ≥6.7:1 light).
+// Rich-text signal palette: black (ink) for body text, blue for structure
+// (headings/links/lists), and a distinct hue per callout type (note/tip/
+// important/warning/caution) so each is recognizable at a glance — this is
+// a reference point, not a hard 5-color cap. Each hue is blended with
+// var(--foreground) so it gains/loses weight the same way the rest of the UI
+// does per theme, keeping contrast solid in both light and dark (verified
+// ≥4.4:1 dark / ≥5.9:1 light for every hue below).
 const RT_BLUE = 'color-mix(in srgb, #1565c0 75%, var(--foreground) 25%)';
 const RT_GREEN = 'color-mix(in srgb, #2e7d32 75%, var(--foreground) 25%)';
+const RT_PURPLE = 'color-mix(in srgb, #7b1fa2 60%, var(--foreground) 40%)';
+const RT_ORANGE = 'color-mix(in srgb, #c96f00 60%, var(--foreground) 40%)';
 const RT_RED = 'color-mix(in srgb, #c62828 75%, var(--foreground) 25%)';
 
 function LilyBubble({
@@ -1737,18 +1739,18 @@ function LilyBubble({
         .rt-body :global(.rt-callout-body) { font-size: 0.86rem; }
         .rt-body :global(.rt-callout-body > :first-child) { margin-top: 0; }
         .rt-body :global(.rt-callout-body > :last-child) { margin-bottom: 0; }
-        /* Callouts use the same signal palette as the rest of rt-body — no
-           purple/orange one-offs: note=blue (info), tip=green (do this),
-           important=black (maximum-seriousness ink, no louder color left to
-           spend), warning=yellow (caution), caution=red (danger). */
+        /* Five distinct hues, one per callout type, so each reads at a
+           glance without having to read the label: note=blue (info),
+           tip=green (do this), important=purple (stands out from both),
+           warning=orange (caution), caution=red (danger). */
         .rt-body :global(.rt-callout-note) { border-left-color: #1565c0; background: color-mix(in srgb, #1565c0 7%, var(--background)); }
         .rt-body :global(.rt-callout-note .rt-callout-head) { color: ${RT_BLUE}; }
         .rt-body :global(.rt-callout-tip) { border-left-color: #2e7d32; background: color-mix(in srgb, #2e7d32 7%, var(--background)); }
         .rt-body :global(.rt-callout-tip .rt-callout-head) { color: ${RT_GREEN}; }
-        .rt-body :global(.rt-callout-important) { border-left-color: var(--foreground); border-left-width: 5px; background: color-mix(in srgb, var(--foreground) 5%, var(--background)); }
-        .rt-body :global(.rt-callout-important .rt-callout-head) { color: var(--foreground); }
-        .rt-body :global(.rt-callout-warning) { border-left-color: #d4a017; background: color-mix(in srgb, #f5c518 14%, var(--background)); }
-        .rt-body :global(.rt-callout-warning .rt-callout-head) { color: color-mix(in srgb, #a3781c 80%, var(--foreground) 20%); }
+        .rt-body :global(.rt-callout-important) { border-left-color: #7b1fa2; background: color-mix(in srgb, #7b1fa2 7%, var(--background)); }
+        .rt-body :global(.rt-callout-important .rt-callout-head) { color: ${RT_PURPLE}; }
+        .rt-body :global(.rt-callout-warning) { border-left-color: #c96f00; background: color-mix(in srgb, #c96f00 9%, var(--background)); }
+        .rt-body :global(.rt-callout-warning .rt-callout-head) { color: ${RT_ORANGE}; }
         .rt-body :global(.rt-callout-caution) { border-left-color: #c62828; background: color-mix(in srgb, #c62828 7%, var(--background)); }
         .rt-body :global(.rt-callout-caution .rt-callout-head) { color: ${RT_RED}; }
         .rt-body :global(hr) { border: none; height: 1px; margin: 0.9em 0; background: linear-gradient(to right, transparent, var(--border-strong, var(--border)), transparent); }
@@ -2437,6 +2439,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     setLoadedFromChatId(null); // new message → diverged from loaded chat, next save creates a new entry
 
     try {
+      // Kick off the diagram-type classification alongside note lookup (not
+      // after it) so its network latency overlaps with local IndexedDB reads
+      // instead of adding on top of them.
+      const diagramKeysPromise = classifyDiagramNeeds(userText, apiKey);
       const contextNotes: Note[] = [];
       if (lilyAllNotes) {
         contextNotes.push(...(allNotes ?? []));
@@ -2446,7 +2452,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           if (n) contextNotes.push(n);
         }
       }
-      const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+      const diagramKeys = await diagramKeysPromise;
+      const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + buildDiagramAddon(diagramKeys);
 
       const allMsgs = [...messages, userMsg];
       // Keep a generous window of recent turns. gemini-2.5-flash has a very
@@ -2716,6 +2723,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     setIsLoading(true);
 
     try {
+      const diagramKeysPromise = classifyDiagramNeeds(lastUserText, apiKey);
       const contextNotes: Note[] = [];
       if (lilyAllNotes) {
         contextNotes.push(...(allNotes ?? []));
@@ -2725,11 +2733,12 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           if (n) contextNotes.push(n);
         }
       }
+      const diagramAddon = buildDiagramAddon(await diagramKeysPromise);
 
       const accuracy = isAccuracyTask(lastUserText);
       let aiText: string;
       if (lilyUltraThinking && !economy) {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(t('⚡ Ultra思考中... 深く考えています'));
@@ -2756,7 +2765,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else if (lilyThinking && !economy) {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(t('🧠 思考中...'));
@@ -2783,7 +2792,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill);
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
         const regenUseLite = economy || regenAutoLite;
         // 古いモード（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {
