@@ -22,7 +22,7 @@ import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
 import type { ChatAttachment, ChatTurn } from '@/lib/gemini';
-import { callGeminiChat } from '@/lib/gemini';
+import { callGeminiChat, classifyPromptAddons, buildPromptAddons, MERMAID_ADDON_KEYS } from '@/lib/gemini';
 import { getEffectiveApiKey, getUserName } from '@/lib/appLang';
 import { getTicketsLeft, consumeTicket, isTicketUnlimited } from '@/lib/points';
 import { renderRich } from '@/lib/richText';
@@ -504,7 +504,18 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       });
     const attachments = [...mdAtts, ...noteAtts, ...genPdfs.map(p => p.att), ...genImages.map(g => g.att)];
 
-    lessonSysRef.current = buildLessonSystemPrompt(topic, en, lessonStyle);
+    // Same lazy addon scheme the chat uses: classify which diagram types this
+    // lesson would benefit from, and append only those syntax rules. Restricted
+    // to Mermaid-family types (the lesson card view can only render mermaid, not
+    // chart/geometry). A classification failure just yields no addon — the base
+    // lesson prompt already covers diagram variety in prose.
+    let lessonAddon = '';
+    try {
+      const keys = (await classifyPromptAddons(topic || (en ? 'lesson' : '授業'), apiKey))
+        .filter(k => MERMAID_ADDON_KEYS.includes(k));
+      lessonAddon = buildPromptAddons(keys);
+    } catch { /* base prompt is enough */ }
+    lessonSysRef.current = buildLessonSystemPrompt(topic, en, lessonStyle) + lessonAddon;
     const kickoff: ChatTurn = {
       role: 'user',
       text: en ? LESSON_KICKOFF.en : LESSON_KICKOFF.ja,

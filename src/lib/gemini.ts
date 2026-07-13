@@ -407,10 +407,14 @@ export const DIAGRAM_MENU: AddonMenuItem[] = [
   { key: 'chart', label: '数値データの推移・比較（棒/折れ線/円/散布図）' },
 ];
 
-const MERMAID_KEYS = new Set([
+// Diagram types rendered by the Mermaid engine. Exported so surfaces that can
+// ONLY render mermaid (the lesson card view) can restrict a classified addon to
+// these and never inject chart/geometry syntax they can't display.
+export const MERMAID_ADDON_KEYS = [
   'flowchart', 'sequence', 'mindmap', 'class_diagram', 'er_diagram', 'gantt',
   'state', 'timeline', 'quadrant', 'journey',
-]);
+];
+const MERMAID_KEYS = new Set(MERMAID_ADDON_KEYS);
 
 // Rules shared by every Mermaid-family type — included once whenever any of
 // them is selected, instead of being repeated inside each type's block.
