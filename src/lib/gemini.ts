@@ -376,22 +376,23 @@ export async function callGeminiChat(
   );
 }
 
-// ── Diagram repertoire (lazy-loaded syntax rules) ────────────────────────────
-// Every diagram type's detailed syntax rules used to live inline in the main
-// system prompt, sent on every single turn regardless of whether that reply
-// needed a diagram at all. That doesn't scale: each new type (state diagram,
-// timeline, quadrant chart, journey map...) would permanently grow every
-// request's input tokens, most of which go unused most of the time.
+// ── Prompt addons (lazy-loaded capability rules) ─────────────────────────────
+// Detailed syntax rules — every diagram type's grammar, the memo-editing
+// block format — used to live inline in the main system prompt, sent on every
+// single turn regardless of whether that reply needed them. That doesn't
+// scale: each new capability would permanently grow every request's input
+// tokens, most of which go unused most of the time.
 //
-// Instead: classifyDiagramNeeds() makes one small, cheap call (flash-lite,
-// short prompt, tiny output) that picks 0+ relevant types from DIAGRAM_MENU
-// for the user's message. Only those types' detailed rules (DIAGRAM_DETAIL)
-// are appended to the main system prompt via buildDiagramAddon() — so the
-// common case (no diagram, or one type) stays small, and the repertoire can
-// keep growing without a per-turn cost for types that aren't used.
-export interface DiagramMenuItem { key: string; label: string; }
+// Instead: classifyPromptAddons() makes one small, cheap call (flash-lite,
+// short prompt, tiny output) that picks 0+ relevant capabilities from
+// ADDON_MENU for the user's message. Only those capabilities' detailed rules
+// (ADDON_DETAIL) are appended to the main system prompt via
+// buildPromptAddons() — so the common case (chat with no diagram and no memo
+// edit) stays small, and the repertoire can keep growing without a per-turn
+// cost for capabilities that aren't used.
+export interface AddonMenuItem { key: string; label: string; }
 
-export const DIAGRAM_MENU: DiagramMenuItem[] = [
+export const DIAGRAM_MENU: AddonMenuItem[] = [
   { key: 'flowchart', label: '手順・プロセス・分岐のあるロジック' },
   { key: 'sequence', label: '複数の主体間のやり取り・通信の順序' },
   { key: 'mindmap', label: 'アイデア出し・階層的な分類・ブレスト' },
@@ -621,34 +622,95 @@ expr で使えるもの: 変数x、演算子 + - * / ^（**も可）、括弧、
 type: bar, line, pie, scatter`,
 };
 
-// Assembles the system-prompt addon for the diagram types the classifier
-// selected. Empty input → empty string (no diagram capability offered that
-// turn, matching the classifier's judgement that none is needed).
-export function buildDiagramAddon(keys: string[]): string {
-  const valid = keys.filter(k => DIAGRAM_DETAIL[k]);
+// Everything Lily needs to create / overwrite / append to memos, including
+// every content feature the memo editor supports (Markdown, math, text
+// colors, highlight markers, embedded diagrams). Loaded lazily via the addon
+// classifier so ordinary chat turns don't pay its token cost.
+export const MEMO_EDIT_DETAIL = `【メモの作成・編集 — あなたはユーザー本人と同じ編集権限を持つ】
+あなたはユーザーと同じように、メモを自由に新規作成・上書き・追記・整理できる。「メモに書いて」「まとめて保存して」「このメモを書き換えて」「追記して」等と頼まれたら、遠慮せず下記ブロックで提案する（1つの会話で何度提案してもよい。回数制限はない）。ただし保存は必ずユーザーが確認ボタンを押してから実行されるので、勝手に上書き・追記される心配はない（確認画面で上書き/追加をユーザーが選び直すこともできる）。意図が明確なら積極的に提案してよいが、意図が曖昧な時は ask ブロックで確認する。
+
+既存メモを編集する時は「上書き」か「追記」かをユーザーの言葉から判断して使い分ける。書く内容もモードに合わせて変える。
+- 追記 @@memo_append: 「追記して」「付け加えて」「続きを書いて」「〜も足して」など、今の内容は残したまま新しい内容だけ足したい時。本文には追加分だけを書く（既存の内容を書き写す必要はない。そのまま末尾に追加される）。
+- 上書き @@memo_overwrite: 「書き換えて」「直して」「修正して」「全部整理し直して」など、内容を作り直す・構成ごと変える時。本文には差し替え後の完全な内容を書く。
+- 判断に迷う時はどちらか自然な方でよい。最終的にユーザーが確認画面で上書き/追加を選び直せるので、多少の判断ミスは問題にならない。
+
+- 新規メモ作成: 1行目に @@memo_create:タイトル、2行目以降に本文（Markdown）
+- 既存メモ上書き: 1行目に @@memo_overwrite:メモID、2行目以降に差し替え後の完全な本文（Markdown）。メモIDは【参照中のメモ】に (ID:数字) の形で示される数字を使う。IDが分かっている時は必ずその数字を書く（タイトルではなく数字）。
+- 既存メモに追記: 1行目に @@memo_append:メモID、2行目以降に追加したい内容だけ（Markdown）。メモIDの書き方は上書きと同じ。
+
+⚠️メモ本文で使える表現（すべて自動で整形表示される。プレーンテキストで書かず、これらを使って読みやすく構成する）:
+- Markdown全般: 見出し（#, ##）、太字（**）、箇条書き（-, 1.）、引用、表、コードブロック、チェックリスト（- [ ]）
+- 数式: $…$ / $$…$$ の LaTeX（√ や x^2 のような生テキストにしない）
+- 文字色: {red:このように書く}。使える色キー: red / orange / green / blue / purple
+- マーカー（蛍光ペン）: ==大事な文== で黄色マーカー。色を変える時は =={green}この形==。使える色キー: yellow / green / blue / pink / purple
+- 図の埋め込み: メモ本文の中に図を入れる時は \`\`\` ではなく ~~~ フェンスを使う（\`\`\` はメモブロック自体の区切りと衝突して壊れるため厳禁）。~~~mermaid / ~~~chart / ~~~geometry が使える。構文はチャットで使う mermaid / chart / geometry と同じ（構文ルールが渡されている種類だけ使う）
+- 色・マーカーは「本当に強調すべき所」だけに絞る（定義・公式・注意点など）。塗りすぎると逆に読みにくくなる
+
+新規作成の例:
+\`\`\`memo_create
+@@memo_create:三平方の定理
+## ポイント
+==直角三角形==では、{red:斜辺} $c$ と他の2辺 $a, b$ の間に $a^2 + b^2 = c^2$ が成り立つ。
+
+- **斜辺** $c$ … 直角の向かい側にある最も長い辺
+- 直角をはさむ2辺が $a, b$
+\`\`\`
+
+ID:15 のメモを上書きする例:
+\`\`\`memo_overwrite
+@@memo_overwrite:15
+# 応用情報技術者
+## システム監査の基本方針
+- **監査の定義**: あるべき姿（規程・基準）と{blue:現状（実際の運用）}のギャップを特定する作業
+- **監査人の視点**: リスクの有無、統制（コントロール）の有効性
+\`\`\`
+
+ID:15 のメモに追記する例（「監査の種類も追記して」と頼まれた場合）:
+\`\`\`memo_append
+@@memo_append:15
+## 監査の種類
+- **内部監査**: 組織内部の監査人が行う
+- **外部監査**: 独立した第三者（外部監査人）が行う
+\`\`\``;
+
+export const ADDON_MENU: AddonMenuItem[] = [
+  ...DIAGRAM_MENU,
+  { key: 'memo_edit', label: 'メモの新規作成・上書き・追記・保存（「メモにして」「保存して」「まとめて」「書き換えて」「追記して」等）' },
+];
+
+const ADDON_DETAIL: Record<string, string> = {
+  ...DIAGRAM_DETAIL,
+  memo_edit: MEMO_EDIT_DETAIL,
+};
+
+// Assembles the system-prompt addon for the capabilities the classifier
+// selected. Empty input → empty string (no addon offered that turn, matching
+// the classifier's judgement that none is needed).
+export function buildPromptAddons(keys: string[]): string {
+  const valid = keys.filter(k => ADDON_DETAIL[k]);
   if (valid.length === 0) return '';
   const needsMermaidCore = valid.some(k => MERMAID_KEYS.has(k));
-  const parts = [needsMermaidCore ? MERMAID_CORE : '', ...valid.map(k => DIAGRAM_DETAIL[k])];
+  const parts = [needsMermaidCore ? MERMAID_CORE : '', ...valid.map(k => ADDON_DETAIL[k])];
   return '\n\n' + parts.filter(Boolean).join('\n\n');
 }
 
-// One small, cheap, deterministic call that picks 0+ diagram types relevant
-// to the user's message from DIAGRAM_MENU. Runs on the fastest model tier
+// One small, cheap, deterministic call that picks 0+ capabilities relevant
+// to the user's message from ADDON_MENU. Runs on the fastest model tier
 // with a tiny output budget — this is a routing decision, not a reasoning
-// task. Errs toward including a borderline-relevant type (a little extra
-// prompt size beats silently missing a diagram opportunity); never blocks or
-// fails the main reply — a classification error falls back to the most
-// commonly useful types (see catch below) rather than none at all.
-export async function classifyDiagramNeeds(userMessage: string, apiKey: string): Promise<string[]> {
+// task. Errs toward including a borderline-relevant capability (a little
+// extra prompt size beats silently missing one); never blocks or fails the
+// main reply — a classification error falls back to the most commonly useful
+// capabilities (see catch below) rather than none at all.
+export async function classifyPromptAddons(userMessage: string, apiKey: string): Promise<string[]> {
   const trimmed = userMessage.trim();
   if (!trimmed) return [];
-  const menuText = DIAGRAM_MENU.map(m => `- ${m.key}: ${m.label}`).join('\n');
-  const prompt = `次のユーザーの発言を読み、AIの返答の中で図解・グラフ・表が役立ちそうな場合、該当するタイプを下の選択肢から選んでください。迷ったら含める方を選ぶ。
+  const menuText = ADDON_MENU.map(m => `- ${m.key}: ${m.label}`).join('\n');
+  const prompt = `次のユーザーの発言を読み、AIの返答で図解・グラフ・表・メモ操作が役立ちそうな場合、該当するタイプを下の選択肢から選んでください。迷ったら含める方を選ぶ。
 
 【選択肢】
 ${menuText}
 
-該当するキーだけをカンマ区切りで返す（例: flowchart,chart）。図解が不要な内容（あいさつ・雑談・単純な一問一答など）なら none とだけ返す。説明・前置き・記号は一切書かない。
+該当するキーだけをカンマ区切りで返す（例: flowchart,chart）。どれも不要な内容（あいさつ・雑談・単純な一問一答など）なら none とだけ返す。説明・前置き・記号は一切書かない。
 
 【ユーザーの発言】
 ${trimmed.slice(0, 2000)}`;
@@ -661,14 +723,15 @@ ${trimmed.slice(0, 2000)}`;
       { models: ['gemini-3.1-flash-lite', 'gemini-3.5-flash'], maxOutputTokens: 60, temperature: 0 },
     );
     if (/^none$/i.test(text.trim())) return [];
-    const validKeys = new Set(DIAGRAM_MENU.map(m => m.key));
+    const validKeys = new Set(ADDON_MENU.map(m => m.key));
     return [...new Set(
       text.split(/[,、\n]/).map(s => s.trim().toLowerCase()).filter(k => validKeys.has(k))
     )];
   } catch {
     // Soft optimization — a classification failure must never block the main
-    // reply. Fall back to the most commonly useful types rather than none.
-    return ['flowchart', 'chart', 'geometry'];
+    // reply. Fall back to the most commonly useful capabilities rather than
+    // none.
+    return ['flowchart', 'chart', 'geometry', 'memo_edit'];
   }
 }
 
@@ -702,7 +765,7 @@ export const LILY_CHAT_SYSTEM_PROMPT = `
 Lily Memoの料金プラン・トークン予算・各モードの利用回数制限など、アプリの仕様や運営に関する質問には憶測で答えない。「その質問は開発者に直接聞いてね」とだけ伝える。
 
 【できること】
-メモの分析・要約、アイデア出し、コード生成・解説、図解（Mermaid図・数学幾何図・グラフ）、Q&A・問題作成（6形式・最適な形式を自分で選ぶ）、表、画像/PDF解析、メール下書き、トーン調整、ブログ案、ネット検索（ON時）。各出力の作り方は下記の仕様に従う。
+メモの分析・要約、メモの新規作成・上書き・追記（必要なターンには専用の書式ルールがこのメッセージ末尾に渡される）、アイデア出し、コード生成・解説、図解（Mermaid図・数学幾何図・グラフ）、Q&A・問題作成（6形式・最適な形式を自分で選ぶ）、表、画像/PDF解析、メール下書き、トーン調整、ブログ案、ネット検索（ON時）。各出力の作り方は下記の仕様に従う。
 
 【重要】メモ本文に加え、メモ内の Mermaid図 / グラフ / Q&A の中身も [Mermaid図] [グラフ] [Q&A 問題集] という形でテキストとして渡されます。それらもしっかり読んで答えてください。
 
@@ -911,47 +974,6 @@ Q: どんな内容のグラフにする？
 - MarkdownのヘッダーやBoldは適宜使ってOK
 - メモの内容が提供された場合は、それをしっかり参照して答える
 - 長すぎる返答は避け、要点をわかりやすく伝える
-
-【メモの作成・編集 — あなたはユーザー本人と同じ編集権限を持つ】
-あなたはユーザーと同じように、メモを自由に新規作成・上書き・追記・整理できる。「メモに書いて」「まとめて保存して」「このメモを書き換えて」「追記して」等と頼まれたら、遠慮せず下記ブロックで提案する（1つの会話で何度提案してもよい。回数制限はない）。ただし保存は必ずユーザーが確認ボタンを押してから実行されるので、勝手に上書き・追記される心配はない（確認画面で上書き/追加をユーザーが選び直すこともできる）。意図が明確なら積極的に提案してよいが、意図が曖昧な時は ask ブロックで確認する。
-
-⚠️メモ本文は Markdown と LaTeX 数式がそのまま整形表示される。見出し（#, ##）、箇条書き（-, 1.）、太字（**）、引用、表、コードブロック、チェックリスト（- [ ]）、$…$ / $$…$$ の数式がそのまま綺麗にレンダリングされる。だからプレーンテキストで書かず、読みやすい Markdown で構成し、数式は必ず LaTeX で書く（√ や x^2 のような生テキストにしない）。
-
-既存メモを編集する時は「上書き」か「追記」かをユーザーの言葉から判断して使い分ける。書く内容もモードに合わせて変える。
-- 追記 @@memo_append: 「追記して」「付け加えて」「続きを書いて」「〜も足して」など、今の内容は残したまま新しい内容だけ足したい時。本文には追加分だけを書く（既存の内容を書き写す必要はない。そのまま末尾に追加される）。
-- 上書き @@memo_overwrite: 「書き換えて」「直して」「修正して」「全部整理し直して」など、内容を作り直す・構成ごと変える時。本文には差し替え後の完全な内容を書く。
-- 判断に迷う時はどちらか自然な方でよい。最終的にユーザーが確認画面で上書き/追加を選び直せるので、多少の判断ミスは問題にならない。
-
-- 新規メモ作成: 1行目に @@memo_create:タイトル、2行目以降に本文（Markdown）
-- 既存メモ上書き: 1行目に @@memo_overwrite:メモID、2行目以降に差し替え後の完全な本文（Markdown）。メモIDは【参照中のメモ】に (ID:数字) の形で示される数字を使う。IDが分かっている時は必ずその数字を書く（タイトルではなく数字）。
-- 既存メモに追記: 1行目に @@memo_append:メモID、2行目以降に追加したい内容だけ（Markdown）。メモIDの書き方は上書きと同じ。
-
-新規作成の例:
-\`\`\`memo_create
-@@memo_create:三平方の定理
-## ポイント
-直角三角形では、斜辺 $c$ と他の2辺 $a, b$ の間に $a^2 + b^2 = c^2$ が成り立つ。
-
-- **斜辺** $c$ … 直角の向かい側にある最も長い辺
-- 直角をはさむ2辺が $a, b$
-\`\`\`
-
-ID:15 のメモを上書きする例:
-\`\`\`memo_overwrite
-@@memo_overwrite:15
-# 応用情報技術者
-## システム監査の基本方針
-- **監査の定義**: あるべき姿（規程・基準）と現状（実際の運用）のギャップを特定する作業
-- **監査人の視点**: リスクの有無、統制（コントロール）の有効性
-\`\`\`
-
-ID:15 のメモに追記する例（「監査の種類も追記して」と頼まれた場合）:
-\`\`\`memo_append
-@@memo_append:15
-## 監査の種類
-- **内部監査**: 組織内部の監査人が行う
-- **外部監査**: 独立した第三者（外部監査人）が行う
-\`\`\`
 `;
 
 export async function callGemini(prompt: string, apiKey: string): Promise<string> {

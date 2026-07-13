@@ -2,6 +2,7 @@
 
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
+import { BubbleMenu } from '@tiptap/react/menus';
 import type { ChainedCommands } from '@tiptap/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import StarterKit from '@tiptap/starter-kit';
@@ -24,6 +25,7 @@ import {
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
   Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2,
   Baseline, Highlighter,
+  Bold, Italic, Underline as UnderlineIcon, Strikethrough,
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
 import HandwritingCanvas from './HandwritingCanvas';
@@ -34,6 +36,7 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
+import { TEXT_COLORS, HIGHLIGHT_COLORS } from '@/lib/memoColors';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getEffectiveApiKey } from '@/lib/appLang';
@@ -121,30 +124,6 @@ const CustomTaskItem = TaskItem.extend({
   },
 });
 
-// Text (font) color swatches. Each mixes a saturated hue with the current
-// theme's foreground color, so the same value reads correctly — and stays
-// well above WCAG AA contrast — in both light and dark mode without a
-// separate dark-mode palette (mirrors the RT_* palette used for Lily's own
-// rich-text explanations in AIChat.tsx).
-const TEXT_COLORS = [
-  { name: '赤', value: 'color-mix(in srgb, #c62828 75%, var(--foreground) 25%)' },
-  { name: 'オレンジ', value: 'color-mix(in srgb, #c96f00 60%, var(--foreground) 40%)' },
-  { name: '緑', value: 'color-mix(in srgb, #2e7d32 75%, var(--foreground) 25%)' },
-  { name: '青', value: 'color-mix(in srgb, #1565c0 75%, var(--foreground) 25%)' },
-  { name: '紫', value: 'color-mix(in srgb, #7b1fa2 60%, var(--foreground) 40%)' },
-];
-
-// Marker/highlight swatches: a soft wash mixed toward transparent (not the
-// foreground color), so it sits as a tint over whatever background is
-// underneath — the text itself stays the reader's normal color.
-const HIGHLIGHT_COLORS = [
-  { name: '黄', value: 'color-mix(in srgb, #f5c518 48%, transparent)' },
-  { name: '緑', value: 'color-mix(in srgb, #4caf50 40%, transparent)' },
-  { name: '青', value: 'color-mix(in srgb, #42a5f5 40%, transparent)' },
-  { name: 'ピンク', value: 'color-mix(in srgb, #ec407a 35%, transparent)' },
-  { name: '紫', value: 'color-mix(in srgb, #ab47bc 35%, transparent)' },
-];
-
 interface NoteEditorProps {
   noteId: number;
   onClose?: () => void;
@@ -198,7 +177,10 @@ const searchInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ codeBlock: false }),
+      // link:false — the explicit Link extension below stays the only one;
+      // StarterKit v3 started bundling its own copy, which logged a
+      // "Duplicate extension names found: ['link']" warning on every mount.
+      StarterKit.configure({ codeBlock: false, link: false }),
       CodeBlockLowlight.configure({ lowlight }).extend({
         addAttributes() {
           return {
@@ -688,6 +670,15 @@ const searchInputRef = useRef<HTMLInputElement>(null);
     setShowColorMenu(false);
   };
 
+  // Snapshot the selection, then open the color sheet. Shared by the toolbar
+  // button and the selection bubble menu.
+  const openColorSheet = () => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    colorSelectionRef.current = { from, to };
+    setShowColorMenu(true);
+  };
+
 
 
 
@@ -728,13 +719,7 @@ const searchInputRef = useRef<HTMLInputElement>(null);
                   // selection drift/collapse before the click handler below
                   // ever runs. See the colorSelectionRef comment.
                   onMouseDown={e => e.preventDefault()}
-                  onClick={() => {
-                    if (!showColorMenu) {
-                      const { from, to } = editor.state.selection;
-                      colorSelectionRef.current = { from, to };
-                    }
-                    setShowColorMenu(p => !p);
-                  }}
+                  onClick={() => (showColorMenu ? setShowColorMenu(false) : openColorSheet())}
                   title={t('文字色・マーカー')}
                 >
                   <Baseline size={18} />
@@ -912,6 +897,56 @@ const searchInputRef = useRef<HTMLInputElement>(null);
               </div>
             ) : (
               <EditorErrorBoundary>
+                {editor && (
+                  <BubbleMenu
+                    editor={editor}
+                    pluginKey="formatBubble"
+                    options={{ placement: 'top', offset: 10 }}
+                    shouldShow={({ editor: ed, state }) =>
+                      ed.isEditable && !state.selection.empty && !('node' in state.selection)
+                    }
+                  >
+                    <div className="fmt-bubble">
+                      <button
+                        className={`fmt-btn${editor.isActive('bold') ? ' active' : ''}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => editor.chain().focus().toggleBold().run()}
+                        title={t('太字')}
+                      ><Bold size={16} /></button>
+                      <button
+                        className={`fmt-btn${editor.isActive('italic') ? ' active' : ''}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => editor.chain().focus().toggleItalic().run()}
+                        title={t('斜体')}
+                      ><Italic size={16} /></button>
+                      <button
+                        className={`fmt-btn${editor.isActive('underline') ? ' active' : ''}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => editor.chain().focus().toggleUnderline().run()}
+                        title={t('下線')}
+                      ><UnderlineIcon size={16} /></button>
+                      <button
+                        className={`fmt-btn${editor.isActive('strike') ? ' active' : ''}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => editor.chain().focus().toggleStrike().run()}
+                        title={t('取り消し線')}
+                      ><Strikethrough size={16} /></button>
+                      <span className="fmt-sep" />
+                      <button
+                        className={`fmt-btn${editor.isActive('highlight') ? ' active' : ''}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => editor.chain().focus().toggleHighlight({ color: HIGHLIGHT_COLORS[0].value }).run()}
+                        title={t('マーカー')}
+                      ><Highlighter size={16} /></button>
+                      <button
+                        className="fmt-btn"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={openColorSheet}
+                        title={t('文字色・マーカー')}
+                      ><Baseline size={16} /></button>
+                    </div>
+                  </BubbleMenu>
+                )}
                 <EditorContent editor={editor} />
               </EditorErrorBoundary>
             )}
@@ -953,6 +988,41 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       )}
 
       <style jsx global>{`
+        /* ===== Selection format bubble ===== */
+        .fmt-bubble {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          padding: 4px;
+          background: color-mix(in srgb, var(--background) 88%, transparent);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          box-shadow: 0 6px 24px rgba(0,0,0,0.14);
+          animation: fmtBubblePop 0.16s cubic-bezier(0.2, 1.4, 0.4, 1);
+        }
+        @keyframes fmtBubblePop {
+          from { opacity: 0; transform: translateY(4px) scale(0.92); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .fmt-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          border: none;
+          border-radius: 8px;
+          background: transparent;
+          color: var(--foreground);
+          cursor: pointer;
+          transition: background 0.12s, color 0.12s;
+        }
+        .fmt-btn:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+        .fmt-btn.active { background: color-mix(in srgb, var(--primary) 16%, transparent); color: var(--primary); }
+        .fmt-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+
         /* ===== Search Highlight Decorations ===== */
         .search-highlight {
           background: rgba(255, 193, 7, 0.35);

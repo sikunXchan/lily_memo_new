@@ -1,7 +1,7 @@
 'use client';
 
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Book, FileText, Sparkles, GraduationCap, Settings,
   Plus, ListTodo, Camera, X, PencilLine, Pen, NotebookPen,
@@ -92,9 +92,10 @@ export default function BubbleHome({ onSelectNote, onNavigate }: BubbleHomeProps
     db.todos.filter(t => t.pinned && !t.done && !t.deletedAt).toArray()
   ) ?? [];
 
-  const albumPhotos = useLiveQuery<AlbumPhoto[]>(() =>
+  const albumPhotosResult = useLiveQuery<AlbumPhoto[]>(() =>
     db.albumPhotos.orderBy('createdAt').toArray()
-  ) ?? [];
+  );
+  const albumPhotos = useMemo(() => albumPhotosResult ?? [], [albumPhotosResult]);
 
   const [albumUrls, setAlbumUrls] = useState<string[]>([]);
   const [deleteOverlayId, setDeleteOverlayId] = useState<number | null>(null);

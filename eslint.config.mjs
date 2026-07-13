@@ -15,6 +15,11 @@ const eslintConfig = defineConfig([
     // Generated service worker files from next-pwa:
     "public/sw.js",
     "public/workbox-*.js",
+    // Vendored pdf.js worker copied from node_modules by the postinstall
+    // script — minified third-party code, not ours to lint.
+    "public/pdf.worker.min.mjs",
+    // Plain-Node build utilities (CommonJS), not part of the app bundle.
+    "scripts/**",
   ]),
 ]);
 
