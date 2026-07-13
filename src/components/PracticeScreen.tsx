@@ -12,7 +12,7 @@ import {
   ArrowLeft, Sparkles, Wand2, Paperclip, X, Play, Trash2,
   Check, ChevronRight, ChevronLeft, FileText, RotateCcw, Trophy, Loader2, PencilLine,
   Settings2, MessageCircle, ChevronDown, ChevronUp, Search, NotebookText,
-  Clock, GraduationCap, BookOpen,
+  Clock, GraduationCap, BookOpen, Pencil,
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
@@ -554,6 +554,15 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     await db.lessonSessions.update(id, { deletedAt: Date.now(), updatedAt: Date.now() });
   }
 
+  async function renameLesson(id: number, current: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = window.prompt(en ? 'Rename lesson' : '授業のタイトルを変更', current);
+    if (next == null) return;
+    const title = next.trim();
+    if (!title || title === current) return;
+    await db.lessonSessions.update(id, { topic: title, updatedAt: Date.now() });
+  }
+
   async function startQuiz() {
     if (lessonCards.length === 0 || genTestLoading) return;
     setGenTestLoading(true);
@@ -887,6 +896,15 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     e.stopPropagation();
     if (!confirm(en ? 'Delete this problem set?' : 'この問題セットを削除する？')) return;
     await deleteProblemSet(id);
+  };
+
+  const handleRenameSet = async (id: number, current: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = window.prompt(en ? 'Rename problem set' : '問題セットのタイトルを変更', current);
+    if (next == null) return;
+    const title = next.trim();
+    if (!title || title === current) return;
+    await db.problemSets.update(id, { title, updatedAt: Date.now() });
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1333,6 +1351,13 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                           : `${s.cardCount}枚 · ${new Date(s.updatedAt).toLocaleDateString('ja-JP')}`}
                       </span>
                     </div>
+                    <button
+                      className="ps-past-edit"
+                      onClick={(e) => void renameLesson(s.id!, s.topic, e)}
+                      title={en ? 'Rename' : '名前を変更'}
+                    >
+                      <Pencil size={13} />
+                    </button>
                     <button
                       className="ps-past-del"
                       onClick={(e) => void deleteLesson(s.id!, e)}
@@ -1790,6 +1815,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                     </div>
                     <div className="ps-card-side">
                       <span className="ps-card-play"><Play size={16} fill="currentColor" /></span>
+                      <span className="ps-card-edit" onClick={(e) => void handleRenameSet(set.id!, set.title, e)} title={en ? 'Rename' : '名前を変更'}><Pencil size={14} /></span>
                       <span className="ps-card-del" onClick={(e) => void handleDelete(set.id!, e)}><Trash2 size={14} /></span>
                     </div>
                   </button>
@@ -1961,6 +1987,8 @@ function PracticeStyles() {
   .ps-card-attempts { color: var(--fg-muted); }
   .ps-card-side { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
   .ps-card-play { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; display: flex; align-items: center; justify-content: center; }
+  .ps-card-edit { width: 28px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--fg-muted); }
+  .ps-card-edit:hover { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, transparent); }
   .ps-card-del { width: 28px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--fg-muted); }
   .ps-card-del:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
 
@@ -2105,6 +2133,8 @@ function PracticeStyles() {
   .ps-past-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .ps-past-topic { font-size: 0.88rem; font-weight: 700; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ps-past-meta { font-size: 0.72rem; color: var(--fg-muted); }
+  .ps-past-edit { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 6px; }
+  .ps-past-edit:hover { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, transparent); }
   .ps-past-del { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 6px; }
   .ps-past-del:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
   /* ── Lesson: slide deck ── */
