@@ -46,7 +46,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${outfit.variable} ${mPlusRounded.variable}`}>
-      <body className="antialiased">
+      {/* suppressHydrationWarning: 下のインラインスクリプトが hydration 前に
+          data-theme 等を body へ付与するため、サーバーHTMLとの属性差分は意図的 */}
+      <body className="antialiased" suppressHydrationWarning>
         {/* テーマをReact hydration前に適用してFOUC防止 */}
         <script dangerouslySetInnerHTML={{ __html: `try{var id=localStorage.getItem('lily-memo-theme');if(!id){var l=localStorage.getItem('theme');if(l==='dark')id='night';}var dark=(id==='night'||id==='starry'||id==='fireworks'||id==='library');document.body.setAttribute('data-theme',dark?'dark':'light');if(id)document.body.setAttribute('data-theme-id',id);if(id==='starry')document.body.setAttribute('data-starfield','true');if(id==='fireworks')document.body.setAttribute('data-fireworks','true');}catch(e){}` }} />
         <ThemeProvider>

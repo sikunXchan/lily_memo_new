@@ -3227,7 +3227,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               const q = getDailyQuote(getAppLang());
               return (
                 <div className="welcome-quote">
-                  <span className="welcome-quote-mark">"</span>
+                  <span className="welcome-quote-mark">&ldquo;</span>
                   <span className="welcome-quote-label">{t('今日の一言')}</span>
                   <p className="welcome-quote-text">{q.text}</p>
                   <p className="welcome-quote-author">— {q.author}</p>

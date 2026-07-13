@@ -175,7 +175,10 @@ const searchInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ codeBlock: false }),
+      // link:false — the explicit Link extension below stays the only one;
+      // StarterKit v3 started bundling its own copy, which logged a
+      // "Duplicate extension names found: ['link']" warning on every mount.
+      StarterKit.configure({ codeBlock: false, link: false }),
       CodeBlockLowlight.configure({ lowlight }).extend({
         addAttributes() {
           return {
