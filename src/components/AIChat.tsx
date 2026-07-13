@@ -91,6 +91,7 @@ interface ChatMessage {
   timestamp: number;
   extractedBlocks?: InsertableBlock[];
   questions?: ClarifyQuestion[];
+  followups?: string[]; // suggested next questions → tappable chips under the bubble
   attachments?: AttachmentMeta[];
   thinking?: string;
   qaChecked?: Record<string, number[]>; // block.id → checked indices
@@ -362,9 +363,11 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
   textContent: string;
   blocks: InsertableBlock[];
   questions: ClarifyQuestion[];
+  followups: string[];
 } {
   const blocks: InsertableBlock[] = [];
   const questions: ClarifyQuestion[] = [];
+  const followups: string[] = [];
 
   // Clarifying-question blocks first.
   const ASK_RE = /```ask\s*([\s\S]*?)```/g;
@@ -385,6 +388,19 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     return '';
   });
 
+  // Suggested follow-up questions Lily can offer at the end of a reply. Each
+  // becomes a tappable chip that sends that exact question when tapped, so the
+  // user can dig deeper with one tap instead of typing. Removed from the
+  // visible prose here — the chips render separately below the bubble.
+  const FOLLOWUP_RE = /```followups?\s*([\s\S]*?)```/g;
+  const afterFollow = afterAsk.replace(FOLLOWUP_RE, (_full, inner: string) => {
+    for (const raw of inner.split('\n')) {
+      const q = cleanAsk(raw.replace(/^[-*・\d.)\s]+/, ''));
+      if (q && q.length <= 60) followups.push(q);
+    }
+    return '';
+  });
+
   // Block markers use a control char so they survive markdown / cleanup
   // regexes without being touched, and so users can't accidentally type them.
   // LilyBubble splits message.text on these and renders each captured block
@@ -393,7 +409,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
 
   // Generic downloadable file blocks (filename on the first line).
   const FILE_RE = /```file\s*\n@@filename:\s*([^\n]+)\n([\s\S]*?)```/g;
-  const work = afterAsk.replace(FILE_RE, (_full, name: string, content: string) => {
+  const work = afterFollow.replace(FILE_RE, (_full, name: string, content: string) => {
     const fileName = name.trim();
     const id = crypto.randomUUID();
     blocks.push({
@@ -589,7 +605,7 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     .replace(/§§FENCE(\d+)§§/g, (_m, i: string) => fences[Number(i)] ?? '')
     .trim();
 
-  return { textContent: cleanText, blocks, questions };
+  return { textContent: cleanText, blocks, questions, followups };
 }
 
 function markdownTableToHtml(markdown: string): string {
@@ -1550,6 +1566,7 @@ const RT_RED = 'color-mix(in srgb, #c62828 75%, var(--foreground) 25%)';
 
 function LilyBubble({
   message, allNotes, selectedNoteId, model, onNoteCreated, onRegenerate, onQaCheck,
+  showFollowups, onFollowup,
 }: {
   message: ChatMessage;
   allNotes: Note[];
@@ -1558,6 +1575,8 @@ function LilyBubble({
   onNoteCreated?: (id: number) => void;
   onRegenerate?: () => void;
   onQaCheck?: (blockId: string, indices: number[]) => void;
+  showFollowups?: boolean;
+  onFollowup?: (question: string) => void;
 }) {
   const t = useT();
   const { avatarSrc: skinAvatarSrc } = useCharacterSkin();
@@ -1717,6 +1736,16 @@ function LilyBubble({
             </button>
           )}
         </div>
+        {showFollowups && message.followups && message.followups.length > 0 && onFollowup && (
+          <div className="followup-chips">
+            <span className="followup-lead">{t('深掘りする')}</span>
+            {message.followups.map((q, i) => (
+              <button key={i} className="followup-chip" onClick={() => onFollowup(q)}>
+                <span className="followup-chip-ic">↳</span>{q}
+              </button>
+            ))}
+          </div>
+        )}
         {message.usage && usageOpen && (
           <div className="msg-usage" style={{ color: message.usage.cached > 0 ? '#1a7a4d' : 'var(--fg-muted,#999)' }}>
             入力{message.usage.prompt.toLocaleString()}（うちキャッシュ{message.usage.cached.toLocaleString()}）/ 出力{message.usage.output.toLocaleString()}
@@ -1744,6 +1773,20 @@ function LilyBubble({
         .inline-block-wrap:first-child { margin-top: 0; }
         .inline-block-wrap:last-child { margin-bottom: 0; }
         .msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+        .followup-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+        .followup-lead { font-size: 0.72rem; font-weight: 800; color: var(--fg-muted, #999); letter-spacing: 0.03em; margin-right: 2px; }
+        .followup-chip {
+          display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+          padding: 7px 13px; border-radius: 999px;
+          border: 1.5px solid color-mix(in srgb, var(--primary) 40%, transparent);
+          background: color-mix(in srgb, var(--primary) 8%, var(--background));
+          color: var(--primary); font-size: 0.82rem; font-weight: 600;
+          cursor: pointer; text-align: left; line-height: 1.35;
+          transition: background 0.14s, border-color 0.14s, transform 0.1s;
+        }
+        .followup-chip:hover { background: color-mix(in srgb, var(--primary) 16%, var(--background)); border-color: var(--primary); }
+        .followup-chip:active { transform: scale(0.97); }
+        .followup-chip-ic { font-weight: 800; opacity: 0.7; flex-shrink: 0; }
         .msg-regen-btn { display: flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted, #888); font-size: 0.78rem; cursor: pointer; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: background 0.14s, color 0.14s, border-color 0.14s; }
         .msg-usage-btn { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--fg-muted, #888); cursor: pointer; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: background 0.14s, color 0.14s, border-color 0.14s; }
         .msg-usage-btn:hover, .msg-usage-btn.open { border-color: var(--primary); color: var(--primary); background: var(--accent); }
@@ -2662,7 +2705,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           temperature: accuracy ? 0.35 : undefined,
         });
       }
-      const { textContent, blocks, questions } = parseAIResponse(aiText, true);
+      const { textContent, blocks, questions, followups } = parseAIResponse(aiText, true);
       const capturedThinking = pendingThinkingRef.current;
       pendingThinkingRef.current = '';
 
@@ -2681,6 +2724,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
+        followups: followups.length > 0 ? followups : undefined,
         thinking: capturedThinking || undefined,
         usage: finalUsage ?? undefined,
         billedTokens,
@@ -2869,7 +2913,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         });
       }
 
-      const { textContent, blocks, questions } = parseAIResponse(aiText, true);
+      const { textContent, blocks, questions, followups } = parseAIResponse(aiText, true);
       const capturedThinking = pendingThinkingRef.current;
       pendingThinkingRef.current = '';
 
@@ -2884,6 +2928,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         timestamp: Date.now(),
         extractedBlocks: blocks.length > 0 ? blocks : undefined,
         questions: questions.length > 0 ? questions : undefined,
+        followups: followups.length > 0 ? followups : undefined,
         thinking: capturedThinking || undefined,
         usage: regenUsage ?? undefined,
         billedTokens: regenBilledTokens,
@@ -3250,6 +3295,8 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
               model="lily"
               onNoteCreated={onNoteCreated}
               onRegenerate={isLastLily && !isLoading ? handleRegenerate : undefined}
+              showFollowups={isLastLily && !isLoading}
+              onFollowup={(q) => void sendMessage(q)}
               onQaCheck={(blockId, indices) =>
                 setMessages(prev => prev.map(m =>
                   m.id === msg.id

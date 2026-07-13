@@ -14,6 +14,8 @@ import TrophyRoom from './TrophyRoom';
 import StudyProfileModal from './StudyProfileModal';
 import { getLevelInfo, fmtHoursShort } from '@/lib/level';
 import LevelIcon from './LevelIcon';
+import { badgeById, BADGES } from '@/lib/badges';
+import { getFavoriteEmblems, setFavoriteEmblems, MAX_FAVORITE_EMBLEMS } from '@/lib/favoriteEmblems';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
 import { AmbientOverlay, useCharacterSkin } from './CharacterSkinContext';
@@ -168,6 +170,76 @@ export interface StudyTrackerProps {
   onOpenFocus?: () => void;
 }
 
+// Modal to pick up to MAX_FAVORITE_EMBLEMS earned badges to feature on the
+// study tab. Tap to toggle; the order tapped is the display order.
+function EmblemPicker({
+  earned, initial, onSave, onClose,
+}: {
+  earned: typeof BADGES;
+  initial: string[];
+  onSave: (ids: string[]) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const [selected, setSelected] = useState<string[]>(initial.filter(id => earned.some(b => b.id === id)));
+  const toggle = (id: string) => {
+    setSelected(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length >= MAX_FAVORITE_EMBLEMS) return prev; // cap reached
+      return [...prev, id];
+    });
+  };
+  return (
+    <div className="emp-overlay" onClick={onClose}>
+      <div className="emp-sheet" onClick={e => e.stopPropagation()}>
+        <div className="emp-head">
+          <span className="emp-title">{t('飾るエンブレムを選ぶ')}</span>
+          <span className="emp-count">{selected.length} / {MAX_FAVORITE_EMBLEMS}</span>
+          <button className="emp-close" onClick={onClose} title={t('閉じる')}><X size={18} /></button>
+        </div>
+        {earned.length === 0 ? (
+          <p className="emp-empty">{t('まだ獲得したバッジがないよ。勉強を記録して集めよう！')}</p>
+        ) : (
+          <div className="emp-grid">
+            {earned.map(b => {
+              const on = selected.includes(b.id);
+              const rank = selected.indexOf(b.id);
+              return (
+                <button key={b.id} className={`emp-item${on ? ' on' : ''}`} onClick={() => toggle(b.id)} title={t(b.title)}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={b.image} alt={t(b.title)} className="emp-img" />
+                  {on && <span className="emp-rank">{rank + 1}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="emp-actions">
+          <button className="emp-save" onClick={() => onSave(selected)}>{t('決定')}</button>
+        </div>
+        <style jsx>{`
+          .emp-overlay { position:fixed; inset:0; z-index:400; background:rgba(0,0,0,0.5); display:flex; align-items:flex-end; justify-content:center; }
+          .emp-sheet { width:100%; max-width:520px; max-height:80vh; display:flex; flex-direction:column; background:var(--background); border-radius:20px 20px 0 0; padding:16px; animation:emp-up .22s cubic-bezier(.32,.72,0,1); }
+          @keyframes emp-up { from { transform:translateY(100%); } to { transform:translateY(0); } }
+          .emp-head { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+          .emp-title { font-size:0.95rem; font-weight:800; color:var(--foreground); }
+          .emp-count { font-size:0.78rem; font-weight:700; color:var(--primary); background:color-mix(in srgb,var(--primary) 12%,transparent); border-radius:99px; padding:2px 10px; }
+          .emp-close { margin-left:auto; background:none; border:none; color:var(--fg-muted); cursor:pointer; display:flex; }
+          .emp-empty { font-size:0.85rem; color:var(--fg-muted); text-align:center; padding:28px 0; }
+          .emp-grid { flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(64px,1fr)); gap:10px; padding:2px; }
+          .emp-item { position:relative; aspect-ratio:1; border-radius:12px; border:2px solid var(--border); background:var(--accent); cursor:pointer; padding:5px; transition:border-color .12s, transform .1s; }
+          .emp-item.on { border-color:var(--primary); background:color-mix(in srgb,var(--primary) 10%,transparent); }
+          .emp-item:active { transform:scale(0.94); }
+          .emp-img { width:100%; height:100%; object-fit:contain; }
+          .emp-rank { position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:800; display:flex; align-items:center; justify-content:center; }
+          .emp-actions { display:flex; justify-content:flex-end; margin-top:12px; }
+          .emp-save { background:var(--primary); color:#fff; border:none; border-radius:12px; padding:10px 28px; font-size:0.9rem; font-weight:700; cursor:pointer; }
+        `}</style>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus }: StudyTrackerProps) {
   const t = useT();
@@ -180,6 +252,16 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // Trophy room + profile modal
   const [showTrophy, setShowTrophy] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+
+  // Favorite emblems showcase (up to 5 earned badges the user chooses to feature)
+  const [showEmblemPicker, setShowEmblemPicker] = useState(false);
+  const [favEmblems, setFavEmblems] = useState<string[]>([]);
+  useEffect(() => {
+    const refresh = () => setFavEmblems(getFavoriteEmblems());
+    refresh();
+    window.addEventListener('lily-favorite-emblems-changed', refresh);
+    return () => window.removeEventListener('lily-favorite-emblems-changed', refresh);
+  }, []);
 
   // Timer
   const [timerMode, setTimerMode] = useState<'stopwatch' | 'pomodoro'>('stopwatch');
@@ -205,6 +287,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // DB
   const categories = useLiveQuery(() => db.studyCategories.orderBy('createdAt').filter(c => !c.deletedAt).toArray(), []) ?? [];
   const sessions = useLiveQuery(() => db.studySessions.orderBy('startTime').filter(s => !s.deletedAt).toArray(), []) ?? [];
+  const earnedBadges = useLiveQuery(() => db.earnedBadges.toArray(), []) ?? [];
 
   // Restore timer + category on mount
   useEffect(() => {
@@ -391,6 +474,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const totalDays = sessionDates.size;
   const levelInfo = getLevelInfo(grandTotal);
 
+  // Favorite-emblem showcase: keep the user's chosen order, but only show ones
+  // that are actually earned and still valid badge ids.
+  const earnedIds = new Set(earnedBadges.map(e => e.badgeId));
+  const showcaseBadges = favEmblems
+    .filter(id => earnedIds.has(id))
+    .map(id => badgeById(id))
+    .filter((b): b is NonNullable<typeof b> => !!b);
+  const earnedBadgeDefs = BADGES.filter(b => earnedIds.has(b.id));
+
   const periodLabel = offset === 0
     ? (period === '7d' ? t('直近7日間') : period === '30d' ? t('直近4週間') : t('直近1年間'))
     : `${buckets[0]?.label ?? ''} 〜 ${buckets[buckets.length-1]?.label ?? ''}`;
@@ -447,6 +539,28 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
               <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
             </div>
           </button>
+
+          {/* Favorite-emblem showcase. Nothing chosen → no decoration at all,
+              just a subtle way to start (only once some badge is earned). */}
+          {showcaseBadges.length > 0 ? (
+            <div className="emblem-showcase">
+              <div className="emblem-showcase-row">
+                {showcaseBadges.map(b => (
+                  <div key={b.id} className="emblem-slot" title={t(b.title)}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={b.image} alt={t(b.title)} className="emblem-img" />
+                  </div>
+                ))}
+              </div>
+              <button className="emblem-edit-btn" onClick={() => setShowEmblemPicker(true)} title={t('エンブレムを選ぶ')}>
+                <Pencil size={13} />
+              </button>
+            </div>
+          ) : earnedBadgeDefs.length > 0 ? (
+            <button className="emblem-add-btn" onClick={() => setShowEmblemPicker(true)}>
+              ＋ {t('お気に入りエンブレムを飾る')}
+            </button>
+          ) : null}
 
           {/* Category selector */}
           <div className="cat-section">
@@ -852,6 +966,14 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       )}
 
       {showTrophy && <TrophyRoom onClose={() => setShowTrophy(false)} />}
+      {showEmblemPicker && (
+        <EmblemPicker
+          earned={earnedBadgeDefs}
+          initial={favEmblems}
+          onClose={() => setShowEmblemPicker(false)}
+          onSave={(ids) => { setFavoriteEmblems(ids); setShowEmblemPicker(false); }}
+        />
+      )}
       {showProfile && <StudyProfileModal onClose={() => setShowProfile(false)} />}
 
       <style jsx>{`
@@ -926,6 +1048,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .today-card-btn:hover { transform:translateY(-2px); box-shadow:0 4px 14px rgba(99,102,241,.18); }
 
         /* ── Level hero (home/timer view) ── */
+        /* Favorite-emblem showcase */
+        .emblem-showcase { display:flex; align-items:center; gap:8px; margin-top:2px; }
+        .emblem-showcase-row { flex:1; display:flex; gap:8px; flex-wrap:wrap; }
+        .emblem-slot { width:46px; height:46px; border-radius:12px; background:var(--accent); border:1.5px solid var(--border); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        .emblem-img { width:100%; height:100%; object-fit:contain; }
+        .emblem-edit-btn { flex-shrink:0; width:32px; height:32px; border-radius:9px; border:1px solid var(--border); background:var(--background); color:var(--fg-muted); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+        .emblem-edit-btn:hover { color:var(--primary); border-color:var(--primary); }
+        .emblem-add-btn { align-self:flex-start; background:none; border:1px dashed var(--border); border-radius:99px; padding:7px 14px; font-size:0.8rem; font-weight:700; color:var(--fg-muted); cursor:pointer; }
+        .emblem-add-btn:hover { color:var(--primary); border-color:var(--primary); }
         .lv-hero { display:flex; align-items:center; gap:13px; width:100%; text-align:left; cursor:pointer; font-family:inherit;
           background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:13px 15px; transition:transform .12s, box-shadow .12s; }
         .lv-hero:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,.12); }
