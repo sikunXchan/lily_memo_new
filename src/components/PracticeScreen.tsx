@@ -24,7 +24,7 @@ import {
 import type { ChatAttachment, ChatTurn } from '@/lib/gemini';
 import { callGeminiChat } from '@/lib/gemini';
 import { getEffectiveApiKey, getUserName } from '@/lib/appLang';
-import { getTicketsLeft, consumeTicket } from '@/lib/points';
+import { getTicketsLeft, consumeTicket, isTicketUnlimited } from '@/lib/points';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
@@ -1311,9 +1311,11 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               </button>
             </div>
             <p className="ps-lesson-ticket-hint">
-              {en
-                ? `Today's remaining lessons: ${getTicketsLeft('lesson')} (1/day for every plan)`
-                : `本日の授業の残り回数: ${getTicketsLeft('lesson')}回（全プラン1日1回）`}
+              {isTicketUnlimited('lesson')
+                ? (en ? 'Lessons: unlimited (Developer)' : '本日の授業の残り回数: 無制限（Developer）')
+                : en
+                  ? `Today's remaining lessons: ${getTicketsLeft('lesson')} (1/day for every plan)`
+                  : `本日の授業の残り回数: ${getTicketsLeft('lesson')}回（全プラン1日1回）`}
             </p>
             {lessonError && <p className="ps-lesson-err">{lessonError}</p>}
 
@@ -1674,9 +1676,11 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             </button>
           </div>
           <p className="ps-gen-ticket-hint">
-            {en
-              ? `Today's remaining problem sets: ${getTicketsLeft('exercise')}`
-              : `本日の問題作成の残り回数: ${getTicketsLeft('exercise')}回`}
+            {isTicketUnlimited('exercise')
+              ? (en ? 'Problem sets: unlimited (Developer)' : '本日の問題作成の残り回数: 無制限（Developer）')
+              : en
+                ? `Today's remaining problem sets: ${getTicketsLeft('exercise')}`
+                : `本日の問題作成の残り回数: ${getTicketsLeft('exercise')}回`}
           </p>
         </div>}
 
