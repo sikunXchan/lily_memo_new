@@ -28,8 +28,9 @@ import {
   streamSikunlilyChat,
   LILY_CHAT_SYSTEM_PROMPT,
   getLastUsage,
-  classifyDiagramNeeds, buildDiagramAddon,
+  classifyPromptAddons, buildPromptAddons,
 } from '@/lib/gemini';
+import { autoColorChart } from '@/lib/chartColors';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
@@ -589,28 +590,6 @@ function parseAIResponse(text: string, allowMemoBlocks = true): {
     .trim();
 
   return { textContent: cleanText, blocks, questions };
-}
-
-const CHART_PALETTE = [
-  'rgba(255,99,132,0.75)', 'rgba(54,162,235,0.75)', 'rgba(255,206,86,0.75)',
-  'rgba(75,192,192,0.75)', 'rgba(153,102,255,0.75)', 'rgba(255,159,64,0.75)',
-  'rgba(231,76,60,0.75)', 'rgba(46,204,113,0.75)', 'rgba(52,152,219,0.75)',
-];
-const CHART_PALETTE_BORDER = CHART_PALETTE.map(c => c.replace('0.75', '1'));
-
-function autoColorChart(parsed: Record<string, unknown>): Record<string, unknown> {
-  const data = parsed.data as { datasets?: Array<Record<string, unknown>> } | undefined;
-  if (!Array.isArray(data?.datasets)) return parsed;
-  const datasets = data!.datasets!.map((ds, i) => {
-    if (ds.backgroundColor) return ds;
-    const isPie = parsed.type === 'pie' || parsed.type === 'doughnut';
-    return {
-      ...ds,
-      backgroundColor: isPie ? CHART_PALETTE : CHART_PALETTE[i % CHART_PALETTE.length],
-      borderColor: isPie ? CHART_PALETTE_BORDER : CHART_PALETTE_BORDER[i % CHART_PALETTE_BORDER.length],
-    };
-  });
-  return { ...parsed, data: { ...data, datasets } };
 }
 
 function markdownTableToHtml(markdown: string): string {
@@ -2512,10 +2491,10 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     setLoadedFromChatId(null); // new message → diverged from loaded chat, next save creates a new entry
 
     try {
-      // Kick off the diagram-type classification alongside note lookup (not
+      // Kick off the capability classification alongside note lookup (not
       // after it) so its network latency overlaps with local IndexedDB reads
       // instead of adding on top of them.
-      const diagramKeysPromise = classifyDiagramNeeds(userText, apiKey);
+      const addonKeysPromise = classifyPromptAddons(userText, apiKey);
       const contextNotes: Note[] = [];
       if (lilyAllNotes) {
         contextNotes.push(...(allNotes ?? []));
@@ -2525,8 +2504,14 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           if (n) contextNotes.push(n);
         }
       }
-      const diagramKeys = await diagramKeysPromise;
-      const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + buildDiagramAddon(diagramKeys);
+      const addonKeys = await addonKeysPromise;
+      // Belt-and-braces beside the classifier: when notes are attached or the
+      // message mentions memos, editing them is likely enough that the
+      // memo-editing rules should always ride along.
+      if (!addonKeys.includes('memo_edit') && (contextNotes.length > 0 || /メモ|ノート/.test(userText))) {
+        addonKeys.push('memo_edit');
+      }
+      const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + buildPromptAddons(addonKeys);
 
       const allMsgs = [...messages, userMsg];
       // Keep a generous window of recent turns. gemini-2.5-flash has a very
@@ -2796,7 +2781,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     setIsLoading(true);
 
     try {
-      const diagramKeysPromise = classifyDiagramNeeds(lastUserText, apiKey);
+      const addonKeysPromise = classifyPromptAddons(lastUserText, apiKey);
       const contextNotes: Note[] = [];
       if (lilyAllNotes) {
         contextNotes.push(...(allNotes ?? []));
@@ -2806,12 +2791,16 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
           if (n) contextNotes.push(n);
         }
       }
-      const diagramAddon = buildDiagramAddon(await diagramKeysPromise);
+      const addonKeys = await addonKeysPromise;
+      if (!addonKeys.includes('memo_edit') && (contextNotes.length > 0 || /メモ|ノート/.test(lastUserText))) {
+        addonKeys.push('memo_edit');
+      }
+      const promptAddons = buildPromptAddons(addonKeys);
 
       const accuracy = isAccuracyTask(lastUserText);
       let aiText: string;
       if (lilyUltraThinking && !economy) {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + promptAddons;
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(t('⚡ Ultra思考中... 深く考えています'));
@@ -2838,7 +2827,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else if (lilyThinking && !economy) {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + promptAddons;
         setSikunLiveThinking('');
         let thinkingAccum = '';
         setSikunProgress(t('🧠 思考中...'));
@@ -2865,7 +2854,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
         setSikunLiveThinking('');
         pendingThinkingRef.current = thinkingAccum;
       } else {
-        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + diagramAddon;
+        const systemPrompt = buildSystemPrompt(contextNotes, activeSkill) + promptAddons;
         const regenUseLite = economy || regenAutoLite;
         // 古いモード（2.x系）モードは旧世代Geminiを呼ぶ。品質は lily-memo-2.0 相当。
         aiText = await callGeminiChat(history, systemPrompt, apiKey, {

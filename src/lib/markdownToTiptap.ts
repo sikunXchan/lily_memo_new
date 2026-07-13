@@ -1,13 +1,16 @@
 // Converts Markdown (optionally with LaTeX math) into HTML that the TipTap
 // note editor can parse into its own schema: headings, bold/italic, lists,
-// task lists, tables, blockquotes, code blocks, and math atom nodes
-// (mathInline / mathBlock, see lib/extensions.ts).
+// task lists, tables, blockquotes, code blocks, math atom nodes (mathInline /
+// mathBlock), text colors / highlight markers, and embedded diagram nodes
+// (mermaid / chart / geometry — see lib/extensions.ts).
 //
 // Used when Lily writes into a memo (create / append / overwrite) so the memo
-// shows a rendered document — real headings, real formulas — instead of raw
-// `#`, `**`, and `$…$` characters.
+// shows a rendered document — real headings, real formulas, real diagrams —
+// instead of raw `#`, `**`, and `$…$` characters.
 
 import { marked } from 'marked';
+import { TEXT_COLOR_BY_KEY, HIGHLIGHT_COLOR_BY_KEY } from './memoColors';
+import { autoColorChart } from './chartColors';
 
 marked.use({ breaks: true, gfm: true });
 
@@ -36,6 +39,30 @@ function convertTaskLists(html: string): string {
   });
 }
 
+// A fenced block inside a memo body becomes either an embedded interactive
+// node (mermaid / chart / geometry — same markup the chat insert-buttons
+// write, so lib/extensions.ts picks them up) or a plain code block.
+function fenceToHtml(lang: string, code: string): string {
+  const body = code.replace(/\n$/, '');
+  if (lang === 'mermaid') {
+    return `<div content="${escAttr(body)}" width="100%" data-type="mermaid"></div>`;
+  }
+  if (lang === 'chart') {
+    try {
+      const parsed = autoColorChart(JSON.parse(body));
+      const codeStr = `return ${JSON.stringify(parsed)};`;
+      return `<div code="${escAttr(codeStr)}" type="${escAttr((parsed.type as string) || 'bar')}" width="100%" data-type="chart"></div>`;
+    } catch {
+      // Invalid JSON — fall through to a plain code block so nothing is lost.
+    }
+  }
+  if (lang === 'geometry') {
+    return `<div data-type="geometry" data-code="${escAttr(body)}" data-width="100%"></div>`;
+  }
+  const cls = lang ? ` class="language-${lang.replace(/[^a-zA-Z0-9_-]/g, '')}"` : '';
+  return `<pre><code${cls}>${escHtml(body)}</code></pre>`;
+}
+
 export function markdownToTiptapHtml(src: string): string {
   if (!src || !src.trim()) return '';
 
@@ -47,12 +74,11 @@ export function markdownToTiptapHtml(src: string): string {
 
   let s = src;
 
-  // 1. Protect code so `$` inside it is never read as math. Fenced first, then
-  //    inline. Stashed as the final HTML TipTap parses.
-  s = s.replace(/```(\w*)[^\n]*\n([\s\S]*?)```/g, (_m, lang: string, code: string) => {
-    const cls = lang ? ` class="language-${lang.replace(/[^a-zA-Z0-9_-]/g, '')}"` : '';
-    return stashBlock(`<pre><code${cls}>${escHtml(code.replace(/\n$/, ''))}</code></pre>`);
-  });
+  // 1. Protect fenced blocks so `$`/`==` inside them are never read as math or
+  //    markers. Both ``` and ~~~ fences are accepted — Lily uses ~~~ inside
+  //    memo bodies because a nested ``` would terminate the outer memo block.
+  const fenceRe = /(```|~~~)(\w*)[^\n]*\n([\s\S]*?)\1/g;
+  s = s.replace(fenceRe, (_m, _f: string, lang: string, code: string) => stashBlock(fenceToHtml(lang, code)));
   s = s.replace(/`([^`\n]+)`/g, (_m, c: string) => stashInline(`<code>${escHtml(c)}</code>`));
 
   // 2. Math → math atom nodes. Block ($$…$$, \[…\]) then inline ($…$, \(…\)).
@@ -63,17 +89,32 @@ export function markdownToTiptapHtml(src: string): string {
   s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, t: string) => mathInline(t));
   s = s.replace(/\$(?!\s)([^\n$]+?)(?<!\s)\$/g, (_m, t: string) => mathInline(t));
 
-  // 3. Markdown → HTML.
+  // 3. Color syntax → inline HTML. marked passes the tags through untouched
+  //    and still renders any markdown inside them, so `=={green}**大事**==`
+  //    keeps its bold. Values come from the shared editor palette, so text
+  //    colored by Lily and text colored via the toolbar are identical marks.
+  //    - marker:     ==テキスト== (yellow) / =={green}テキスト==
+  //    - text color: {red:テキスト}
+  s = s.replace(/==(?:\{([a-z]+)\})?([^=\n]+?)==/g, (m, key: string | undefined, text: string) => {
+    const color = HIGHLIGHT_COLOR_BY_KEY[key || 'yellow'];
+    return color ? `<mark data-color="${escAttr(color)}">${text}</mark>` : m;
+  });
+  s = s.replace(/\{([a-z]+):([^{}\n]+)\}/g, (m, key: string, text: string) => {
+    const color = TEXT_COLOR_BY_KEY[key];
+    return color ? `<span style="color: ${escAttr(color)}">${text}</span>` : m;
+  });
+
+  // 4. Markdown → HTML.
   let html = marked.parse(s) as string;
 
-  // 4. Restore stashed HTML. Replace the paragraph-wrapped form first so a block
+  // 5. Restore stashed HTML. Replace the paragraph-wrapped form first so a block
   //    node never ends up illegally nested inside a <p>.
   for (let pass = 0; pass < 4 && /xrtx\d+xtrx/.test(html); pass++) {
     html = html.replace(/<p>\s*xrtx(\d+)xtrx\s*<\/p>/g, (_m, i: string) => store[Number(i)] ?? '');
     html = html.replace(/xrtx(\d+)xtrx/g, (_m, i: string) => store[Number(i)] ?? '');
   }
 
-  // 5. Task lists.
+  // 6. Task lists.
   html = convertTaskLists(html);
 
   return html.trim();

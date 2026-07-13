@@ -34,6 +34,7 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
+import { TEXT_COLORS, HIGHLIGHT_COLORS } from '@/lib/memoColors';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getEffectiveApiKey } from '@/lib/appLang';
@@ -120,30 +121,6 @@ const CustomTaskItem = TaskItem.extend({
     };
   },
 });
-
-// Text (font) color swatches. Each mixes a saturated hue with the current
-// theme's foreground color, so the same value reads correctly — and stays
-// well above WCAG AA contrast — in both light and dark mode without a
-// separate dark-mode palette (mirrors the RT_* palette used for Lily's own
-// rich-text explanations in AIChat.tsx).
-const TEXT_COLORS = [
-  { name: '赤', value: 'color-mix(in srgb, #c62828 75%, var(--foreground) 25%)' },
-  { name: 'オレンジ', value: 'color-mix(in srgb, #c96f00 60%, var(--foreground) 40%)' },
-  { name: '緑', value: 'color-mix(in srgb, #2e7d32 75%, var(--foreground) 25%)' },
-  { name: '青', value: 'color-mix(in srgb, #1565c0 75%, var(--foreground) 25%)' },
-  { name: '紫', value: 'color-mix(in srgb, #7b1fa2 60%, var(--foreground) 40%)' },
-];
-
-// Marker/highlight swatches: a soft wash mixed toward transparent (not the
-// foreground color), so it sits as a tint over whatever background is
-// underneath — the text itself stays the reader's normal color.
-const HIGHLIGHT_COLORS = [
-  { name: '黄', value: 'color-mix(in srgb, #f5c518 48%, transparent)' },
-  { name: '緑', value: 'color-mix(in srgb, #4caf50 40%, transparent)' },
-  { name: '青', value: 'color-mix(in srgb, #42a5f5 40%, transparent)' },
-  { name: 'ピンク', value: 'color-mix(in srgb, #ec407a 35%, transparent)' },
-  { name: '紫', value: 'color-mix(in srgb, #ab47bc 35%, transparent)' },
-];
 
 interface NoteEditorProps {
   noteId: number;
