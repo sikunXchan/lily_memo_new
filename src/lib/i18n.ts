@@ -113,6 +113,7 @@ const EN: Record<string, string> = {
   '色を変更': 'Change color',
   'メモを追加': 'Add note',
   'フォルダを削除': 'Delete folder',
+  '名前を変更': 'Rename',
   'メモはありません': 'No notes',
   '検索結果': 'Search results',
   'すべてのメモ': 'All notes',

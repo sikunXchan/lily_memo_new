@@ -70,6 +70,8 @@ export default function Sidebar({
   const [editingFolderColor, setEditingFolderColor] = useState<number | null>(null);
   const [internalViewMode, setInternalViewMode] = useState<'tree' | 'graph'>('tree');
   const [deletingFolder, setDeletingFolder] = useState<DeletingFolderState | null>(null);
+  const [renamingFolder, setRenamingFolder] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   // Controlled or uncontrolled view mode.
   const viewMode = viewModeProp ?? internalViewMode;
@@ -120,6 +122,20 @@ export default function Sidebar({
   const updateFolderColor = async (id: number, color: string) => {
     await db.folders.update(id, { color, updatedAt: Date.now() });
     setEditingFolderColor(null);
+  };
+
+  const startRenameFolder = (id: number, current: string) => {
+    setEditingFolderColor(null);
+    setRenamingFolder(id);
+    setRenameValue(current);
+  };
+
+  const commitRenameFolder = async () => {
+    if (renamingFolder == null) return;
+    const name = renameValue.trim();
+    if (name) await db.folders.update(renamingFolder, { name, updatedAt: Date.now() });
+    setRenamingFolder(null);
+    setRenameValue('');
   };
 
   const addNote = async (folderId?: number) => {
@@ -225,8 +241,26 @@ export default function Sidebar({
                     <ChevronRight size={14} />
                   </span>
                   <FolderIcon size={16} style={{ color: `var(${folder.color || '--folder-pink'})`, flexShrink: 0 }} />
-                  <span className="folder-name">{folder.name}</span>
+                  {renamingFolder === folder.id ? (
+                    <input
+                      className="folder-rename-input"
+                      value={renameValue}
+                      autoFocus
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onBlur={() => void commitRenameFolder()}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { e.preventDefault(); void commitRenameFolder(); }
+                        if (e.key === 'Escape') { setRenamingFolder(null); setRenameValue(''); }
+                      }}
+                    />
+                  ) : (
+                    <span className="folder-name">{folder.name}</span>
+                  )}
                   <div className="folder-item-actions">
+                    <button className="btn-inline" title={t('名前を変更')} onClick={(e) => { e.stopPropagation(); startRenameFolder(folder.id!, folder.name); }}>
+                      <Pencil size={13} />
+                    </button>
                     <button className="btn-inline" title={t('色を変更')} onClick={(e) => { e.stopPropagation(); setEditingFolderColor(editingFolderColor === folder.id ? null : folder.id!); }}>
                       <Palette size={13} />
                     </button>
@@ -576,6 +610,19 @@ export default function Sidebar({
             overflow: hidden;
             text-overflow: ellipsis;
             color: var(--foreground);
+          }
+          .folder-rename-input {
+            flex: 1;
+            min-width: 0;
+            font-size: 0.875rem;
+            font-weight: 600;
+            font-family: inherit;
+            color: var(--foreground);
+            background: var(--background);
+            border: 1.5px solid var(--primary);
+            border-radius: 6px;
+            padding: 2px 6px;
+            outline: none;
           }
           .folder-item-actions {
             display: flex;
