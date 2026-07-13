@@ -12,7 +12,7 @@ import {
   ArrowLeft, Sparkles, Wand2, Paperclip, X, Play, Trash2,
   Check, ChevronRight, ChevronLeft, FileText, RotateCcw, Trophy, Loader2, PencilLine,
   Settings2, MessageCircle, ChevronDown, ChevronUp, Search, NotebookText,
-  Clock, GraduationCap, BookOpen,
+  Clock, GraduationCap, BookOpen, Pencil,
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { db } from '@/lib/db';
@@ -22,9 +22,9 @@ import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
 import type { ChatAttachment, ChatTurn } from '@/lib/gemini';
-import { callGeminiChat } from '@/lib/gemini';
+import { callGeminiChat, classifyPromptAddons, buildPromptAddons, MERMAID_ADDON_KEYS } from '@/lib/gemini';
 import { getEffectiveApiKey, getUserName } from '@/lib/appLang';
-import { getTicketsLeft, consumeTicket } from '@/lib/points';
+import { getTicketsLeft, consumeTicket, isTicketUnlimited } from '@/lib/points';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
@@ -343,7 +343,7 @@ How to run the lesson (strict):
 - Follow the lesson style instruction below exactly.
 - Use concrete examples and analogies. Be encouraging and friendly; a few emojis are fine.
 - Use rich Markdown formatting: **bold** key terms, bullet/numbered lists, Markdown tables (| col | col |), and LaTeX math ($formula$, $$block$$). Lean heavily on visual layouts — when in doubt, add a table or list.
-- For any concept involving flow, process, relationships, hierarchy, or sequence, draw a Mermaid diagram (\`\`\`mermaid … \`\`\`) — they render natively in the lesson view. Prefer diagrams over prose whenever a picture is clearer.
+- Draw Mermaid diagrams (\`\`\`mermaid … \`\`\`) when a picture beats prose — they render natively. Pick the diagram TYPE that fits the content; do NOT turn everything into a \`graph\` flowchart. Use flowcharts only for real branching/decisions; use \`timeline\` for chronology, \`sequenceDiagram\` for interactions between actors, \`stateDiagram-v2\` for state changes, \`mindmap\` for hierarchies/overviews, and Markdown tables for comparisons.
 - At the end of each message, ask one short comprehension question to check understanding.
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
@@ -356,7 +356,7 @@ How to run the lesson (strict):
 - 以下の授業スタイル指示に必ず従う。
 - 具体例や比喩を使う。難しい用語には（ふりがな）を付ける。親しみやすく励ましながら。絵文字も少し使ってOK。
 - Markdownを積極活用する。**太字**でキーワード強調、箇条書き・番号リスト、Markdownの表（| 列 | 列 |）、数式（$数式$・$$ブロック$$）を使う。迷ったら表やリストで整理する。
-- フロー・プロセス・関係・階層・シーケンスなど図で説明できる概念は必ずMermaidのフェンスコードブロック（\`\`\`mermaid … \`\`\`）で描くこと。授業画面でそのまま描画される。文章よりも図の方が伝わる場面では積極的に図を優先する。
+- 図が文章より伝わる場面ではMermaid（\`\`\`mermaid … \`\`\`）で描く（授業画面でそのまま描画される）。ただし内容の"かたち"に合った種類を選び、**何でも \`graph\` フローチャートにしない**。フローチャートは分岐・条件のある手順だけ。時系列は \`timeline\`、複数主体のやり取りは \`sequenceDiagram\`、状態変化は \`stateDiagram-v2\`、階層・全体像は \`mindmap\`、比較はMarkdownの表を使う。
 - 発言の最後に、理解度を確認する短い問いかけを1つ入れる。
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
@@ -504,7 +504,18 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       });
     const attachments = [...mdAtts, ...noteAtts, ...genPdfs.map(p => p.att), ...genImages.map(g => g.att)];
 
-    lessonSysRef.current = buildLessonSystemPrompt(topic, en, lessonStyle);
+    // Same lazy addon scheme the chat uses: classify which diagram types this
+    // lesson would benefit from, and append only those syntax rules. Restricted
+    // to Mermaid-family types (the lesson card view can only render mermaid, not
+    // chart/geometry). A classification failure just yields no addon — the base
+    // lesson prompt already covers diagram variety in prose.
+    let lessonAddon = '';
+    try {
+      const keys = (await classifyPromptAddons(topic || (en ? 'lesson' : '授業'), apiKey))
+        .filter(k => MERMAID_ADDON_KEYS.includes(k));
+      lessonAddon = buildPromptAddons(keys);
+    } catch { /* base prompt is enough */ }
+    lessonSysRef.current = buildLessonSystemPrompt(topic, en, lessonStyle) + lessonAddon;
     const kickoff: ChatTurn = {
       role: 'user',
       text: en ? LESSON_KICKOFF.en : LESSON_KICKOFF.ja,
@@ -552,6 +563,15 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     // Soft-delete (tombstone + bumped clock) so the deletion propagates via
     // live-sync instead of the lesson resurrecting from another device.
     await db.lessonSessions.update(id, { deletedAt: Date.now(), updatedAt: Date.now() });
+  }
+
+  async function renameLesson(id: number, current: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = window.prompt(en ? 'Rename lesson' : '授業のタイトルを変更', current);
+    if (next == null) return;
+    const title = next.trim();
+    if (!title || title === current) return;
+    await db.lessonSessions.update(id, { topic: title, updatedAt: Date.now() });
   }
 
   async function startQuiz() {
@@ -887,6 +907,15 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     e.stopPropagation();
     if (!confirm(en ? 'Delete this problem set?' : 'この問題セットを削除する？')) return;
     await deleteProblemSet(id);
+  };
+
+  const handleRenameSet = async (id: number, current: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = window.prompt(en ? 'Rename problem set' : '問題セットのタイトルを変更', current);
+    if (next == null) return;
+    const title = next.trim();
+    if (!title || title === current) return;
+    await db.problemSets.update(id, { title, updatedAt: Date.now() });
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1311,9 +1340,11 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               </button>
             </div>
             <p className="ps-lesson-ticket-hint">
-              {en
-                ? `Today's remaining lessons: ${getTicketsLeft('lesson')} (1/day for every plan)`
-                : `本日の授業の残り回数: ${getTicketsLeft('lesson')}回（全プラン1日1回）`}
+              {isTicketUnlimited('lesson')
+                ? (en ? 'Lessons: unlimited (Developer)' : '本日の授業の残り回数: 無制限（Developer）')
+                : en
+                  ? `Today's remaining lessons: ${getTicketsLeft('lesson')} (1/day for every plan)`
+                  : `本日の授業の残り回数: ${getTicketsLeft('lesson')}回（全プラン1日1回）`}
             </p>
             {lessonError && <p className="ps-lesson-err">{lessonError}</p>}
 
@@ -1331,6 +1362,13 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                           : `${s.cardCount}枚 · ${new Date(s.updatedAt).toLocaleDateString('ja-JP')}`}
                       </span>
                     </div>
+                    <button
+                      className="ps-past-edit"
+                      onClick={(e) => void renameLesson(s.id!, s.topic, e)}
+                      title={en ? 'Rename' : '名前を変更'}
+                    >
+                      <Pencil size={13} />
+                    </button>
                     <button
                       className="ps-past-del"
                       onClick={(e) => void deleteLesson(s.id!, e)}
@@ -1674,9 +1712,11 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             </button>
           </div>
           <p className="ps-gen-ticket-hint">
-            {en
-              ? `Today's remaining problem sets: ${getTicketsLeft('exercise')}`
-              : `本日の問題作成の残り回数: ${getTicketsLeft('exercise')}回`}
+            {isTicketUnlimited('exercise')
+              ? (en ? 'Problem sets: unlimited (Developer)' : '本日の問題作成の残り回数: 無制限（Developer）')
+              : en
+                ? `Today's remaining problem sets: ${getTicketsLeft('exercise')}`
+                : `本日の問題作成の残り回数: ${getTicketsLeft('exercise')}回`}
           </p>
         </div>}
 
@@ -1786,6 +1826,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                     </div>
                     <div className="ps-card-side">
                       <span className="ps-card-play"><Play size={16} fill="currentColor" /></span>
+                      <span className="ps-card-edit" onClick={(e) => void handleRenameSet(set.id!, set.title, e)} title={en ? 'Rename' : '名前を変更'}><Pencil size={14} /></span>
                       <span className="ps-card-del" onClick={(e) => void handleDelete(set.id!, e)}><Trash2 size={14} /></span>
                     </div>
                   </button>
@@ -1957,6 +1998,8 @@ function PracticeStyles() {
   .ps-card-attempts { color: var(--fg-muted); }
   .ps-card-side { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
   .ps-card-play { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; display: flex; align-items: center; justify-content: center; }
+  .ps-card-edit { width: 28px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--fg-muted); }
+  .ps-card-edit:hover { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, transparent); }
   .ps-card-del { width: 28px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--fg-muted); }
   .ps-card-del:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
 
@@ -2101,6 +2144,8 @@ function PracticeStyles() {
   .ps-past-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .ps-past-topic { font-size: 0.88rem; font-weight: 700; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ps-past-meta { font-size: 0.72rem; color: var(--fg-muted); }
+  .ps-past-edit { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 6px; }
+  .ps-past-edit:hover { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, transparent); }
   .ps-past-del { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 6px; }
   .ps-past-del:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
   /* ── Lesson: slide deck ── */

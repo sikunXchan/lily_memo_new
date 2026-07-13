@@ -307,14 +307,14 @@ export const PLAN_EXERCISE_TICKETS: Record<Plan, number> = {
   developer: Number.MAX_SAFE_INTEGER,
 };
 
-// 演習タブ「授業」: 全プラン共通で1日1回（Developerも例外なし）。
+// 演習タブ「授業」: 有料/無料は全プラン共通で1日1回。Developerのみ無制限。
 export const PLAN_LESSON_TICKETS: Record<Plan, number> = {
   free: 1,
   plus: 1,
   pro: 1,
   max: 1,
   ultimate: 1,
-  developer: 1,
+  developer: Number.MAX_SAFE_INTEGER,
 };
 
 // ネット検索: 全プラン共通で1日1回（Developerも例外なし）。
@@ -368,6 +368,13 @@ export function getTicketsUsedToday(mode: TicketMode): number {
 
 export function getTicketsLeft(mode: TicketMode): number {
   return Math.max(0, getTicketLimit(mode) - getTicketsUsedToday(mode));
+}
+
+// True when a mode is effectively unlimited for the current plan (e.g. every
+// ticket mode on the Developer plan), so the UI can show "無制限" instead of a
+// meaningless huge remaining count.
+export function isTicketUnlimited(mode: TicketMode): boolean {
+  return getTicketLimit(mode) > 100_000;
 }
 
 export function hasTicket(mode: TicketMode): boolean {

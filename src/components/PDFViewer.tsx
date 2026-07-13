@@ -6,13 +6,12 @@ import {
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Clock,
   Play, Pause, RotateCcw, RotateCw,
   Image as ImageIcon, Plus, Maximize2, Minimize2,
-  FileDown, Home,
+  FileDown, Home, ArrowLeft,
 } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { registerPdfProvider } from '@/lib/pdfBridge';
 import { pdfPagesToMarkdown } from '@/lib/pdfToMarkdown';
-import { summarizePdfPage } from '@/lib/pdfPageSummary';
 import { downloadTextFile } from '@/lib/fileGen';
 import { db, newSyncId } from '@/lib/db';
 import { useT } from '@/lib/i18n';
@@ -21,8 +20,7 @@ if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 }
 
-// Same practical range as before (0.5x–2.5x), but continuous so a two-finger
-// pinch can drive it directly instead of only jumping between fixed steps.
+// Zoom range for the ± buttons (0.5x–2.5x).
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 2.5;
 const DEFAULT_SCALE = 1.5;
@@ -183,16 +181,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   // closed/replaced PDF can't surface its (now irrelevant) result.
   const mdRunIdRef = useRef(0);
 
-  // Lily dock — manual summary of the currently shown page (button-triggered;
-  // no auto-fetch and no free-text Q&A here, that's what the floating sikun
-  // assistant is for).
-  const [dockSummary, setDockSummary] = useState('');
-  const [dockTerms, setDockTerms] = useState<string[]>([]);
-  const [dockLoading, setDockLoading] = useState(false);
-  const [dockError, setDockError] = useState('');
-  // Bumped on every page change so a slow summary for a page the user already
-  // left can't overwrite the dock with stale content.
-  const dockRunIdRef = useRef(0);
 
   // Canvas & DOM refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -204,16 +192,10 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const blobUrlRef = useRef('');
   const photoThumbsRef = useRef<string[]>([]);
   photoThumbsRef.current = photoThumbs;
-  // Two-finger pinch-to-zoom (viewing only).
+  // Zoom is button-only (±). Finger pinch-zoom is intentionally disabled and
+  // horizontal panning is locked (touch-action: pan-y on the canvas area), so
+  // reading a PDF stays a clean vertical scroll.
   const pdfCanvasAreaRef = useRef<HTMLDivElement>(null);
-  const pinchPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const pinchStartRef = useRef<{ dist: number; scale: number } | null>(null);
-  // Where on the page (as a fraction of the canvas box) the pinch grabbed,
-  // and the latest on-screen midpoint of the two fingers — used to keep that
-  // page point fixed under the fingers as the canvas is re-rendered at the
-  // new scale, instead of drifting toward the flex-centered layout origin.
-  const pinchAnchorRef = useRef<{ fracX: number; fracY: number } | null>(null);
-  const pinchMidRef = useRef<{ x: number; y: number } | null>(null);
 
   const scaleRef = useRef(DEFAULT_SCALE);
   const currentPageRef = useRef(1);
@@ -248,47 +230,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
   const zoomByStep = (dir: 1 | -1) =>
     setScale(s => clampScale(dir === 1 ? s * ZOOM_BTN_STEP : s / ZOOM_BTN_STEP));
-
-  // ---- Two-finger pinch-to-zoom (viewing only) ----
-  // Panning stays native (browser scroll); this only ever touches `scale`.
-  const pinchDist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
-    Math.hypot(a.x - b.x, a.y - b.y);
-
-  const handleWrapperPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pinchPointersRef.current.size === 2) {
-      const [a, b] = [...pinchPointersRef.current.values()];
-      pinchStartRef.current = { dist: pinchDist(a, b) || 1, scale: scaleRef.current };
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      pinchMidRef.current = mid;
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const r = canvas.getBoundingClientRect();
-        pinchAnchorRef.current = {
-          fracX: r.width > 0 ? (mid.x - r.left) / r.width : 0.5,
-          fracY: r.height > 0 ? (mid.y - r.top) / r.height : 0.5,
-        };
-      }
-    }
-  };
-  const handleWrapperPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!pinchPointersRef.current.has(e.pointerId)) return;
-    pinchPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    const pts = [...pinchPointersRef.current.values()];
-    if (pts.length === 2 && pinchStartRef.current) {
-      const d = pinchDist(pts[0], pts[1]);
-      pinchMidRef.current = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-      setScale(clampScale(pinchStartRef.current.scale * (d / pinchStartRef.current.dist)));
-    }
-  };
-  const endWrapperPointer = (e: React.PointerEvent<HTMLDivElement>) => {
-    pinchPointersRef.current.delete(e.pointerId);
-    if (pinchPointersRef.current.size < 2) {
-      pinchStartRef.current = null;
-      pinchAnchorRef.current = null;
-      pinchMidRef.current = null;
-    }
-  };
 
   // ---- PDF loading ----
   const loadPDF = useCallback(async (url: string, originalUrl: string) => {
@@ -433,19 +374,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
         canvas.width = physicalViewport.width;
         canvas.height = physicalViewport.height;
         canvas.style.width = `${logicalViewport.width}px`;
-        // Keep the pinch-grabbed page point under the fingers instead of
-        // letting it drift toward the flex-centered layout origin as the
-        // canvas resizes to the new scale.
-        const anchor = pinchAnchorRef.current;
-        const mid = pinchMidRef.current;
-        const container = pdfCanvasAreaRef.current;
-        if (anchor && mid && container) {
-          const r = canvas.getBoundingClientRect();
-          const anchorClientX = r.left + anchor.fracX * r.width;
-          const anchorClientY = r.top + anchor.fracY * r.height;
-          container.scrollLeft += anchorClientX - mid.x;
-          container.scrollTop += anchorClientY - mid.y;
-        }
         const task = page.render({ canvasContext: ctx, viewport: physicalViewport });
         renderTaskRef.current = task;
         await task.promise;
@@ -496,38 +424,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
     return () => { registerPdfProvider(null); };
   }, [hasPDF, totalPages, capturePageImage]);
 
-  // Lily dock — reset any summary from the previous page so stale content
-  // can't linger; the actual summarize call is manual (button-triggered),
-  // see handleSummarizeDock.
-  useEffect(() => {
-    setDockSummary('');
-    setDockTerms([]);
-    setDockError('');
-    dockRunIdRef.current++;
-    setDockLoading(false);
-  }, [hasPDF, currentPage]);
-
-  const handleSummarizeDock = useCallback(() => {
-    if (dockLoading) return;
-    const image = capturePageImage();
-    if (!image) return;
-    const runId = ++dockRunIdRef.current;
-    setDockLoading(true);
-    setDockError('');
-    summarizePdfPage(image)
-      .then(({ summary, terms }) => {
-        if (dockRunIdRef.current !== runId) return;
-        setDockSummary(summary);
-        setDockTerms(terms);
-      })
-      .catch((e: unknown) => {
-        if (dockRunIdRef.current !== runId) return;
-        setDockError(e instanceof Error ? e.message : 'ページの要約に失敗しちゃった');
-      })
-      .finally(() => {
-        if (dockRunIdRef.current === runId) setDockLoading(false);
-      });
-  }, [dockLoading, capturePageImage]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -797,48 +693,11 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
             </div>
           )}
           {!isLoading && !error && (
-            <div
-              className="pdf-canvas-wrapper"
-              onPointerDown={handleWrapperPointerDown}
-              onPointerMove={handleWrapperPointerMove}
-              onPointerUp={endWrapperPointer}
-              onPointerCancel={endWrapperPointer}
-            >
+            <div className="pdf-canvas-wrapper">
               <canvas ref={canvasRef} className="pdf-canvas" />
             </div>
           )}
         </div>
-
-        {/* Lily dock — manual page summary */}
-        {hasPDF && !isLoading && !error && !isAppFullscreen && (
-          <div className="lily-dock">
-            <div className="dock-row">
-              <div className="dock-ava" />
-              <span className="dock-lbl">🔎 {t('このページの要点')}</span>
-              <button
-                className="dock-summarize-btn"
-                onClick={handleSummarizeDock}
-                disabled={dockLoading}
-              >
-                {dockLoading ? t('要約中…') : dockSummary ? t('もう一度要約') : t('要約する')}
-              </button>
-            </div>
-            {dockLoading ? (
-              <p className="dock-text dock-loading">{t('読んでいるよ…')}</p>
-            ) : dockError ? (
-              <p className="dock-text dock-error">{dockError}</p>
-            ) : dockSummary ? (
-              <p className="dock-text">
-                {dockSummary}
-                {dockTerms.map(term => (
-                  <span key={term} className="dock-term-chip">{term}</span>
-                ))}
-              </p>
-            ) : (
-              <p className="dock-text dock-hint">{t('ボタンを押すとLilyがこのページを要約するよ')}</p>
-            )}
-          </div>
-        )}
 
         <style jsx>{`
           .pdf-fullscreen {
@@ -975,14 +834,13 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           .timer-btn.pause { background:#f59e0b; color:white; }
           .timer-btn.reset { background:var(--accent); color:var(--foreground); border:1px solid var(--border); }
           .timer-btn:hover { opacity:0.85; }
-          /* Canvas — scrolls both ways once zoomed past the viewport. Pinch
-             (2-finger) is handled in JS via pointer events on the wrapper;
-             touch-action lists only pan-x/pan-y (no pinch-zoom) so the browser
-             leaves 2-finger gestures to our handler instead of zooming the page. */
+          /* Canvas — vertical scroll only. touch-action: pan-y disables finger
+             pinch-zoom and horizontal panning (the page stays left-right fixed);
+             zoom is done exclusively with the ± toolbar buttons. */
           .pdf-canvas-area {
-            flex:1; overflow:auto; min-height:0;
+            flex:1; overflow-y:auto; overflow-x:hidden; min-height:0;
             -webkit-overflow-scrolling:touch;
-            touch-action: pan-x pan-y;
+            touch-action: pan-y;
             overscroll-behavior: contain;
             padding:16px;
             display:flex; justify-content:center; align-items:flex-start;
@@ -1041,32 +899,6 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           .md-btn.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
           .md-btn:disabled { opacity:0.55; cursor:default; }
 
-          .lily-dock {
-            margin: 0 14px 14px; flex-shrink: 0;
-            background: #fff; border-radius: 16px; padding: 13px 14px;
-            box-shadow: 0 4px 18px rgba(40,30,20,.16);
-            display: flex; flex-direction: column; gap: 9px;
-          }
-          .dock-row { display: flex; align-items: center; gap: 8px; }
-          .dock-ava {
-            width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
-            background: linear-gradient(135deg,#e08394,#c25c70);
-          }
-          .dock-lbl { font-size: 11px; font-weight: 800; color: #c25c70; }
-          .dock-summarize-btn {
-            margin-left: auto; flex-shrink: 0; border: none; border-radius: 999px;
-            background: #f1ece1; color: #c25c70; font-size: 11px; font-weight: 700;
-            padding: 6px 12px; cursor: pointer;
-          }
-          .dock-summarize-btn:disabled { opacity: .6; cursor: default; }
-          .dock-text { font-size: 12px; color: #463f36; line-height: 1.55; margin: 0; }
-          .dock-loading { color: #a8a08f; }
-          .dock-error { color: #c0392b; }
-          .dock-hint { color: #a8a08f; }
-          .dock-term-chip {
-            display: inline-flex; font-size: 10.5px; font-weight: 700; color: #3d6f9c;
-            background: #eaf2fa; padding: 2px 8px; border-radius: 999px; margin-left: 5px;
-          }
         `}</style>
       </div>
     );
@@ -1076,6 +908,11 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
   return (
     <div className={`pdf-home${embedded ? ' embedded' : ''}`}>
       <div className="pdf-home-inner">
+        {onSwitchTab && !embedded && (
+          <button className="pdf-home-back" onClick={() => onSwitchTab('memos')}>
+            <ArrowLeft size={18} /><span>{t('ホームに戻る')}</span>
+          </button>
+        )}
         <div className="pdf-header">
           <FileText size={32} className="pdf-header-icon" />
           <h2>{t('PDF ビューア')}</h2>
@@ -1165,6 +1002,14 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
           margin:0 auto;
           display:flex; flex-direction:column; gap:24px;
         }
+        .pdf-home-back {
+          display:flex; align-items:center; gap:6px; align-self:flex-start;
+          background:var(--accent); border:1px solid var(--border);
+          border-radius:99px; padding:8px 16px; margin-top:4px;
+          font-size:0.85rem; font-weight:700; color:var(--foreground);
+          cursor:pointer; transition:background 0.15s;
+        }
+        .pdf-home-back:hover, .pdf-home-back:active { background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary); }
         .pdf-header { text-align:center; padding:24px 0 8px; }
         .pdf-header-icon { color:var(--primary); margin-bottom:12px; }
         .pdf-header h2 { font-size:1.6rem; color:var(--primary); margin-bottom:8px; }

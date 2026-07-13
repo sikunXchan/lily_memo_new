@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  ArrowLeft, Plus, Search, ChevronRight, Folder, FileText, FolderPlus, Check, X,
+  ArrowLeft, Plus, Search, ChevronRight, Folder, FileText, FolderPlus, Check, X, Pencil,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Folder as FolderType, Note } from '@/lib/db';
@@ -25,6 +25,8 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
 
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [renamingFolder, setRenamingFolder] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const folders = useLiveQuery<FolderType[]>(() => db.folders.filter(f => !f.deletedAt).toArray()) ?? [];
@@ -56,6 +58,19 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
 
   const toggleFolder = (id: number) =>
     setExpandedFolders(p => ({ ...p, [id]: !p[id] }));
+
+  const startRenameFolder = (id: number, current: string) => {
+    setRenamingFolder(id);
+    setRenameValue(current);
+  };
+
+  const commitRenameFolder = useCallback(async () => {
+    if (renamingFolder == null) return;
+    const name = renameValue.trim();
+    if (name) await db.folders.update(renamingFolder, { name, updatedAt: Date.now() });
+    setRenamingFolder(null);
+    setRenameValue('');
+  }, [renamingFolder, renameValue]);
 
   const openNewFolder = () => {
     setShowNewFolder(true);
@@ -136,12 +151,39 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           const expanded = !!expandedFolders[f.id!];
           return (
             <div key={f.id} className="mt-folder-card">
-              <button className="mt-folder-row" onClick={() => toggleFolder(f.id!)}>
-                <ChevronRight size={15} color="#c7b8be" className={`mt-chev ${expanded ? 'open' : ''}`} />
-                <Folder size={16} color="#ffb6c1" />
-                <span className="mt-fname">{f.name}</span>
-                <span className="mt-fcount">{folderNotes.length}</span>
-              </button>
+              {renamingFolder === f.id ? (
+                <div className="mt-folder-row mt-folder-rename">
+                  <Folder size={16} color="#ffb6c1" />
+                  <input
+                    className="mt-rename-input"
+                    value={renameValue}
+                    autoFocus
+                    onChange={e => setRenameValue(e.target.value)}
+                    onBlur={() => void commitRenameFolder()}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); void commitRenameFolder(); }
+                      if (e.key === 'Escape') { setRenamingFolder(null); setRenameValue(''); }
+                    }}
+                  />
+                  <button className="mt-rename-ok" onMouseDown={e => e.preventDefault()} onClick={() => void commitRenameFolder()} title={t('保存')}>
+                    <Check size={16} />
+                  </button>
+                </div>
+              ) : (
+                <button className="mt-folder-row" onClick={() => toggleFolder(f.id!)}>
+                  <ChevronRight size={15} color="#c7b8be" className={`mt-chev ${expanded ? 'open' : ''}`} />
+                  <Folder size={16} color="#ffb6c1" />
+                  <span className="mt-fname">{f.name}</span>
+                  <button
+                    className="mt-frename-btn"
+                    onClick={e => { e.stopPropagation(); startRenameFolder(f.id!, f.name); }}
+                    title={t('名前を変更')}
+                  >
+                    <Pencil size={14} color="#c7b8be" />
+                  </button>
+                  <span className="mt-fcount">{folderNotes.length}</span>
+                </button>
+              )}
               {expanded && (
                 <div className="mt-folder-notes">
                   {folderNotes.map(n => (
@@ -283,6 +325,26 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
         .mt-fcount {
           font-size: .72rem; font-weight: 700; color: #a08a72;
           background: #f1ece1; padding: 2px 8px; border-radius: 99px;
+        }
+        .mt-frename-btn {
+          display: flex; align-items: center; justify-content: center;
+          background: none; border: none; cursor: pointer;
+          padding: 4px; border-radius: 6px; flex-shrink: 0;
+        }
+        .mt-frename-btn:active { background: rgba(255,182,193,.2); }
+        .mt-folder-rename {
+          gap: 8px; padding: 8px 14px;
+        }
+        .mt-rename-input {
+          flex: 1; min-width: 0; font-size: .9rem; font-weight: 700;
+          font-family: inherit; color: #2c2620;
+          background: #fff; border: 1.5px solid #ff8da1; border-radius: 8px;
+          padding: 6px 10px; outline: none;
+        }
+        .mt-rename-ok {
+          display: flex; align-items: center; justify-content: center;
+          background: #ff8da1; color: #fff; border: none; cursor: pointer;
+          width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
         }
         .mt-folder-notes {
           padding: 0 14px 10px 40px;
