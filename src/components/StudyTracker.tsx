@@ -227,7 +227,7 @@ function EmblemPicker({
           .emp-close { margin-left:auto; background:none; border:none; color:var(--fg-muted); cursor:pointer; display:flex; }
           .emp-empty { font-size:0.85rem; color:var(--fg-muted); text-align:center; padding:28px 0; }
           .emp-grid { flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(64px,1fr)); gap:10px; padding:2px; }
-          .emp-item { position:relative; aspect-ratio:1; border-radius:12px; border:2px solid var(--border); background:var(--accent); cursor:pointer; padding:5px; transition:border-color .12s, transform .1s; }
+          .emp-item { position:relative; aspect-ratio:1; border-radius:12px; border:2px solid var(--border); background:transparent; cursor:pointer; padding:5px; transition:border-color .12s, transform .1s; }
           .emp-item.on { border-color:var(--primary); background:color-mix(in srgb,var(--primary) 10%,transparent); }
           .emp-item:active { transform:scale(0.94); }
           .emp-img { width:100%; height:100%; object-fit:contain; }
@@ -1051,7 +1051,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         /* Favorite-emblem showcase */
         .emblem-showcase { display:flex; align-items:center; gap:8px; margin-top:2px; }
         .emblem-showcase-row { flex:1; display:flex; gap:8px; flex-wrap:wrap; }
-        .emblem-slot { width:46px; height:46px; border-radius:12px; background:var(--accent); border:1.5px solid var(--border); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        .emblem-slot { width:46px; height:46px; border-radius:12px; background:transparent; border:1.5px solid var(--border); display:flex; align-items:center; justify-content:center; overflow:hidden; }
         .emblem-img { width:100%; height:100%; object-fit:contain; }
         .emblem-edit-btn { flex-shrink:0; width:32px; height:32px; border-radius:9px; border:1px solid var(--border); background:var(--background); color:var(--fg-muted); display:flex; align-items:center; justify-content:center; cursor:pointer; }
         .emblem-edit-btn:hover { color:var(--primary); border-color:var(--primary); }

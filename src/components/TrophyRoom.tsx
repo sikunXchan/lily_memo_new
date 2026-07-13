@@ -90,7 +90,7 @@ export default function TrophyRoom({ onClose }: Props) {
     <div className="tr-overlay">
       {/* Header */}
       <div className="tr-header">
-        <span className="tr-title">🏆 {t('トロフィールーム')}</span>
+        <span className="tr-title">🏆 {t('エンブレムルーム')}</span>
         <span className="tr-count">{totalEarned} / {BADGES.length}</span>
         <button className="tr-close" onClick={onClose}><X size={20} /></button>
       </div>

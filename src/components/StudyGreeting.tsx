@@ -139,7 +139,7 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
               <span className="sg-streak"><Flame size={13} /> {t('{n}日連続中', { n: stats.currentStreak })}</span>
             )}
             <button className="sg-btn" onClick={onOpenTrophy}>
-              <Trophy size={14} /> {t('トロフィー')} <b>{earnedCount}/{BADGES.length}</b>
+              <Trophy size={14} /> {t('エンブレム')} <b>{earnedCount}/{BADGES.length}</b>
             </button>
             <button className="sg-btn ghost" onClick={onEditProfile}>
               <Pencil size={13} /> {t('目標を編集')}
