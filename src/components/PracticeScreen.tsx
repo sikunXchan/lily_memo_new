@@ -341,27 +341,31 @@ function buildLessonSystemPrompt(topic: string, en: boolean, style: LessonStyle 
     return `You are "Lily", an excellent and warm 1-on-1 private tutor. You teach the student through an interactive back-and-forth conversation — NOT by dumping the whole lesson at once.
 
 How to run the lesson (strict):
+- No preamble, ever. Open the very first card with actual content — never with "Today we'll learn about…", "Let's get started", or any throat-clearing sentence. The first sentence must already be teaching something.
 - Follow the lesson style instruction below exactly.
 - Use concrete examples and analogies. Be encouraging and friendly; a few emojis are fine.
 - Use rich Markdown formatting: **bold** key terms, bullet/numbered lists, Markdown tables (| col | col |), and LaTeX math ($formula$, $$block$$). Lean heavily on visual layouts — when in doubt, add a table or list.
 - Draw Mermaid diagrams (\`\`\`mermaid … \`\`\`) when a picture beats prose — they render natively. Pick the diagram TYPE that fits the content; do NOT turn everything into a \`graph\` flowchart. Use flowcharts only for real branching/decisions; use \`timeline\` for chronology, \`sequenceDiagram\` for interactions between actors, \`stateDiagram-v2\` for state changes, \`mindmap\` for hierarchies/overviews, and Markdown tables for comparisons.
+- You may emphasise text with color and size: {red:text} colors text (keys: red/orange/green/blue/purple), {big:text}/{huge:text}/{small:text} changes its size, and ==text== highlights it (=={green}text== for a different tint; keys: yellow/green/blue/pink/purple). Use sparingly, only for genuinely key terms/warnings — not on every line.
 - At the end of each message, ask one short comprehension question to check understanding.
 - If the student asks a question, answer it kindly and thoroughly, then guide them back to the lesson.
 - When the student says "next", teach the next chunk that follows on from the previous one.
-- When you have covered everything, finish with a heading "## Summary" listing the key points as bullets and clearly tell them the lesson is complete. Once you have written this summary, do NOT teach any further "next" parts — the student will move on to a confirmation quiz.
+- When you have covered everything, finish with a heading "## Summary" listing the key points as bullets and clearly tell them the lesson is complete. If the student still says "next" afterward, continue naturally — offer a related deeper point or a quick comprehension question rather than repeating the summary.
 - If materials are attached, base the lesson on their content.${styleLineEn}${nameLine}${topicLine}`;
   }
   return `あなたは優秀で温かいマンツーマンの家庭教師「Lily」です。生徒と対話のキャッチボールをしながら授業を進めます。
 
 進め方（厳守）：
+- 前置き厳禁。「今日は〜について学びましょう」「それでは始めます」のような導入文で最初のカードを始めない。1文目からもう本題（実際の内容）を教える。
 - 以下の授業スタイル指示に必ず従う。
 - 具体例や比喩を使う。難しい用語には（ふりがな）を付ける。親しみやすく励ましながら。絵文字も少し使ってOK。
 - Markdownを積極活用する。**太字**でキーワード強調、箇条書き・番号リスト、Markdownの表（| 列 | 列 |）、数式（$数式$・$$ブロック$$）を使う。迷ったら表やリストで整理する。
 - 図が文章より伝わる場面ではMermaid（\`\`\`mermaid … \`\`\`）で描く（授業画面でそのまま描画される）。ただし内容の"かたち"に合った種類を選び、**何でも \`graph\` フローチャートにしない**。フローチャートは分岐・条件のある手順だけ。時系列は \`timeline\`、複数主体のやり取りは \`sequenceDiagram\`、状態変化は \`stateDiagram-v2\`、階層・全体像は \`mindmap\`、比較はMarkdownの表を使う。
+- 文字の色・大きさで強調できる: {red:文字}で色付け（使える色: red/orange/green/blue/purple）、{big:文字}/{huge:文字}/{small:文字}で大きさ変更、==文字==でマーカー（=={green}文字==で色変更、使える色: yellow/green/blue/pink/purple）。本当に大事な用語・注意点だけに絞り、多用しない。
 - 発言の最後に、理解度を確認する短い問いかけを1つ入れる。
 - 生徒が質問したら、その質問に丁寧に答えてから、授業に戻す。
 - 生徒が「次へ」と言ったら、前回の続きの次のまとまりを教える。
-- すべての内容を教え終えたら、最後に必ず見出し「## まとめ」を付けて要点を箇条書きにし、授業の終わりをはっきり伝える。まとめを出したあとは、もう「次へ」の続きは教えない（生徒には確認テストに進んでもらう）。
+- すべての内容を教え終えたら、最後に見出し「## まとめ」を付けて要点を箇条書きにし、授業の終わりをはっきり伝える。まとめの後も生徒が「次へ」と言ったら、まとめを繰り返さず、関連する発展的な話や理解度チェックの問いかけを続ける。
 - 資料が添付されている場合は、その内容に沿って授業を組み立てる。${styleLineJa}${nameLine}${topicLine}`;
 }
 
@@ -419,17 +423,7 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     return out;
   }, [lessonTurns]);
 
-  // Lesson is complete once Lily writes her wrap-up. We accept any Markdown
-  // heading that contains "まとめ"/"Summary" (e.g. "## まとめ", "## 本日のまとめ",
-  // "### Lesson Summary") so a slightly differently-worded heading still ends
-  // the lesson instead of leaving the "次へ" button pressable forever.
-  const isLessonComplete = useMemo(
-    () => lessonCards.some(c => /^#{1,6}\s*.*(?:まとめ|Summary)/im.test(c.text)),
-    [lessonCards],
-  );
-
   const [cardIdx, setCardIdx] = useState(0);
-  const [genTestLoading, setGenTestLoading] = useState(false);
   // Whenever a new card arrives, slide to it.
   useEffect(() => {
     if (lessonCards.length > 0) setCardIdx(lessonCards.length - 1);
@@ -573,28 +567,6 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     const title = next.trim();
     if (!title || title === current) return;
     await db.lessonSessions.update(id, { topic: title, updatedAt: Date.now() });
-  }
-
-  async function startQuiz() {
-    if (lessonCards.length === 0 || genTestLoading) return;
-    setGenTestLoading(true);
-    try {
-      const content = lessonCards.map((c, i) => `## Part ${i + 1}\n${c.text}`).join('\n\n---\n\n');
-      const prompt = en
-        ? `Based on the following lesson content, create a varied quiz (mix of multiple-choice, fill-in-the-blank, and true/false) to test understanding:\n\n${content}`
-        : `以下の授業内容をもとに、理解度を確認する確認テストを作成してください（選択・穴埋め・○×などの形式をバランスよく使ってください）：\n\n${content}`;
-      const result = await generateProblemSet(prompt, [], ['gemini-3.5-flash', 'gemini-3.1-flash-lite']);
-      const id = await saveProblemSet(result, {});
-      const fresh = await db.problemSets.get(id);
-      if (fresh) {
-        exitLesson();
-        startSolving(fresh);
-      }
-    } catch {
-      setLessonError(en ? 'Failed to create quiz.' : 'テスト作成に失敗しました。');
-    } finally {
-      setGenTestLoading(false);
-    }
   }
 
   async function saveLesson() {
@@ -1473,22 +1445,12 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
               ) : null}
             </div>
 
-            {/* Lesson wrap-up: once Lily has written her summary and we are on the
-                final card, the only way onward is the confirmation quiz. */}
-            {isLessonComplete && cardIdx === lessonCards.length - 1 && (
-              <div className="ps-lesson-done">
-                🎉 {en
-                  ? 'Lesson complete! Finish with a quick quiz to check what you learned.'
-                  : '授業はここまで！最後に確認テストで理解度をチェックしよう。'}
-              </div>
-            )}
-
             {/* Slide navigation */}
             <div className="ps-slide-nav">
               <button
                 className="ps-slide-prev"
                 onClick={() => setCardIdx(i => Math.max(0, i - 1))}
-                disabled={cardIdx === 0 || lessonLoading || genTestLoading}
+                disabled={cardIdx === 0 || lessonLoading}
               >
                 <ChevronLeft size={17} /> {en ? 'Back' : '前へ'}
               </button>
@@ -1496,25 +1458,15 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 <button
                   className="ps-slide-next"
                   onClick={() => setCardIdx(i => i + 1)}
-                  disabled={lessonLoading || genTestLoading}
+                  disabled={lessonLoading}
                 >
                   {en ? 'Forward' : '進む'} <ChevronRight size={17} />
-                </button>
-              ) : isLessonComplete ? (
-                <button
-                  className="ps-slide-next quiz"
-                  onClick={() => void startQuiz()}
-                  disabled={genTestLoading || lessonLoading}
-                >
-                  {genTestLoading
-                    ? <><Loader2 size={15} className="ps-spin" /> {en ? 'Creating…' : '作成中…'}</>
-                    : <><Trophy size={15} /> {en ? 'Take a quiz' : '確認テストを受ける'}</>}
                 </button>
               ) : (
                 <button
                   className="ps-slide-next"
                   onClick={() => void sendLessonMessage(en ? LESSON_NEXT.en : LESSON_NEXT.ja)}
-                  disabled={lessonLoading || genTestLoading}
+                  disabled={lessonLoading}
                 >
                   {en ? 'Next part' : '次へ'} <ChevronRight size={17} />
                 </button>
@@ -1875,6 +1827,9 @@ function PracticeStyles() {
   return (
     <style jsx global>{`
   .rich { font-size: 0.9rem; line-height: 1.7; color: var(--foreground); word-break: break-word; }
+  .rich .rt-mark { color: var(--foreground); padding: 0 4px; border-radius: 3px; }
+  .rich .rt-term { font-weight: 800; color: var(--foreground); }
+  .rich .rt-gloss { color: var(--fg-muted); font-weight: 500; }
   .rich p { margin: 0 0 8px; }
   .rich p:last-child { margin-bottom: 0; }
   .rich h2 { font-size: 1.02rem; font-weight: 800; margin: 4px 0 8px; color: #8b5cf6; }
@@ -2216,15 +2171,11 @@ function PracticeStyles() {
   .ps-class-typing span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes ps-typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
 
-  /* Lesson wrap-up banner */
-  .ps-lesson-done { margin: 0 14px; padding: 9px 14px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; text-align: center; color: var(--foreground); background: linear-gradient(120deg, rgba(245,158,11,0.16), rgba(239,68,68,0.16)); border: 1.5px solid rgba(245,158,11,0.4); }
-
   /* Slide navigation */
   .ps-slide-nav { display: flex; gap: 8px; padding: 6px 14px 4px; flex-shrink: 0; }
   .ps-slide-prev, .ps-slide-next { display: flex; align-items: center; justify-content: center; gap: 4px; height: 42px; border-radius: 12px; font-size: 0.86rem; font-weight: 800; cursor: pointer; }
   .ps-slide-prev { flex: 0 0 auto; padding: 0 16px; background: var(--accent); border: 1.5px solid var(--border); color: var(--fg-muted); }
   .ps-slide-next { flex: 1; padding: 0 16px; background: linear-gradient(120deg, #8b5cf6, #ec4899); border: none; color: #fff; }
-  .ps-slide-next.quiz { background: linear-gradient(120deg, #f59e0b, #ef4444); }
   .ps-slide-prev:disabled, .ps-slide-next:disabled { opacity: 0.45; cursor: default; }
 
   /* Ask the teacher */

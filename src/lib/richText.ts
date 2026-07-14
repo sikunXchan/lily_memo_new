@@ -7,8 +7,18 @@ import { marked } from 'marked';
 import { translate } from './i18n';
 import katex from 'katex';
 import { common, createLowlight } from 'lowlight';
+import { TEXT_COLOR_BY_KEY, HIGHLIGHT_COLOR_BY_KEY } from './memoColors';
 
 marked.use({ breaks: true, gfm: true });
+
+// Font-size keys for {big:text} etc. — chat/lesson only (memos have no
+// font-size mark in the TipTap schema, so markdownToTiptap.ts doesn't have
+// this dimension; see the shared color maps in memoColors.ts for those keys).
+const TEXT_SIZE_BY_KEY: Record<string, string> = {
+  small: '0.85em',
+  big: '1.3em',
+  huge: '1.6em',
+};
 
 // ── Lowlight (syntax highlight) ──────────────────────────────────────────────
 type HastNode = {
@@ -204,15 +214,34 @@ export function renderRich(src: string): string {
   s = s.replace(/`([^`\n]+)`/g, (_m, c: string) =>
     stashInline(`<code class="rt-code">${c.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code>`));
 
-  // 3. Highlight: ==text== → <mark>
-  s = s.replace(/==([^=\n]+)==/g, (_m, t: string) =>
-    stashInline(`<mark class="rt-mark">${t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</mark>`));
+  // 3. Highlight: ==text== → <mark> (yellow by default; =={green}text== for a
+  // different tint). Same color keys/values as the memo editor's marker, and
+  // rendered as an inline style rather than a data-attribute so the color
+  // shows correctly regardless of which component's CSS scope wraps it (chat
+  // bubbles and lesson cards use different wrapper classes).
+  const escHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  s = s.replace(/==(?:\{([a-z]+)\})?([^=\n]+?)==/g, (m, key: string | undefined, t: string) => {
+    const color = HIGHLIGHT_COLOR_BY_KEY[key || 'yellow'];
+    if (!color) return m;
+    return stashInline(`<mark class="rt-mark" style="background: ${color}">${escHtml(t)}</mark>`);
+  });
 
   // 3b. Term / gloss highlighting for casual (light/medium) replies:
   // {{t:用語}} → bold term, {{g:補足}} → muted inline gloss.
-  const escHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   s = s.replace(/\{\{t:([^{}\n]+)\}\}/g, (_m, t: string) => stashInline(`<span class="rt-term">${escHtml(t)}</span>`));
   s = s.replace(/\{\{g:([^{}\n]+)\}\}/g, (_m, t: string) => stashInline(`<span class="rt-gloss">${escHtml(t)}</span>`));
+
+  // 3c. Text color / size: {red:text} colors it (same keys as the memo
+  // editor), {big:text}/{huge:text}/{small:text} resizes it — a dimension
+  // memos don't have (no font-size mark in the TipTap schema), so it's kept
+  // local to this renderer rather than shared via memoColors.ts.
+  s = s.replace(/\{([a-z]+):([^{}\n]+)\}/g, (m, key: string, t: string) => {
+    const color = TEXT_COLOR_BY_KEY[key];
+    if (color) return stashInline(`<span style="color: ${color}">${escHtml(t)}</span>`);
+    const size = TEXT_SIZE_BY_KEY[key];
+    if (size) return stashInline(`<span style="font-size: ${size}">${escHtml(t)}</span>`);
+    return m;
+  });
 
   // 4. Block math: $$...$$ and \[...\]
   s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_m, t: string) => stashBlock(renderMath(t.trim(), true)));
