@@ -28,6 +28,7 @@ import { getTicketsLeft, consumeTicket, isTicketUnlimited } from '@/lib/points';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
 import { getAppLang } from '@/lib/appLang';
+import { renderPdfAsImages } from '@/lib/pdfToImages';
 import { useCharacterSkin } from '@/components/CharacterSkinContext';
 import mermaid from 'mermaid';
 import { initMermaid } from '@/lib/mermaidConfig';
@@ -701,6 +702,17 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
       } else if (f.type === 'application/pdf' || f.name.endsWith('.pdf')) {
         const att = await fileToAttachment(f);
         att.mimeType = 'application/pdf';
+        try {
+          const { images, totalPages } = await renderPdfAsImages(att.data);
+          att.pdfPageImages = images;
+          att.pdfTotalPages = totalPages;
+          att.data = '';
+        } catch (err) {
+          setGenError(en
+            ? `Failed to read PDF "${f.name}": ${err instanceof Error ? err.message : 'unknown error'}`
+            : `「${f.name}」のPDF読み込みに失敗したよ: ${err instanceof Error ? err.message : 'unknown error'}`);
+          continue;
+        }
         setGenPdfs(prev => prev.length >= 3 ? prev : [...prev, { name: f.name, att }]);
       } else {
         const content = await f.text();

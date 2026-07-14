@@ -33,6 +33,7 @@ import {
 import { autoColorChart } from '@/lib/chartColors';
 import type { ChatTurn, ChatAttachment } from '@/lib/gemini';
 import { noteHtmlToText } from '@/lib/noteText';
+import { renderPdfAsImages } from '@/lib/pdfToImages';
 import { parseGeometry, renderGeometrySvg } from '@/lib/geometry';
 import { renderRich } from '@/lib/richText';
 import { markdownToTiptapHtml } from '@/lib/markdownToTiptap';
@@ -2300,33 +2301,6 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
     const q = input.slice(1).toLowerCase();
     return SLASH_COMMANDS.filter(s => s.id.startsWith(q));
   }, [input]);
-
-  const renderPdfAsImages = async (
-    base64Data: string,
-  ): Promise<{ images: Array<{ data: string }>; totalPages: number }> => {
-    const pdfjs = await import('pdfjs-dist');
-    pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-    const binaryStr = atob(base64Data);
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-    const doc = await pdfjs.getDocument({ data: bytes }).promise;
-    const totalPages = doc.numPages;
-    if (totalPages === 0) throw new Error('The document has no pages.');
-    const MAX_PAGES = 20;
-    const images: Array<{ data: string }> = [];
-    for (let p = 1; p <= Math.min(totalPages, MAX_PAGES); p++) {
-      const page = await doc.getPage(p);
-      const viewport = page.getViewport({ scale: 1.5 });
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext('2d')!;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-      images.push({ data: dataUrl.split(',')[1] });
-    }
-    return { images, totalPages };
-  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
