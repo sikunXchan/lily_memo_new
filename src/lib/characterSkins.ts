@@ -72,6 +72,29 @@ export const CHARACTER_SKINS: CharacterSkin[] = [
   { id: 'birthday', name: 'ハッピーバースデイ', file: 'birthday.png', accent: '#ff4fa3', rarity: 'N' },
   { id: 'ninja', name: '忍者', file: 'ninja.png', accent: '#7a1f2b', rarity: 'N' },
   { id: 'police', name: '警察', file: 'police.png', accent: '#1d3f72', rarity: 'N' },
+  {
+    id: 'boxer', name: 'プロボクサー', file: 'boxer.png', accent: '#d4a017', rarity: 'UR',
+    background: 'bg-boxer.jpg',
+    homeBackground: 'home-boxer.jpg',
+    ambient: [
+      'ambient-boxer-1.png', 'ambient-boxer-2.png', 'ambient-boxer-3.png', 'ambient-boxer-4.png',
+      'ambient-boxer-5.png', 'ambient-boxer-6.png', 'ambient-boxer-7.png', 'ambient-boxer-8.png',
+    ],
+  },
+  { id: 'hacker', name: 'ハッカー', file: 'hacker.png', accent: '#00e676', rarity: 'N' },
+  { id: 'doctor', name: '医者', file: 'doctor.png', accent: '#1976d2', rarity: 'N' },
+  // 背景素材が未提供のため background は省略（R本来の仕様ではチャット背景必須だが、
+  // 素材が届き次第 bg-detective.jpg を追加すれば自動で反映される）。
+  { id: 'detective', name: '探偵', file: 'detective.png', accent: '#8b5e34', rarity: 'R' },
+  {
+    id: 'astronaut', name: '宇宙飛行士', file: 'astronaut.png', accent: '#17a2b8', rarity: 'UR',
+    background: 'bg-astronaut.jpg',
+    homeBackground: 'home-astronaut.jpg',
+    ambient: [
+      'ambient-astronaut-1.png', 'ambient-astronaut-2.png', 'ambient-astronaut-3.png', 'ambient-astronaut-4.png',
+      'ambient-astronaut-5.png', 'ambient-astronaut-6.png', 'ambient-astronaut-7.png', 'ambient-astronaut-8.png',
+    ],
+  },
 ];
 
 // Settings picker shows skins rarest-first.
