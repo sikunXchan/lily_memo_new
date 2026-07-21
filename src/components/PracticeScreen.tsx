@@ -323,9 +323,9 @@ ${materials}
 JSON schema:
 {
   "title": "short heading",
-  "width": 780, "height": 480,            // optional; default 780x480. Enlarge for many nodes.
+  "width": 880, "height": 540,            // optional; default 880x540. Enlarge for many nodes.
   "nodes": [
-    { "id": "u", "icon": "user", "label": "Victim", "sublabel": "logged in", "x": 12, "y": 30, "color": "blue" }
+    { "id": "u", "icon": "user", "label": "Victim", "sublabel": "logged in", "x": 12, "y": 28, "color": "blue" }
   ],
   "edges": [
     { "from": "u", "to": "s", "label": "request + cookie", "dashed": false, "dir": "to", "curve": 0 }
@@ -335,8 +335,8 @@ JSON schema:
 }
 
 Rules:
-- x and y are 0..100 (percent of the canvas; x=left→right, y=top→bottom). Space nodes out so badges and labels don't overlap (keep centers ≥ 18 apart).
-- Prefer a clear left→right or top→bottom flow. 3–7 nodes is ideal; never exceed 9.
+- x and y are 0..100 (percent of the canvas; x=left→right, y=top→bottom). SPREAD NODES OUT — each node is a card with a text label underneath, so keep centers at least 24 apart horizontally AND vertically; never stack two nodes at a similar x with little vertical gap. Keep x within 8..92 and y within 10..88.
+- Prefer a clear left→right or top→bottom flow. 3–6 nodes is ideal; never exceed 8. Fewer, well-spaced nodes read far better than a crowded canvas.
 - Edge "label" is the action or data that flows (keep it short). Use "dashed": true for a malicious/forged/optional path, "dir": "both" for a two-way exchange, "curve" (-1..1) to bow parallel arrows apart.
 - Use "zones" for trust boundaries / networks / a site's inside. Use "notes" for a one-line caption.
 - color can be a name (blue, green, red, purple, orange, teal, pink, gray) or #hex. Give the attacker/danger a red-ish color.
@@ -352,9 +352,9 @@ ${materials}
 JSON スキーマ:
 {
   "title": "短い見出し",
-  "width": 780, "height": 480,            // 省略可。既定 780x480。ノードが多いときは大きく。
+  "width": 880, "height": 540,            // 省略可。既定 880x540。ノードが多いときは大きく。
   "nodes": [
-    { "id": "u", "icon": "user", "label": "利用者", "sublabel": "ログイン中", "x": 12, "y": 30, "color": "blue" }
+    { "id": "u", "icon": "user", "label": "利用者", "sublabel": "ログイン中", "x": 12, "y": 28, "color": "blue" }
   ],
   "edges": [
     { "from": "u", "to": "s", "label": "リクエスト＋Cookie", "dashed": false, "dir": "to", "curve": 0 }
@@ -364,8 +364,8 @@ JSON スキーマ:
 }
 
 ルール:
-- x・y は 0〜100（キャンバスに対する％。x は左→右、y は上→下）。バッジとラベルが重ならないよう十分に離す（中心間は 18 以上あける）。
-- 左→右 または 上→下 の流れを基本に。ノードは 3〜7 個が理想、9 個を超えない。
+- x・y は 0〜100（キャンバスに対する％。x は左→右、y は上→下）。各ノードは「カード＋その下のラベル」なので、必ず十分に離す：中心間は横も縦も 24 以上あけ、同じような x に縦の余白が狭いまま2つ置かない。x は 8〜92、y は 10〜88 の範囲に収める。
+- 左→右 または 上→下 の流れを基本に。ノードは 3〜6 個が理想、8 個を超えない。詰め込むより、少なく広く配置する方が断然読みやすい。
 - edge の "label" は「流れる動作・データ」を短く。不正・偽装・任意の経路は "dashed": true、双方向のやり取りは "dir": "both"、並行する矢印は "curve"（-1〜1）で弓なりに離す。
 - 信頼境界・ネットワーク・サイトの内側などは "zones" で囲む。一言の補足は "notes"。
 - color は名前（blue, green, red, purple, orange, teal, pink, gray）か #hex。攻撃者・危険には赤系を使う。
@@ -538,11 +538,33 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
     await softDeleteDiagramSet(id);
   }
 
-  function downloadDiagram(kind: 'png' | 'svg') {
+  // Inline the sprite-sheet images (referenced by URL for on-screen display) as
+  // data URIs so the exported PNG/SVG is fully self-contained (each sheet is
+  // fetched once — icons crop from it — so the export stays small).
+  async function inlineDiagramSheets(svg: string): Promise<string> {
+    const urls = Array.from(new Set(svg.match(/\/zukai\/s\d+\.webp/g) ?? []));
+    let out = svg;
+    for (const url of urls) {
+      try {
+        const blob = await (await fetch(url)).blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.onerror = reject;
+          r.readAsDataURL(blob);
+        });
+        out = out.split(url).join(dataUrl);
+      } catch { /* leave the URL as-is if it can't be fetched */ }
+    }
+    return out;
+  }
+
+  async function downloadDiagram(kind: 'png' | 'svg') {
     if (!diagramSvg) return;
     const base = `lily-diagram-${(currentDiagram?.title || 'figure').replace(/[^\w぀-ヿ一-鿿]+/g, '_').slice(0, 40) || 'figure'}`;
-    if (kind === 'png') downloadSvgAsPng(diagramSvg, `${base}.png`);
-    else downloadSvg(diagramSvg, `${base}.svg`);
+    const svg = await inlineDiagramSheets(diagramSvg);
+    if (kind === 'png') downloadSvgAsPng(svg, `${base}.png`);
+    else downloadSvg(svg, `${base}.svg`);
   }
 
   // The lesson is presented as a deck of "slides": one card per Lily message.
@@ -1998,8 +2020,8 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
                 <div className="ps-dg-viewhead">
                   <span className="ps-dg-viewtitle">{currentDiagram.title || currentDiagram.topic}</span>
                   <div className="ps-dg-viewacts">
-                    <button className="ps-dg-dl" onClick={() => downloadDiagram('png')} title="PNG"><Download size={13} /> PNG</button>
-                    <button className="ps-dg-dl" onClick={() => downloadDiagram('svg')} title="SVG"><Download size={13} /> SVG</button>
+                    <button className="ps-dg-dl" onClick={() => void downloadDiagram('png')} title="PNG"><Download size={13} /> PNG</button>
+                    <button className="ps-dg-dl" onClick={() => void downloadDiagram('svg')} title="SVG"><Download size={13} /> SVG</button>
                     <button className="ps-dg-close" onClick={() => setCurrentDiagram(null)} title={en ? 'Close' : '閉じる'}><X size={15} /></button>
                   </div>
                 </div>
@@ -2378,7 +2400,9 @@ function PracticeStyles() {
   .ps-dg-close { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 7px; }
   .ps-dg-close:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
   .ps-dg-canvas { padding: 14px; overflow-x: auto; display: flex; justify-content: center; background: #ffffff; }
-  .ps-dg-canvas :global(svg) { max-width: 100%; height: auto; }
+  /* Only the outer diagram SVG should scale — NOT the nested icon <svg>s that
+     crop cells from the sprite sheet (they must keep their fixed width/height). */
+  .ps-dg-canvas > :global(svg) { max-width: 100%; height: auto; }
   .ps-dg-broken { padding: 20px; text-align: center; font-size: 0.82rem; color: var(--fg-muted); }
   .ps-dg-list { display: flex; flex-direction: column; gap: 8px; }
   .ps-dg-card { display: flex; align-items: center; gap: 10px; width: 100%; background: var(--accent); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; cursor: pointer; text-align: left; transition: border-color .15s; }
