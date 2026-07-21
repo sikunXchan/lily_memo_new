@@ -1,10 +1,11 @@
-// 日記タブの「AIフレンド」= SNS風チャット相手のロジック。
+// DMタブの「AIフレンド」= SNS風チャット相手のロジック。
 //
-// - 各フレンドは persona（基本の性格・立ち位置・話し方）と learned（毎日の振り返りで
-//   育つ学習メモ）を持つ。userPersona（ユーザーの性格・話し方）と合わせてシステム
-//   プロンプトを組み立てる。
-// - 1日の終わり（or 手動）に runDailyLearning() が、その日の日記＋チャットから
-//   userPersona と各フレンドの learned を更新する ＝「自分に合ったAI」を育てる。
+// - 各フレンドは最初に選ぶ persona（性格・立ち位置・話し方の起点）と、そこから
+//   キャラごとに育つ learned（学習メモ）を持つ。
+// - 学習は「キャラごと・個人チャットのみ」。runCharacterLearning() がそのキャラの
+//   個人チャット（ゴースト除く）から learned を更新し learnCount を +1 する。
+//   グループでは学習しない。ゴーストチャットは学習に使わない。
+// - グループ参加・発言は「個人チャット30回＋学習10回」を満たしたキャラのみ。
 // - 呼び出すモデルは最安の gemini-3.1-flash-lite に固定。
 
 import { db, type AiFriend } from './db';
@@ -13,29 +14,9 @@ import { callGeminiChat, type ChatTurn } from './gemini';
 // 最安モデル（軽量・低コスト）。フレンドの会話も学習もこれで回す。
 export const CHEAP_MODELS = ['gemini-3.1-flash-lite'];
 
-export interface UserPersona {
-  summary: string; // 性格・興味・今の状況
-  style: string;   // 話し方の特徴
-  updatedAt: number;
-}
-
-const UP_KEY = 'lily-diary-userpersona';
 const LAST_LEARNED_KEY = 'lily-diary-last-learned';
 
-export function getUserPersona(): UserPersona {
-  if (typeof localStorage === 'undefined') return { summary: '', style: '', updatedAt: 0 };
-  try {
-    const raw = localStorage.getItem(UP_KEY);
-    if (raw) return JSON.parse(raw) as UserPersona;
-  } catch { /* ignore */ }
-  return { summary: '', style: '', updatedAt: 0 };
-}
-
-export function setUserPersona(p: UserPersona): void {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(UP_KEY, JSON.stringify(p));
-}
-
+// 自動学習を「1日1回」に抑えるための最終自動学習日（YYYY-MM-DD）。
 export function getLastLearnedDate(): string {
   if (typeof localStorage === 'undefined') return '';
   return localStorage.getItem(LAST_LEARNED_KEY) ?? '';
@@ -85,24 +66,35 @@ export async function seedDefaultFriends(): Promise<void> {
   }
 }
 
-// ── チャット用システムプロンプト ──
-function fmtUserPersona(up: UserPersona): string {
-  if (!up.summary && !up.style) {
-    return '（まだよく知らない。会話や日記から少しずつ知っていく。）';
-  }
-  return `${up.summary || '（性格は未把握）'}${up.style ? `\n話し方の特徴: ${up.style}` : ''}`;
+// ── グループ参加の解放条件 ──
+// キャラは「個人チャットで最低30回会話」かつ「10回学習」してはじめてグループに
+// 参加・発言できる。学習はキャラごと・個人チャットのみ（グループでは学習しない）。
+export const GROUP_MIN_CHATS = 30;
+export const GROUP_MIN_LEARNS = 10;
+
+export function isGroupEligible(friend: AiFriend, chatCount: number): boolean {
+  return chatCount >= GROUP_MIN_CHATS && (friend.learnCount ?? 0) >= GROUP_MIN_LEARNS;
 }
 
-export function buildChatSystemPrompt(friend: AiFriend, up: UserPersona, otherNames?: string[]): string {
+// ── 自動学習のオン/オフ設定（チャット設定） ──
+const AUTOLEARN_KEY = 'lily-diary-autolearn';
+export function getAutoLearn(): boolean {
+  if (typeof localStorage === 'undefined') return true;
+  return localStorage.getItem(AUTOLEARN_KEY) !== '0'; // 既定 ON
+}
+export function setAutoLearn(on: boolean): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(AUTOLEARN_KEY, on ? '1' : '0');
+}
+
+// ── チャット用システムプロンプト（キャラごと。userPersona は使わない） ──
+export function buildChatSystemPrompt(friend: AiFriend, otherNames?: string[]): string {
   const group = otherNames && otherNames.length > 0;
-  return `あなたは「${friend.name}」。ユーザーの日記アプリに住む、AIの友だちです。SNSのDMのように短く自然に会話します。
+  return `あなたは「${friend.name}」。ユーザーのアプリに住む、AIの友だちです。SNSのDMのように短く自然に会話します。
 
-【あなたの性格・立ち位置・話し方】
+【あなたの性格・立ち位置・話し方（最初に決めた起点）】
 ${friend.persona}
-${friend.learned ? `\n【これまでに学んだこと（ユーザーに合わせた振る舞い）】\n${friend.learned}` : ''}
-
-【ユーザーについて分かっていること】
-${fmtUserPersona(up)}
+${friend.learned ? `\n【この子が個人チャットから学んだこと（ユーザーに合わせた振る舞い・ユーザー像）】\n${friend.learned}` : ''}
 
 【ルール】
 - 返事は1〜3文の短さ。SNSのメッセージのように自然に。
@@ -113,9 +105,9 @@ ${fmtUserPersona(up)}
 
 // フレンド1人の返信を得る。history は ChatTurn[]（user/model）。
 export async function chatReply(
-  friend: AiFriend, history: ChatTurn[], up: UserPersona, apiKey: string, otherNames?: string[],
+  friend: AiFriend, history: ChatTurn[], apiKey: string, otherNames?: string[],
 ): Promise<string> {
-  const sys = buildChatSystemPrompt(friend, up, otherNames);
+  const sys = buildChatSystemPrompt(friend, otherNames);
   const reply = await callGeminiChat(history, sys, apiKey, {
     models: CHEAP_MODELS,
     temperature: 0.9,
@@ -124,19 +116,17 @@ export async function chatReply(
   return reply.trim();
 }
 
-// ── 1日の振り返り学習 ──
-const LEARNING_SYSTEM = `あなたは、ユーザー専用のAIを育てるための「観察役」です。その日の日記とチャットのやり取りから、ユーザー像と、各AIフレンドがユーザーに対してどう振る舞うと心地よいかを、簡潔に更新します。返答はJSONオブジェクト1つだけ（散文・コードフェンス禁止）。
+// ── キャラごとの学習（個人チャットのみ） ──
+// そのキャラの個人チャット（ゴースト除く）から、learned を1つの短いメモに更新し、
+// learnCount を +1 する。最初に選んだ性格(persona)を起点に、少しずつ育つイメージ。
+const CHAR_LEARNING_SYSTEM = `あなたは、あるAIキャラを「そのユーザー専用」に育てる観察役です。キャラの現在の設定と学習メモ、そして最近の個人チャットから、learned（このキャラがユーザーに対してどう振る舞うと心地よいか＋分かってきたユーザー像）を、これまでを踏まえて簡潔に更新します。返答はJSONオブジェクト1つだけ（散文・コードフェンス禁止）。
 
 スキーマ:
-{
-  "userSummary": "ユーザーの性格・興味・価値観・今の状況を3〜4文で（これまでの把握を踏まえ更新）",
-  "userStyle": "ユーザーの話し方・語調の特徴を1〜2文で",
-  "friends": [ { "name": "フレンド名", "learned": "この子がユーザーに対してどう振る舞うと良いか・何を避けるべきかを1〜2文で（既存メモを踏まえ更新）" } ]
-}
+{ "learned": "このキャラ用の学習メモ（3〜5文以内）。ユーザーの性格・興味・話し方・地雷、そしてこのキャラがどう接すると良いかを、性格(起点)を保ったまま反映する。" }
 
-注意: 断定しすぎず、その日の材料から言える範囲で。誇張や決めつけをしない。`;
+注意: 断定しすぎない。起点の性格を壊さない。今ある材料から言える範囲で更新する。`;
 
-function parseLearningJson(text: string): { userSummary?: string; userStyle?: string; friends?: { name: string; learned: string }[] } | null {
+function parseLearnedJson(text: string): string | null {
   let t = (text || '').trim();
   const fence = t.match(/^(?:`{3,})\s*[a-zA-Z]*\s*\n([\s\S]*?)\n(?:`{3,})\s*$/);
   if (fence) t = fence[1]!.trim();
@@ -144,42 +134,32 @@ function parseLearningJson(text: string): { userSummary?: string; userStyle?: st
     const s = t.indexOf('{'), e = t.lastIndexOf('}');
     if (s >= 0 && e > s) t = t.slice(s, e + 1);
   }
-  try { return JSON.parse(t); } catch { return null; }
+  try {
+    const obj = JSON.parse(t) as { learned?: string };
+    return typeof obj.learned === 'string' ? obj.learned : null;
+  } catch { return null; }
 }
 
-// その日の日記本文＋チャット転記＋現在のプロフィールを渡し、userPersona と各フレンドの
-// learned を更新して保存する。成功したら true。
-export async function runDailyLearning(
-  apiKey: string, diaryText: string, chatTranscript: string, friends: AiFriend[], up: UserPersona,
+// 1キャラ分の学習。transcript はそのキャラとの個人チャット（ゴースト除く）の転記。
+// 成功したら true（learned 更新 + learnCount +1 + lastLearnedAt）。
+export async function runCharacterLearning(
+  apiKey: string, friend: AiFriend, transcript: string,
 ): Promise<boolean> {
-  const friendsBlock = friends
-    .map(f => `- ${f.name}: ${f.learned || '（まだ学習メモなし）'}`)
-    .join('\n');
-  const payload = `【現在のユーザー像】\n${up.summary || '（未把握）'}\n話し方: ${up.style || '（未把握）'}\n\n【各フレンドの現在の学習メモ】\n${friendsBlock}\n\n【今日の日記】\n${diaryText || '（今日の日記はなし）'}\n\n【今日のチャット】\n${chatTranscript || '（今日のチャットはなし）'}\n\n以上から、userSummary / userStyle / friends[].learned を更新してJSONで返して。`;
-
-  const reply = await callGeminiChat([{ role: 'user', text: payload }], LEARNING_SYSTEM, apiKey, {
+  if (!transcript.trim() || friend.id == null) return false;
+  const payload = `【キャラ】${friend.name}\n【起点の性格】${friend.persona}\n【現在の学習メモ】${friend.learned || '（まだ無し）'}\n\n【最近の個人チャット】\n${transcript}\n\n以上から learned を更新してJSONで返して。`;
+  const reply = await callGeminiChat([{ role: 'user', text: payload }], CHAR_LEARNING_SYSTEM, apiKey, {
     models: CHEAP_MODELS,
     temperature: 0.4,
-    maxOutputTokens: 900,
+    maxOutputTokens: 500,
   });
-  const parsed = parseLearningJson(reply);
-  if (!parsed) return false;
-
+  const learned = parseLearnedJson(reply);
+  if (!learned || !learned.trim()) return false;
   const now = Date.now();
-  if (parsed.userSummary || parsed.userStyle) {
-    setUserPersona({
-      summary: (parsed.userSummary ?? up.summary ?? '').slice(0, 1200),
-      style: (parsed.userStyle ?? up.style ?? '').slice(0, 400),
-      updatedAt: now,
-    });
-  }
-  if (Array.isArray(parsed.friends)) {
-    for (const upd of parsed.friends) {
-      const target = friends.find(f => f.name === upd?.name);
-      if (target && target.id != null && typeof upd.learned === 'string' && upd.learned.trim()) {
-        await db.aiFriends.update(target.id, { learned: upd.learned.trim().slice(0, 600), updatedAt: now });
-      }
-    }
-  }
+  await db.aiFriends.update(friend.id, {
+    learned: learned.trim().slice(0, 800),
+    learnCount: (friend.learnCount ?? 0) + 1,
+    lastLearnedAt: now,
+    updatedAt: now,
+  });
   return true;
 }

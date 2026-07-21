@@ -267,8 +267,10 @@ export interface AiFriend {
   emoji: string;        // アバター絵文字（画像アバターが無いフレンド用）
   color: string;        // アクセント色
   avatarKey?: string;   // 画像アバターの種類: 'lily'（選択中スキン）/'sikun'/'chakun'
-  persona: string;      // 基本の性格・立ち位置・話し方
-  learned: string;      // 毎日の振り返りで追記される学習メモ（育つ部分）
+  persona: string;      // 最初に選ぶ基本の性格・立ち位置・話し方（起点）
+  learned: string;      // 個人チャットからキャラごとに育つ学習メモ
+  learnCount?: number;  // 学習した回数（グループ参加の解放条件に使う）
+  lastLearnedAt?: number; // 最後に学習した時刻（自動学習の重複防止）
   builtin?: boolean;    // 既定フレンドの再シード防止
   createdAt: number;
   updatedAt: number;    // version clock（削除含む）
@@ -286,6 +288,7 @@ export interface DiaryChatMsg {
   avatarKey?: string;   // 表示用画像アバターの種類（'lily'/'sikun'/'chakun'）
   color?: string;
   text: string;
+  ghost?: boolean;      // ゴーストチャット: 学習に使わないメッセージ
   createdAt: number;
   deletedAt?: number;
 }

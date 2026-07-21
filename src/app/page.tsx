@@ -21,7 +21,7 @@ const StudyTracker = dynamic(() => import('@/components/StudyTracker'), { ssr: f
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
 const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false });
 const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ssr: false });
-const DiaryScreen = dynamic(() => import('@/components/DiaryScreen'), { ssr: false });
+const DiaryFriends = dynamic(() => import('@/components/DiaryFriends'), { ssr: false });
 const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
 const TrophyRoom = dynamic(() => import('@/components/TrophyRoom'), { ssr: false });
 const PracticeScreen = dynamic(() => import('@/components/PracticeScreen'), { ssr: false });
@@ -206,9 +206,9 @@ export default function Home() {
                     onNavigate={handleMobileNavigate}
                   />
                 )}
-                {/* Diary screen (mobile + desktop/iPad) */}
+                {/* DM tab: AI-friends chat is the main view; the diary opens from inside it. */}
                 {activeTab === 'diary' && (
-                  <DiaryScreen onGoBack={goHome} />
+                  <DiaryFriends onGoBack={goHome} />
                 )}
                 {/* ToDo screen */}
                 {isMobile && activeTab === 'todo' && (
