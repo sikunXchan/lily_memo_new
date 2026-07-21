@@ -2,7 +2,7 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId, softDeleteNotes, softDeleteFolder } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X, NotebookPen } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -20,6 +20,7 @@ interface SidebarProps {
   onOpenPDF?: () => void;
   onOpenSketch?: () => void;
   onOpenAI?: () => void;
+  onOpenDiary?: () => void;
   onOpenSearch?: () => void;
   isMobileOpen: boolean;
   onToggleMobile: () => void;
@@ -47,7 +48,7 @@ interface DeletingFolderState {
 }
 
 export default function Sidebar({
-  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, onOpenAI, onOpenSearch,
+  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, onOpenAI, onOpenDiary, onOpenSearch,
   isMobileOpen, onToggleMobile, onActiveNoteDeleted, onBackToHome,
   viewModeProp, onViewModeChangeProp, highlightFolderReq,
 }: SidebarProps) {
@@ -335,6 +336,12 @@ export default function Sidebar({
             <button className="btn-settings" onClick={onOpenSketch}>
               <Brush size={18} />
               <span>{t('落書き')}</span>
+            </button>
+          )}
+          {onOpenDiary && (
+            <button className="btn-settings" onClick={onOpenDiary}>
+              <NotebookPen size={18} />
+              <span>{t('日記')}</span>
             </button>
           )}
           {onOpenPDF && (

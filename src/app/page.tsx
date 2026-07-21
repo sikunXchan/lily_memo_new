@@ -172,6 +172,7 @@ export default function Home() {
           onOpenSettings={openSettings}
           onOpenPDF={openPDF}
           onOpenAI={openAI}
+          onOpenDiary={() => { setActiveTab('diary'); setActiveNoteId(undefined); }}
           onOpenSearch={() => setShowSearch(true)}
           isMobileOpen={false}
           onToggleMobile={() => {}}
@@ -205,8 +206,8 @@ export default function Home() {
                     onNavigate={handleMobileNavigate}
                   />
                 )}
-                {/* Diary screen */}
-                {isMobile && activeTab === 'diary' && (
+                {/* Diary screen (mobile + desktop/iPad) */}
+                {activeTab === 'diary' && (
                   <DiaryScreen onGoBack={goHome} />
                 )}
                 {/* ToDo screen */}

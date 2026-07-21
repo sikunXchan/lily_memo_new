@@ -2,13 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { ArrowLeft, ChevronLeft, ChevronRight, Check, ListTodo, Heart, RefreshCw, CalendarDays, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Check, ListTodo, Heart, RefreshCw, CalendarDays, X, MessageCircle } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Diary, Todo } from '@/lib/db';
 import { callGemini } from '@/lib/gemini';
 import { useT } from '@/lib/i18n';
 import { getAppLang, getUserName } from '@/lib/appLang';
 import { useCharacterSkin, AmbientOverlay } from '@/components/CharacterSkinContext';
+import DiaryFriends from '@/components/DiaryFriends';
 
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -148,6 +149,7 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
   // Story view (default) vs. the classic month-calendar (for jumping to an
   // arbitrary past date). Both share all the state/persist logic above.
   const [viewMode, setViewMode] = useState<'story' | 'calendar'>('story');
+  const [showFriends, setShowFriends] = useState(false);
   const [seenDays, setSeenDays] = useState<Set<string>>(() => loadSeenDays());
   const storyTouchX = useRef<number | null>(null);
 
@@ -306,6 +308,10 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
       : <span className="dy-ava dy-ava-fallback">🐕</span>
   );
 
+  if (showFriends) {
+    return <DiaryFriends onClose={() => setShowFriends(false)} />;
+  }
+
   return (
     <div className="dy-root">
       <AmbientOverlay />
@@ -321,6 +327,14 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
         <div className="dy-header-mid">
           <span className="dy-title">{t('日記')}</span>
         </div>
+        <button
+          className="dy-view-toggle dy-friends-btn"
+          onClick={() => setShowFriends(true)}
+          aria-label={t('AIフレンド')}
+          title={t('AIフレンド')}
+        >
+          <MessageCircle size={17} />
+        </button>
         <button
           className={`dy-view-toggle${viewMode === 'calendar' ? ' on' : ''}`}
           onClick={() => setViewMode(v => v === 'story' ? 'calendar' : 'story')}
@@ -631,6 +645,13 @@ export default function DiaryScreen({ onGoBack }: DiaryScreenProps) {
           flex: 1; display: flex; flex-direction: column;
           background: var(--background); overflow: hidden;
           position: relative;
+        }
+        /* iPad / PC: center and cap the width so the mobile-first story view
+           doesn't stretch across a wide screen. */
+        @media (min-width: 1025px) {
+          .dy-header { max-width: 600px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+          .dy-scroll > * { max-width: 600px; margin-left: auto; margin-right: auto; width: 100%; box-sizing: border-box; }
+          .dy-stage { max-height: 70vh; }
         }
         .dy-header {
           display: flex; align-items: center; gap: 10px;

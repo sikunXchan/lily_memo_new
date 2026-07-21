@@ -50,6 +50,7 @@ const EN: Record<string, string> = {
   'すべて': 'All',
   '今日': 'Today',
   '日記': 'Diary',
+  'AIフレンド': 'AI Friends',
   '前の月': 'Previous month',
   '次の月': 'Next month',
   '保存済み': 'Saved',
