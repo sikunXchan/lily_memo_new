@@ -2,7 +2,7 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId, softDeleteNotes, softDeleteFolder } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X, NotebookPen } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X, MessageCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -340,8 +340,8 @@ export default function Sidebar({
           )}
           {onOpenDiary && (
             <button className="btn-settings" onClick={onOpenDiary}>
-              <NotebookPen size={18} />
-              <span>{t('日記')}</span>
+              <MessageCircle size={18} />
+              <span>DM</span>
             </button>
           )}
           {onOpenPDF && (
