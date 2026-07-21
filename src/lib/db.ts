@@ -264,8 +264,9 @@ export interface DiagramSet {
 export interface AiFriend {
   id?: number;
   name: string;
-  emoji: string;        // アバター絵文字
+  emoji: string;        // アバター絵文字（画像アバターが無いフレンド用）
   color: string;        // アクセント色
+  avatarKey?: string;   // 画像アバターの種類: 'lily'（選択中スキン）/'sikun'/'chakun'
   persona: string;      // 基本の性格・立ち位置・話し方
   learned: string;      // 毎日の振り返りで追記される学習メモ（育つ部分）
   builtin?: boolean;    // 既定フレンドの再シード防止
@@ -281,7 +282,8 @@ export interface DiaryChatMsg {
   role: 'user' | 'ai';
   friendId?: number;    // role==='ai' のとき、発言したフレンド
   friendName?: string;  // 表示用（非正規化）
-  emoji?: string;       // 表示用アバター
+  emoji?: string;       // 表示用アバター絵文字
+  avatarKey?: string;   // 表示用画像アバターの種類（'lily'/'sikun'/'chakun'）
   color?: string;
   text: string;
   createdAt: number;

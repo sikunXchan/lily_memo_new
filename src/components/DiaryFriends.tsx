@@ -11,6 +11,7 @@ import {
 } from '@/lib/aiFriends';
 import { getEffectiveApiKey } from '@/lib/appLang';
 import { getAppLang } from '@/lib/appLang';
+import { useCharacterSkin } from '@/components/CharacterSkinContext';
 
 const todayIso = () => {
   const d = new Date();
@@ -33,8 +34,32 @@ function mergeTurns(turns: ChatTurn[]): ChatTurn[] {
 const AVATAR_EMOJIS = ['🌸', '🌙', '🐻', '🐱', '🦊', '🐧', '🌟', '🍀', '🎀', '🍵', '🐰', '🐥'];
 const AVATAR_COLORS = ['#ec4899', '#6366f1', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ef4444', '#14b8a6'];
 
+// avatarKey -> 画像パス。'lily' は選択中スキン、他は固定のキャラ画像。
+function useAvatarImg() {
+  const { avatarSrc } = useCharacterSkin();
+  return (avatarKey?: string): string | null => {
+    if (avatarKey === 'lily') return avatarSrc('/lilygirls.PNG');
+    if (avatarKey === 'sikun') return '/sikun-character.png';
+    if (avatarKey === 'chakun') return '/sikun-dribble.gif';
+    return null;
+  };
+}
+
+// 円形アバター: 画像アバターがあれば <img>、無ければ絵文字。
+function Avatar({ img, emoji, color, size }: { img: string | null; emoji?: string; color?: string; size: number }) {
+  return (
+    <span className="df-ava" style={{ background: img ? '#fff' : (color || '#8b5cf6'), width: size, height: size, fontSize: size * 0.56 }}>
+      {img
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={img} alt="" className="df-ava-img" />
+        : (emoji || '🙂')}
+    </span>
+  );
+}
+
 export default function DiaryFriends({ onClose }: { onClose: () => void }) {
   const en = getAppLang() === 'en';
+  const avatarImg = useAvatarImg();
   const friends = useLiveQuery<AiFriend[]>(
     () => db.aiFriends.orderBy('createdAt').filter(f => !f.deletedAt).toArray(), []
   ) ?? [];
@@ -113,14 +138,14 @@ export default function DiaryFriends({ onClose }: { onClose: () => void }) {
           const others = otherNamesAll.filter(n => n !== f.name);
           const reply = await chatReply(f, turns, up, apiKey, others);
           if (reply) {
-            await db.diaryChats.add({ thread: 'group', role: 'ai', friendId: f.id, friendName: f.name, emoji: f.emoji, color: f.color, text: reply, createdAt: Date.now() });
+            await db.diaryChats.add({ thread: 'group', role: 'ai', friendId: f.id, friendName: f.name, emoji: f.emoji, avatarKey: f.avatarKey, color: f.color, text: reply, createdAt: Date.now() });
           }
         }
       } else if (activeFriend) {
         const turns = mergeTurns(history.map<ChatTurn>(m => ({ role: m.role === 'user' ? 'user' : 'model', text: m.text })));
         const reply = await chatReply(activeFriend, turns, up, apiKey);
         if (reply) {
-          await db.diaryChats.add({ thread, role: 'ai', friendId: activeFriend.id, friendName: activeFriend.name, emoji: activeFriend.emoji, color: activeFriend.color, text: reply, createdAt: Date.now() });
+          await db.diaryChats.add({ thread, role: 'ai', friendId: activeFriend.id, friendName: activeFriend.name, emoji: activeFriend.emoji, avatarKey: activeFriend.avatarKey, color: activeFriend.color, text: reply, createdAt: Date.now() });
         }
       }
     } catch {
@@ -177,12 +202,18 @@ export default function DiaryFriends({ onClose }: { onClose: () => void }) {
         <button className={`df-tab${thread === 'group' ? ' on' : ''}`} onClick={() => setThread('group')}>
           <Users size={14} /> {en ? 'Group' : 'グループ'}
         </button>
-        {friends.map(f => (
-          <button key={f.id} className={`df-tab${thread === `f${f.id}` ? ' on' : ''}`} onClick={() => setThread(`f${f.id}`)}>
-            <span className="df-tab-ava" style={{ background: f.color }}>{f.emoji}</span>
-            {f.name}
-          </button>
-        ))}
+        {friends.map(f => {
+          const img = avatarImg(f.avatarKey);
+          return (
+            <button key={f.id} className={`df-tab${thread === `f${f.id}` ? ' on' : ''}`} onClick={() => setThread(`f${f.id}`)}>
+              <span className="df-tab-ava" style={{ background: img ? '#fff' : f.color }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {img ? <img src={img} alt="" className="df-ava-img" /> : f.emoji}
+              </span>
+              {f.name}
+            </button>
+          );
+        })}
         <button className="df-tab df-tab-add" onClick={() => setEditing('new')} title={en ? 'Add friend' : 'フレンドを追加'}>
           <UserPlus size={15} />
         </button>
@@ -198,7 +229,14 @@ export default function DiaryFriends({ onClose }: { onClose: () => void }) {
       <div className="df-thread" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="df-empty">
-            <div className="df-empty-emoji">{thread === 'group' ? '👥' : activeFriend?.emoji ?? '💬'}</div>
+            <div className="df-empty-emoji">
+              {thread === 'group'
+                ? '👥'
+                : (avatarImg(activeFriend?.avatarKey)
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={avatarImg(activeFriend?.avatarKey)!} alt="" className="df-empty-avaimg" />
+                  : (activeFriend?.emoji ?? '💬'))}
+            </div>
             <p>{thread === 'group'
               ? (en ? 'Everyone is here. Say hi!' : 'みんないるよ。話しかけてみて！')
               : (en ? `Chat with ${activeFriend?.name ?? ''}` : `${activeFriend?.name ?? ''}とおしゃべり`)}</p>
@@ -212,7 +250,7 @@ export default function DiaryFriends({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             <div key={m.id} className="df-row">
-              <span className="df-ava" style={{ background: m.color || '#8b5cf6' }}>{m.emoji || '🙂'}</span>
+              <Avatar img={avatarImg(m.avatarKey)} emoji={m.emoji} color={m.color} size={34} />
               <div className="df-msg">
                 <span className="df-name">{m.friendName}</span>
                 <div className="df-bubble">{m.text}</div>
@@ -241,19 +279,20 @@ export default function DiaryFriends({ onClose }: { onClose: () => void }) {
       </div>
 
       {toast && <div className="df-toast">{toast}</div>}
-      {editing && <FriendEditor friend={editing === 'new' ? null : editing} onClose={() => setEditing(null)} en={en} />}
+      {editing && <FriendEditor friend={editing === 'new' ? null : editing} avatarImg={editing !== 'new' ? avatarImg(editing.avatarKey) : null} onClose={() => setEditing(null)} en={en} />}
       <DiaryFriendsStyles />
     </div>
   );
 }
 
 // ── フレンドの追加/編集 ──
-function FriendEditor({ friend, onClose, en }: { friend: AiFriend | null; onClose: () => void; en: boolean }) {
+function FriendEditor({ friend, avatarImg, onClose, en }: { friend: AiFriend | null; avatarImg?: string | null; onClose: () => void; en: boolean }) {
   const [name, setName] = useState(friend?.name ?? '');
   const [emoji, setEmoji] = useState(friend?.emoji ?? '🌸');
   const [color, setColor] = useState(friend?.color ?? '#ec4899');
   const [persona, setPersona] = useState(friend?.persona ?? '');
   const [confirmDel, setConfirmDel] = useState(false);
+  const hasImg = !!avatarImg; // 画像アバターの既定フレンド（アイコン/色の変更は不可）
 
   async function save() {
     if (!name.trim() || !persona.trim()) return;
@@ -274,16 +313,21 @@ function FriendEditor({ friend, onClose, en }: { friend: AiFriend | null; onClos
           <button onClick={onClose}><X size={18} /></button>
         </div>
         <div className="df-modal-avarow">
-          <span className="df-modal-ava" style={{ background: color }}>{emoji}</span>
+          <span className="df-modal-ava" style={{ background: hasImg ? '#fff' : color, overflow: 'hidden' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {hasImg ? <img src={avatarImg!} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} /> : emoji}
+          </span>
           <input className="df-modal-name" value={name} onChange={e => setName(e.target.value)} placeholder={en ? 'Name' : '名前'} maxLength={16} />
         </div>
-        <div className="df-modal-label">{en ? 'Avatar' : 'アイコン'}</div>
-        <div className="df-modal-emojis">
-          {AVATAR_EMOJIS.map(e => <button key={e} className={`df-emo${emoji === e ? ' on' : ''}`} onClick={() => setEmoji(e)}>{e}</button>)}
-        </div>
-        <div className="df-modal-colors">
-          {AVATAR_COLORS.map(c => <button key={c} className={`df-col${color === c ? ' on' : ''}`} style={{ background: c }} onClick={() => setColor(c)} />)}
-        </div>
+        {!hasImg && <>
+          <div className="df-modal-label">{en ? 'Avatar' : 'アイコン'}</div>
+          <div className="df-modal-emojis">
+            {AVATAR_EMOJIS.map(e => <button key={e} className={`df-emo${emoji === e ? ' on' : ''}`} onClick={() => setEmoji(e)}>{e}</button>)}
+          </div>
+          <div className="df-modal-colors">
+            {AVATAR_COLORS.map(c => <button key={c} className={`df-col${color === c ? ' on' : ''}`} style={{ background: c }} onClick={() => setColor(c)} />)}
+          </div>
+        </>}
         <div className="df-modal-label">{en ? 'Personality / role / speaking style' : '性格・立ち位置・話し方'}</div>
         <textarea className="df-modal-persona" value={persona} onChange={e => setPersona(e.target.value)}
           placeholder={en ? 'e.g. A calm, reliable listener who keeps things short.' : '例: 落ち着いた頼れる聞き上手。短く的確に返す。'} rows={4} />
@@ -336,7 +380,10 @@ function DiaryFriendsStyles() {
       .df-empty-sub { font-size: 0.78rem !important; font-weight: 400 !important; color: var(--fg-muted) !important; }
       .df-row { display: flex; gap: 8px; align-items: flex-end; max-width: 100%; }
       .df-row-me { justify-content: flex-end; }
-      .df-ava { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; font-size: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+      .df-ava { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; font-size: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.12); overflow: hidden; }
+      .df-ava-img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+      .df-empty-avaimg { width: 74px; height: 74px; object-fit: contain; }
+      .df-tab-ava { overflow: hidden; }
       .df-msg { display: flex; flex-direction: column; gap: 2px; max-width: 78%; }
       .df-name { font-size: 0.68rem; color: var(--fg-muted); margin-left: 4px; font-weight: 700; }
       .df-bubble { padding: 9px 13px; border-radius: 16px; font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; background: var(--accent); color: var(--foreground); border-top-left-radius: 5px; }

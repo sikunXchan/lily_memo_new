@@ -46,26 +46,38 @@ export function setLastLearnedDate(iso: string): void {
 }
 
 // ── 既定フレンド ──
+// アバターはアプリのキャラクター画像を使う（avatarKey）。
+//  - リリー: 選択中のスキン（動的に解決）
+//  - しくん: instance sikun のキャラ（/sikun-character.png）
+//  - ちゃくん: 学習タブで目標達成時に出るマスコット（/sikun-dribble.gif）
 const DEFAULT_FRIENDS: Omit<AiFriend, 'id' | 'createdAt' | 'updatedAt'>[] = [
   {
-    name: 'こはる', emoji: '🌸', color: '#ec4899', builtin: true, learned: '',
-    persona: '明るくて共感的な聞き上手。ユーザーの気持ちにまず寄り添い、やさしく肯定する。ポジティブだが軽すぎず、友だちのような距離感。話し方はやわらかく、たまに絵文字。',
+    name: 'リリー', emoji: '🌸', color: '#fb7185', avatarKey: 'lily', builtin: true, learned: '',
+    persona: 'このアプリの相棒AI「Lily」。明るくて温かく、いつも味方でいてくれる。ユーザーの気持ちにまず寄り添い、やさしく肯定して背中を押す。友だちのような距離感で、話し方はやわらかく前向き。たまに絵文字。',
   },
   {
-    name: 'ソラ', emoji: '🌙', color: '#6366f1', builtin: true, learned: '',
-    persona: '落ち着いた頼れる相談相手。冷静で、少し大人びた視点をくれる。感情に流されず、要点を短く整理してくれる。絵文字は少なめ、丁寧だが堅すぎない。',
+    name: 'しくん', emoji: '🐻', color: '#c084fc', avatarKey: 'sikun', builtin: true, learned: '',
+    persona: 'アプリのマスコット「sikun」というクマの男の子。のんびりマイペースで素直、ちょっと天然。勉強や毎日を一緒にがんばる相棒として、飾らない言葉で励ましてくれる。くだけた口調、絵文字は控えめ。',
   },
   {
-    name: 'モカ', emoji: '🐻', color: '#f59e0b', builtin: true, learned: '',
-    persona: 'おちゃめで元気なムードメーカー。テンション高めで、軽いツッコミや冗談で場を和ませる。ユーザーを笑わせたい。くだけた話し方、絵文字多め。',
+    name: 'ちゃくん', emoji: '🧸', color: '#f59e0b', avatarKey: 'chakun', builtin: true, learned: '',
+    persona: '目標達成のときに現れる、元気いっぱいの応援キャラ。テンション高めで、ユーザーの頑張りや小さな一歩をめいっぱい褒めてハイタッチする。ポジティブで勢いがあり、明るい口調、絵文字多め。',
   },
 ];
 
-// 既定フレンドを（無ければ）シードする。builtin 名で重複を避ける。
+// 既定フレンドをシードする。名前が変わった過去の既定フレンド（builtin）は掃除して、
+// 現在の既定セットに揃える（idempotent）。
 export async function seedDefaultFriends(): Promise<void> {
-  const existing = await db.aiFriends.filter(f => !!f.builtin && !f.deletedAt).toArray();
-  const have = new Set(existing.map(f => f.name));
   const now = Date.now();
+  const names = new Set(DEFAULT_FRIENDS.map(f => f.name));
+  const existing = await db.aiFriends.filter(f => !!f.builtin && !f.deletedAt).toArray();
+  // 現在の既定セットに無い旧・既定フレンドはソフト削除（例: 旧こはる/ソラ/モカ）。
+  for (const f of existing) {
+    if (!names.has(f.name) && f.id != null) {
+      await db.aiFriends.update(f.id, { deletedAt: now, updatedAt: now });
+    }
+  }
+  const have = new Set(existing.filter(f => names.has(f.name)).map(f => f.name));
   for (const f of DEFAULT_FRIENDS) {
     if (!have.has(f.name)) {
       await db.aiFriends.add({ ...f, createdAt: now, updatedAt: now });
