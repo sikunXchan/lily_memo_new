@@ -1,6 +1,6 @@
 import { liveQuery, type Table } from 'dexie';
 import { db, newSyncId } from './db';
-import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession } from './db';
+import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession, DiagramSet } from './db';
 import { getPlanSyncState, applyPlanSyncState, registerPlanSyncHook, type PlanSyncState } from './points';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
@@ -29,6 +29,7 @@ interface LiveSnapshot {
   problemSets:      ProblemSet[];
   diaries:          Diary[];
   lessonSessions:   LessonSession[];
+  diagramSets:      DiagramSet[];
   planState?:       PlanSyncState;
   ts: number;
 }
@@ -64,7 +65,7 @@ function stripSavedChatForSync(chat: SavedChat): SavedChat {
 
 // ── Build local snapshot ─────────────────────────────────────────
 async function buildSnapshot(): Promise<LiveSnapshot> {
-  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries, lessonSessions] = await Promise.all([
+  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries, lessonSessions, diagramSets] = await Promise.all([
     db.notes.toArray(),
     db.folders.toArray(),
     db.studySessions.toArray(),
@@ -77,6 +78,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     db.problemSets.toArray(),
     db.diaries.toArray(),
     db.lessonSessions.toArray(),
+    db.diagramSets.toArray(),
   ]);
   // Enrich cross-table references with stable syncIds (see SyncNote above).
   const folderSyncById = new Map(folders.filter(f => f.id != null && f.syncId).map(f => [f.id!, f.syncId]));
@@ -97,7 +99,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     notes: outNotes, folders: outFolders, studySessions: outSessions,
     studyCategories, exams, scheduleDays,
     savedChats: savedChats.map(stripSavedChatForSync),
-    todos, earnedBadges, problemSets, diaries, lessonSessions,
+    todos, earnedBadges, problemSets, diaries, lessonSessions, diagramSets,
     planState: getPlanSyncState(),
     ts: Date.now(),
   };
@@ -489,6 +491,27 @@ async function mergeSnapshot(remote: LiveSnapshot) {
         }
       }
     }
+
+    // ── Diagram sets: per-record last-write-wins keyed by `createdAt`, with
+    // tombstone support so a generated 図解 propagates and a deletion wins over
+    // an older copy.
+    if (remote.diagramSets !== undefined) {
+      const localDiagrams = await db.diagramSets.toArray(); // includes tombstones
+      const diagramMap = new Map(localDiagrams.map(d => [d.createdAt, d]));
+      for (const r of remote.diagramSets) {
+        const rUpdated = r.updatedAt ?? r.createdAt;
+        const local = diagramMap.get(r.createdAt);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = r;
+        if (!local) {
+          if (!r.deletedAt) {
+            await db.diagramSets.add({ ...rest, updatedAt: rUpdated } as DiagramSet);
+          }
+        } else if (rUpdated > (local.updatedAt ?? local.createdAt)) {
+          await db.diagramSets.update(local.id!, { ...rest, updatedAt: rUpdated });
+        }
+      }
+    }
   } finally {
     _isMerging = false;
     _suppressUntil = Date.now() + MERGE_SUPPRESS_MS;
@@ -548,7 +571,7 @@ function installWriteHooks() {
   const tables = [
     db.notes, db.folders, db.studySessions, db.studyCategories, db.exams,
     db.scheduleDays, db.savedChats, db.todos, db.earnedBadges, db.problemSets,
-    db.diaries, db.lessonSessions,
+    db.diaries, db.lessonSessions, db.diagramSets,
   ] as unknown as Table[];
   for (const table of tables) {
     table.hook('creating', onWrite);
@@ -586,6 +609,8 @@ export function initLiveSync(key: string) {
     db.diaries.orderBy('updatedAt').last().then(d => d?.updatedAt ?? 0),
     db.lessonSessions.orderBy('updatedAt').last().then(l => l?.updatedAt ?? 0),
     db.lessonSessions.count(),
+    db.diagramSets.orderBy('updatedAt').last().then(d => d?.updatedAt ?? 0),
+    db.diagramSets.count(),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());
 

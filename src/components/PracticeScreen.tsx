@@ -12,12 +12,15 @@ import {
   ArrowLeft, Sparkles, Wand2, Paperclip, X, Play, Trash2,
   Check, ChevronRight, ChevronLeft, FileText, RotateCcw, Trophy, Loader2, PencilLine,
   Settings2, MessageCircle, ChevronDown, ChevronUp, Search, NotebookText,
-  Clock, GraduationCap, BookOpen, Pencil,
+  Clock, GraduationCap, BookOpen, Pencil, Network, Download,
 } from 'lucide-react';
 import 'katex/dist/katex.min.css';
-import { db } from '@/lib/db';
-import type { ProblemSet, PracticeQuestion, Note, Folder, LessonSession } from '@/lib/db';
+import { db, softDeleteDiagramSet } from '@/lib/db';
+import type { ProblemSet, PracticeQuestion, Note, Folder, LessonSession, DiagramSet } from '@/lib/db';
 import { newSyncId } from '@/lib/db';
+import { parseIllustDiagram, renderIllustDiagramSvg, type IllustDiagramSpec } from '@/lib/illustDiagram';
+import { ILLUST_MATERIAL_CATALOG } from '@/lib/illustAssets';
+import { downloadSvg, downloadSvgAsPng } from '@/lib/fileGen';
 import {
   generateProblemSet, saveProblemSet, deleteProblemSet, recordAttempt,
 } from '@/lib/practice';
@@ -298,8 +301,76 @@ function buildResultContext(
 }
 
 type View = 'list' | 'solve' | 'result';
-type ScreenMode = 'practice' | 'lesson';
+type ScreenMode = 'practice' | 'lesson' | 'diagram';
 type LessonStyle = 'overview' | 'standard' | 'detailed';
+
+// ── 図解（イラスト図解）のプロンプト ─────────────────────────────────────────
+// 概念（例: クロスサイトリクエストフォージェリ）を渡すと、Lily が素材アイコンを
+// 選んで配置し、仕組みが一目で分かる1枚の図を JSON 仕様で返す。散文は返さない。
+// 座標系・素材カタログ・スキーマを明示して、余計な基本プロンプトは足さない。
+function buildDiagramSystemPrompt(en: boolean): string {
+  const materials = ILLUST_MATERIAL_CATALOG
+    .map(m => `  - ${m.key}: ${m.label}`)
+    .join('\n');
+  if (en) {
+    return `You are "Lily", building a single illustrated diagram (図解) that explains the given concept at a glance. You reply with ONE JSON object and nothing else — no prose, no markdown, no code fence.
+
+Pick material icons whose SHAPE fits the concept (don't force everything into one kind), place them, and connect them with labeled arrows so the mechanism reads clearly.
+
+Available material icons (use the key on the left as "icon"):
+${materials}
+
+JSON schema:
+{
+  "title": "short heading",
+  "width": 780, "height": 480,            // optional; default 780x480. Enlarge for many nodes.
+  "nodes": [
+    { "id": "u", "icon": "user", "label": "Victim", "sublabel": "logged in", "x": 12, "y": 30, "color": "blue" }
+  ],
+  "edges": [
+    { "from": "u", "to": "s", "label": "request + cookie", "dashed": false, "dir": "to", "curve": 0 }
+  ],
+  "zones": [ { "label": "Trust boundary", "x": 4, "y": 10, "w": 50, "h": 80, "color": "gray" } ],
+  "notes": [ { "x": 50, "y": 95, "text": "caption" } ]
+}
+
+Rules:
+- x and y are 0..100 (percent of the canvas; x=left→right, y=top→bottom). Space nodes out so badges and labels don't overlap (keep centers ≥ 18 apart).
+- Prefer a clear left→right or top→bottom flow. 3–7 nodes is ideal; never exceed 9.
+- Edge "label" is the action or data that flows (keep it short). Use "dashed": true for a malicious/forged/optional path, "dir": "both" for a two-way exchange, "curve" (-1..1) to bow parallel arrows apart.
+- Use "zones" for trust boundaries / networks / a site's inside. Use "notes" for a one-line caption.
+- color can be a name (blue, green, red, purple, orange, teal, pink, gray) or #hex. Give the attacker/danger a red-ish color.
+- Output ONLY the JSON object.`;
+  }
+  return `あなたは「Lily」。与えられた概念を「一目で仕組みが分かる1枚のイラスト図解」にする役です。返答は JSON オブジェクト1つだけ。散文・マークダウン・コードフェンスは一切書かない。
+
+内容のかたちに合う素材アイコンを選び（何でも同じ素材にしない）、配置して、ラベル付きの矢印でつないで仕組みが伝わるようにする。
+
+使える素材アイコン（左の key を "icon" に指定）:
+${materials}
+
+JSON スキーマ:
+{
+  "title": "短い見出し",
+  "width": 780, "height": 480,            // 省略可。既定 780x480。ノードが多いときは大きく。
+  "nodes": [
+    { "id": "u", "icon": "user", "label": "利用者", "sublabel": "ログイン中", "x": 12, "y": 30, "color": "blue" }
+  ],
+  "edges": [
+    { "from": "u", "to": "s", "label": "リクエスト＋Cookie", "dashed": false, "dir": "to", "curve": 0 }
+  ],
+  "zones": [ { "label": "信頼境界", "x": 4, "y": 10, "w": 50, "h": 80, "color": "gray" } ],
+  "notes": [ { "x": 50, "y": 95, "text": "補足" } ]
+}
+
+ルール:
+- x・y は 0〜100（キャンバスに対する％。x は左→右、y は上→下）。バッジとラベルが重ならないよう十分に離す（中心間は 18 以上あける）。
+- 左→右 または 上→下 の流れを基本に。ノードは 3〜7 個が理想、9 個を超えない。
+- edge の "label" は「流れる動作・データ」を短く。不正・偽装・任意の経路は "dashed": true、双方向のやり取りは "dir": "both"、並行する矢印は "curve"（-1〜1）で弓なりに離す。
+- 信頼境界・ネットワーク・サイトの内側などは "zones" で囲む。一言の補足は "notes"。
+- color は名前（blue, green, red, purple, orange, teal, pink, gray）か #hex。攻撃者・危険には赤系を使う。
+- 出力は JSON オブジェクトだけ。`;
+}
 
 // Preset turns that advance the lesson rather than ask a question. Cards built
 // from these are shown without a "your question" chip.
@@ -405,6 +476,74 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
   const [lessonError, setLessonError] = useState('');
   const [lessonSaved, setLessonSaved] = useState(false);
   const lessonSysRef = useRef('');
+
+  // ── 図解 (illustrated diagram) state ──
+  const pastDiagrams = useLiveQuery<DiagramSet[]>(
+    () => db.diagramSets.orderBy('updatedAt').reverse().filter(d => !d.deletedAt).limit(30).toArray(), []
+  ) ?? [];
+  const [diagramInput, setDiagramInput] = useState('');
+  const [diagramLoading, setDiagramLoading] = useState(false);
+  const [diagramError, setDiagramError] = useState('');
+  const [currentDiagram, setCurrentDiagram] = useState<{ id?: number; topic: string; title?: string; spec: IllustDiagramSpec } | null>(null);
+
+  // Re-render the current spec to SVG (pure, cached). Empty on error.
+  const diagramSvg = useMemo(() => {
+    if (!currentDiagram) return '';
+    try { return renderIllustDiagramSvg(currentDiagram.spec); }
+    catch { return ''; }
+  }, [currentDiagram]);
+
+  const DIAGRAM_SUGGESTIONS = en
+    ? ['Cross-Site Request Forgery', 'SQL injection', 'Public-key cryptography', 'TCP 3-way handshake', 'DNS resolution', 'Zero Trust']
+    : ['クロスサイトリクエストフォージェリ', 'SQLインジェクション', '公開鍵暗号', 'TCP 3ウェイハンドシェイク', 'DNSの名前解決', 'ゼロトラスト'];
+
+  async function generateDiagram(topicArg?: string) {
+    const topic = (topicArg ?? diagramInput).trim();
+    if (!topic || diagramLoading) return;
+    const apiKey = getEffectiveApiKey();
+    if (!apiKey) { setDiagramError(en ? 'Set your API key in Settings.' : 'APIキーを設定してください。'); return; }
+    if (getTicketsLeft('diagram') <= 0) {
+      setDiagramError(en ? "Today's diagram limit has been reached. Try again tomorrow." : '本日の図解の作成回数の上限に達したよ。明日また試してね。');
+      return;
+    }
+    consumeTicket('diagram');
+    setDiagramLoading(true);
+    setDiagramError('');
+    try {
+      const sys = buildDiagramSystemPrompt(en);
+      const userTurn: ChatTurn = { role: 'user', text: en ? `Concept to illustrate: ${topic}` : `図解にする概念: ${topic}` };
+      const reply = await callGeminiChat([userTurn], sys, apiKey, {
+        temperature: 0.5,
+        maxOutputTokens: 4096,
+        models: ['gemini-3.5-flash', 'gemini-3.1-flash-lite'],
+      });
+      const spec = parseIllustDiagram(reply);
+      // Fail early (before saving) if the spec can't be rendered.
+      renderIllustDiagramSvg(spec);
+      const now = Date.now();
+      const title = (spec.title && spec.title.trim()) || topic;
+      const id = await db.diagramSets.add({ topic, title, spec, createdAt: now, updatedAt: now }) as number;
+      setCurrentDiagram({ id, topic, title, spec });
+      setDiagramInput('');
+    } catch {
+      setDiagramError(en ? 'Could not build the diagram. Try rephrasing the concept.' : 'うまく図解できなかった…言い方を変えてもう一度試してね。');
+    } finally {
+      setDiagramLoading(false);
+    }
+  }
+
+  async function deleteDiagram(id: number, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (currentDiagram?.id === id) setCurrentDiagram(null);
+    await softDeleteDiagramSet(id);
+  }
+
+  function downloadDiagram(kind: 'png' | 'svg') {
+    if (!diagramSvg) return;
+    const base = `lily-diagram-${(currentDiagram?.title || 'figure').replace(/[^\w぀-ヿ一-鿿]+/g, '_').slice(0, 40) || 'figure'}`;
+    if (kind === 'png') downloadSvgAsPng(diagramSvg, `${base}.png`);
+    else downloadSvg(diagramSvg, `${base}.svg`);
+  }
 
   // The lesson is presented as a deck of "slides": one card per Lily message.
   // A card that answers a real question carries that question; cards produced by
@@ -1238,6 +1377,13 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             <GraduationCap size={13} />
             {en ? 'Lesson' : '授業'}
           </button>
+          <button
+            className={`ps-mode-btn${screenMode === 'diagram' ? ' on' : ''}`}
+            onClick={() => setScreenMode('diagram')}
+          >
+            <Network size={13} />
+            {en ? 'Diagram' : '図解'}
+          </button>
         </div>
 
         {/* ── Lesson: setup view ── */}
@@ -1799,6 +1945,98 @@ export default function PracticeScreen({ onGoBack, onOpenAI }: PracticeScreenPro
             </>
           )}
         </div>}
+
+        {/* ── Diagram (図解): illustrated diagram generator ── */}
+        {screenMode === 'diagram' && (
+          <div className="ps-dg">
+            <div className="ps-dg-gen">
+              <div className="ps-dg-genhead">
+                <Sparkles size={16} />
+                <span>{en ? 'Ask Lily for a diagram' : 'Lilyに図解を作ってもらう'}</span>
+              </div>
+              <p className="ps-dg-desc">
+                {en
+                  ? 'Type a concept (e.g. "Cross-Site Request Forgery") and Lily picks the right material icons — servers, PCs, users… — and lays out a diagram that explains it at a glance.'
+                  : '概念を入力すると（例：「クロスサイトリクエストフォージェリ」）、Lilyがサーバーやパソコンなどの素材を選んで、仕組みが一目で分かる図解を組み立てるよ。'}
+              </p>
+              <input
+                className="ps-dg-input"
+                value={diagramInput}
+                onChange={e => setDiagramInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') void generateDiagram(); }}
+                placeholder={en ? 'A concept to illustrate…' : '図解にしたい概念を入力…'}
+                disabled={diagramLoading}
+              />
+              <div className="ps-dg-chips">
+                {DIAGRAM_SUGGESTIONS.map(s => (
+                  <button key={s} className="ps-dg-chip" onClick={() => { setDiagramInput(s); void generateDiagram(s); }} disabled={diagramLoading}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <button
+                className="ps-dg-btn"
+                onClick={() => void generateDiagram()}
+                disabled={!diagramInput.trim() || diagramLoading || getTicketsLeft('diagram') <= 0}
+              >
+                {diagramLoading ? <Loader2 size={15} className="ps-spin" /> : <Wand2 size={15} />}
+                {en ? 'Create diagram' : '図解を作る'}
+              </button>
+              <p className="ps-dg-ticket">
+                {isTicketUnlimited('diagram')
+                  ? (en ? 'Diagrams: unlimited (Developer)' : '本日の図解の残り回数: 無制限（Developer）')
+                  : en
+                    ? `Today's remaining diagrams: ${getTicketsLeft('diagram')}`
+                    : `本日の図解の残り回数: ${getTicketsLeft('diagram')}回`}
+              </p>
+              {diagramError && <p className="ps-dg-err">{diagramError}</p>}
+            </div>
+
+            {/* Current diagram viewer */}
+            {currentDiagram && (
+              <div className="ps-dg-view">
+                <div className="ps-dg-viewhead">
+                  <span className="ps-dg-viewtitle">{currentDiagram.title || currentDiagram.topic}</span>
+                  <div className="ps-dg-viewacts">
+                    <button className="ps-dg-dl" onClick={() => downloadDiagram('png')} title="PNG"><Download size={13} /> PNG</button>
+                    <button className="ps-dg-dl" onClick={() => downloadDiagram('svg')} title="SVG"><Download size={13} /> SVG</button>
+                    <button className="ps-dg-close" onClick={() => setCurrentDiagram(null)} title={en ? 'Close' : '閉じる'}><X size={15} /></button>
+                  </div>
+                </div>
+                {diagramSvg
+                  ? <div className="ps-dg-canvas" dangerouslySetInnerHTML={{ __html: diagramSvg }} />
+                  : <div className="ps-dg-broken">{en ? 'This diagram could not be rendered.' : 'この図解は表示できませんでした。'}</div>}
+              </div>
+            )}
+
+            {/* Past diagrams */}
+            <div className="ps-dg-list">
+              <div className="ps-list-head">
+                <p className="ps-list-title">{en ? 'Your diagrams' : '作った図解'}</p>
+                {pastDiagrams.length > 0 && <span className="ps-list-count">{pastDiagrams.length}</span>}
+              </div>
+              {pastDiagrams.length === 0 ? (
+                <div className="ps-empty">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={lilyAvatarSrc('/9D507C9A-09F0-4B05-9F41-612FBD120675.png')} alt="Lily" className="ps-empty-img" />
+                  <p>{en ? 'No diagrams yet.' : 'まだ図解がないよ'}</p>
+                  <p className="ps-empty-sub">{en ? 'Type a concept above!' : '上の欄に概念を入力してみてね！'}</p>
+                </div>
+              ) : (
+                pastDiagrams.map(d => (
+                  <button key={d.id} className="ps-dg-card" onClick={() => setCurrentDiagram({ id: d.id, topic: d.topic, title: d.title, spec: d.spec })}>
+                    <span className="ps-dg-cardic"><Network size={16} /></span>
+                    <div className="ps-dg-cardmain">
+                      <span className="ps-dg-cardname">{d.title || d.topic}</span>
+                      <span className="ps-dg-cardmeta">{new Date(d.updatedAt).toLocaleDateString(en ? undefined : 'ja-JP')}</span>
+                    </div>
+                    <span className="ps-dg-carddel" onClick={(e) => void deleteDiagram(d.id!, e)} title={en ? 'Delete' : '削除'}><Trash2 size={14} /></span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Full-screen overlay during generation — blocks all other taps */}
@@ -2115,6 +2353,42 @@ function PracticeStyles() {
   .ps-past-edit:hover { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 12%, transparent); }
   .ps-past-del { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 6px; }
   .ps-past-del:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
+  /* ── Diagram (図解) ── */
+  .ps-dg { padding: 14px; display: flex; flex-direction: column; gap: 16px; }
+  .ps-dg-gen { display: flex; flex-direction: column; gap: 10px; background: color-mix(in srgb, #8b5cf6 6%, var(--accent)); border: 1.5px solid color-mix(in srgb, #8b5cf6 22%, var(--border)); border-radius: 16px; padding: 14px; }
+  .ps-dg-genhead { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; font-weight: 800; color: var(--foreground); }
+  .ps-dg-genhead :global(svg) { color: #8b5cf6; }
+  .ps-dg-desc { font-size: 0.78rem; color: var(--fg-muted); line-height: 1.6; margin: 0; }
+  .ps-dg-input { width: 100%; height: 44px; background: var(--background); border: 1.5px solid var(--border); border-radius: 12px; padding: 0 12px; font-size: 0.9rem; color: var(--foreground); outline: none; box-sizing: border-box; }
+  .ps-dg-input:focus { border-color: #8b5cf6; }
+  .ps-dg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ps-dg-chip { background: var(--background); border: 1.5px solid var(--border); border-radius: 999px; padding: 5px 12px; font-size: 0.76rem; font-weight: 600; color: var(--fg-muted); cursor: pointer; transition: color .15s, border-color .15s; }
+  .ps-dg-chip:hover:not(:disabled) { color: #8b5cf6; border-color: #8b5cf6; }
+  .ps-dg-chip:disabled { opacity: 0.4; cursor: default; }
+  .ps-dg-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 46px; border: none; border-radius: 12px; background: linear-gradient(120deg, #8b5cf6, #ec4899); color: #fff; font-size: 0.9rem; font-weight: 800; cursor: pointer; transition: opacity .15s; }
+  .ps-dg-btn:disabled { opacity: 0.45; cursor: default; }
+  .ps-dg-ticket { font-size: 0.72rem; color: var(--fg-muted); margin: 0; }
+  .ps-dg-err { font-size: 0.8rem; color: #ef4444; margin: 0; }
+  .ps-dg-view { display: flex; flex-direction: column; background: var(--accent); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .ps-dg-viewhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; background: var(--muted); border-bottom: 1px solid var(--border); }
+  .ps-dg-viewtitle { font-size: 0.86rem; font-weight: 800; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-dg-viewacts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .ps-dg-dl { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; background: transparent; border: 1px solid var(--border); border-radius: 7px; font-size: 0.72rem; font-weight: 700; color: var(--fg-muted); cursor: pointer; }
+  .ps-dg-dl:hover { border-color: #8b5cf6; color: #8b5cf6; }
+  .ps-dg-close { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 7px; }
+  .ps-dg-close:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
+  .ps-dg-canvas { padding: 14px; overflow-x: auto; display: flex; justify-content: center; background: #ffffff; }
+  .ps-dg-canvas :global(svg) { max-width: 100%; height: auto; }
+  .ps-dg-broken { padding: 20px; text-align: center; font-size: 0.82rem; color: var(--fg-muted); }
+  .ps-dg-list { display: flex; flex-direction: column; gap: 8px; }
+  .ps-dg-card { display: flex; align-items: center; gap: 10px; width: 100%; background: var(--accent); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; cursor: pointer; text-align: left; transition: border-color .15s; }
+  .ps-dg-card:hover { border-color: #8b5cf6; }
+  .ps-dg-cardic { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 9px; background: color-mix(in srgb, #8b5cf6 12%, transparent); color: #8b5cf6; }
+  .ps-dg-cardmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .ps-dg-cardname { font-size: 0.88rem; font-weight: 700; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-dg-cardmeta { font-size: 0.72rem; color: var(--fg-muted); }
+  .ps-dg-carddel { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: transparent; border: none; color: var(--fg-muted); cursor: pointer; border-radius: 6px; }
+  .ps-dg-carddel:hover { color: #ef4444; background: color-mix(in srgb, #ef4444 12%, transparent); }
   /* ── Lesson: slide deck ── */
   .ps-class { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 -16px -16px; }
   .ps-class-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--accent); flex-shrink: 0; }

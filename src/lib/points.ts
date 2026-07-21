@@ -268,7 +268,7 @@ export function applyPlanSyncState(remote: PlanSyncState | undefined): void {
 // ネット検索 is likewise ticket-gated (1/day, every plan including Free and
 // Developer) rather than token-metered — grounded search calls vary too much
 // in cost to fold into the per-mode multiplier cleanly.
-export type TicketMode = 'thinking' | 'ultra' | 'stable' | 'exercise' | 'lesson' | 'search';
+export type TicketMode = 'thinking' | 'ultra' | 'stable' | 'exercise' | 'lesson' | 'search' | 'diagram';
 
 export const PLAN_THINKING_TICKETS: Record<Plan, number> = {
   free: 0,
@@ -327,6 +327,17 @@ export const PLAN_SEARCH_TICKETS: Record<Plan, number> = {
   developer: 1,
 };
 
+// 演習タブ「図解」: Lily に概念を渡してイラスト図解を作ってもらう。演習の問題作成と
+// 同じ配分（Free は1日1回、有料は1日2回、Developer のみ無制限）。
+export const PLAN_DIAGRAM_TICKETS: Record<Plan, number> = {
+  free: 1,
+  plus: 2,
+  pro: 2,
+  max: 2,
+  ultimate: 2,
+  developer: Number.MAX_SAFE_INTEGER,
+};
+
 const TICKET_LIMITS: Record<TicketMode, Record<Plan, number>> = {
   thinking: PLAN_THINKING_TICKETS,
   ultra: PLAN_ULTRA_TICKETS,
@@ -334,6 +345,7 @@ const TICKET_LIMITS: Record<TicketMode, Record<Plan, number>> = {
   exercise: PLAN_EXERCISE_TICKETS,
   lesson: PLAN_LESSON_TICKETS,
   search: PLAN_SEARCH_TICKETS,
+  diagram: PLAN_DIAGRAM_TICKETS,
 };
 
 const KEY_TICKET_DATE = 'lily-tickets-date';
@@ -344,6 +356,7 @@ const KEY_TICKET_USED: Record<TicketMode, string> = {
   exercise: 'lily-tickets-used-exercise',
   lesson: 'lily-tickets-used-lesson',
   search: 'lily-tickets-used-search',
+  diagram: 'lily-tickets-used-diagram',
 };
 
 function resetTicketsIfNewDay(): void {
