@@ -185,17 +185,16 @@ export const RASTER_ICONS: Record<string, RasterIcon> = Object.fromEntries(
   RASTER_LIST.map(([key, sheet, r, c, label, en, keywords]) => [key, { key, sheet, r, c, label, en, keywords }])
 );
 
-// シートに切り出したセルの表示位置（画像座標系）。中心に寄せた正方形（セル高の90%）
-// を切り出すと、隣のセルが写り込まず 1 アイコンだけがきれいに収まる。
-export function iconCell(key: string): { sheet: IconSheet; sheetId: string; vx: number; vy: number; side: number } | null {
+// シートの該当セルの矩形（画像座標系）。切り出しはレンダラ側で「セルを少しだけ
+// 内側にinsetした窓」を contain（アスペクト維持）でカードに収めるので、横長アイコン
+// も切れず中央に載る。ここではセルの外形だけを返す。
+export function iconCell(key: string): { sheet: IconSheet; sheetId: string; cellX: number; cellY: number; cellW: number; cellH: number } | null {
   const a = RASTER_ICONS[key];
   if (!a) return null;
   const sh = ICON_SHEETS[a.sheet];
   if (!sh) return null;
-  const cw = sh.w / sh.cols, ch = sh.h / sh.rows, side = ch * 0.9;
-  const vx = a.c * cw + (cw - side) / 2;
-  const vy = a.r * ch + (ch - side) / 2;
-  return { sheet: sh, sheetId: a.sheet, vx, vy, side };
+  const cellW = sh.w / sh.cols, cellH = sh.h / sh.rows;
+  return { sheet: sh, sheetId: a.sheet, cellX: a.c * cellW, cellY: a.r * cellH, cellW, cellH };
 }
 
 /* ---------- SVG フォールバック（シートに無い概念用の線画グリフ） ---------- */

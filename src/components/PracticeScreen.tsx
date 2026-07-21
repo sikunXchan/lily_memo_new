@@ -337,8 +337,10 @@ JSON schema:
 Rules:
 - x and y are 0..100 (percent of the canvas; x=left→right, y=top→bottom). SPREAD NODES OUT — each node is a card with a text label underneath, so keep centers at least 24 apart horizontally AND vertically; never stack two nodes at a similar x with little vertical gap. Keep x within 8..92 and y within 10..88.
 - Prefer a clear left→right or top→bottom flow. 3–6 nodes is ideal; never exceed 8. Fewer, well-spaced nodes read far better than a crowded canvas.
-- Edge "label" is the action or data that flows (keep it short). Use "dashed": true for a malicious/forged/optional path, "dir": "both" for a two-way exchange, "curve" (-1..1) to bow parallel arrows apart.
-- Use "zones" for trust boundaries / networks / a site's inside. Use "notes" for a one-line caption.
+- Edge "label" is the action or data that flows — keep it to a few words. Use "dashed": true for a malicious/forged/optional path, "dir": "both" for a two-way exchange, "curve" (-1..1) to bow parallel arrows apart.
+- Keep "label" ≤ ~8 chars and "sublabel" ≤ ~12 chars per node (long text collides). Use "sublabel" for a short qualifier, not a sentence.
+- Use "zones" for trust boundaries / networks / a group. Keep the zone "label" SHORT (≤ ~10 chars, it sits on the top border) and DON'T place a node right at the zone's top edge (leave the top ~12% of the zone clear for the label).
+- Use at most ONE short "notes" caption, placed in an EMPTY area (not over nodes/labels). Prefer no note if the diagram is self-explanatory.
 - color can be a name (blue, green, red, purple, orange, teal, pink, gray) or #hex. Give the attacker/danger a red-ish color.
 - Output ONLY the JSON object.`;
   }
@@ -366,8 +368,10 @@ JSON スキーマ:
 ルール:
 - x・y は 0〜100（キャンバスに対する％。x は左→右、y は上→下）。各ノードは「カード＋その下のラベル」なので、必ず十分に離す：中心間は横も縦も 24 以上あけ、同じような x に縦の余白が狭いまま2つ置かない。x は 8〜92、y は 10〜88 の範囲に収める。
 - 左→右 または 上→下 の流れを基本に。ノードは 3〜6 個が理想、8 個を超えない。詰め込むより、少なく広く配置する方が断然読みやすい。
-- edge の "label" は「流れる動作・データ」を短く。不正・偽装・任意の経路は "dashed": true、双方向のやり取りは "dir": "both"、並行する矢印は "curve"（-1〜1）で弓なりに離す。
-- 信頼境界・ネットワーク・サイトの内側などは "zones" で囲む。一言の補足は "notes"。
+- edge の "label" は「流れる動作・データ」を数語で短く。不正・偽装・任意の経路は "dashed": true、双方向のやり取りは "dir": "both"、並行する矢印は "curve"（-1〜1）で弓なりに離す。
+- ノードの "label" は8文字以内、"sublabel" は12文字以内を目安に（長いと重なる）。"sublabel" は短い補足に使い、文章にしない。
+- 信頼境界・ネットワーク・グループは "zones" で囲む。ゾーンの "label" は短く（10文字以内・上辺に載る）。ゾーンの一番上の端にはノードを置かず、上から12%ほどはラベル用に空ける。
+- "notes" は使っても1つ・短く、空いている場所に置く（ノードやラベルの上に重ねない）。図だけで分かるなら無くてよい。
 - color は名前（blue, green, red, purple, orange, teal, pink, gray）か #hex。攻撃者・危険には赤系を使う。
 - 出力は JSON オブジェクトだけ。`;
 }
