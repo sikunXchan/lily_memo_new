@@ -82,7 +82,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     db.lessonSessions.toArray(),
     db.diagramSets.toArray(),
     db.aiFriends.toArray(),
-    db.diaryChats.toArray(),
+    db.diaryChats.filter(m => !m.ghost).toArray(), // ゴーストは同期しない
   ]);
   // Enrich cross-table references with stable syncIds (see SyncNote above).
   const folderSyncById = new Map(folders.filter(f => f.id != null && f.syncId).map(f => [f.id!, f.syncId]));
