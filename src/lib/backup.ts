@@ -1,4 +1,4 @@
-import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, type Diary, type LessonSession, newSyncId } from './db';
+import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, type Diary, type LessonSession, type DiagramSet, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -33,6 +33,7 @@ export interface BackupPayload {
   studySessions?: StudySession[];
   diaries?: Diary[];
   lessonSessions?: LessonSession[];
+  diagramSets?: DiagramSet[];
   timestamp: number;
   version?: number;
 }
@@ -103,6 +104,18 @@ export async function restoreSyncFromJson(jsonText: string): Promise<void> {
     }
   });
 
+  // Diagram sets: full replace on sync (mirror source exactly), same as lessons.
+  await db.transaction('rw', db.diagramSets, async () => {
+    await db.diagramSets.clear();
+    if (data.diagramSets?.length) {
+      for (const d of data.diagramSets) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = d;
+        await db.diagramSets.add(rest as DiagramSet);
+      }
+    }
+  });
+
   // Earned badges: additive merge (never remove a badge already unlocked here;
   // keep the earliest earnedAt when both sides have it).
   if (data.earnedBadges?.length) {
@@ -123,6 +136,7 @@ export async function buildBackupJson(): Promise<string> {
   const studySessions = await db.studySessions.toArray();
   const diaries = await db.diaries.toArray();
   const lessonSessions = await db.lessonSessions.toArray();
+  const diagramSets = await db.diagramSets.toArray();
 
   const allImages: Record<string, string> = {};
   const compactNotes = notes.map(note => {
@@ -142,6 +156,7 @@ export async function buildBackupJson(): Promise<string> {
     studySessions,
     diaries,
     lessonSessions,
+    diagramSets,
     timestamp: Date.now(),
     version: 1,
   };
@@ -200,6 +215,9 @@ export async function restoreBackupFromJson(jsonText: string): Promise<void> {
   // created at the exact same time on different devices are the same session).
   // Newest updatedAt wins so continued sessions propagate.
   await mergeLessonSessions(data.lessonSessions ?? [], now);
+
+  // Diagram sets: additive MERGE by createdAt, newest updatedAt wins.
+  await mergeDiagramSets(data.diagramSets ?? [], now);
 }
 
 // Merge saved chats by `createdAt` (stable natural key across devices) without
@@ -269,6 +287,25 @@ async function mergeLessonSessions(incoming: LessonSession[], now: number): Prom
         if (!rest.deletedAt) await db.lessonSessions.add(rest as LessonSession);
       } else if (rest.updatedAt > (local.updatedAt ?? local.createdAt)) {
         await db.lessonSessions.update(local.id!, rest);
+      }
+    }
+  });
+}
+
+async function mergeDiagramSets(incoming: DiagramSet[], now: number): Promise<void> {
+  if (!incoming.length) return;
+  await db.transaction('rw', db.diagramSets, async () => {
+    const existing = await db.diagramSets.toArray();
+    const byCreatedAt = new Map(existing.map(d => [d.createdAt, d]));
+    for (const raw of incoming) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = raw;
+      rest.updatedAt = rest.updatedAt ?? rest.createdAt ?? now;
+      const local = byCreatedAt.get(rest.createdAt);
+      if (!local) {
+        if (!rest.deletedAt) await db.diagramSets.add(rest as DiagramSet);
+      } else if (rest.updatedAt > (local.updatedAt ?? local.createdAt)) {
+        await db.diagramSets.update(local.id!, rest);
       }
     }
   });

@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie';
+import type { IllustDiagramSpec } from './illustDiagram';
 
 export interface Folder {
   id?: number;
@@ -243,6 +244,20 @@ export interface LessonSession {
   deletedAt?: number; // soft-delete tombstone so deletions propagate via sync
 }
 
+// 図解（イラスト図解）: 演習タブの「図解」で、概念（例:「クロスサイトリクエスト
+// フォージェリ」）を入力すると Lily が素材アイコンを選んで組み立てた1枚の図。
+// 描画済み SVG ではなく仕様（spec）を保存し、表示時に renderIllustDiagramSvg で
+// 描き直す（軽量・テーマ非依存・再編集可能）。
+export interface DiagramSet {
+  id?: number;
+  topic: string;             // 入力された概念テキスト
+  title?: string;            // 図のタイトル（一覧表示用）
+  spec: IllustDiagramSpec;   // 図解の仕様
+  createdAt: number;
+  updatedAt: number;         // version clock — bumped on mutation incl. soft-delete
+  deletedAt?: number;        // tombstone for sync; UI filters these out
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
@@ -259,6 +274,7 @@ export class LilyDatabase extends Dexie {
   problemSets!: Table<ProblemSet>;
   diaries!: Table<Diary>;
   lessonSessions!: Table<LessonSession>;
+  diagramSets!: Table<DiagramSet>;
 
   constructor() {
     super('LilyDatabase');
@@ -386,6 +402,10 @@ export class LilyDatabase extends Dexie {
     this.version(22).stores({
       lessonSessions: '++id, topic, createdAt, updatedAt, deletedAt',
     });
+    // v23: illustrated diagrams (図解) generated in the 演習 tab.
+    this.version(23).stores({
+      diagramSets: '++id, topic, createdAt, updatedAt, deletedAt',
+    });
   }
 }
 
@@ -428,4 +448,9 @@ export async function softDeleteSavedChat(id: number): Promise<void> {
 export async function softDeleteProblemSet(id: number): Promise<void> {
   const t = Date.now();
   await db.problemSets.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteDiagramSet(id: number): Promise<void> {
+  const t = Date.now();
+  await db.diagramSets.update(id, { deletedAt: t, updatedAt: t });
 }
