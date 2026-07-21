@@ -4,7 +4,7 @@
 // エッジ＝ラベル付き矢印、ゾーン＝範囲の囲み）を純粋関数で 1 枚の SVG に描く。
 // アイコンの実体は illustAssets.ts が持ち、ここは配置・接続・ラベルを担当する。
 
-import { illustGlyph } from './illustAssets';
+import { illustGlyph, iconCell } from './illustAssets';
 
 export interface DiagramNode {
   id: string;
@@ -61,9 +61,9 @@ function resolveColor(c: string | undefined, fallback: string): string {
 }
 
 /* ---------- geometry constants ---------- */
-const BADGE = 78;              // ノードの丸角バッジの一辺
-const RB = BADGE * 0.5 + 5;    // 接続線を止めるノード境界の半径（円近似）
-const ICON_PAD = 11;           // バッジ内のアイコン余白
+const CARD = 84;               // ノードの白カードの一辺
+const ISZ = 62;                // カード内に描くアイコンの一辺
+const RB = CARD * 0.5 + 6;     // 接続線を止めるノード境界の半径（円近似）
 
 /* ---------- text helpers ---------- */
 function esc(s: string): string {
@@ -104,37 +104,63 @@ function wrapLabel(s: string, maxUnits: number): string[] {
   return lines;
 }
 
-/* ---------- node badge ---------- */
+/* ---------- node card + icon ---------- */
 function renderNode(n: DiagramNode, cx: number, cy: number, color: string): string {
-  const half = BADGE / 2;
+  const half = CARD / 2;
   const x = cx - half, y = cy - half;
-  const scale = (BADGE - ICON_PAD * 2) / 64;
-  const glyph = illustGlyph(n.icon, color);
   const parts: string[] = [];
-  // バッジ背景
+  // やわらかい影 → 白カード（アイコンのラスターは白背景なのでカードに馴染む）
   parts.push(
-    `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${BADGE}" height="${BADGE}" rx="18" ` +
-    `fill="${color}" fill-opacity="0.09" stroke="${color}" stroke-opacity="0.35" stroke-width="1.5"/>`
+    `<rect x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" width="${CARD}" height="${CARD}" rx="18" fill="#0f172a" fill-opacity="0.07"/>`
   );
-  // アイコン（64→scale）
   parts.push(
-    `<g transform="translate(${(x + ICON_PAD).toFixed(1)},${(y + ICON_PAD).toFixed(1)}) scale(${scale.toFixed(3)})">${glyph}</g>`
+    `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${CARD}" height="${CARD}" rx="18" ` +
+    `fill="#ffffff" stroke="${color}" stroke-opacity="0.5" stroke-width="1.6"/>`
   );
-  // 主ラベル（バッジ下）
-  if (n.label) {
-    const fs = 14;
-    const lines = wrapLabel(n.label, 8);
-    let ly = cy + half + 17;
+  // アイコン: ラスター素材はシートの該当セルを viewBox で切り出す。無ければ SVG グリフ。
+  const cell = iconCell(n.icon);
+  if (cell) {
+    parts.push(
+      `<svg x="${(cx - ISZ / 2).toFixed(1)}" y="${(cy - ISZ / 2).toFixed(1)}" width="${ISZ}" height="${ISZ}" ` +
+      `viewBox="${cell.vx.toFixed(1)} ${cell.vy.toFixed(1)} ${cell.side.toFixed(1)} ${cell.side.toFixed(1)}">` +
+      `<image href="${cell.sheet.file}" x="0" y="0" width="${cell.sheet.w}" height="${cell.sheet.h}" preserveAspectRatio="none"/></svg>`
+    );
+  } else {
+    const gsz = ISZ * 0.92;
+    const sc = gsz / 64;
+    parts.push(
+      `<g transform="translate(${(cx - gsz / 2).toFixed(1)},${(cy - gsz / 2).toFixed(1)}) scale(${sc.toFixed(3)})">${illustGlyph(n.icon, color)}</g>`
+    );
+  }
+  // ラベル（カード下）。エッジやゾーンに重なっても読めるよう、白い下地を敷く。
+  if (n.label || n.sublabel) {
+    const fs = 14, sfs = 11.5;
+    const lines = n.label ? wrapLabel(n.label, 8) : [];
+    const widths = [
+      ...lines.map(l => textWidth(l, fs)),
+      ...(n.sublabel ? [textWidth(n.sublabel, sfs)] : []),
+    ];
+    const maxW = Math.max(0, ...widths);
+    const rows = lines.length + (n.sublabel ? 1 : 0);
+    const blockH = lines.length * (fs + 3) + (n.sublabel ? sfs + 4 : 0) + 4;
+    const top = cy + half + 5;
+    if (rows > 0 && maxW > 0) {
+      parts.push(
+        `<rect x="${(cx - maxW / 2 - 6).toFixed(1)}" y="${top.toFixed(1)}" width="${(maxW + 12).toFixed(1)}" height="${blockH.toFixed(1)}" ` +
+        `rx="7" fill="#ffffff" fill-opacity="0.9"/>`
+      );
+    }
+    let ly = top + fs + 3;
     for (const ln of lines) {
       parts.push(
         `<text x="${cx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="${fs}" font-weight="700" ` +
         `fill="#1e293b" text-anchor="middle">${esc(ln)}</text>`
       );
-      ly += fs + 2;
+      ly += fs + 3;
     }
     if (n.sublabel) {
       parts.push(
-        `<text x="${cx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="11.5" ` +
+        `<text x="${cx.toFixed(1)}" y="${(ly + 1).toFixed(1)}" font-size="${sfs}" ` +
         `fill="#64748b" text-anchor="middle">${esc(n.sublabel)}</text>`
       );
     }
@@ -143,10 +169,11 @@ function renderNode(n: DiagramNode, cx: number, cy: number, color: string): stri
 }
 
 /* ---------- edge ---------- */
+// body（線＋矢印）は最背面近く、label（白下地付き）はノードより前面に描くため分けて返す。
 function renderEdge(
   a: { x: number; y: number }, b: { x: number; y: number }, e: DiagramEdge, color: string,
   curveOverride: number,
-): string {
+): { body: string; label: string } {
   const dx = b.x - a.x, dy = b.y - a.y;
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len, uy = dy / len;
@@ -187,21 +214,19 @@ function renderEdge(
   if (dir === 'to' || dir === 'both') parts.push(head(ex, ey, ux, uy));
   if (dir === 'both') parts.push(head(sx, sy, -ux, -uy));
 
-  // ラベル（白い角丸背景で可読性を確保）
+  // ラベル（白い角丸背景で可読性を確保）。ノードカードに隠れないよう別レイヤーで返す。
+  let label = '';
   if (e.label) {
     const fs = 12.5;
     const w = textWidth(e.label, fs) + 12;
     const h = fs + 8;
-    parts.push(
+    label =
       `<rect x="${(midX - w / 2).toFixed(1)}" y="${(midY - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" ` +
-      `rx="6" fill="#ffffff" stroke="${color}" stroke-opacity="0.35" stroke-width="1"/>`
-    );
-    parts.push(
+      `rx="6" fill="#ffffff" stroke="${color}" stroke-opacity="0.35" stroke-width="1"/>` +
       `<text x="${midX.toFixed(1)}" y="${(midY + fs * 0.35).toFixed(1)}" font-size="${fs}" font-weight="600" ` +
-      `fill="${color}" text-anchor="middle">${esc(e.label)}</text>`
-    );
+      `fill="${color}" text-anchor="middle">${esc(e.label)}</text>`;
   }
-  return parts.join('');
+  return { body: parts.join(''), label };
 }
 
 /* ---------- zone ---------- */
@@ -232,13 +257,13 @@ export function renderIllustDiagramSvg(spec: IllustDiagramSpec): string {
   const notes = Array.isArray(spec.notes) ? spec.notes : [];
 
   const hasTitle = !!(spec.title && spec.title.trim());
-  const W = Math.max(360, Math.min(1400, spec.width ?? 780));
-  const H = Math.max(280, Math.min(1200, spec.height ?? 480));
+  const W = Math.max(360, Math.min(1600, spec.width ?? 880));
+  const H = Math.max(280, Math.min(1200, spec.height ?? 540));
 
-  const padL = BADGE * 0.5 + 34;
-  const padR = BADGE * 0.5 + 34;
-  const padT = (hasTitle ? 50 : 26) + BADGE * 0.5;
-  const padB = BADGE * 0.5 + 46;
+  const padL = CARD * 0.5 + 40;
+  const padR = CARD * 0.5 + 40;
+  const padT = (hasTitle ? 54 : 28) + CARD * 0.5;
+  const padB = CARD * 0.5 + 52;
 
   const center = (n: DiagramNode) => ({
     x: padL + (Math.max(0, Math.min(100, n.x)) / 100) * (W - padL - padR),
@@ -267,6 +292,7 @@ export function renderIllustDiagramSvg(spec: IllustDiagramSpec): string {
     arr.push(i);
     groups.set(k, arr);
   });
+  const edgeLabels: string[] = []; // ノードより前面に描くラベル
   edges.forEach((e, i) => {
     const a = centers.get(e.from), b = centers.get(e.to);
     if (!a || !b) return;
@@ -282,7 +308,9 @@ export function renderIllustDiagramSvg(spec: IllustDiagramSpec): string {
       const idA = e.from < e.to ? e.from : e.to;
       curve = base * (e.from === idA ? 1 : -1);
     }
-    layers.push(renderEdge(a, b, e, col, curve));
+    const { body, label } = renderEdge(a, b, e, col, curve);
+    layers.push(body);
+    if (label) edgeLabels.push(label);
   });
 
   // 3) ノート（自由テキスト）— 他の要素の上でも読めるよう白い角丸背景を敷く。
@@ -302,11 +330,14 @@ export function renderIllustDiagramSvg(spec: IllustDiagramSpec): string {
     );
   });
 
-  // 4) ノード（最前面）
+  // 4) ノード
   nodes.forEach((n, i) => {
     const p = centers.get(n.id)!;
     layers.push(renderNode(n, p.x, p.y, colorOf(n.color, i)));
   });
+
+  // 5) エッジのラベル（最前面）— ノードカードに隠れず常に読めるようにする。
+  edgeLabels.forEach(l => layers.push(l));
 
   const titleSvg = hasTitle
     ? `<text x="${(W / 2).toFixed(1)}" y="30" font-size="17" font-weight="800" fill="#0f172a" text-anchor="middle">${esc(spec.title!.trim())}</text>`
