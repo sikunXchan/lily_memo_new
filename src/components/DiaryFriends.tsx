@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, Send, Users, UserPlus, Sparkles, Trash2, X, Loader2, Pencil, MessageCircle, Notebook, Sliders, Ghost, Lock, Info } from 'lucide-react';
+import { ArrowLeft, Send, Users, UserPlus, Sparkles, Trash2, X, Loader2, Pencil, MessageCircle, Notebook, Sliders, Ghost, Lock, Info, Copy, Repeat } from 'lucide-react';
 import { db, softDeleteAiFriend, type AiFriend, type DiaryChatMsg } from '@/lib/db';
 import type { ChatTurn } from '@/lib/gemini';
 import {
@@ -97,9 +97,9 @@ export default function DiaryFriends({ onGoBack }: { onGoBack: () => void }) {
     [thread]
   ) ?? [];
 
-  // 各フレンドの個人チャット回数（ユーザー発言数）→ グループ解放条件に使う。
+  // 各フレンドの個人チャット回数（ユーザー発言数、ゴースト除く）→ グループ解放条件に使う。
   const chatCounts = useLiveQuery<Record<string, number>>(async () => {
-    const rows = await db.diaryChats.filter(m => !m.deletedAt && m.role === 'user' && m.thread.startsWith('f')).toArray();
+    const rows = await db.diaryChats.filter(m => !m.deletedAt && !m.ghost && m.role === 'user' && m.thread.startsWith('f')).toArray();
     const map: Record<string, number> = {};
     for (const m of rows) map[m.thread] = (map[m.thread] ?? 0) + 1;
     return map;
@@ -113,6 +113,8 @@ export default function DiaryFriends({ onGoBack }: { onGoBack: () => void }) {
     seededRef.current = true;
     void (async () => {
       await seedDefaultFriends();
+      // ゴーストチャットは一時的。前回のゴーストメッセージは開き直したら消す。
+      try { await db.diaryChats.filter(m => !!m.ghost).delete(); } catch { /* ignore */ }
       if (!getAutoLearn()) return;
       const today = todayIso();
       if (getLastLearnedDate() === today) return;
@@ -189,10 +191,39 @@ export default function DiaryFriends({ onGoBack }: { onGoBack: () => void }) {
     }
   }
 
-  // 送信取り消し（ソフト削除）。
-  async function unsend(id: number) {
+  // メッセージ削除（自分・相手どちらもソフト削除）。
+  async function deleteMsg(id: number) {
     setMenuMsg(null);
     await db.diaryChats.update(id, { deletedAt: Date.now() });
+  }
+
+  function copyMsg(text: string) {
+    setMenuMsg(null);
+    try { void navigator.clipboard?.writeText(text); setToast(en ? 'Copied' : 'コピーしたよ'); } catch { /* ignore */ }
+  }
+
+  // AIの最後の返信を作り直す（1対1のみ）。直前までの履歴で生成し直す。
+  async function regenerate(m: DiaryChatMsg) {
+    setMenuMsg(null);
+    if (sending || thread === 'group' || !activeFriend || m.id == null) return;
+    const apiKey = getEffectiveApiKey();
+    if (!apiKey) { setToast(en ? 'Set your API key in Settings.' : 'APIキーを設定してね'); return; }
+    await db.diaryChats.update(m.id, { deletedAt: Date.now() });
+    setSending(true);
+    setTypingFriend(activeFriend);
+    try {
+      const history = await db.diaryChats.where('thread').equals(thread).filter(x => !x.deletedAt).sortBy('createdAt');
+      const turns = mergeTurns(history.map<ChatTurn>(x => ({ role: x.role === 'user' ? 'user' : 'model', text: x.text })));
+      const reply = await chatReply(activeFriend, turns, apiKey);
+      if (reply) {
+        await db.diaryChats.add({ thread, role: 'ai', friendId: activeFriend.id, friendName: activeFriend.name, emoji: activeFriend.emoji, avatarKey: activeFriend.avatarKey, color: activeFriend.color, text: reply, ghost: m.ghost, createdAt: Date.now() });
+      }
+    } catch {
+      setToast(en ? 'Something went wrong.' : 'うまくいかなかった…');
+    } finally {
+      setSending(false);
+      setTypingFriend(null);
+    }
   }
 
   // このキャラの個人チャット（ゴースト除く）から手動学習。グループでは不可。
@@ -319,17 +350,26 @@ export default function DiaryFriends({ onGoBack }: { onGoBack: () => void }) {
             </div>
           </div>
         )}
-        {messages.map(m => (
-          m.role === 'user' ? (
+        {messages.map((m, idx) => {
+          const isLast = idx === messages.length - 1;
+          const canRegen = m.role === 'ai' && isLast && thread !== 'group';
+          const menu = menuMsg === m.id && (
+            <div className={`df-menu${m.role === 'user' ? ' me' : ''}`} onClick={e => e.stopPropagation()}>
+              <button onClick={() => copyMsg(m.text)}><Copy size={13} /> {en ? 'Copy' : 'コピー'}</button>
+              {canRegen && <button onClick={() => void regenerate(m)}><Repeat size={13} /> {en ? 'Regenerate' : '再生成'}</button>}
+              <button className="del" onClick={() => void deleteMsg(m.id!)}><Trash2 size={13} /> {en ? 'Delete' : '削除'}</button>
+            </div>
+          );
+          return m.role === 'user' ? (
             <div key={m.id} className="df-row df-row-me">
-              {menuMsg === m.id && (
-                <button className="df-unsend" onClick={() => void unsend(m.id!)}><Trash2 size={12} /> {en ? 'Unsend' : '取り消し'}</button>
-              )}
-              <div
-                className={`df-bubble df-bubble-me${m.ghost ? ' df-bubble-ghost' : ''}`}
-                onClick={(e) => { e.stopPropagation(); setMenuMsg(menuMsg === m.id ? null : m.id!); }}
-              >
-                {m.ghost && <Ghost size={12} className="df-ghost-ic" />}{m.text}
+              <div className="df-msg df-msg-me">
+                <div
+                  className={`df-bubble df-bubble-me${m.ghost ? ' df-bubble-ghost' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); setMenuMsg(menuMsg === m.id ? null : m.id!); }}
+                >
+                  {m.ghost && <Ghost size={12} className="df-ghost-ic" />}{m.text}
+                </div>
+                {menu}
               </div>
             </div>
           ) : (
@@ -337,11 +377,15 @@ export default function DiaryFriends({ onGoBack }: { onGoBack: () => void }) {
               <Avatar img={avatarImg(m.avatarKey)} emoji={m.emoji} color={m.color} size={34} />
               <div className="df-msg">
                 <span className="df-name">{m.friendName}</span>
-                <div className={`df-bubble${m.ghost ? ' df-bubble-ghost' : ''}`}>{m.text}</div>
+                <div
+                  className={`df-bubble${m.ghost ? ' df-bubble-ghost' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); setMenuMsg(menuMsg === m.id ? null : m.id!); }}
+                >{m.text}</div>
+                {menu}
               </div>
             </div>
-          )
-        ))}
+          );
+        })}
         {sending && typingFriend && (
           <div className="df-row">
             <Avatar img={avatarImg(typingFriend.avatarKey)} emoji={typingFriend.emoji} color={typingFriend.color} size={34} />
@@ -350,6 +394,11 @@ export default function DiaryFriends({ onGoBack }: { onGoBack: () => void }) {
         )}
       </div>
 
+      {ghost && (
+        <div className="df-ghost-banner">
+          <Ghost size={13} /> {en ? 'Ghost chat — not saved, not learned. Cleared when you reopen.' : 'ゴーストチャット中 — 保存も学習もされず、開き直すと消えるよ。'}
+        </div>
+      )}
       <div className={`df-inputbar${ghost ? ' ghost' : ''}`}>
         <button className={`df-ghost-btn${ghost ? ' on' : ''}`} onClick={() => setGhost(g => !g)} title={en ? 'Ghost chat (not used for learning)' : 'ゴーストチャット（学習に使わない）'}>
           <Ghost size={17} />
@@ -542,7 +591,13 @@ function DiaryFriendsStyles() {
       @keyframes df-blink { 0%,60%,100% { opacity: .3; } 30% { opacity: 1; } }
       .df-bubble-ghost { opacity: 0.65; border: 1px dashed color-mix(in srgb, var(--fg-muted) 55%, transparent); }
       .df-ghost-ic { vertical-align: -1px; margin-right: 4px; opacity: 0.8; }
-      .df-unsend { align-self: center; display: inline-flex; align-items: center; gap: 4px; background: rgba(15,23,42,.9); color: #fff; border: none; border-radius: 8px; padding: 6px 10px; font-size: 0.74rem; font-weight: 700; cursor: pointer; margin-right: 4px; }
+      .df-msg-me { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 78%; }
+      .df-menu { display: inline-flex; gap: 2px; background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 3px; box-shadow: 0 4px 14px rgba(0,0,0,.14); }
+      .df-menu button { display: inline-flex; align-items: center; gap: 4px; background: transparent; border: none; border-radius: 7px; padding: 6px 9px; font-size: 0.74rem; font-weight: 700; color: var(--foreground); cursor: pointer; white-space: nowrap; }
+      .df-menu button:hover { background: var(--accent); }
+      .df-menu button.del { color: #ef4444; }
+      .df-bubble { cursor: pointer; }
+      .df-ghost-banner { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 12px; background: color-mix(in srgb, #64748b 12%, var(--background)); color: var(--fg-muted); font-size: 0.74rem; font-weight: 600; flex-shrink: 0; }
       /* locked group */
       .df-locked { margin: auto; text-align: center; color: var(--fg-muted); padding: 20px; max-width: 420px; }
       .df-locked > svg { color: #8b5cf6; opacity: 0.8; }

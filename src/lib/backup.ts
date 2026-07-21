@@ -162,7 +162,7 @@ export async function buildBackupJson(): Promise<string> {
   const lessonSessions = await db.lessonSessions.toArray();
   const diagramSets = await db.diagramSets.toArray();
   const aiFriends = await db.aiFriends.toArray();
-  const diaryChats = await db.diaryChats.toArray();
+  const diaryChats = await db.diaryChats.filter(m => !m.ghost).toArray(); // ゴーストはバックアップしない
 
   const allImages: Record<string, string> = {};
   const compactNotes = notes.map(note => {
