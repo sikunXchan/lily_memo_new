@@ -1,4 +1,4 @@
-import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, type Diary, type LessonSession, type DiagramSet, newSyncId } from './db';
+import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, type Diary, type LessonSession, type DiagramSet, type AiFriend, type DiaryChatMsg, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
   const images: Record<string, string> = {};
@@ -34,6 +34,8 @@ export interface BackupPayload {
   diaries?: Diary[];
   lessonSessions?: LessonSession[];
   diagramSets?: DiagramSet[];
+  aiFriends?: AiFriend[];
+  diaryChats?: DiaryChatMsg[];
   timestamp: number;
   version?: number;
 }
@@ -116,6 +118,28 @@ export async function restoreSyncFromJson(jsonText: string): Promise<void> {
     }
   });
 
+  // AI friends + diary chats: full replace on sync (mirror source exactly).
+  await db.transaction('rw', db.aiFriends, async () => {
+    await db.aiFriends.clear();
+    if (data.aiFriends?.length) {
+      for (const f of data.aiFriends) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = f;
+        await db.aiFriends.add(rest as AiFriend);
+      }
+    }
+  });
+  await db.transaction('rw', db.diaryChats, async () => {
+    await db.diaryChats.clear();
+    if (data.diaryChats?.length) {
+      for (const m of data.diaryChats) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = m;
+        await db.diaryChats.add(rest as DiaryChatMsg);
+      }
+    }
+  });
+
   // Earned badges: additive merge (never remove a badge already unlocked here;
   // keep the earliest earnedAt when both sides have it).
   if (data.earnedBadges?.length) {
@@ -137,6 +161,8 @@ export async function buildBackupJson(): Promise<string> {
   const diaries = await db.diaries.toArray();
   const lessonSessions = await db.lessonSessions.toArray();
   const diagramSets = await db.diagramSets.toArray();
+  const aiFriends = await db.aiFriends.toArray();
+  const diaryChats = await db.diaryChats.toArray();
 
   const allImages: Record<string, string> = {};
   const compactNotes = notes.map(note => {
@@ -157,6 +183,8 @@ export async function buildBackupJson(): Promise<string> {
     diaries,
     lessonSessions,
     diagramSets,
+    aiFriends,
+    diaryChats,
     timestamp: Date.now(),
     version: 1,
   };
@@ -218,6 +246,10 @@ export async function restoreBackupFromJson(jsonText: string): Promise<void> {
 
   // Diagram sets: additive MERGE by createdAt, newest updatedAt wins.
   await mergeDiagramSets(data.diagramSets ?? [], now);
+
+  // AI friends (by createdAt, newest updatedAt wins) + diary chats (add-only by createdAt).
+  await mergeAiFriends(data.aiFriends ?? [], now);
+  await mergeDiaryChats(data.diaryChats ?? []);
 }
 
 // Merge saved chats by `createdAt` (stable natural key across devices) without
@@ -307,6 +339,41 @@ async function mergeDiagramSets(incoming: DiagramSet[], now: number): Promise<vo
       } else if (rest.updatedAt > (local.updatedAt ?? local.createdAt)) {
         await db.diagramSets.update(local.id!, rest);
       }
+    }
+  });
+}
+
+async function mergeAiFriends(incoming: AiFriend[], now: number): Promise<void> {
+  if (!incoming.length) return;
+  await db.transaction('rw', db.aiFriends, async () => {
+    const existing = await db.aiFriends.toArray();
+    const byCreatedAt = new Map(existing.map(f => [f.createdAt, f]));
+    for (const raw of incoming) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = raw;
+      rest.updatedAt = rest.updatedAt ?? rest.createdAt ?? now;
+      const local = byCreatedAt.get(rest.createdAt);
+      if (!local) {
+        if (!rest.deletedAt) await db.aiFriends.add(rest as AiFriend);
+      } else if (rest.updatedAt > (local.updatedAt ?? local.createdAt)) {
+        await db.aiFriends.update(local.id!, rest);
+      }
+    }
+  });
+}
+
+// Diary chat messages: add-only union by createdAt (respect tombstones).
+async function mergeDiaryChats(incoming: DiaryChatMsg[]): Promise<void> {
+  if (!incoming.length) return;
+  await db.transaction('rw', db.diaryChats, async () => {
+    const existing = await db.diaryChats.toArray();
+    const seen = new Set(existing.map(m => `${m.thread}|${m.createdAt}`));
+    for (const raw of incoming) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id: _id, ...rest } = raw;
+      if (rest.deletedAt) continue;
+      const key = `${rest.thread}|${rest.createdAt}`;
+      if (!seen.has(key)) { await db.diaryChats.add(rest as DiaryChatMsg); seen.add(key); }
     }
   });
 }

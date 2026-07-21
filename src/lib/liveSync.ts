@@ -1,6 +1,6 @@
 import { liveQuery, type Table } from 'dexie';
 import { db, newSyncId } from './db';
-import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession, DiagramSet } from './db';
+import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession, DiagramSet, AiFriend, DiaryChatMsg } from './db';
 import { getPlanSyncState, applyPlanSyncState, registerPlanSyncHook, type PlanSyncState } from './points';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
@@ -30,6 +30,8 @@ interface LiveSnapshot {
   diaries:          Diary[];
   lessonSessions:   LessonSession[];
   diagramSets:      DiagramSet[];
+  aiFriends:        AiFriend[];
+  diaryChats:       DiaryChatMsg[];
   planState?:       PlanSyncState;
   ts: number;
 }
@@ -65,7 +67,7 @@ function stripSavedChatForSync(chat: SavedChat): SavedChat {
 
 // ── Build local snapshot ─────────────────────────────────────────
 async function buildSnapshot(): Promise<LiveSnapshot> {
-  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries, lessonSessions, diagramSets] = await Promise.all([
+  const [notes, folders, studySessions, studyCategories, exams, scheduleDays, savedChats, todos, earnedBadges, problemSets, diaries, lessonSessions, diagramSets, aiFriends, diaryChats] = await Promise.all([
     db.notes.toArray(),
     db.folders.toArray(),
     db.studySessions.toArray(),
@@ -79,6 +81,8 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     db.diaries.toArray(),
     db.lessonSessions.toArray(),
     db.diagramSets.toArray(),
+    db.aiFriends.toArray(),
+    db.diaryChats.toArray(),
   ]);
   // Enrich cross-table references with stable syncIds (see SyncNote above).
   const folderSyncById = new Map(folders.filter(f => f.id != null && f.syncId).map(f => [f.id!, f.syncId]));
@@ -99,7 +103,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     notes: outNotes, folders: outFolders, studySessions: outSessions,
     studyCategories, exams, scheduleDays,
     savedChats: savedChats.map(stripSavedChatForSync),
-    todos, earnedBadges, problemSets, diaries, lessonSessions, diagramSets,
+    todos, earnedBadges, problemSets, diaries, lessonSessions, diagramSets, aiFriends, diaryChats,
     planState: getPlanSyncState(),
     ts: Date.now(),
   };
@@ -512,6 +516,40 @@ async function mergeSnapshot(remote: LiveSnapshot) {
         }
       }
     }
+
+    // ── AI friends: per-record last-write-wins keyed by createdAt (the evolving
+    // persona/learned notes), with tombstone support.
+    if (remote.aiFriends !== undefined) {
+      const localFriends = await db.aiFriends.toArray();
+      const friendMap = new Map(localFriends.map(f => [f.createdAt, f]));
+      for (const r of remote.aiFriends) {
+        const rUpdated = r.updatedAt ?? r.createdAt;
+        const local = friendMap.get(r.createdAt);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = r;
+        if (!local) {
+          if (!r.deletedAt) await db.aiFriends.add({ ...rest, updatedAt: rUpdated } as AiFriend);
+        } else if (rUpdated > (local.updatedAt ?? local.createdAt)) {
+          await db.aiFriends.update(local.id!, { ...rest, updatedAt: rUpdated });
+        }
+      }
+    }
+
+    // ── Diary chats: add-only union keyed by thread+createdAt.
+    if (remote.diaryChats !== undefined) {
+      const localChats = await db.diaryChats.toArray();
+      const seen = new Set(localChats.map(m => `${m.thread}|${m.createdAt}`));
+      for (const r of remote.diaryChats) {
+        if (r.deletedAt) continue;
+        const key = `${r.thread}|${r.createdAt}`;
+        if (!seen.has(key)) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { id: _id, ...rest } = r;
+          await db.diaryChats.add(rest as DiaryChatMsg);
+          seen.add(key);
+        }
+      }
+    }
   } finally {
     _isMerging = false;
     _suppressUntil = Date.now() + MERGE_SUPPRESS_MS;
@@ -571,7 +609,7 @@ function installWriteHooks() {
   const tables = [
     db.notes, db.folders, db.studySessions, db.studyCategories, db.exams,
     db.scheduleDays, db.savedChats, db.todos, db.earnedBadges, db.problemSets,
-    db.diaries, db.lessonSessions, db.diagramSets,
+    db.diaries, db.lessonSessions, db.diagramSets, db.aiFriends, db.diaryChats,
   ] as unknown as Table[];
   for (const table of tables) {
     table.hook('creating', onWrite);
@@ -611,6 +649,9 @@ export function initLiveSync(key: string) {
     db.lessonSessions.count(),
     db.diagramSets.orderBy('updatedAt').last().then(d => d?.updatedAt ?? 0),
     db.diagramSets.count(),
+    db.aiFriends.orderBy('updatedAt').last().then(f => f?.updatedAt ?? 0),
+    db.aiFriends.count(),
+    db.diaryChats.count(),
   ]));
   _dexieSub = obs.subscribe(() => schedulePush());
 

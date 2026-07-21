@@ -258,6 +258,36 @@ export interface DiagramSet {
   deletedAt?: number;        // tombstone for sync; UI filters these out
 }
 
+// ── 日記の「AIフレンド」= SNS風チャット相手 ──────────────────────────────────
+// ペルソナ(persona)は基本の性格、learned は毎日の振り返りで少しずつ育つ「学習メモ」。
+// これを毎日更新することで、自分に合った振る舞いのAIに近づく。
+export interface AiFriend {
+  id?: number;
+  name: string;
+  emoji: string;        // アバター絵文字
+  color: string;        // アクセント色
+  persona: string;      // 基本の性格・立ち位置・話し方
+  learned: string;      // 毎日の振り返りで追記される学習メモ（育つ部分）
+  builtin?: boolean;    // 既定フレンドの再シード防止
+  createdAt: number;
+  updatedAt: number;    // version clock（削除含む）
+  deletedAt?: number;   // tombstone
+}
+
+// SNS風チャットの1メッセージ。thread は 'group'（グループ）or `f{friendId}`（1対1）。
+export interface DiaryChatMsg {
+  id?: number;
+  thread: string;
+  role: 'user' | 'ai';
+  friendId?: number;    // role==='ai' のとき、発言したフレンド
+  friendName?: string;  // 表示用（非正規化）
+  emoji?: string;       // 表示用アバター
+  color?: string;
+  text: string;
+  createdAt: number;
+  deletedAt?: number;
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
@@ -275,6 +305,8 @@ export class LilyDatabase extends Dexie {
   diaries!: Table<Diary>;
   lessonSessions!: Table<LessonSession>;
   diagramSets!: Table<DiagramSet>;
+  aiFriends!: Table<AiFriend>;
+  diaryChats!: Table<DiaryChatMsg>;
 
   constructor() {
     super('LilyDatabase');
@@ -406,6 +438,11 @@ export class LilyDatabase extends Dexie {
     this.version(23).stores({
       diagramSets: '++id, topic, createdAt, updatedAt, deletedAt',
     });
+    // v24: diary AI friends (personas) + SNS-style chat messages.
+    this.version(24).stores({
+      aiFriends: '++id, name, builtin, createdAt, updatedAt, deletedAt',
+      diaryChats: '++id, thread, createdAt, deletedAt',
+    });
   }
 }
 
@@ -453,4 +490,9 @@ export async function softDeleteProblemSet(id: number): Promise<void> {
 export async function softDeleteDiagramSet(id: number): Promise<void> {
   const t = Date.now();
   await db.diagramSets.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteAiFriend(id: number): Promise<void> {
+  const t = Date.now();
+  await db.aiFriends.update(id, { deletedAt: t, updatedAt: t });
 }
