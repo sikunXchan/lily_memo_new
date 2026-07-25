@@ -278,6 +278,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
   // Recent sessions editing & swipe-to-delete
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
+  const [editingDate, setEditingDate] = useState('');
   const [editingStart, setEditingStart] = useState('');
   const [editingEnd, setEditingEnd] = useState('');
   const [editingCatId, setEditingCatId] = useState<number | null>(null);
@@ -401,6 +402,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
     setSwipedId(null);
     setEditingSessionId(s.id!);
     setEditingCatId(s.categoryId ?? null);
+    setEditingDate(s.date);
     const toHHMM = (ts: number) => {
       const d = new Date(ts);
       return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -409,12 +411,13 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
     setEditingEnd(toHHMM(s.endTime));
   };
 
-  const saveEditSession = useCallback(async (id: number, date: string) => {
-    const startMs = new Date(`${date}T${editingStart}:00`).getTime();
-    const endMs = new Date(`${date}T${editingEnd}:00`).getTime();
+  const saveEditSession = useCallback(async (id: number) => {
+    const startMs = new Date(`${editingDate}T${editingStart}:00`).getTime();
+    const endMs = new Date(`${editingDate}T${editingEnd}:00`).getTime();
     if (!isNaN(startMs) && !isNaN(endMs) && endMs > startMs) {
       const cat = editingCatId !== null ? categories.find(c => c.id === editingCatId) ?? null : null;
       await db.studySessions.update(id, {
+        date: editingDate,
         startTime: startMs,
         endTime: endMs,
         duration: Math.round((endMs - startMs) / 1000),
@@ -425,10 +428,11 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       });
     }
     setEditingSessionId(null);
+    setEditingDate('');
     setEditingStart('');
     setEditingEnd('');
     setEditingCatId(null);
-  }, [editingStart, editingEnd, editingCatId, categories]);
+  }, [editingDate, editingStart, editingEnd, editingCatId, categories]);
 
   const deleteSession = useCallback(async (id: number) => {
     await softDeleteSession(id);
@@ -725,6 +729,13 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                       <div className="recent-edit-area" onClick={e => e.stopPropagation()}>
                         <div className="recent-edit-row">
                           <input
+                            type="date"
+                            className="recent-edit-date"
+                            value={editingDate}
+                            max={todayStr()}
+                            onChange={e => setEditingDate(e.target.value)}
+                          />
+                          <input
                             type="time"
                             className="recent-edit-time"
                             value={editingStart}
@@ -737,7 +748,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                             value={editingEnd}
                             onChange={e => setEditingEnd(e.target.value)}
                           />
-                          <button className="recent-confirm-btn" onClick={() => void saveEditSession(s.id!, s.date)}>
+                          <button className="recent-confirm-btn" onClick={() => void saveEditSession(s.id!)}>
                             <Check size={12} />
                           </button>
                         </div>
@@ -1101,7 +1112,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .recent-dur-btn:hover { background:color-mix(in srgb,var(--primary) 10%,transparent); }
         .recent-edit-icon { opacity:.5; }
         .recent-edit-area { display:flex; flex-direction:column; gap:5px; }
-        .recent-edit-row { display:flex; align-items:center; gap:3px; }
+        .recent-edit-row { display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
+        .recent-edit-date { width:118px; background:var(--background); border:1.5px solid var(--primary); border-radius:6px; padding:3px 5px; font-size:.78rem; font-weight:600; color:var(--foreground); outline:none; font-family:inherit; }
         .recent-edit-time { width:76px; background:var(--background); border:1.5px solid var(--primary); border-radius:6px; padding:3px 5px; font-size:.78rem; font-weight:600; color:var(--foreground); outline:none; font-family:inherit; }
         .recent-edit-sep { font-size:.72rem; color:var(--fg-muted); font-weight:600; }
         .recent-confirm-btn { width:22px; height:22px; border-radius:6px; background:var(--primary); border:none; color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
