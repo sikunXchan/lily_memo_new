@@ -100,60 +100,6 @@ export function hoursForTier(tier: LevelTier): number {
 /** Tiers listed low → high (LEVEL_TIERS is stored highest-first for lookup). */
 export const LEVEL_TIERS_ASC: LevelTier[] = [...LEVEL_TIERS].reverse();
 
-// ── 称号 (titles) ─────────────────────────────────────────────────────────────
-// A second axis that also grows purely from cumulative study time, but on much
-// finer steps than the 15 trophy tiers — so there's something new to reach even
-// in the long stretch between two tiers. Like the level, it's a pure function of
-// the synced study sessions, so it needs no storage and can never drift between
-// devices.
-export interface LevelTitle {
-  minHours: number;
-  name: string;   // Japanese (i18n key — English lives in lib/i18n.ts)
-  emoji: string;
-}
-
-export const LEVEL_TITLES: LevelTitle[] = [
-  { minHours: 0,    name: '学びのたまご',   emoji: '🥚' },
-  { minHours: 5,    name: 'かけだし学習者', emoji: '🌱' },
-  { minHours: 15,   name: '継続のめばえ',   emoji: '🌿' },
-  { minHours: 30,   name: '努力家',         emoji: '📗' },
-  { minHours: 60,   name: '勤勉な学徒',     emoji: '📘' },
-  { minHours: 100,  name: '積み上げる人',   emoji: '📚' },
-  { minHours: 150,  name: '不屈の挑戦者',   emoji: '🔥' },
-  { minHours: 220,  name: '努力の達人',     emoji: '🎯' },
-  { minHours: 300,  name: '光を宿す者',     emoji: '💎' },
-  { minHours: 420,  name: '静かなる求道者', emoji: '❄️' },
-  { minHours: 600,  name: '翠玉の賢者',     emoji: '💚' },
-  { minHours: 850,  name: '学びの王',       emoji: '👑' },
-  { minHours: 1200, name: '天翔ける学徒',   emoji: '🪽' },
-  { minHours: 1700, name: '聖なる導き手',   emoji: '😇' },
-  { minHours: 2500, name: '虹をこえた者',   emoji: '🌈' },
-];
-
-export interface TitleInfo {
-  title: LevelTitle;
-  next: LevelTitle | null;   // null once the last title is reached
-  remainingHours: number;    // hours left until `next` (0 when maxed)
-  pct: number;               // progress toward `next` (0..100, 100 when maxed)
-}
-
-export function titleForHours(hours: number): TitleInfo {
-  let idx = 0;
-  for (let i = 0; i < LEVEL_TITLES.length; i++) {
-    if (hours >= LEVEL_TITLES[i].minHours) idx = i;
-  }
-  const title = LEVEL_TITLES[idx];
-  const next = LEVEL_TITLES[idx + 1] ?? null;
-  if (!next) return { title, next: null, remainingHours: 0, pct: 100 };
-  const span = Math.max(1e-6, next.minHours - title.minHours);
-  return {
-    title,
-    next,
-    remainingHours: Math.max(0, next.minHours - hours),
-    pct: Math.min(100, Math.max(0, ((hours - title.minHours) / span) * 100)),
-  };
-}
-
 /** Human-friendly "time to next level" label. */
 export function fmtHoursShort(h: number): string {
   if (h >= 1) {
