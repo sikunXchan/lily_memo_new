@@ -8,9 +8,10 @@ import { computeStudyStats, syncEarnedBadges, BADGES } from '@/lib/badges';
 import type { BadgeDef } from '@/lib/badges';
 import { getStudyProfile, daysUntilGoal, goalHoursForDate, isHolidayDate } from '@/lib/studyProfile';
 import type { StudyProfile } from '@/lib/studyProfile';
-import { getLevelInfo } from '@/lib/level';
-import type { LevelTier } from '@/lib/level';
+import { getLevelInfo, titleForHours } from '@/lib/level';
+import type { LevelTier, LevelTitle } from '@/lib/level';
 import LevelIcon from './LevelIcon';
+import TierUpOverlay from './TierUpOverlay';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
 
@@ -52,10 +53,16 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   const [profile, setProfile] = useState<StudyProfile>(getStudyProfile);
   const [celebrate, setCelebrate] = useState<BadgeDef[]>([]);
   const [levelUp, setLevelUp] = useState<{ level: number; tier: LevelTier } | null>(null);
+  // ティア昇格（トロフィーの姿が変わる 15 段）と称号の昇格は、ただのレベルアップ
+  // とは別の特別な演出にする。
+  const [tierUp, setTierUp] = useState<{ level: number; tier: LevelTier } | null>(null);
+  const [titleUp, setTitleUp] = useState<LevelTitle | null>(null);
   const firstSync = useRef(true);
   // Per-session baseline for level-up detection. Stays null until sessions have
   // actually loaded, so the initial empty→loaded jump never fires a popup.
   const lastLevel = useRef<number | null>(null);
+  const lastTierLevel = useRef<number | null>(null);
+  const lastTitleHours = useRef<number | null>(null);
 
   useEffect(() => {
     const onCh = () => setProfile(getStudyProfile());
@@ -78,17 +85,32 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
 
   const stats = computeStudyStats(sessions ?? [], { weekday: profile.weekdayGoalHours, holiday: profile.holidayGoalHours });
   const lvl = getLevelInfo(stats.totalSeconds);
+  const ttl = titleForHours(lvl.hours);
 
   // Detect level-ups. We wait until sessions have actually loaded, then take the
   // current level as the silent baseline — so opening the app (empty → loaded,
   // or a fresh page render) never fires a spurious popup. Only an increase that
   // happens live in this session pops the celebration.
+  //
+  // ティアが変わるレベル（例: Lv101 = 累計300時間）に届いたときは、通常の
+  // レベルアップではなく専用の昇格演出（TierUpOverlay）を出す。
   useEffect(() => {
     if (sessions === undefined) return; // still loading
-    if (lastLevel.current === null) { lastLevel.current = lvl.level; return; }
-    if (lvl.level > lastLevel.current) setLevelUp({ level: lvl.level, tier: lvl.tier });
+    if (lastLevel.current === null) {
+      lastLevel.current = lvl.level;
+      lastTierLevel.current = lvl.tier.minLevel;
+      lastTitleHours.current = ttl.title.minHours;
+      return;
+    }
+    if (lvl.level > lastLevel.current) {
+      if (lvl.tier.minLevel > (lastTierLevel.current ?? 0)) setTierUp({ level: lvl.level, tier: lvl.tier });
+      else setLevelUp({ level: lvl.level, tier: lvl.tier });
+    }
+    if (ttl.title.minHours > (lastTitleHours.current ?? 0)) setTitleUp(ttl.title);
     lastLevel.current = lvl.level;
-  }, [sessions, lvl.level, lvl.tier]);
+    lastTierLevel.current = lvl.tier.minLevel;
+    lastTitleHours.current = ttl.title.minHours;
+  }, [sessions, lvl.level, lvl.tier, ttl.title]);
 
   const today = todayStr();
   const todaySec = (sessions ?? []).filter(s => s.date === today).reduce((s, x) => s + x.duration, 0);
@@ -135,6 +157,10 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
           </div>
 
           <div className="sg-chips">
+            {/* 称号 — 合計学習時間だけで決まるので、同期していれば端末をまたいでも同じ */}
+            <span className="sg-title-chip" title={t('合計学習時間で変わる称号')}>
+              {ttl.title.emoji} {t(ttl.title.name)}
+            </span>
             {stats.currentStreak >= 2 && (
               <span className="sg-streak"><Flame size={13} /> {t('{n}日連続中', { n: stats.currentStreak })}</span>
             )}
@@ -208,6 +234,24 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
         </div>
       )}
 
+      {/* ティア昇格演出（トロフィーの姿が変わったとき） */}
+      {tierUp && (
+        <TierUpOverlay tier={tierUp.tier} level={tierUp.level} onClose={() => setTierUp(null)} />
+      )}
+
+      {/* 称号アップ */}
+      {titleUp && (
+        <div className="sg-celebrate" onClick={() => setTitleUp(null)}>
+          <div className="sg-celebrate-card" onClick={e => e.stopPropagation()}>
+            <p className="sg-celebrate-title">🎖 {t('称号アップ！')}</p>
+            <p className="sg-titleup-emoji">{titleUp.emoji}</p>
+            <p className="sg-celebrate-name">{t(titleUp.name)}</p>
+            <p className="sg-celebrate-desc">{t('積み上げた時間が、あなたの称号になったよ')}</p>
+            <button className="sg-celebrate-ok" onClick={() => setTitleUp(null)}>{t('やったー！')}</button>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
         .sg-wrap { padding: 12px 14px 0; }
         .sg-card {
@@ -225,6 +269,7 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
         .sg-prog-fill { height: 100%; background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 50%, #fff)); border-radius: 99px; transition: width 0.5s; }
         .sg-prog-label { font-size: 0.72rem; font-weight: 700; color: var(--fg-muted); white-space: nowrap; }
         .sg-chips { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+        .sg-title-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 800; color: var(--primary); background: color-mix(in srgb, var(--primary) 13%, transparent); border-radius: 99px; padding: 4px 10px; }
         .sg-streak { display: inline-flex; align-items: center; gap: 3px; font-size: 0.74rem; font-weight: 800; color: #f97316; background: rgba(249,115,22,0.12); border-radius: 99px; padding: 4px 9px; }
         .sg-btn {
           display: inline-flex; align-items: center; gap: 5px;
@@ -262,6 +307,7 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
         .sg-levelup-num { font-size: 3rem; font-weight: 900; margin: 8px 0 8px; line-height: 1; }
         .sg-celebrate-img { width: 150px; height: 150px; object-fit: contain; animation: bob 1.6s ease-in-out infinite; }
         @keyframes bob { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-8px) rotate(2deg)} }
+        .sg-titleup-emoji { font-size: 4rem; margin: 4px 0 0; line-height: 1; animation: bob 1.6s ease-in-out infinite; }
         .sg-celebrate-name { font-size: 1.15rem; font-weight: 900; color: var(--foreground); margin: 8px 0 4px; }
         .sg-celebrate-desc { font-size: 0.82rem; color: var(--fg-muted); margin: 0 0 6px; }
         .sg-celebrate-more { font-size: 0.76rem; color: var(--primary); font-weight: 700; margin: 0 0 8px; }

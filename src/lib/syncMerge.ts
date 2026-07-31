@@ -37,6 +37,29 @@ export interface SyncSnapshot {
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 
+// Study records pushed by an older client can arrive WITHOUT a syncId (the
+// focus-mode timer used to save sessions without one). A record with no key was
+// silently dropped from the merge, so those study hours never reached the other
+// device and the total study time drifted apart. Fall back to the same
+// deterministic id the client migration assigns (`s_<date>_<startTime>` /
+// `c_<name>`), so the identical record from two devices still collapses into
+// one instead of being counted twice.
+function sessionKey(r: Rec): string | null {
+  const sid = str(r.syncId);
+  if (sid) return sid;
+  const date = str(r.date);
+  const start = r.startTime;
+  if (!date || typeof start !== 'number') return null;
+  return `s_${date}_${start}`;
+}
+
+function categoryKey(r: Rec): string | null {
+  const sid = str(r.syncId);
+  if (sid) return sid;
+  const name = str(r.name);
+  return name ? `c_${name}` : null;
+}
+
 // Last-write-wins merge keyed by a stable identity. The record with the larger
 // version clock survives; on a tie the incoming one wins (it's at least as
 // fresh). Tombstones (deletedAt) carry a bumped clock, so a deletion beats an
@@ -95,11 +118,11 @@ export function mergeSnapshots(base: SyncSnapshot, incoming: SyncSnapshot): Sync
     folders: mergeLWW(b.folders ?? [], i.folders ?? [], r => str(r.syncId), r => num(r.updatedAt)),
     studySessions: mergeLWW(
       b.studySessions ?? [], i.studySessions ?? [],
-      r => str(r.syncId), r => num(r.updatedAt) || num(r.startTime),
+      sessionKey, r => num(r.updatedAt) || num(r.startTime),
     ),
     studyCategories: mergeLWW(
       b.studyCategories ?? [], i.studyCategories ?? [],
-      r => str(r.syncId), r => num(r.updatedAt) || num(r.createdAt),
+      categoryKey, r => num(r.updatedAt) || num(r.createdAt),
     ),
     todos: mergeLWW(
       b.todos ?? [], i.todos ?? [],

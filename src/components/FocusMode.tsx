@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, X, Camera, CameraOff, BookOpen, Coffee, Volume2, VolumeX } from 'lucide-react';
-import { db } from '@/lib/db';
+import { db, newSyncId } from '@/lib/db';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
 
@@ -445,6 +445,11 @@ export default function FocusMode({ onClose }: FocusModeProps) {
           date: dateStr, startTime, endTime, duration: focusDuration,
           categoryId: catId, categoryName: catName || null, categoryColor: catColor || null,
           source: 'pomodoro',
+          // syncId / updatedAt は必須。これが無いと liveSync もサーバー側マージも
+          // このレコードを丸ごと無視するので、集中モードの記録だけが同期されず
+          // 合計学習時間が端末ごとにズレる。
+          syncId: newSyncId(),
+          updatedAt: Date.now(),
         });
       } catch { /* non-fatal */ }
     }

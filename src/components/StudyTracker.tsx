@@ -12,8 +12,9 @@ import type { StudyCategory, StudySession } from '@/lib/db';
 import StudyGreeting from './StudyGreeting';
 import TrophyRoom from './TrophyRoom';
 import StudyProfileModal from './StudyProfileModal';
-import { getLevelInfo, fmtHoursShort } from '@/lib/level';
+import { getLevelInfo, fmtHoursShort, titleForHours } from '@/lib/level';
 import LevelIcon from './LevelIcon';
+import LevelTierGallery from './LevelTierGallery';
 import { badgeById, BADGES } from '@/lib/badges';
 import { getFavoriteEmblems, setFavoriteEmblems, MAX_FAVORITE_EMBLEMS } from '@/lib/favoriteEmblems';
 import { useT } from '@/lib/i18n';
@@ -252,6 +253,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // Trophy room + profile modal
   const [showTrophy, setShowTrophy] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  // レベル図鑑（15段のトロフィーと、その到達時間・演出の一覧）
+  const [showTierGallery, setShowTierGallery] = useState(false);
 
   // Favorite emblems showcase (up to 5 earned badges the user chooses to feature)
   const [showEmblemPicker, setShowEmblemPicker] = useState(false);
@@ -477,6 +480,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const allCatTotals = [...allCatMap.values()].sort((a, b) => b.secs - a.secs);
   const totalDays = sessionDates.size;
   const levelInfo = getLevelInfo(grandTotal);
+  const titleInfo = titleForHours(levelInfo.hours);
 
   // Favorite-emblem showcase: keep the user's chosen order, but only show ones
   // that are actually earned and still valid badge ids.
@@ -530,19 +534,32 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             onEditProfile={() => setShowProfile(true)}
           />
 
-          {/* Prominent level banner */}
-          <button className="lv-hero" onClick={() => setView('total')} style={{ borderColor: levelInfo.tier.color + '55' }}>
-            <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
-              <LevelIcon tier={levelInfo.tier} size={56} />
-            </div>
-            <div className="lv-hero-body">
-              <div className="lv-hero-top">
-                <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
-                <span className="lv-hero-next">{t('次まで {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
+          {/* Prominent level banner. エフェクト付きの段ではバナーも発光する。 */}
+          <div className="lv-hero-row">
+            <button
+              className="lv-hero"
+              onClick={() => setView('total')}
+              style={{
+                borderColor: levelInfo.tier.color + '55',
+                boxShadow: levelInfo.tier.fx !== 'none' ? `0 0 22px ${levelInfo.tier.color}3d` : undefined,
+              }}
+            >
+              <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
+                <LevelIcon tier={levelInfo.tier} size={56} />
               </div>
-              <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
-            </div>
-          </button>
+              <div className="lv-hero-body">
+                <div className="lv-hero-top">
+                  <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                  <span className="lv-hero-next">{t('次まで {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
+                </div>
+                <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
+                <span className="lv-hero-title">{titleInfo.title.emoji} {t(titleInfo.title.name)}</span>
+              </div>
+            </button>
+            <button className="lv-hero-gallery" onClick={() => setShowTierGallery(true)} title={t('レベル図鑑')}>
+              🏆<span>{t('図鑑')}</span>
+            </button>
+          </div>
 
           {/* Favorite-emblem showcase. Nothing chosen → no decoration at all,
               just a subtle way to start (only once some badge is earned). */}
@@ -912,8 +929,16 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {/* ── Total view ── */}
       {view === 'total' && (
         <div className="st-scroll">
-          {/* Level card */}
-          <div className="lv-card" style={{ borderColor: levelInfo.tier.color + '66' }}>
+          {/* Level card — タップでレベル図鑑（各段の到達時間と演出）へ。
+              エフェクトが付く段(Tier 9〜)ではカード自体もその色に発光する。 */}
+          <button
+            className={`lv-card${levelInfo.tier.fx !== 'none' ? ' lv-card-fx' : ''}`}
+            onClick={() => setShowTierGallery(true)}
+            style={{
+              borderColor: levelInfo.tier.color + '66',
+              boxShadow: levelInfo.tier.fx !== 'none' ? `0 0 26px ${levelInfo.tier.color}44` : undefined,
+            }}
+          >
             <div className="lv-card-icon" style={{ background: levelInfo.tier.color + '1f', borderColor: levelInfo.tier.color + '66' }}>
               <LevelIcon tier={levelInfo.tier} size={72} />
             </div>
@@ -921,7 +946,29 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
               <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
               <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
               <span className="lv-next">{t('次のレベルまであと {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
+              <span className="lv-gallery-link">{t('レベル図鑑を見る')} ›</span>
             </div>
+          </button>
+
+          {/* 称号 — レベルとは別の刻みで、勉強時間だけで上がっていく肩書き */}
+          <div className="title-card">
+            <div className="title-head">
+              <span className="title-emoji">{titleInfo.title.emoji}</span>
+              <div className="title-texts">
+                <span className="title-label">{t('いまの称号')}</span>
+                <span className="title-name">{t(titleInfo.title.name)}</span>
+              </div>
+            </div>
+            {titleInfo.next ? (
+              <>
+                <div className="title-bar"><div className="title-fill" style={{ width: `${titleInfo.pct}%` }} /></div>
+                <span className="title-next">
+                  {t('あと {h} で「{name}」', { h: fmtHoursShort(titleInfo.remainingHours), name: t(titleInfo.next.name) })}
+                </span>
+              </>
+            ) : (
+              <span className="title-next">{t('すべての称号を獲得！')}</span>
+            )}
           </div>
 
           <div className="grand-card">
@@ -986,6 +1033,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         />
       )}
       {showProfile && <StudyProfileModal onClose={() => setShowProfile(false)} />}
+      {showTierGallery && (
+        <LevelTierGallery totalSeconds={grandTotal} onClose={() => setShowTierGallery(false)} />
+      )}
 
       <style jsx>{`
         .st-container { display:flex; flex-direction:column; height:100%; background:var(--background); overflow:hidden; position:relative; }
@@ -1078,9 +1128,28 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .lv-hero-next { font-size:.72rem; font-weight:700; color:var(--fg-muted); white-space:nowrap; }
         .lv-hero-bar { height:9px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
         .lv-hero-fill { height:100%; border-radius:99px; transition:width .6s ease; }
+        .lv-hero-title { font-size:.74rem; font-weight:800; color:var(--foreground); }
+        .lv-hero-row { display:flex; gap:8px; align-items:stretch; }
+        .lv-hero-gallery { flex-shrink:0; width:60px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+          background:var(--accent); border:1.5px solid var(--border); border-radius:18px; cursor:pointer; font-family:inherit; font-size:1.2rem; color:var(--foreground); transition:transform .12s; }
+        .lv-hero-gallery span { font-size:.66rem; font-weight:800; color:var(--fg-muted); }
+        .lv-hero-gallery:hover { transform:translateY(-2px); border-color:var(--primary); }
 
         /* ── Total view ── */
-        .lv-card { background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; align-items:center; gap:15px; }
+        .lv-card { width:100%; text-align:left; font-family:inherit; cursor:pointer; background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; align-items:center; gap:15px; transition:transform .12s, box-shadow .2s; }
+        .lv-card:hover { transform:translateY(-2px); }
+        .lv-gallery-link { font-size:.74rem; font-weight:800; color:var(--primary); }
+
+        /* 称号カード — 勉強時間で変わるもうひとつの肩書き */
+        .title-card { background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:14px 16px; display:flex; flex-direction:column; gap:9px; }
+        .title-head { display:flex; align-items:center; gap:12px; }
+        .title-emoji { font-size:1.9rem; line-height:1; }
+        .title-texts { display:flex; flex-direction:column; gap:2px; min-width:0; }
+        .title-label { font-size:.7rem; font-weight:800; color:var(--fg-muted); }
+        .title-name { font-size:1.05rem; font-weight:900; color:var(--foreground); }
+        .title-bar { height:8px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
+        .title-fill { height:100%; background:linear-gradient(90deg,var(--primary),color-mix(in srgb,var(--primary) 45%,#fff)); border-radius:99px; transition:width .5s; }
+        .title-next { font-size:.76rem; font-weight:700; color:var(--fg-muted); }
         .lv-card-icon { width:80px; height:80px; flex-shrink:0; border-radius:18px; border:1.5px solid; display:flex; align-items:center; justify-content:center; }
         .lv-card-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
         .lv-num { font-size:1.7rem; font-weight:900; line-height:1; }
