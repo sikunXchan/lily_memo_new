@@ -479,23 +479,47 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const totalDays = sessionDates.size;
   const levelInfo = getLevelInfo(grandTotal);
   // ティアのオーラ設定。段が上がるほどオーラは太く・濃く・速くなり、最高段は虹。
+  // 2枚のリングを逆回転させ、内側のリングには小さな光の粒も焼き込んで、
+  // カード自体が魔法陣のように渦巻いて見えるようにしている。
   const tierFx = (() => {
     const tier = levelInfo.tier;
-    if (tier.fx === 'none') return { on: false, vars: undefined };
+    if (tier.fx === 'none') return { on: false, rainbow: false, vars: undefined };
     const rank = LEVEL_TIERS_ASC.findIndex(x => x.minLevel === tier.minLevel) + 1; // 9..15
-    const step = Math.max(0, rank - 9);
+    const step = Math.max(0, rank - 9); // 0..6
     const c = tier.color;
+    const rainbow = tier.fx === 'rainbow';
+    // The ring's "spin" is done by animating the conic-gradient's own start
+    // angle (var(--lv-ang1)/2), NOT by rotating the pseudo-element's box —
+    // this card is a wide, short pill, and rotating that whole rectangle
+    // swings its corners far outside the card at non-axis angles (its
+    // bounding box balloons to roughly the diagonal), smearing color across
+    // unrelated cards above/below. Spinning the gradient's angle keeps the
+    // ring's footprint pinned to the card at all times.
+    const ring1 = rainbow
+      ? 'conic-gradient(from var(--lv-ang1),#ff5e5e,#ffd24d,#5eff8b,#5ec8ff,#b15eff,#ff5ec8,#ff5e5e)'
+      : `conic-gradient(from var(--lv-ang1), ${c}, ${c}00 22%, ${c} 50%, ${c}00 72%, ${c})`;
+    const sparkles = ', radial-gradient(circle 3px at 15% 20%, #fff 60%, transparent 62%),'
+      + ' radial-gradient(circle 2.5px at 85% 18%, #fff 60%, transparent 62%),'
+      + ' radial-gradient(circle 2.5px at 12% 82%, #fff 60%, transparent 62%),'
+      + ' radial-gradient(circle 3px at 88% 80%, #fff 60%, transparent 62%)';
+    const ring2 = (rainbow
+      ? 'conic-gradient(from var(--lv-ang2),#ff5ec8,#b15eff,#5ec8ff,#5eff8b,#ffd24d,#ff5e5e,#ff5ec8)'
+      : `conic-gradient(from var(--lv-ang2), transparent, #fff, transparent 30%, ${c} 55%, transparent 80%, #fff)`) + sparkles;
     return {
       on: true,
+      rainbow,
       vars: {
         ['--tier']: c,
-        ['--aura']: tier.fx === 'rainbow'
-          ? 'conic-gradient(from 0deg,#ff5e5e,#ffd24d,#5eff8b,#5ec8ff,#b15eff,#ff5ec8,#ff5e5e)'
-          : `conic-gradient(from 0deg, ${c}, ${c}00 20%, ${c} 48%, ${c}00 70%, ${c})`,
-        ['--aura-blur']: `${9 + step * 2}px`,
-        ['--aura-opacity']: `${Math.min(1, 0.6 + step * 0.07)}`,
-        ['--aura-spin']: `${Math.max(2.4, 6 - step * 0.6)}s`,
-        ['--aura-spread']: `${5 + step * 1.6}px`,
+        ['--aura']: ring1,
+        ['--aura2']: ring2,
+        ['--aura-blur']: `${8 + step * 2}px`,
+        ['--aura-blur2']: `${4 + step * 1.2}px`,
+        ['--aura-opacity']: `${Math.min(0.98, 0.68 + step * 0.05)}`,
+        ['--aura-opacity2']: `${Math.min(0.85, 0.45 + step * 0.055)}`,
+        ['--aura-spin']: `${Math.max(1.6, 4.4 - step * 0.4)}s`,
+        ['--aura-spin2']: `${Math.max(1.1, 3 - step * 0.3)}s`,
+        ['--aura-spread']: `${6 + step * 1.6}px`,
+        ['--aura-spread2']: `${2 + step * 0.8}px`,
       } as CSSProperties,
     };
   })();
@@ -554,7 +578,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
           {/* Prominent level banner. エフェクトが付く段(Tier 9〜)では、カード自体が
               ティア色のオーラをまとって脈打つ — 段が上がるほど強くなる。 */}
-          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}`} style={tierFx.vars}>
+          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`} style={tierFx.vars}>
             <button className={`lv-hero${tierFx.on ? ' glowing' : ''}`} onClick={() => setView('total')} style={{ borderColor: levelInfo.tier.color + '77' }}>
               <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
                 <LevelIcon tier={levelInfo.tier} size={56} />
@@ -939,7 +963,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         <div className="st-scroll">
           {/* Level card。エフェクトが付く段(Tier 9〜)では、カードが回転する
               ティア色のオーラをまとって脈打つ。 */}
-          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}`} style={tierFx.vars}>
+          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`} style={tierFx.vars}>
             <div className={`lv-card${tierFx.on ? ' glowing' : ''}`} style={{ borderColor: levelInfo.tier.color + '77' }}>
               <div className="lv-card-icon" style={{ background: levelInfo.tier.color + '1f', borderColor: levelInfo.tier.color + '66' }}>
                 <LevelIcon tier={levelInfo.tier} size={72} />
@@ -1108,26 +1132,60 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .lv-hero-fill { height:100%; border-radius:99px; transition:width .6s ease; }
 
         /* ── ティアのオーラ（Tier 9〜）────────────────────────────────
-           回転する光の輪＋脈打つ発光でカードごと光らせる。段が上がるほど
-           太く・濃く・速くなり、最高段は虹色。 */
-        .lv-aura-wrap { position:relative; }
+           2枚の光の輪を逆回転させ、内側の輪には小さな光の粒も焼き込んで、
+           カードごと魔法陣のように渦巻いて見えるようにする。段が上がるほど
+           太く・濃く・速くなり、最高段は虹色＋色相が巡回する。
+           「回転」はコンジックグラデーションの開始角度（--lv-ang1/2）を
+           animate して作る — pseudo-element の箱自体を rotate() すると、
+           このカードのような横長ピルの対角線ぶん回転時にバウンディング
+           ボックスが大きく振れて、隣のカードまで色がにじんでしまうため。 */
+        .lv-aura-wrap { position:relative; isolation:isolate; }
         .lv-aura-wrap.on::before {
-          content:''; position:absolute; inset:calc(var(--aura-spread) * -1); border-radius:26px; z-index:0;
-          background:var(--aura); filter:blur(var(--aura-blur)); opacity:var(--aura-opacity);
-          animation:lvAuraSpin var(--aura-spin) linear infinite, lvAuraPulse 1.9s ease-in-out infinite;
+          content:''; position:absolute; inset:calc(var(--aura-spread) * -1); border-radius:28px; z-index:0;
+          background:var(--aura); filter:blur(var(--aura-blur));
+          animation:lvAuraSpin1 var(--aura-spin) linear infinite, lvAuraPulse 2.1s ease-in-out infinite;
+        }
+        .lv-aura-wrap.rainbow.on::before {
+          animation:lvAuraSpin1 var(--aura-spin) linear infinite, lvAuraPulse 2.1s ease-in-out infinite, lvAuraHue 3.2s linear infinite;
         }
         .lv-aura-wrap.on::after {
-          content:''; position:absolute; inset:-2px; border-radius:20px; z-index:0; pointer-events:none;
-          box-shadow:0 0 0 1.5px var(--tier), 0 0 18px var(--tier);
-          opacity:.55; animation:lvAuraPulse 1.9s ease-in-out infinite;
+          content:''; position:absolute; inset:calc(var(--aura-spread2) * -1); border-radius:22px; z-index:0; pointer-events:none;
+          background:var(--aura2); filter:blur(var(--aura-blur2)); mix-blend-mode:screen;
+          animation:lvAuraSpin2 var(--aura-spin2) linear infinite, lvAuraPulse2 1.5s ease-in-out infinite;
         }
         .lv-aura-wrap > :global(*) { position:relative; z-index:1; }
-        .lv-hero.glowing, .lv-card.glowing { animation:lvCardGlow 1.9s ease-in-out infinite; }
-        @keyframes lvAuraSpin  { to { transform:rotate(360deg); } }
-        @keyframes lvAuraPulse { 0%,100% { opacity:calc(var(--aura-opacity) * .62); transform:scale(.985) rotate(0deg); } 50% { opacity:var(--aura-opacity); transform:scale(1.02) rotate(0deg); } }
-        @keyframes lvCardGlow  {
-          0%,100% { box-shadow:0 0 16px -2px var(--tier), inset 0 0 22px -14px var(--tier); }
-          50%     { box-shadow:0 0 38px 2px var(--tier), inset 0 0 30px -8px var(--tier); }
+        .lv-hero.glowing, .lv-card.glowing { animation:lvCardGlow 1.5s ease-in-out infinite; }
+        .lv-aura-wrap.rainbow .lv-hero.glowing, .lv-aura-wrap.rainbow .lv-card.glowing {
+          animation:lvCardGlow 1.5s ease-in-out infinite, lvBorderHue 3.2s linear infinite;
+        }
+        @property --lv-ang1 { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+        @property --lv-ang2 { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+        @keyframes lvAuraSpin1 { from { --lv-ang1:0deg; } to { --lv-ang1:360deg; } }
+        @keyframes lvAuraSpin2 { from { --lv-ang2:360deg; } to { --lv-ang2:0deg; } }
+        @keyframes lvAuraPulse {
+          0%,100% { transform:scale(0.94); opacity:calc(var(--aura-opacity) * .55); }
+          50%     { transform:scale(1.1);  opacity:var(--aura-opacity); }
+        }
+        @keyframes lvAuraPulse2 {
+          0%,100% { transform:scale(1.08); opacity:calc(var(--aura-opacity2) * .45); }
+          50%     { transform:scale(0.9);  opacity:var(--aura-opacity2); }
+        }
+        @keyframes lvAuraHue {
+          from { filter:blur(var(--aura-blur)) hue-rotate(0deg); }
+          to   { filter:blur(var(--aura-blur)) hue-rotate(360deg); }
+        }
+        @keyframes lvCardGlow {
+          0%,100% { box-shadow:0 0 10px -2px var(--tier), 0 0 18px -12px var(--tier), inset 0 0 18px -14px var(--tier); }
+          50%     { box-shadow:0 0 24px 1px var(--tier), 0 0 36px -8px var(--tier), inset 0 0 26px -8px var(--tier); }
+        }
+        @keyframes lvBorderHue {
+          0%   { border-color:#ff5e5e; }
+          16%  { border-color:#ffd24d; }
+          33%  { border-color:#5eff8b; }
+          50%  { border-color:#5ec8ff; }
+          66%  { border-color:#b15eff; }
+          83%  { border-color:#ff5ec8; }
+          100% { border-color:#ff5e5e; }
         }
         @media (prefers-reduced-motion: reduce) {
           .lv-aura-wrap.on::before, .lv-aura-wrap.on::after, .lv-hero.glowing, .lv-card.glowing { animation:none !important; }
