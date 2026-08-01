@@ -6,10 +6,12 @@ import { hoursForTier, LEVEL_TIERS_ASC } from '@/lib/level';
 import LevelIcon from './LevelIcon';
 import { useT } from '@/lib/i18n';
 
-// トロフィーの「段位（ティア）」が上がったときの演出。15段しかないティア昇格
-// だけに使う特別な全画面演出で、ただのレベルアップのポップアップとは別物。
+// レベルが上がるたびに出す全画面演出。トロフィーの「段位（ティア）」その
+// ものが変わった時（tierChanged）は「トロフィー進化！」＋ TIER 表記で祝い、
+// 同じティア内の普通のレベルアップは「レベルアップ！」という見出しに変える
+// だけで、フラッシュ・衝撃波・紙吹雪などの派手さは全レベルアップで共通。
 // 累計300時間 = Tier 9 は「はじめてトロフィーにエフェクトが付く段」なので、
-// ここが最初の大きな山場になる。
+// tierChanged の中でも最初の大きな山場になる。
 //
 // 構成（時系列）:
 //   0.00s 画面全体の白フラッシュ + 画面シェイク
@@ -42,14 +44,17 @@ const CONFETTI = Array.from({ length: 40 }, (_, i) => ({
 interface Props {
   tier: LevelTier;
   level: number;
+  // true: このレベルアップでトロフィーの段位そのものが変わった（Tier 9〜）。
+  // false: 同じティア内の普通のレベルアップ。
+  tierChanged: boolean;
   onClose: () => void;
 }
 
-export default function TierUpOverlay({ tier, level, onClose }: Props) {
+export default function LevelUpOverlay({ tier, level, tierChanged, onClose }: Props) {
   const t = useT();
   const tierNo = LEVEL_TIERS_ASC.findIndex(x => x.minLevel === tier.minLevel) + 1;
   const hours = Math.round(hoursForTier(tier));
-  const isMax = tier.fx === 'rainbow';
+  const isMax = tierChanged && tier.fx === 'rainbow';
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -57,7 +62,7 @@ export default function TierUpOverlay({ tier, level, onClose }: Props) {
     return () => window.removeEventListener('keydown', onEsc);
   }, [onClose]);
 
-  // 最高段だけは虹、それ以外はそのティアの色で染める。
+  // 最高段に「今まさに」到達した時だけ虹、それ以外はそのティアの色で染める。
   const rays = isMax
     ? 'conic-gradient(from 0deg, transparent 0deg, #ff5e5e 5deg, transparent 10deg, transparent 25deg, #ffd24d 30deg, transparent 35deg, transparent 50deg, #5eff8b 55deg, transparent 60deg, transparent 75deg, #5ec8ff 80deg, transparent 85deg, transparent 100deg, #b15eff 105deg, transparent 110deg)'
     : `conic-gradient(from 0deg, transparent 0deg, ${tier.color} 5deg, transparent 11deg, transparent 28deg, ${tier.color}cc 33deg, transparent 39deg, transparent 56deg, ${tier.color} 61deg, transparent 67deg)`;
@@ -124,18 +129,24 @@ export default function TierUpOverlay({ tier, level, onClose }: Props) {
 
         {/* 本体 */}
         <div className="tu-card" onClick={e => e.stopPropagation()}>
-          <p className="tu-kicker">{t('トロフィー進化！')}</p>
+          <p className="tu-kicker">{tierChanged ? t('トロフィー進化！') : t('レベルアップ！')}</p>
           <div className="tu-icon-wrap">
             <span className="tu-icon-halo" style={{ background: `radial-gradient(circle, ${tier.color}, transparent 66%)` }} />
             <span className="tu-icon"><LevelIcon tier={tier} size={190} /></span>
           </div>
-          <p className="tu-tier" style={{ color: tier.color, textShadow: `0 0 24px ${tier.color}, 0 0 60px ${tier.color}` }}>
-            TIER {tierNo}
-          </p>
-          <p className="tu-hours">{t('累計 {h} 時間 到達', { h: hours })}</p>
+          {tierChanged && (
+            <p className="tu-tier" style={{ color: tier.color, textShadow: `0 0 24px ${tier.color}, 0 0 60px ${tier.color}` }}>
+              TIER {tierNo}
+            </p>
+          )}
+          {tierChanged && <p className="tu-hours">{t('累計 {h} 時間 到達', { h: hours })}</p>}
           <p className="tu-level">Lv {level}</p>
           <p className="tu-msg">
-            {isMax ? t('ついに最高段。ここまで積み上げたのは本当にすごい！') : t('トロフィーが新しい姿になったよ！')}
+            {isMax
+              ? t('ついに最高段。ここまで積み上げたのは本当にすごい！')
+              : tierChanged
+              ? t('トロフィーが新しい姿になったよ！')
+              : t('この調子で積み上げよう！')}
           </p>
           <button className="tu-ok" style={{ background: tier.color }} onClick={onClose}>{t('やったー！')}</button>
         </div>
@@ -235,7 +246,7 @@ export default function TierUpOverlay({ tier, level, onClose }: Props) {
           animation: tuPunch 0.5s cubic-bezier(.2,1.8,.35,1) 0.62s both;
         }
         .tu-hours { font-size: 1.08rem; font-weight: 900; color: #fff; margin: 0 0 2px; animation: tuUp 0.45s ease-out 0.75s both; }
-        .tu-level { font-size: 0.84rem; font-weight: 800; color: rgba(255,255,255,0.6); margin: 0 0 10px; animation: tuUp 0.45s ease-out 0.82s both; }
+        .tu-level { font-size: 0.84rem; font-weight: 800; color: rgba(255,255,255,0.6); margin: 6px 0 10px; animation: tuUp 0.45s ease-out 0.82s both; }
         .tu-msg { font-size: 0.86rem; color: rgba(255,255,255,0.84); margin: 0 0 16px; line-height: 1.55; animation: tuUp 0.45s ease-out 0.9s both; }
         .tu-ok {
           border: none; border-radius: 14px; padding: 13px 32px; color: #10121c;
