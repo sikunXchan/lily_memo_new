@@ -11,7 +11,6 @@ import type { StudyProfile } from '@/lib/studyProfile';
 import { getLevelInfo } from '@/lib/level';
 import type { LevelTier } from '@/lib/level';
 import LevelIcon from './LevelIcon';
-import TierUpOverlay from './TierUpOverlay';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
 
@@ -53,14 +52,10 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   const [profile, setProfile] = useState<StudyProfile>(getStudyProfile);
   const [celebrate, setCelebrate] = useState<BadgeDef[]>([]);
   const [levelUp, setLevelUp] = useState<{ level: number; tier: LevelTier } | null>(null);
-  // ティア昇格（トロフィーの姿が変わる 15 段）は、ただのレベルアップとは別の
-  // 特別な演出にする。
-  const [tierUp, setTierUp] = useState<{ level: number; tier: LevelTier } | null>(null);
   const firstSync = useRef(true);
   // Per-session baseline for level-up detection. Stays null until sessions have
   // actually loaded, so the initial empty→loaded jump never fires a popup.
   const lastLevel = useRef<number | null>(null);
-  const lastTierLevel = useRef<number | null>(null);
 
   useEffect(() => {
     const onCh = () => setProfile(getStudyProfile());
@@ -88,22 +83,11 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   // current level as the silent baseline — so opening the app (empty → loaded,
   // or a fresh page render) never fires a spurious popup. Only an increase that
   // happens live in this session pops the celebration.
-  //
-  // ティアが変わるレベル（例: Lv101 = 累計300時間）に届いたときは、通常の
-  // レベルアップではなく専用の昇格演出（TierUpOverlay）を出す。
   useEffect(() => {
     if (sessions === undefined) return; // still loading
-    if (lastLevel.current === null) {
-      lastLevel.current = lvl.level;
-      lastTierLevel.current = lvl.tier.minLevel;
-      return;
-    }
-    if (lvl.level > lastLevel.current) {
-      if (lvl.tier.minLevel > (lastTierLevel.current ?? 0)) setTierUp({ level: lvl.level, tier: lvl.tier });
-      else setLevelUp({ level: lvl.level, tier: lvl.tier });
-    }
+    if (lastLevel.current === null) { lastLevel.current = lvl.level; return; }
+    if (lvl.level > lastLevel.current) setLevelUp({ level: lvl.level, tier: lvl.tier });
     lastLevel.current = lvl.level;
-    lastTierLevel.current = lvl.tier.minLevel;
   }, [sessions, lvl.level, lvl.tier]);
 
   const today = todayStr();
@@ -222,11 +206,6 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
             <button className="sg-celebrate-ok" onClick={() => setLevelUp(null)}>{t('やったー！')}</button>
           </div>
         </div>
-      )}
-
-      {/* ティア昇格演出（トロフィーの姿が変わったとき） */}
-      {tierUp && (
-        <TierUpOverlay tier={tierUp.tier} level={tierUp.level} onClose={() => setTierUp(null)} />
       )}
 
       <style jsx>{`
