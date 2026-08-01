@@ -226,6 +226,13 @@ const EN: Record<string, string> = {
   "タイマー": "Timer",
   "記録": "Stats",
   "次まで {h}": "{h} to next",
+
+  // ── ティア昇格演出 ──
+  "累計 {h} 時間 到達": "{h} hours reached",
+  "トロフィー進化！": "TROPHY EVOLVED!",
+  "トロフィーが新しい姿になったよ！": "Your trophy took on a new form!",
+  "ついに最高段。ここまで積み上げたのは本当にすごい！": "The highest rank at last — stacking up this much is seriously impressive!",
+
   "なし": "None",
   "教科名 (例: 数学)": "Subject name (e.g. Math)",
   "停止して保存": "Stop & save",
@@ -271,8 +278,6 @@ const EN: Record<string, string> = {
   "新しいバッジ獲得！": "New badge earned!",
   "ほか {n} 個も獲得！": "And {n} more earned!",
   "やったー！": "Yay!",
-  "レベルアップ！": "Level up!",
-  "この調子で積み上げよう！": "Keep it up!",
   "勉強の目標": "Study goals",
   "平日の目標時間": "Weekday goal hours",
   "休日の目標時間": "Holiday goal hours",
