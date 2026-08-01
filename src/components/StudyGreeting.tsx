@@ -10,7 +10,7 @@ import { getStudyProfile, daysUntilGoal, goalHoursForDate, isHolidayDate } from 
 import type { StudyProfile } from '@/lib/studyProfile';
 import { getLevelInfo } from '@/lib/level';
 import type { LevelTier } from '@/lib/level';
-import TierUpOverlay from './TierUpOverlay';
+import LevelUpOverlay from './LevelUpOverlay';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
 
@@ -51,10 +51,11 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   const earnedCount = useLiveQuery(() => db.earnedBadges.count(), [], 0);
   const [profile, setProfile] = useState<StudyProfile>(getStudyProfile);
   const [celebrate, setCelebrate] = useState<BadgeDef[]>([]);
-  // ティア昇格（トロフィーの姿が変わる 15 段）だけを祝う。同じティア内の
-  // 細かいレベルアップはポップアップを出さない — 毎回だと煩わしいので、
-  // 見た目が変わる瞬間だけ大きく演出する。
-  const [tierUp, setTierUp] = useState<{ level: number; tier: LevelTier } | null>(null);
+  // レベルアップは毎回この全画面演出で祝う。トロフィーの段位（ティア）
+  // そのものが変わった時（tierChanged）だけ「トロフィー進化！」「TIER N」
+  // 表記に切り替わり、それ以外の同ティア内レベルアップは「レベルアップ！」
+  // という見出しになる — フラッシュや紙吹雪などの派手さ自体は共通。
+  const [levelUp, setLevelUp] = useState<{ level: number; tier: LevelTier; tierChanged: boolean } | null>(null);
   const firstSync = useRef(true);
   // Per-session baseline for level-up detection. Stays null until sessions have
   // actually loaded, so the initial empty→loaded jump never fires a popup.
@@ -83,12 +84,12 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   const stats = computeStudyStats(sessions ?? [], { weekday: profile.weekdayGoalHours, holiday: profile.holidayGoalHours });
   const lvl = getLevelInfo(stats.totalSeconds);
 
-  // Detect tier-ups (the trophy's look changing — Tier 9+). We wait until
-  // sessions have actually loaded, then take the current level/tier as the
-  // silent baseline — so opening the app (empty → loaded, or a fresh page
-  // render) never fires a spurious popup. Only a tier increase that happens
-  // live in this session pops the full-screen celebration; ordinary level-ups
-  // within the same tier stay silent.
+  // Detect level-ups. We wait until sessions have actually loaded, then take
+  // the current level/tier as the silent baseline — so opening the app
+  // (empty → loaded, or a fresh page render) never fires a spurious popup.
+  // Every level increase that happens live in this session pops the
+  // celebration; whether the trophy's tier itself changed just picks which
+  // flavor of the overlay text shows (see LevelUpOverlay).
   useEffect(() => {
     if (sessions === undefined) return; // still loading
     if (lastLevel.current === null) {
@@ -96,8 +97,8 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
       lastTierLevel.current = lvl.tier.minLevel;
       return;
     }
-    if (lvl.level > lastLevel.current && lvl.tier.minLevel > (lastTierLevel.current ?? 0)) {
-      setTierUp({ level: lvl.level, tier: lvl.tier });
+    if (lvl.level > lastLevel.current) {
+      setLevelUp({ level: lvl.level, tier: lvl.tier, tierChanged: lvl.tier.minLevel > (lastTierLevel.current ?? 0) });
     }
     lastLevel.current = lvl.level;
     lastTierLevel.current = lvl.tier.minLevel;
@@ -193,9 +194,14 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
         </div>
       )}
 
-      {/* ティア昇格演出（トロフィーの姿が変わったとき） */}
-      {tierUp && (
-        <TierUpOverlay tier={tierUp.tier} level={tierUp.level} onClose={() => setTierUp(null)} />
+      {/* レベルアップ演出（ティアが変わった時は特別な見出しになる） */}
+      {levelUp && (
+        <LevelUpOverlay
+          tier={levelUp.tier}
+          level={levelUp.level}
+          tierChanged={levelUp.tierChanged}
+          onClose={() => setLevelUp(null)}
+        />
       )}
 
       <style jsx>{`
