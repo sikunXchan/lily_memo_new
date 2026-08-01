@@ -10,7 +10,7 @@ import { getStudyProfile, daysUntilGoal, goalHoursForDate, isHolidayDate } from 
 import type { StudyProfile } from '@/lib/studyProfile';
 import { getLevelInfo } from '@/lib/level';
 import type { LevelTier } from '@/lib/level';
-import LevelIcon from './LevelIcon';
+import TierUpOverlay from './TierUpOverlay';
 import { useT } from '@/lib/i18n';
 import { getAppLang } from '@/lib/appLang';
 
@@ -51,11 +51,15 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   const earnedCount = useLiveQuery(() => db.earnedBadges.count(), [], 0);
   const [profile, setProfile] = useState<StudyProfile>(getStudyProfile);
   const [celebrate, setCelebrate] = useState<BadgeDef[]>([]);
-  const [levelUp, setLevelUp] = useState<{ level: number; tier: LevelTier } | null>(null);
+  // ティア昇格（トロフィーの姿が変わる 15 段）だけを祝う。同じティア内の
+  // 細かいレベルアップはポップアップを出さない — 毎回だと煩わしいので、
+  // 見た目が変わる瞬間だけ大きく演出する。
+  const [tierUp, setTierUp] = useState<{ level: number; tier: LevelTier } | null>(null);
   const firstSync = useRef(true);
   // Per-session baseline for level-up detection. Stays null until sessions have
   // actually loaded, so the initial empty→loaded jump never fires a popup.
   const lastLevel = useRef<number | null>(null);
+  const lastTierLevel = useRef<number | null>(null);
 
   useEffect(() => {
     const onCh = () => setProfile(getStudyProfile());
@@ -79,15 +83,24 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
   const stats = computeStudyStats(sessions ?? [], { weekday: profile.weekdayGoalHours, holiday: profile.holidayGoalHours });
   const lvl = getLevelInfo(stats.totalSeconds);
 
-  // Detect level-ups. We wait until sessions have actually loaded, then take the
-  // current level as the silent baseline — so opening the app (empty → loaded,
-  // or a fresh page render) never fires a spurious popup. Only an increase that
-  // happens live in this session pops the celebration.
+  // Detect tier-ups (the trophy's look changing — Tier 9+). We wait until
+  // sessions have actually loaded, then take the current level/tier as the
+  // silent baseline — so opening the app (empty → loaded, or a fresh page
+  // render) never fires a spurious popup. Only a tier increase that happens
+  // live in this session pops the full-screen celebration; ordinary level-ups
+  // within the same tier stay silent.
   useEffect(() => {
     if (sessions === undefined) return; // still loading
-    if (lastLevel.current === null) { lastLevel.current = lvl.level; return; }
-    if (lvl.level > lastLevel.current) setLevelUp({ level: lvl.level, tier: lvl.tier });
+    if (lastLevel.current === null) {
+      lastLevel.current = lvl.level;
+      lastTierLevel.current = lvl.tier.minLevel;
+      return;
+    }
+    if (lvl.level > lastLevel.current && lvl.tier.minLevel > (lastTierLevel.current ?? 0)) {
+      setTierUp({ level: lvl.level, tier: lvl.tier });
+    }
     lastLevel.current = lvl.level;
+    lastTierLevel.current = lvl.tier.minLevel;
   }, [sessions, lvl.level, lvl.tier]);
 
   const today = todayStr();
@@ -180,32 +193,9 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
         </div>
       )}
 
-      {/* Level-up celebration */}
-      {levelUp && (
-        <div className="sg-celebrate" onClick={() => setLevelUp(null)}>
-          <div className="sg-confetti">
-            {CONFETTI.map((c, i) => (
-              <span
-                key={i}
-                style={{
-                  left: `${c.left}%`,
-                  width: `${c.size}px`,
-                  height: `${c.size}px`,
-                  background: c.color,
-                  animationDelay: `${c.delay}s`,
-                  animationDuration: `${c.dur}s`,
-                }}
-              />
-            ))}
-          </div>
-          <div className="sg-celebrate-card" onClick={e => e.stopPropagation()}>
-            <p className="sg-celebrate-title">⬆️ {t('レベルアップ！')}</p>
-            <div className="sg-levelup-icon"><LevelIcon tier={levelUp.tier} size={120} /></div>
-            <p className="sg-levelup-num" style={{ color: levelUp.tier.color }}>Lv {levelUp.level}</p>
-            <p className="sg-celebrate-desc">{t('この調子で積み上げよう！')}</p>
-            <button className="sg-celebrate-ok" onClick={() => setLevelUp(null)}>{t('やったー！')}</button>
-          </div>
-        </div>
+      {/* ティア昇格演出（トロフィーの姿が変わったとき） */}
+      {tierUp && (
+        <TierUpOverlay tier={tierUp.tier} level={tierUp.level} onClose={() => setTierUp(null)} />
       )}
 
       <style jsx>{`
@@ -258,8 +248,6 @@ export default function StudyGreeting({ onOpenTrophy, onEditProfile }: Props) {
         }
         @keyframes pop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .sg-celebrate-title { font-size: 0.95rem; font-weight: 800; color: var(--primary); margin: 0 0 12px; }
-        .sg-levelup-icon { display: flex; justify-content: center; animation: bob 1.6s ease-in-out infinite; }
-        .sg-levelup-num { font-size: 3rem; font-weight: 900; margin: 8px 0 8px; line-height: 1; }
         .sg-celebrate-img { width: 150px; height: 150px; object-fit: contain; animation: bob 1.6s ease-in-out infinite; }
         @keyframes bob { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-8px) rotate(2deg)} }
         .sg-celebrate-name { font-size: 1.15rem; font-weight: 900; color: var(--foreground); margin: 8px 0 4px; }
