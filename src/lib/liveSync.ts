@@ -1,5 +1,5 @@
 import { liveQuery, type Table } from 'dexie';
-import { db, newSyncId } from './db';
+import { db, newSyncId, ensureStudySyncIds } from './db';
 import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession, DiagramSet } from './db';
 import { getPlanSyncState, applyPlanSyncState, registerPlanSyncHook, type PlanSyncState } from './points';
 
@@ -290,19 +290,22 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       const localCats = await db.studyCategories.toArray();
       const map = new Map(localCats.filter(c => c.syncId).map(c => [c.syncId!, c]));
       for (const r of remote.studyCategories ?? []) {
-        if (!r.syncId) continue;
-        const local = map.get(r.syncId);
+        // Older clients could push categories without a syncId; fall back to the
+        // same deterministic id the migration assigns so they still merge.
+        const syncId = r.syncId ?? (r.name ? `c_${r.name}` : undefined);
+        if (!syncId) continue;
+        const local = map.get(syncId);
         const rUpdated = r.updatedAt ?? r.createdAt;
         if (!local) {
           if (!r.deletedAt) {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { id: _id, ...rest } = r;
-            await db.studyCategories.add(rest as StudyCategory);
+            await db.studyCategories.add({ ...rest, syncId } as StudyCategory);
           }
         } else if (rUpdated > (local.updatedAt ?? local.createdAt)) {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { id: _id, ...rest } = r;
-          await db.studyCategories.update(local.id!, rest);
+          await db.studyCategories.update(local.id!, { ...rest, syncId });
         }
       }
     }
@@ -323,18 +326,25 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       const localSessions = await db.studySessions.toArray();
       const map = new Map(localSessions.filter(s => s.syncId).map(s => [s.syncId!, s]));
       for (const r of remote.studySessions ?? []) {
-        if (!r.syncId) continue;
-        const local = map.get(r.syncId);
+        // A session pushed by an older client (the focus-mode timer used to save
+        // sessions with no syncId) would be skipped here entirely — its study
+        // hours never landed on this device, which is exactly how the total
+        // study time drifted apart between devices. Fall back to the same
+        // deterministic id the migration assigns, so the record still merges and
+        // the identical session from two devices collapses into one.
+        const syncId = r.syncId ?? (r.date && typeof r.startTime === 'number' ? `s_${r.date}_${r.startTime}` : undefined);
+        if (!syncId) continue;
+        const local = map.get(syncId);
         const rUpdated = r.updatedAt ?? r.startTime;
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id: _id, categorySyncId, categoryId: _cid, ...rest } = r;
         const categoryId = resolveCategoryId(categorySyncId, r.categoryId);
         if (!local) {
           if (!r.deletedAt) {
-            await db.studySessions.add({ ...rest, categoryId } as StudySession);
+            await db.studySessions.add({ ...rest, syncId, categoryId } as StudySession);
           }
         } else if (rUpdated > (local.updatedAt ?? local.startTime)) {
-          await db.studySessions.update(local.id!, { ...rest, categoryId });
+          await db.studySessions.update(local.id!, { ...rest, syncId, categoryId });
         }
       }
     }
@@ -590,6 +600,13 @@ export function initLiveSync(key: string) {
   _lastSyncTs = Number(localStorage.getItem('lily_livesync_ts') ?? 0);
 
   installWriteHooks(); // reliable per-write push trigger (idempotent)
+
+  // Repair study records that are missing syncId/updatedAt before the first
+  // push. Records without a syncId are dropped by BOTH the client merge and the
+  // server merge, so they never leave this device — that's how the total study
+  // time ended up different on each device. Runs once per init and writes only
+  // when something is actually broken (the write hook then schedules a push).
+  void ensureStudySyncIds().catch(() => { /* non-fatal */ });
 
   // Watch Dexie for local changes.
   // Tables whose mutations are UPDATEs (soft-deletes, done/pin toggles) are

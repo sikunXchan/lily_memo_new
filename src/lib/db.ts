@@ -416,10 +416,65 @@ export class LilyDatabase extends Dexie {
       aiFriends: null,
       diaryChats: null,
     });
+    // v26: 学習記録の syncId/updatedAt 取りこぼしを修復する。集中モード
+    // (FocusMode) が保存していたセッションには syncId が付いておらず、
+    // liveSync も /api/sync も「syncId の無いレコードは無視」なので、その分だけ
+    // 合計学習時間が端末ごとにズレていた。v16 と同じ決定的な id を振り直す
+    // （同じ記録なら端末が違っても同じ id になり、二重登録されない）。
+    this.version(26).stores({
+      studyCategories: '++id, syncId, name, color, createdAt, updatedAt, deletedAt',
+      studySessions: '++id, syncId, date, startTime, categoryId, updatedAt, deletedAt',
+    }).upgrade(async tx => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await tx.table('studySessions').toCollection().modify((s: any) => {
+        if (!s.syncId) s.syncId = `s_${s.date}_${s.startTime}`;
+        if (!s.updatedAt) s.updatedAt = s.startTime ?? Date.now();
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await tx.table('studyCategories').toCollection().modify((c: any) => {
+        if (!c.syncId) c.syncId = `c_${c.name}`;
+        if (!c.updatedAt) c.updatedAt = c.createdAt ?? Date.now();
+      });
+    });
   }
 }
 
 export const db = new LilyDatabase();
+
+/**
+ * 学習記録の sync 用フィールド（syncId / updatedAt）を埋め直す自己修復。
+ *
+ * syncId が無いセッションは liveSync / サーバー側マージの両方でスキップされる
+ * ため、その記録は永久に他端末へ渡らず「合計学習時間が端末によって違う」状態に
+ * なる。v26 のマイグレーションで既存データは直るが、古いビルドが後から書いた
+ * 行や、syncId 無しのバックアップを取り込んだ場合にも備えて、同期の開始時に
+ * 1度だけ走らせる。id は v16 / backup.ts と同じ決定的な形なので、同じ記録が
+ * 複数端末にあっても同じ id になり二重登録されない。
+ *
+ * 返り値は修復した件数（0 なら書き込みは発生しない）。
+ */
+export async function ensureStudySyncIds(): Promise<number> {
+  let fixed = 0;
+  const sessions = await db.studySessions.filter(s => !s.syncId || !s.updatedAt).toArray();
+  for (const s of sessions) {
+    if (s.id == null) continue;
+    await db.studySessions.update(s.id, {
+      syncId: s.syncId ?? `s_${s.date}_${s.startTime}`,
+      updatedAt: s.updatedAt ?? s.startTime ?? Date.now(),
+    });
+    fixed++;
+  }
+  const cats = await db.studyCategories.filter(c => !c.syncId || !c.updatedAt).toArray();
+  for (const c of cats) {
+    if (c.id == null) continue;
+    await db.studyCategories.update(c.id, {
+      syncId: c.syncId ?? `c_${c.name}`,
+      updatedAt: c.updatedAt ?? c.createdAt ?? Date.now(),
+    });
+    fixed++;
+  }
+  return fixed;
+}
 
 // Soft-delete helpers. We set a `deletedAt` tombstone (and bump `updatedAt`)
 // instead of removing the row, so the deletion propagates through liveSync /

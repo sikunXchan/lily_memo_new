@@ -92,6 +92,14 @@ export function getLevelInfo(totalSeconds: number): LevelInfo {
   return { level, tier, hours, pct, remainingHours };
 }
 
+/** Cumulative hours needed to reach a tier (its first level). */
+export function hoursForTier(tier: LevelTier): number {
+  return hoursForLevel(tier.minLevel);
+}
+
+/** Tiers listed low → high (LEVEL_TIERS is stored highest-first for lookup). */
+export const LEVEL_TIERS_ASC: LevelTier[] = [...LEVEL_TIERS].reverse();
+
 /** Human-friendly "time to next level" label. */
 export function fmtHoursShort(h: number): string {
   if (h >= 1) {

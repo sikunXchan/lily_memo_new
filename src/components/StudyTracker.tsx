@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import type { CSSProperties } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Play, Square, Plus, Trash2, BarChart2, Timer, ArrowLeft,
@@ -12,7 +13,7 @@ import type { StudyCategory, StudySession } from '@/lib/db';
 import StudyGreeting from './StudyGreeting';
 import TrophyRoom from './TrophyRoom';
 import StudyProfileModal from './StudyProfileModal';
-import { getLevelInfo, fmtHoursShort } from '@/lib/level';
+import { getLevelInfo, fmtHoursShort, LEVEL_TIERS_ASC } from '@/lib/level';
 import LevelIcon from './LevelIcon';
 import { badgeById, BADGES } from '@/lib/badges';
 import { getFavoriteEmblems, setFavoriteEmblems, MAX_FAVORITE_EMBLEMS } from '@/lib/favoriteEmblems';
@@ -477,6 +478,27 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const allCatTotals = [...allCatMap.values()].sort((a, b) => b.secs - a.secs);
   const totalDays = sessionDates.size;
   const levelInfo = getLevelInfo(grandTotal);
+  // ティアのオーラ設定。段が上がるほどオーラは太く・濃く・速くなり、最高段は虹。
+  const tierFx = (() => {
+    const tier = levelInfo.tier;
+    if (tier.fx === 'none') return { on: false, vars: undefined };
+    const rank = LEVEL_TIERS_ASC.findIndex(x => x.minLevel === tier.minLevel) + 1; // 9..15
+    const step = Math.max(0, rank - 9);
+    const c = tier.color;
+    return {
+      on: true,
+      vars: {
+        ['--tier']: c,
+        ['--aura']: tier.fx === 'rainbow'
+          ? 'conic-gradient(from 0deg,#ff5e5e,#ffd24d,#5eff8b,#5ec8ff,#b15eff,#ff5ec8,#ff5e5e)'
+          : `conic-gradient(from 0deg, ${c}, ${c}00 20%, ${c} 48%, ${c}00 70%, ${c})`,
+        ['--aura-blur']: `${9 + step * 2}px`,
+        ['--aura-opacity']: `${Math.min(1, 0.6 + step * 0.07)}`,
+        ['--aura-spin']: `${Math.max(2.4, 6 - step * 0.6)}s`,
+        ['--aura-spread']: `${5 + step * 1.6}px`,
+      } as CSSProperties,
+    };
+  })();
 
   // Favorite-emblem showcase: keep the user's chosen order, but only show ones
   // that are actually earned and still valid badge ids.
@@ -530,19 +552,22 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
             onEditProfile={() => setShowProfile(true)}
           />
 
-          {/* Prominent level banner */}
-          <button className="lv-hero" onClick={() => setView('total')} style={{ borderColor: levelInfo.tier.color + '55' }}>
-            <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
-              <LevelIcon tier={levelInfo.tier} size={56} />
-            </div>
-            <div className="lv-hero-body">
-              <div className="lv-hero-top">
-                <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
-                <span className="lv-hero-next">{t('次まで {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
+          {/* Prominent level banner. エフェクトが付く段(Tier 9〜)では、カード自体が
+              ティア色のオーラをまとって脈打つ — 段が上がるほど強くなる。 */}
+          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}`} style={tierFx.vars}>
+            <button className={`lv-hero${tierFx.on ? ' glowing' : ''}`} onClick={() => setView('total')} style={{ borderColor: levelInfo.tier.color + '77' }}>
+              <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
+                <LevelIcon tier={levelInfo.tier} size={56} />
               </div>
-              <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
-            </div>
-          </button>
+              <div className="lv-hero-body">
+                <div className="lv-hero-top">
+                  <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                  <span className="lv-hero-next">{t('次まで {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
+                </div>
+                <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
+              </div>
+            </button>
+          </div>
 
           {/* Favorite-emblem showcase. Nothing chosen → no decoration at all,
               just a subtle way to start (only once some badge is earned). */}
@@ -912,15 +937,18 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {/* ── Total view ── */}
       {view === 'total' && (
         <div className="st-scroll">
-          {/* Level card */}
-          <div className="lv-card" style={{ borderColor: levelInfo.tier.color + '66' }}>
-            <div className="lv-card-icon" style={{ background: levelInfo.tier.color + '1f', borderColor: levelInfo.tier.color + '66' }}>
-              <LevelIcon tier={levelInfo.tier} size={72} />
-            </div>
-            <div className="lv-card-body">
-              <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
-              <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
-              <span className="lv-next">{t('次のレベルまであと {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
+          {/* Level card。エフェクトが付く段(Tier 9〜)では、カードが回転する
+              ティア色のオーラをまとって脈打つ。 */}
+          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}`} style={tierFx.vars}>
+            <div className={`lv-card${tierFx.on ? ' glowing' : ''}`} style={{ borderColor: levelInfo.tier.color + '77' }}>
+              <div className="lv-card-icon" style={{ background: levelInfo.tier.color + '1f', borderColor: levelInfo.tier.color + '66' }}>
+                <LevelIcon tier={levelInfo.tier} size={72} />
+              </div>
+              <div className="lv-card-body">
+                <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
+                <span className="lv-next">{t('次のレベルまであと {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
+              </div>
             </div>
           </div>
 
@@ -1078,6 +1106,32 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .lv-hero-next { font-size:.72rem; font-weight:700; color:var(--fg-muted); white-space:nowrap; }
         .lv-hero-bar { height:9px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
         .lv-hero-fill { height:100%; border-radius:99px; transition:width .6s ease; }
+
+        /* ── ティアのオーラ（Tier 9〜）────────────────────────────────
+           回転する光の輪＋脈打つ発光でカードごと光らせる。段が上がるほど
+           太く・濃く・速くなり、最高段は虹色。 */
+        .lv-aura-wrap { position:relative; }
+        .lv-aura-wrap.on::before {
+          content:''; position:absolute; inset:calc(var(--aura-spread) * -1); border-radius:26px; z-index:0;
+          background:var(--aura); filter:blur(var(--aura-blur)); opacity:var(--aura-opacity);
+          animation:lvAuraSpin var(--aura-spin) linear infinite, lvAuraPulse 1.9s ease-in-out infinite;
+        }
+        .lv-aura-wrap.on::after {
+          content:''; position:absolute; inset:-2px; border-radius:20px; z-index:0; pointer-events:none;
+          box-shadow:0 0 0 1.5px var(--tier), 0 0 18px var(--tier);
+          opacity:.55; animation:lvAuraPulse 1.9s ease-in-out infinite;
+        }
+        .lv-aura-wrap > :global(*) { position:relative; z-index:1; }
+        .lv-hero.glowing, .lv-card.glowing { animation:lvCardGlow 1.9s ease-in-out infinite; }
+        @keyframes lvAuraSpin  { to { transform:rotate(360deg); } }
+        @keyframes lvAuraPulse { 0%,100% { opacity:calc(var(--aura-opacity) * .62); transform:scale(.985) rotate(0deg); } 50% { opacity:var(--aura-opacity); transform:scale(1.02) rotate(0deg); } }
+        @keyframes lvCardGlow  {
+          0%,100% { box-shadow:0 0 16px -2px var(--tier), inset 0 0 22px -14px var(--tier); }
+          50%     { box-shadow:0 0 38px 2px var(--tier), inset 0 0 30px -8px var(--tier); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .lv-aura-wrap.on::before, .lv-aura-wrap.on::after, .lv-hero.glowing, .lv-card.glowing { animation:none !important; }
+        }
 
         /* ── Total view ── */
         .lv-card { background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; align-items:center; gap:15px; }
