@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import type { LevelTier } from '@/lib/level';
-import { hoursForTier, LEVEL_TIERS_ASC } from '@/lib/level';
+import { hoursForTier, fxSpecFor, tierName, tierNumber } from '@/lib/level';
 import LevelIcon from './LevelIcon';
 import { useT } from '@/lib/i18n';
 
@@ -52,9 +52,9 @@ interface Props {
 
 export default function LevelUpOverlay({ tier, level, tierChanged, onClose }: Props) {
   const t = useT();
-  const tierNo = LEVEL_TIERS_ASC.findIndex(x => x.minLevel === tier.minLevel) + 1;
+  const tierNo = tierNumber(tier);
   const hours = Math.round(hoursForTier(tier));
-  const isMax = tierChanged && tier.fx === 'rainbow';
+  const isMax = tierChanged && !!fxSpecFor(tier)?.rainbow;
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -135,9 +135,12 @@ export default function LevelUpOverlay({ tier, level, tierChanged, onClose }: Pr
             <span className="tu-icon"><LevelIcon tier={tier} size={190} /></span>
           </div>
           {tierChanged && (
-            <p className="tu-tier" style={{ color: tier.color, textShadow: `0 0 24px ${tier.color}, 0 0 60px ${tier.color}` }}>
-              TIER {tierNo}
-            </p>
+            <>
+              <p className="tu-tier" style={{ color: tier.color, textShadow: `0 0 24px ${tier.color}, 0 0 60px ${tier.color}` }}>
+                {tierName(tier, t)}
+              </p>
+              <p className="tu-tier-no">TIER {tierNo}</p>
+            </>
           )}
           {tierChanged && <p className="tu-hours">{t('累計 {h} 時間 到達', { h: hours })}</p>}
           <p className="tu-level">Lv {level}</p>
@@ -242,8 +245,14 @@ export default function LevelUpOverlay({ tier, level, tierChanged, onClose }: Pr
           animation: tuDrop 0.85s cubic-bezier(.16,1.5,.4,1) 0.35s both, tuFloat 3s ease-in-out 1.2s infinite;
         }
         .tu-tier {
-          font-size: 2.6rem; font-weight: 900; margin: 6px 0 4px; letter-spacing: 0.08em; line-height: 1;
+          font-size: clamp(1.6rem, 9vw, 2.4rem); font-weight: 900; margin: 6px 0 2px;
+          letter-spacing: 0.04em; line-height: 1.12; word-break: keep-all;
           animation: tuPunch 0.5s cubic-bezier(.2,1.8,.35,1) 0.62s both;
+        }
+        .tu-tier-no {
+          font-size: 0.72rem; font-weight: 900; letter-spacing: 0.24em; margin: 0 0 4px;
+          color: rgba(255,255,255,0.55);
+          animation: tuUp 0.45s ease-out 0.7s both;
         }
         .tu-hours { font-size: 1.08rem; font-weight: 900; color: #fff; margin: 0 0 2px; animation: tuUp 0.45s ease-out 0.75s both; }
         .tu-level { font-size: 0.84rem; font-weight: 800; color: rgba(255,255,255,0.6); margin: 6px 0 10px; animation: tuUp 0.45s ease-out 0.82s both; }
@@ -285,7 +294,7 @@ export default function LevelUpOverlay({ tier, level, tierChanged, onClose }: Pr
         @media (prefers-reduced-motion: reduce) {
           .tu-flash, .tu-shake, .tu-pillar, .tu-rays, .tu-glow, .tu-flare, .tu-ring,
           .tu-spark, .tu-conf, .tu-card, .tu-kicker, .tu-icon, .tu-icon-halo,
-          .tu-tier, .tu-hours, .tu-level, .tu-msg, .tu-ok {
+          .tu-tier, .tu-tier-no, .tu-hours, .tu-level, .tu-msg, .tu-ok {
             animation: none !important;
           }
           .tu-flash { display: none; }

@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """Slice the level-icon source sheets in public/level_icon/ into individual
-tier{1..15}.png files in public/level/.
+tier{1..23}.png files in public/level/.
 
 The source sheets are already RGBA (background-removed by hand), each holding
-a row of 1–3 trophies on a transparent background:
+a row of 1–3 trophies on a transparent background. The order below IS the tier
+order — the rainbow trophy that used to be Tier 15 is now the very last one
+(Tier 23 = キング):
 
-  Tier1-2.PNG   -> tier1, tier2
-  Tier3-5.PNG   -> tier3, tier4, tier5
-  Tier6-8.PNG   -> tier6, tier7, tier8
-  Tier9-10.PNG  -> tier9, tier10
-  Tier11-12.PNG -> tier11, tier12
-  Tier13-14.PNG -> tier13, tier14
-  Tier15.PNG    -> tier15
+  Tier1-2.PNG   -> tier1, tier2    ブロンズ
+  Tier3-5.PNG   -> tier3..tier5    シルバー
+  Tier6-8.PNG   -> tier6..tier8    ゴールド
+  Tier9-10.PNG  -> tier9, tier10   プラチナ
+  Tier11-12.PNG -> tier11, tier12  エメラルド
+  Tier13-14.PNG -> tier13, tier14  ダイヤモンド
+  tier15-16.PNG -> tier15, tier16  エリート
+  tier17-18.PNG -> tier17, tier18  エース
+  tier19-20.PNG -> tier19, tier20  チャンピオン Ⅰ/Ⅱ
+  tier21-22.PNG -> tier21, tier22  チャンピオン Ⅲ/Ⅳ
+  Tier15.PNG    -> tier23          キング（虹）
 """
 from PIL import Image
 import numpy as np
@@ -26,6 +32,10 @@ SHEETS = [
     ('Tier9-10.PNG',  2),
     ('Tier11-12.PNG', 2),
     ('Tier13-14.PNG', 2),
+    ('tier15-16.PNG', 2),
+    ('tier17-18.PNG', 2),
+    ('tier19-20.PNG', 2),
+    ('tier21-22.PNG', 2),
     ('Tier15.PNG',    1),
 ]
 

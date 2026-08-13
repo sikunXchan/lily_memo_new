@@ -13,7 +13,7 @@ import type { StudyCategory, StudySession } from '@/lib/db';
 import StudyGreeting from './StudyGreeting';
 import TrophyRoom from './TrophyRoom';
 import StudyProfileModal from './StudyProfileModal';
-import { getLevelInfo, fmtHoursShort, LEVEL_TIERS_ASC } from '@/lib/level';
+import { getLevelInfo, fmtHoursShort, fxSpecFor, tierName } from '@/lib/level';
 import LevelIcon from './LevelIcon';
 import { badgeById, BADGES } from '@/lib/badges';
 import { getFavoriteEmblems, setFavoriteEmblems, MAX_FAVORITE_EMBLEMS } from '@/lib/favoriteEmblems';
@@ -483,11 +483,11 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // カード自体が魔法陣のように渦巻いて見えるようにしている。
   const tierFx = (() => {
     const tier = levelInfo.tier;
-    if (tier.fx === 'none') return { on: false, rainbow: false, vars: undefined };
-    const rank = LEVEL_TIERS_ASC.findIndex(x => x.minLevel === tier.minLevel) + 1; // 9..15
-    const step = Math.max(0, rank - 9); // 0..6
+    const spec = fxSpecFor(tier);
+    if (!spec) return { on: false, rainbow: false, vars: undefined };
+    const p = spec.power; // 0.1（プラチナ Ⅰ）〜 1.0（キング）
     const c = tier.color;
-    const rainbow = tier.fx === 'rainbow';
+    const rainbow = spec.rainbow;
     // The ring's "spin" is done by animating the conic-gradient's own start
     // angle (var(--lv-ang1)/2), NOT by rotating the pseudo-element's box —
     // this card is a wide, short pill, and rotating that whole rectangle
@@ -510,16 +510,21 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       rainbow,
       vars: {
         ['--tier']: c,
+        ['--tier-metal']: spec.metal,
+        ['--tier-edge']: spec.metalEdge,
         ['--aura']: ring1,
         ['--aura2']: ring2,
-        ['--aura-blur']: `${8 + step * 2}px`,
-        ['--aura-blur2']: `${4 + step * 1.2}px`,
-        ['--aura-opacity']: `${Math.min(0.98, 0.68 + step * 0.05)}`,
-        ['--aura-opacity2']: `${Math.min(0.85, 0.45 + step * 0.055)}`,
-        ['--aura-spin']: `${Math.max(1.6, 4.4 - step * 0.4)}s`,
-        ['--aura-spin2']: `${Math.max(1.1, 3 - step * 0.3)}s`,
-        ['--aura-spread']: `${6 + step * 1.6}px`,
-        ['--aura-spread2']: `${2 + step * 0.8}px`,
+        ['--aura-blur']: `${(8 + p * 13).toFixed(1)}px`,
+        ['--aura-blur2']: `${(4 + p * 8).toFixed(1)}px`,
+        ['--aura-opacity']: `${(0.66 + p * 0.32).toFixed(2)}`,
+        ['--aura-opacity2']: `${(0.43 + p * 0.35).toFixed(2)}`,
+        ['--aura-spin']: `${(4.6 - p * 2.8).toFixed(2)}s`,
+        ['--aura-spin2']: `${(3.1 - p * 1.9).toFixed(2)}s`,
+        ['--aura-spread']: `${(6 + p * 10).toFixed(1)}px`,
+        ['--aura-spread2']: `${(2 + p * 5).toFixed(1)}px`,
+        // カードを横切る金属光沢のスイープ（段が上がるほど速く・強く）
+        ['--card-sheen-dur']: `${(5.4 - p * 2.2).toFixed(2)}s`,
+        ['--card-sheen-op']: `${(0.3 + p * 0.42).toFixed(2)}`,
       } as CSSProperties,
     };
   })();
@@ -586,6 +591,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
               <div className="lv-hero-body">
                 <div className="lv-hero-top">
                   <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                  <span className="lv-tier-chip" style={{ color: levelInfo.tier.color, borderColor: levelInfo.tier.color + '66', background: levelInfo.tier.color + '1a' }}>
+                    {tierName(levelInfo.tier, t)}
+                  </span>
                   <span className="lv-hero-next">{t('次まで {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
                 </div>
                 <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
@@ -969,7 +977,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
                 <LevelIcon tier={levelInfo.tier} size={72} />
               </div>
               <div className="lv-card-body">
-                <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                <div className="lv-card-top">
+                  <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                  <span className="lv-tier-chip" style={{ color: levelInfo.tier.color, borderColor: levelInfo.tier.color + '66', background: levelInfo.tier.color + '1a' }}>
+                    {tierName(levelInfo.tier, t)}
+                  </span>
+                </div>
                 <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
                 <span className="lv-next">{t('次のレベルまであと {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
               </div>
@@ -1128,6 +1141,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .lv-hero-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
         .lv-hero-num { font-size:1.7rem; font-weight:900; line-height:1; }
         .lv-hero-next { font-size:.72rem; font-weight:700; color:var(--fg-muted); white-space:nowrap; }
+        /* 段位名（ブロンズ Ⅰ … キング）。Lv の隣に置き、右端の「次まで」は右寄せのまま。 */
+        .lv-tier-chip { flex:0 1 auto; min-width:0; margin-right:auto; padding:3px 9px; border-radius:99px; border:1px solid;
+          font-size:.7rem; font-weight:900; letter-spacing:.03em; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .lv-card-top { display:flex; align-items:baseline; gap:9px; }
         .lv-hero-bar { height:9px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
         .lv-hero-fill { height:100%; border-radius:99px; transition:width .6s ease; }
 
@@ -1154,7 +1171,24 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           animation:lvAuraSpin2 var(--aura-spin2) linear infinite, lvAuraPulse2 1.5s ease-in-out infinite;
         }
         .lv-aura-wrap > :global(*) { position:relative; z-index:1; }
-        .lv-hero.glowing, .lv-card.glowing { animation:lvCardGlow 1.5s ease-in-out infinite; }
+        .lv-hero.glowing, .lv-card.glowing { animation:lvCardGlow 1.5s ease-in-out infinite; overflow:hidden; }
+        /* カード面を横切る金属光沢。トロフィー本体（LevelIcon）の光沢と同じ
+           発想で、カードそのものが磨かれた金属板のように光を返す。 */
+        .lv-hero.glowing::after, .lv-card.glowing::after {
+          content:''; position:absolute; inset:0; z-index:2; pointer-events:none; border-radius:inherit;
+          background:linear-gradient(100deg, transparent 43%, var(--tier-edge) 48%, var(--tier-metal) 50%, var(--tier-edge) 52%, transparent 57%);
+          background-size:420% 100%; background-repeat:no-repeat;
+          opacity:var(--card-sheen-op);
+          animation:lvCardSheen var(--card-sheen-dur) cubic-bezier(.45,.05,.3,1) infinite;
+        }
+        /* 経験値バーにも光が流れる */
+        .glowing .lv-hero-fill, .glowing .lv-fill { position:relative; overflow:hidden; }
+        .glowing .lv-hero-fill::after, .glowing .lv-fill::after {
+          content:''; position:absolute; inset:0;
+          background:linear-gradient(100deg, transparent 30%, rgba(255,255,255,.85) 50%, transparent 70%);
+          background-size:220% 100%; background-repeat:no-repeat;
+          animation:lvCardSheen calc(var(--card-sheen-dur) * 0.8) linear infinite;
+        }
         .lv-aura-wrap.rainbow .lv-hero.glowing, .lv-aura-wrap.rainbow .lv-card.glowing {
           animation:lvCardGlow 1.5s ease-in-out infinite, lvBorderHue 3.2s linear infinite;
         }
@@ -1174,6 +1208,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           from { filter:blur(var(--aura-blur)) hue-rotate(0deg); }
           to   { filter:blur(var(--aura-blur)) hue-rotate(360deg); }
         }
+        @keyframes lvCardSheen {
+          0%       { background-position:190% 0; }
+          62%,100% { background-position:-90% 0; }
+        }
         @keyframes lvCardGlow {
           0%,100% { box-shadow:0 0 10px -2px var(--tier), 0 0 18px -12px var(--tier), inset 0 0 18px -14px var(--tier); }
           50%     { box-shadow:0 0 24px 1px var(--tier), 0 0 36px -8px var(--tier), inset 0 0 26px -8px var(--tier); }
@@ -1188,7 +1226,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           100% { border-color:#ff5e5e; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .lv-aura-wrap.on::before, .lv-aura-wrap.on::after, .lv-hero.glowing, .lv-card.glowing { animation:none !important; }
+          .lv-aura-wrap.on::before, .lv-aura-wrap.on::after, .lv-hero.glowing, .lv-card.glowing,
+          .lv-hero.glowing::after, .lv-card.glowing::after,
+          .glowing .lv-hero-fill::after, .glowing .lv-fill::after { animation:none !important; }
+          .lv-hero.glowing::after, .lv-card.glowing::after { display:none; }
         }
 
         /* ── Total view ── */
