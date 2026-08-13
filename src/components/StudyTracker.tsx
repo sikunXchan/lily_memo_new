@@ -586,7 +586,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`} style={tierFx.vars}>
             <button className={`lv-hero${tierFx.on ? ' glowing' : ''}`} onClick={() => setView('total')} style={{ borderColor: levelInfo.tier.color + '77' }}>
               <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
-                <LevelIcon tier={levelInfo.tier} size={56} />
+                <LevelIcon tier={levelInfo.tier} size={76} />
               </div>
               <div className="lv-hero-body">
                 <div className="lv-hero-top">
@@ -974,7 +974,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`} style={tierFx.vars}>
             <div className={`lv-card${tierFx.on ? ' glowing' : ''}`} style={{ borderColor: levelInfo.tier.color + '77' }}>
               <div className="lv-card-icon" style={{ background: levelInfo.tier.color + '1f', borderColor: levelInfo.tier.color + '66' }}>
-                <LevelIcon tier={levelInfo.tier} size={72} />
+                <LevelIcon tier={levelInfo.tier} size={104} />
               </div>
               <div className="lv-card-body">
                 <div className="lv-card-top">
@@ -1136,15 +1136,15 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .lv-hero { display:flex; align-items:center; gap:13px; width:100%; text-align:left; cursor:pointer; font-family:inherit;
           background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:13px 15px; transition:transform .12s, box-shadow .12s; }
         .lv-hero:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,.12); }
-        .lv-hero-icon { width:62px; height:62px; flex-shrink:0; border-radius:16px; border:1.5px solid; display:flex; align-items:center; justify-content:center; }
+        .lv-hero-icon { width:84px; height:84px; flex-shrink:0; border-radius:16px; border:1.5px solid; display:flex; align-items:center; justify-content:center; }
         .lv-hero-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
-        .lv-hero-top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
-        .lv-hero-num { font-size:1.7rem; font-weight:900; line-height:1; }
-        .lv-hero-next { font-size:.72rem; font-weight:700; color:var(--fg-muted); white-space:nowrap; }
+        .lv-hero-top { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 8px; }
+        .lv-hero-num { font-size:1.7rem; font-weight:900; line-height:1; white-space:nowrap; }
+        .lv-hero-next { font-size:.72rem; font-weight:700; color:var(--fg-muted); white-space:nowrap; margin-left:auto; }
         /* 段位名（ブロンズ Ⅰ … キング）。Lv の隣に置き、右端の「次まで」は右寄せのまま。 */
-        .lv-tier-chip { flex:0 1 auto; min-width:0; margin-right:auto; padding:3px 9px; border-radius:99px; border:1px solid;
+        .lv-tier-chip { flex:0 1 auto; min-width:0; padding:3px 9px; border-radius:99px; border:1px solid;
           font-size:.7rem; font-weight:900; letter-spacing:.03em; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .lv-card-top { display:flex; align-items:baseline; gap:9px; }
+        .lv-card-top { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 9px; }
         .lv-hero-bar { height:9px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
         .lv-hero-fill { height:100%; border-radius:99px; transition:width .6s ease; }
 
@@ -1234,9 +1234,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
         /* ── Total view ── */
         .lv-card { background:var(--accent); border:1.5px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; align-items:center; gap:15px; }
-        .lv-card-icon { width:80px; height:80px; flex-shrink:0; border-radius:18px; border:1.5px solid; display:flex; align-items:center; justify-content:center; }
+        .lv-card-icon { width:114px; height:114px; flex-shrink:0; border-radius:18px; border:1.5px solid; display:flex; align-items:center; justify-content:center; }
         .lv-card-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
-        .lv-num { font-size:1.7rem; font-weight:900; line-height:1; }
+        .lv-num { font-size:1.7rem; font-weight:900; line-height:1; white-space:nowrap; }
         .lv-bar { height:10px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
         .lv-fill { height:100%; border-radius:99px; transition:width .6s ease; }
         .lv-next { font-size:.76rem; font-weight:700; color:var(--fg-muted); }
