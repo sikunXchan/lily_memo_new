@@ -88,29 +88,31 @@ export interface LevelTier {
 // 23 visual tiers. Highest first so tierForLevel returns the first match.
 // Tiers 1–8 (ブロンズ〜ゴールド) cluster in the first ~300h as an accessible
 // warm-up with no effects at all; from Tier 9 (プラチナ Ⅰ = 累計300時間) every
-// tier carries its own metal gloss, and the required hours keep climbing —
-// gently decelerating at the very top so キング stays reachable.
+// tier carries its own metal gloss. Tier 9 以降は「1段に必要な時間が毎段
+// 少しずつ増える」形（+139h → +241h）にしてあり、頂点の キングは累計
+// 約3000時間。ずっと加速させると到達不能になるので、伸び幅の増え方は
+// 一定に抑えている。
 //   t1  Lv1(0h)     t2  Lv21(12h)    t3  Lv38(41h)    t4  Lv51(75h)
 //   t5  Lv63(115h)  t6  Lv74(160h)   t7  Lv86(217h)   t8  Lv95(265h)
-//   t9  Lv101(300h) t10 Lv124(454h)  t11 Lv148(648h)  t12 Lv184(1005h)
-//   t13 Lv217(1400h) t14 Lv253(1905h) t15 Lv283(2386h) t16 Lv308(2828h)
-//   t17 Lv330(3247h) t18 Lv349(3633h) t19 Lv366(3997h) t20 Lv381(4332h)
-//   t21 Lv394(4633h) t22 Lv406(4921h) t23 Lv417(5192h ≈ 5200h)
+//   t9  Lv101(300h) t10 Lv122(439h)  t11 Lv141(588h)  t12 Lv159(749h)
+//   t13 Lv175(908h) t14 Lv191(1083h) t15 Lv206(1261h) t16 Lv221(1452h)
+//   t17 Lv236(1657h) t18 Lv250(1860h) t19 Lv264(2075h) t20 Lv277(2285h)
+//   t21 Lv291(2523h) t22 Lv304(2754h) t23 Lv317(2996h ≈ 3000h)
 export const LEVEL_TIERS: LevelTier[] = [
-  { minLevel: 417, group: 'キング',       rank: 0, emoji: '👑', icon: '/level/tier23.png', color: '#e879f9', fx: 'king' },
-  { minLevel: 406, group: 'チャンピオン', rank: 4, emoji: '🌌', icon: '/level/tier22.png', color: '#b06cf7', fx: 'champion4' },
-  { minLevel: 394, group: 'チャンピオン', rank: 3, emoji: '🌌', icon: '/level/tier21.png', color: '#7c6cf5', fx: 'champion3' },
-  { minLevel: 381, group: 'チャンピオン', rank: 2, emoji: '🔥', icon: '/level/tier20.png', color: '#ec4899', fx: 'champion2' },
-  { minLevel: 366, group: 'チャンピオン', rank: 1, emoji: '🔥', icon: '/level/tier19.png', color: '#ef4444', fx: 'champion1' },
-  { minLevel: 349, group: 'エース',       rank: 2, emoji: '🖤', icon: '/level/tier18.png', color: '#9d8ae0', fx: 'ace2' },
-  { minLevel: 330, group: 'エース',       rank: 1, emoji: '🖤', icon: '/level/tier17.png', color: '#7f88b8', fx: 'ace1' },
-  { minLevel: 308, group: 'エリート',     rank: 2, emoji: '🔷', icon: '/level/tier16.png', color: '#5145e5', fx: 'elite2' },
-  { minLevel: 283, group: 'エリート',     rank: 1, emoji: '🔹', icon: '/level/tier15.png', color: '#2f6fed', fx: 'elite1' },
-  { minLevel: 253, group: 'ダイヤモンド', rank: 2, emoji: '💎', icon: '/level/tier14.png', color: '#818cf8', fx: 'diamond2' },
-  { minLevel: 217, group: 'ダイヤモンド', rank: 1, emoji: '💎', icon: '/level/tier13.png', color: '#a5b4fc', fx: 'diamond1' },
-  { minLevel: 184, group: 'エメラルド',   rank: 2, emoji: '💚', icon: '/level/tier12.png', color: '#10b981', fx: 'emerald2' },
-  { minLevel: 148, group: 'エメラルド',   rank: 1, emoji: '💚', icon: '/level/tier11.png', color: '#34d399', fx: 'emerald1' },
-  { minLevel: 124, group: 'プラチナ',     rank: 2, emoji: '💠', icon: '/level/tier10.png', color: '#38bdf8', fx: 'platinum2' },
+  { minLevel: 317, group: 'キング',       rank: 0, emoji: '👑', icon: '/level/tier23.png', color: '#e879f9', fx: 'king' },
+  { minLevel: 304, group: 'チャンピオン', rank: 4, emoji: '🌌', icon: '/level/tier22.png', color: '#b06cf7', fx: 'champion4' },
+  { minLevel: 291, group: 'チャンピオン', rank: 3, emoji: '🌌', icon: '/level/tier21.png', color: '#7c6cf5', fx: 'champion3' },
+  { minLevel: 277, group: 'チャンピオン', rank: 2, emoji: '🔥', icon: '/level/tier20.png', color: '#ec4899', fx: 'champion2' },
+  { minLevel: 264, group: 'チャンピオン', rank: 1, emoji: '🔥', icon: '/level/tier19.png', color: '#ef4444', fx: 'champion1' },
+  { minLevel: 250, group: 'エース',       rank: 2, emoji: '🖤', icon: '/level/tier18.png', color: '#9d8ae0', fx: 'ace2' },
+  { minLevel: 236, group: 'エース',       rank: 1, emoji: '🖤', icon: '/level/tier17.png', color: '#7f88b8', fx: 'ace1' },
+  { minLevel: 221, group: 'エリート',     rank: 2, emoji: '🔷', icon: '/level/tier16.png', color: '#5145e5', fx: 'elite2' },
+  { minLevel: 206, group: 'エリート',     rank: 1, emoji: '🔹', icon: '/level/tier15.png', color: '#2f6fed', fx: 'elite1' },
+  { minLevel: 191, group: 'ダイヤモンド', rank: 2, emoji: '💎', icon: '/level/tier14.png', color: '#818cf8', fx: 'diamond2' },
+  { minLevel: 175, group: 'ダイヤモンド', rank: 1, emoji: '💎', icon: '/level/tier13.png', color: '#a5b4fc', fx: 'diamond1' },
+  { minLevel: 159, group: 'エメラルド',   rank: 2, emoji: '💚', icon: '/level/tier12.png', color: '#10b981', fx: 'emerald2' },
+  { minLevel: 141, group: 'エメラルド',   rank: 1, emoji: '💚', icon: '/level/tier11.png', color: '#34d399', fx: 'emerald1' },
+  { minLevel: 122, group: 'プラチナ',     rank: 2, emoji: '💠', icon: '/level/tier10.png', color: '#38bdf8', fx: 'platinum2' },
   { minLevel: 101, group: 'プラチナ',     rank: 1, emoji: '💠', icon: '/level/tier9.png',  color: '#7dd3fc', fx: 'platinum1' },
   { minLevel: 95,  group: 'ゴールド',     rank: 3, emoji: '🥇', icon: '/level/tier8.png',  color: '#ffc107', fx: 'none' },
   { minLevel: 86,  group: 'ゴールド',     rank: 2, emoji: '🥇', icon: '/level/tier7.png',  color: '#f4b400', fx: 'none' },
