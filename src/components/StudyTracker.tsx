@@ -242,6 +242,16 @@ function EmblemPicker({
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
+// エリート以降で学習タブ全体に舞わせる光の粒。Math.random は使わず、
+// 黄金角で決め打ちして SSR と CSR がズレないようにする。
+const AMB_MOTES = Array.from({ length: 22 }, (_, i) => ({
+  left: +((i * 137.508) % 100).toFixed(2),
+  size: 2 + ((i * 5) % 5),
+  delay: +(((i * 17) % 40) / 2).toFixed(2),
+  dur: +(9 + ((i * 13) % 11)).toFixed(2),
+  drift: ((i % 5) - 2) * 26,
+}));
+
 export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus }: StudyTrackerProps) {
   const t = useT();
   const { homeBackgroundSrc } = useCharacterSkin();
@@ -484,7 +494,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const tierFx = (() => {
     const tier = levelInfo.tier;
     const spec = fxSpecFor(tier);
-    if (!spec) return { on: false, rainbow: false, vars: undefined };
+    if (!spec) return { on: false, rainbow: false, chip: 'plain' as const, ambient: 0, vars: undefined };
     const p = spec.power; // 0.1（プラチナ Ⅰ）〜 1.0（キング）
     const c = tier.color;
     const rainbow = spec.rainbow;
@@ -505,9 +515,12 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
     const ring2 = (rainbow
       ? 'conic-gradient(from var(--lv-ang2),#ff5ec8,#b15eff,#5ec8ff,#5eff8b,#ffd24d,#ff5e5e,#ff5ec8)'
       : `conic-gradient(from var(--lv-ang2), transparent, #fff, transparent 30%, ${c} 55%, transparent 80%, #fff)`) + sparkles;
+    const amb = spec.ambient;
     return {
       on: true,
       rainbow,
+      chip: spec.chip,
+      ambient: amb,
       vars: {
         ['--tier']: c,
         ['--tier-metal']: spec.metal,
@@ -525,9 +538,26 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         // カードを横切る金属光沢のスイープ（段が上がるほど速く・強く）
         ['--card-sheen-dur']: `${(5.4 - p * 2.2).toFixed(2)}s`,
         ['--card-sheen-op']: `${(0.3 + p * 0.42).toFixed(2)}`,
+        // 段位名チップ（エメラルド以降）
+        ['--chip-spin']: `${(4.4 - p * 2.2).toFixed(2)}s`,
+        ['--chip-sheen']: `${(3.6 - p * 1.4).toFixed(2)}s`,
+        // 学習タブ全体に広がるオーラ（エリート以降。0 のときは描画しない）
+        ['--amb']: `${amb.toFixed(2)}`,
+        ['--amb-spin']: `${(34 - amb * 16).toFixed(1)}s`,
+        ['--amb-pulse']: `${(5.2 - amb * 2.2).toFixed(2)}s`,
       } as CSSProperties,
     };
   })();
+
+  // 段位名の札のクラスと色。エメラルド以降は金属の縁取り＋流れる光沢
+  // （fancy）、エリート以降は縁そのものが回って脈打つ（wild）。plain の段
+  // だけ色を直接当てる。札の JSX 自体は使う場所に直接書く — styled-jsx は
+  // return の JSX ツリー内の要素にしかスコープ用の class を付けないので、
+  // 変数に切り出すとスタイルが一切当たらなくなる。
+  const chipCls = `lv-tier-chip ${tierFx.chip}${tierFx.rainbow ? ' king' : ''}`;
+  const chipStyle = tierFx.chip === 'plain'
+    ? { color: levelInfo.tier.color, borderColor: levelInfo.tier.color + '66', background: levelInfo.tier.color + '1a' }
+    : undefined;
 
   // Favorite-emblem showcase: keep the user's chosen order, but only show ones
   // that are actually earned and still valid badge ids.
@@ -545,11 +575,44 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div
-      className={`st-container${homeBackgroundSrc ? ' has-skin-bg' : ''}`}
-      style={homeBackgroundSrc
-        ? { backgroundImage: `url(${homeBackgroundSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-        : undefined}
+      className={`st-container${homeBackgroundSrc ? ' has-skin-bg' : ''}${tierFx.ambient > 0 ? ' tier-amb' : ''}${tierFx.rainbow ? ' tier-king' : ''}`}
+      style={{
+        ...(homeBackgroundSrc
+          ? { backgroundImage: `url(${homeBackgroundSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+          : null),
+        ...tierFx.vars,
+      }}
     >
+      {/* エリート（Tier 15）以降は、タブ全体がティア色のオーラに包まれる。
+          オーロラ2枚＋回転する光条＋上下の縁光＋舞う粒。段が上がるほど濃く
+          速くなり、キングは色相が巡回する。 */}
+      {tierFx.ambient > 0 && (
+        <div className="st-tier-fx" aria-hidden>
+          <span className="stfx-aurora stfx-a1" />
+          <span className="stfx-aurora stfx-a2" />
+          <span className="stfx-beams" />
+          <span className="stfx-edge stfx-top" />
+          <span className="stfx-edge stfx-bottom" />
+          <span className="stfx-sweep" />
+          <span className="stfx-frame" />
+          <span className="stfx-motes">
+            {AMB_MOTES.slice(0, Math.round(6 + tierFx.ambient * 16)).map((m, i) => (
+              <i
+                key={i}
+                className="stfx-mote"
+                style={{
+                  left: `${m.left}%`,
+                  width: `${m.size}px`,
+                  height: `${m.size}px`,
+                  animationDelay: `${m.delay}s`,
+                  animationDuration: `${m.dur}s`,
+                  ['--drift' as string]: `${m.drift}px`,
+                }}
+              />
+            ))}
+          </span>
+        </div>
+      )}
       <AmbientOverlay />
       {/* Header */}
       <div className="st-header">
@@ -583,7 +646,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
           {/* Prominent level banner. エフェクトが付く段(Tier 9〜)では、カード自体が
               ティア色のオーラをまとって脈打つ — 段が上がるほど強くなる。 */}
-          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`} style={tierFx.vars}>
+          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`}>
             <button className={`lv-hero${tierFx.on ? ' glowing' : ''}`} onClick={() => setView('total')} style={{ borderColor: levelInfo.tier.color + '77' }}>
               <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
                 <LevelIcon tier={levelInfo.tier} size={76} />
@@ -591,9 +654,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
               <div className="lv-hero-body">
                 <div className="lv-hero-top">
                   <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
-                  <span className="lv-tier-chip" style={{ color: levelInfo.tier.color, borderColor: levelInfo.tier.color + '66', background: levelInfo.tier.color + '1a' }}>
-                    {tierName(levelInfo.tier, t)}
-                  </span>
+                  <span className={chipCls} style={chipStyle}>{tierName(levelInfo.tier, t)}</span>
                   <span className="lv-hero-next">{t('次まで {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
                 </div>
                 <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
@@ -971,7 +1032,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         <div className="st-scroll">
           {/* Level card。エフェクトが付く段(Tier 9〜)では、カードが回転する
               ティア色のオーラをまとって脈打つ。 */}
-          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`} style={tierFx.vars}>
+          <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`}>
             <div className={`lv-card${tierFx.on ? ' glowing' : ''}`} style={{ borderColor: levelInfo.tier.color + '77' }}>
               <div className="lv-card-icon" style={{ background: levelInfo.tier.color + '1f', borderColor: levelInfo.tier.color + '66' }}>
                 <LevelIcon tier={levelInfo.tier} size={104} />
@@ -979,9 +1040,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
               <div className="lv-card-body">
                 <div className="lv-card-top">
                   <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
-                  <span className="lv-tier-chip" style={{ color: levelInfo.tier.color, borderColor: levelInfo.tier.color + '66', background: levelInfo.tier.color + '1a' }}>
-                    {tierName(levelInfo.tier, t)}
-                  </span>
+                  <span className={chipCls} style={chipStyle}>{tierName(levelInfo.tier, t)}</span>
                 </div>
                 <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
                 <span className="lv-next">{t('次のレベルまであと {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
@@ -1064,6 +1123,97 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
         .st-scroll { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
 
+        /* ── 学習タブ全体のティアオーラ（エリート = Tier 15 以降）─────────
+           カード単位ではなく画面ごと染める演出。--amb（0.34〜1.0）が強さで、
+           段が上がるほどオーロラが濃く、光条が速く、粒が増える。キングだけ
+           全体の色相が巡回する。中身は .st-header / .st-scroll を z-index 1
+           に上げて、この層より前に出している。 */
+        .st-tier-fx { position:absolute; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+        .st-container.tier-amb .st-header, .st-container.tier-amb .st-scroll { position:relative; z-index:1; }
+        .stfx-aurora { position:absolute; width:150%; height:62%; border-radius:50%; filter:blur(56px); }
+        .stfx-a1 {
+          top:-22%; left:-28%; background:radial-gradient(circle, var(--tier), transparent 66%);
+          opacity:calc(var(--amb) * 0.62); animation:stfxDrift1 calc(var(--amb-spin) * 0.55) ease-in-out infinite;
+        }
+        .stfx-a2 {
+          bottom:-26%; right:-28%; background:radial-gradient(circle, var(--tier-edge), transparent 66%);
+          opacity:calc(var(--amb) * 0.5); animation:stfxDrift2 calc(var(--amb-spin) * 0.72) ease-in-out infinite;
+        }
+        /* 画面ぜんぶを斜めに横切る光。トロフィーやカードの金属光沢と同じ動き
+           を画面スケールでやると、タブ全体が磨かれた金属板のように見える。 */
+        .stfx-sweep {
+          position:absolute; inset:-10%;
+          background:linear-gradient(100deg, transparent 41%, color-mix(in srgb, var(--tier) 70%, transparent) 47%,
+            var(--tier-metal) 50%, color-mix(in srgb, var(--tier) 70%, transparent) 53%, transparent 59%);
+          background-size:340% 100%; background-repeat:no-repeat; filter:blur(6px);
+          opacity:calc(var(--amb) * 0.55);
+          animation:stfxSweep calc(var(--amb-pulse) * 1.6) cubic-bezier(.45,.05,.3,1) infinite;
+        }
+        /* 画面の縁が段位色に光って脈打つ。これが一番「囲まれてる感」が出る。 */
+        .stfx-frame {
+          position:absolute; inset:0;
+          box-shadow:inset 0 0 calc(18px + var(--amb) * 70px) calc(var(--amb) * -4px) var(--tier),
+                     inset 0 0 calc(4px + var(--amb) * 14px) color-mix(in srgb, var(--tier-edge) 70%, transparent);
+          animation:stfxFrame var(--amb-pulse) ease-in-out infinite;
+        }
+        /* 画面の外まで伸びる光条。回転させても正方形なのでにじみ出ない。 */
+        .stfx-beams {
+          position:absolute; top:50%; left:50%; width:230vmax; height:230vmax; transform:translate(-50%,-50%);
+          background:conic-gradient(from 0deg,
+            transparent 0deg, var(--tier) 3deg, transparent 8deg,
+            transparent 44deg, var(--tier-edge) 47deg, transparent 52deg,
+            transparent 88deg, var(--tier) 91deg, transparent 96deg,
+            transparent 132deg, var(--tier-edge) 135deg, transparent 140deg,
+            transparent 176deg, var(--tier) 179deg, transparent 184deg);
+          opacity:calc(var(--amb) * 0.22); filter:blur(2px);
+          animation:stfxSpin var(--amb-spin) linear infinite;
+        }
+        .stfx-edge {
+          position:absolute; left:0; right:0; height:34%;
+          opacity:calc(var(--amb) * 0.5); animation:stfxBreathe var(--amb-pulse) ease-in-out infinite;
+        }
+        .stfx-top    { top:0;    background:linear-gradient(to bottom, color-mix(in srgb, var(--tier) 55%, transparent), transparent); }
+        .stfx-bottom { bottom:0; background:linear-gradient(to top,    color-mix(in srgb, var(--tier-edge) 55%, transparent), transparent); animation-delay:-1.4s; }
+        .stfx-motes { position:absolute; inset:0; overflow:hidden; }
+        .stfx-mote {
+          position:absolute; bottom:-12px; border-radius:50%; opacity:0;
+          background:var(--tier); box-shadow:0 0 10px var(--tier), 0 0 4px var(--tier-metal);
+          animation-name:stfxRise; animation-timing-function:linear; animation-iteration-count:infinite;
+        }
+        /* 段位に染まるヘッダーとタブ */
+        .st-container.tier-amb .st-header {
+          border-bottom-color:color-mix(in srgb, var(--tier) 55%, transparent);
+          box-shadow:0 6px 26px -14px var(--tier);
+        }
+        .st-container.tier-amb .st-title { text-shadow:0 0 calc(6px + var(--amb) * 14px) var(--tier); }
+        /* 選択中のタブも段位色に。ティア色は濃いもの（エリートの藍やチャンピオン
+           の紫）ばかりなので文字は白のまま、影だけ足して淡い段でも沈まないように。 */
+        .st-container.tier-amb .st-tab.active {
+          background:var(--tier); border-color:var(--tier); color:#fff;
+          text-shadow:0 1px 3px rgba(0,0,0,.45);
+          box-shadow:0 0 calc(6px + var(--amb) * 12px) -2px var(--tier);
+        }
+        .st-container.tier-king .st-tier-fx { animation:chipHue 7s linear infinite; }
+
+        @keyframes stfxSpin    { to { transform:translate(-50%,-50%) rotate(360deg); } }
+        @keyframes stfxDrift1  { 0%,100% { transform:translate(0,0) scale(1); } 50% { transform:translate(12%, 8%) scale(1.18); } }
+        @keyframes stfxDrift2  { 0%,100% { transform:translate(0,0) scale(1.12); } 50% { transform:translate(-14%, -7%) scale(0.94); } }
+        @keyframes stfxBreathe { 0%,100% { opacity:calc(var(--amb) * 0.3); } 50% { opacity:calc(var(--amb) * 0.75); } }
+        @keyframes stfxSweep   { 0% { background-position:200% 0; } 55%,100% { background-position:-100% 0; } }
+        @keyframes stfxFrame   { 0%,100% { opacity:0.55; } 50% { opacity:1; } }
+        @keyframes stfxRise    {
+          0%   { opacity:0; transform:translate(0,0) scale(0.6); }
+          10%  { opacity:1; }
+          100% { opacity:0; transform:translate(var(--drift), -104vh) scale(1.3); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .stfx-aurora, .stfx-beams, .stfx-edge, .stfx-mote, .stfx-sweep, .stfx-frame,
+          .st-container.tier-king .st-tier-fx,
+          .lv-tier-chip.fancy, .lv-tier-chip.wild,
+          .lv-tier-chip.fancy::after, .lv-tier-chip.wild::after { animation:none !important; }
+          .stfx-motes, .stfx-sweep { display:none; }
+        }
+
         /* ── Category ── */
         .cat-section { display:flex; flex-direction:column; gap:8px; }
         .cat-row { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
@@ -1141,9 +1291,62 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         .lv-hero-top { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 8px; }
         .lv-hero-num { font-size:1.7rem; font-weight:900; line-height:1; white-space:nowrap; }
         .lv-hero-next { font-size:.72rem; font-weight:700; color:var(--fg-muted); white-space:nowrap; margin-left:auto; }
-        /* 段位名（ブロンズ Ⅰ … キング）。Lv の隣に置き、右端の「次まで」は右寄せのまま。 */
-        .lv-tier-chip { flex:0 1 auto; min-width:0; padding:3px 9px; border-radius:99px; border:1px solid;
+        /* ── 段位名の札（ブロンズ Ⅰ … キング）──────────────────────────
+           Lv の隣に置き、右端の「次まで」は右寄せのまま。
+           plain（〜プラチナ）: ただの色付きピル。
+           fancy（エメラルド〜ダイヤモンド）: 金属の縁取り＋光沢が流れる。
+           wild （エリート以降）: 縁のコンジックが回り、脈打ち、光沢が走る。
+           縁の「回転」は border-box に敷いたコンジックの開始角(--chip-ang)を
+           animate して作る（要素ごと rotate すると文字まで回ってしまう）。 */
+        .lv-tier-chip { position:relative; z-index:3; flex:0 1 auto; min-width:0; padding:3px 9px; border-radius:99px; border:1px solid;
           font-size:.7rem; font-weight:900; letter-spacing:.03em; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+        @property --chip-ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+        @keyframes chipSpin  { from { --chip-ang:0deg; } to { --chip-ang:360deg; } }
+        @keyframes chipSheen { 0% { background-position:190% 0; } 60%,100% { background-position:-90% 0; } }
+        @keyframes chipPulse {
+          0%,100% { box-shadow:0 0 6px -3px var(--tier), 0 0 14px -10px var(--tier); }
+          50%     { box-shadow:0 0 14px -1px var(--tier), 0 0 28px -6px var(--tier); }
+        }
+        @keyframes chipHue   { to { filter:hue-rotate(360deg); } }
+
+        /* 共通：札の面を斜めに走る光沢 */
+        .lv-tier-chip.fancy::after, .lv-tier-chip.wild::after {
+          content:''; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+          background:linear-gradient(100deg, transparent 40%, rgba(255,255,255,.55) 48%, #fff 50%, rgba(255,255,255,.55) 52%, transparent 60%);
+          background-size:320% 100%; background-repeat:no-repeat;
+          animation:chipSheen var(--chip-sheen) cubic-bezier(.45,.05,.3,1) infinite;
+        }
+
+        /* fancy — エメラルド〜ダイヤモンド */
+        .lv-tier-chip.fancy {
+          border:2px solid transparent; color:var(--tier); padding:4px 12px; font-size:.72rem; letter-spacing:.05em;
+          background:
+            linear-gradient(160deg, color-mix(in srgb, var(--tier) 26%, var(--background)), color-mix(in srgb, var(--tier) 8%, var(--background))) padding-box,
+            linear-gradient(115deg, var(--tier), #fff 42%, var(--tier-edge) 68%, var(--tier)) border-box;
+          text-shadow:0 0 10px color-mix(in srgb, var(--tier) 60%, transparent);
+          animation:chipPulse 2.4s ease-in-out infinite;
+        }
+        .lv-tier-chip.fancy::after { opacity:.7; }
+
+        /* wild — エリート以降。縁が回り、札そのものが発光する */
+        .lv-tier-chip.wild {
+          border:2px solid transparent; color:#fff; padding:4px 13px; font-size:.72rem; letter-spacing:.06em;
+          background:
+            linear-gradient(160deg, color-mix(in srgb, var(--tier) 42%, #0b0d1a), color-mix(in srgb, var(--tier) 14%, #0b0d1a)) padding-box,
+            conic-gradient(from var(--chip-ang), var(--tier), #fff, var(--tier-edge), var(--tier), #fff, var(--tier)) border-box;
+          text-shadow:0 0 8px var(--tier), 0 0 20px var(--tier);
+          animation:chipSpin var(--chip-spin) linear infinite, chipPulse var(--chip-sheen) ease-in-out infinite;
+        }
+        .lv-tier-chip.wild::after { opacity:.85; mix-blend-mode:screen; }
+        /* キング — 縁も光も虹 */
+        .lv-tier-chip.wild.king {
+          background:
+            linear-gradient(160deg, rgba(18,12,32,.94), rgba(38,18,52,.94)) padding-box,
+            conic-gradient(from var(--chip-ang), #ff5e5e, #ffd24d, #5eff8b, #5ec8ff, #b15eff, #ff5ec8, #ff5e5e) border-box;
+          animation:chipSpin var(--chip-spin) linear infinite, chipPulse var(--chip-sheen) ease-in-out infinite, chipHue 4s linear infinite;
+        }
+
         .lv-card-top { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 9px; }
         .lv-hero-bar { height:9px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
         .lv-hero-fill { height:100%; border-radius:99px; transition:width .6s ease; }
