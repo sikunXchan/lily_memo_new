@@ -233,6 +233,18 @@ const EN: Record<string, string> = {
   "トロフィーが新しい姿になったよ！": "Your trophy took on a new form!",
   "ついに最高段。ここまで積み上げたのは本当にすごい！": "The highest rank at last — stacking up this much is seriously impressive!",
 
+  // ── 段位名（Ⅰ〜Ⅳ の序数はローマ数字のまま付く）──
+  "ブロンズ": "Bronze",
+  "シルバー": "Silver",
+  "ゴールド": "Gold",
+  "プラチナ": "Platinum",
+  "エメラルド": "Emerald",
+  "ダイヤモンド": "Diamond",
+  "エリート": "Elite",
+  "エース": "Ace",
+  "チャンピオン": "Champion",
+  "キング": "King",
+
   "なし": "None",
   "教科名 (例: 数学)": "Subject name (e.g. Math)",
   "停止して保存": "Stop & save",

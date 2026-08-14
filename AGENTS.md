@@ -32,6 +32,18 @@ Lily Memo は、メモ・AIアシスタント「Lily」・学習記録・演習/
 
 Lily がメモに書ける Markdown を TipTap 用 HTML に変換する。数式($…$/$$…$$)、文字色 `{red:…}`、マーカー `==…==` / `=={green}…==`、図の埋め込み `~~~mermaid` / `~~~chart` / `~~~geometry`（メモブロックの ``` と衝突するのでチルダフェンス）に対応。色は `src/lib/memoColors.ts` の共有パレットを使い、エディタのツールバー（NoteEditor のバブルメニュー/色シート）と完全に一致させる。
 
+## 学習レベルの段位 — `src/lib/level.ts`
+
+レベルは累計学習時間だけで決まる（`0.03 × (level-1)²` 時間）。トロフィーの段位は
+23段で、`LEVEL_TIERS`（minLevel の降順）に段位名 `group` と序数 `rank`（Ⅰ〜Ⅳ）を
+持たせ、表示は `tierName(tier, t)` で「ゴールド Ⅱ」のように組み立てる。`group` は
+そのまま i18n のキー。演出は **累計300時間＝プラチナ Ⅰ（Tier 9）から** 付き、
+段ごとのパラメータは `LEVEL_FX`（金属光沢の色・強さ、オーラ、回転リング、粒の数、
+3D傾き）。描画は `src/components/LevelIcon.tsx` — 光沢はトロフィー PNG 自体を CSS
+マスクに使い、シルエットの中だけをハイライトの帯が走る。アイコンの元画像は
+`public/level_icon/` にあり、`python3 scripts/slice_level_icons.py` で
+`public/level/tierN.png` に切り出す（`SHEETS` の並び＝tier の並び）。
+
 ## プラン・利用制限 — `src/lib/points.ts`
 
 日次のトークン予算（`PLAN_DAILY_TOKENS`）と、回数制のチケット（`PLAN_*_TICKETS`：thinking/ultra/stable/exercise/lesson/search）で制御。`developer` プランは実質無制限。UI表示は `isTicketUnlimited()` で「無制限」に切り替える。
