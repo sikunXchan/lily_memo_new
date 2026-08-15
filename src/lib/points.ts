@@ -42,11 +42,13 @@ export const PLAN_LABEL: Record<Plan, string> = {
 // 'legacy' (古いモード) routes to the previous-generation 2.x Gemini models —
 // lower quality (lily-memo-2.0 相当) but very cheap, so it's billed at just
 // 0.1× and is usable without limit on every plan.
+// 'lite' (軽量モード) も flash-lite で走るので同じく 0.1×。どのプランでも
+// 回数無制限の「まずはこれ」枠なので、トークンもほとんど減らない。
 export type ResponseMode = 'legacy' | 'lite' | 'stable' | 'thinking' | 'ultra';
 
 export const MODE_MULTIPLIER: Record<ResponseMode, number> = {
   legacy: 0.1,
-  lite: 1,
+  lite: 0.1,
   stable: 2,
   thinking: 10,
   ultra: 15,
