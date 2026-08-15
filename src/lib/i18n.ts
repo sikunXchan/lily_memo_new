@@ -233,6 +233,24 @@ const EN: Record<string, string> = {
   "トロフィーが新しい姿になったよ！": "Your trophy took on a new form!",
   "ついに最高段。ここまで積み上げたのは本当にすごい！": "The highest rank at last — stacking up this much is seriously impressive!",
 
+  // ── 学習テーマ（見た目の着せ替え。段位で解禁される）──
+  "学習テーマ": "Study theme",
+  "色は自分で選べて、派手さは今の段位（{tier}）で決まるよ。":
+    "You pick the color; how flashy it gets is set by your current rank ({tier}).",
+  "解禁済み": "Unlocked",
+  "今の段位の色をそのまま使う": "Uses your current rank's own color",
+  "{tier} で解禁": "Unlocks at {tier}",
+  "段位カラー": "Rank color",
+  "オーロラ": "Aurora",
+  "ネオン": "Neon",
+  "森": "Forest",
+  "氷晶": "Frost",
+  "蒼雷": "Thunder",
+  "黒曜": "Obsidian",
+  "紅蓮": "Crimson",
+  "星海": "Star sea",
+  "虹": "Rainbow",
+
   // ── 段位名（Ⅰ〜Ⅳ の序数はローマ数字のまま付く）──
   "ブロンズ": "Bronze",
   "シルバー": "Silver",

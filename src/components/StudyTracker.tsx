@@ -6,14 +6,16 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Play, Square, Plus, Trash2, BarChart2, Timer, ArrowLeft,
   Book, FileText, Brush, Sparkles, Settings as SettingsIcon, GraduationCap,
-  Flame, X, ChevronLeft, ChevronRight, Zap, Pencil, Check,
+  Flame, X, ChevronLeft, ChevronRight, Zap, Pencil, Check, Palette,
 } from 'lucide-react';
 import { db, newSyncId, softDeleteSession, softDeleteCategory } from '@/lib/db';
 import type { StudyCategory, StudySession } from '@/lib/db';
 import StudyGreeting from './StudyGreeting';
 import TrophyRoom from './TrophyRoom';
 import StudyProfileModal from './StudyProfileModal';
+import StudyThemeModal from './StudyThemeModal';
 import { getLevelInfo, fmtHoursShort, fxSpecFor, tierName } from '@/lib/level';
+import { getStudyThemeId, resolveLook, themeById, STUDY_THEME_EVENT } from '@/lib/studyThemes';
 import LevelIcon from './LevelIcon';
 import { badgeById, BADGES } from '@/lib/badges';
 import { getFavoriteEmblems, setFavoriteEmblems, MAX_FAVORITE_EMBLEMS } from '@/lib/favoriteEmblems';
@@ -266,6 +268,9 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
 
   // Favorite emblems showcase (up to 5 earned badges the user chooses to feature)
   const [showEmblemPicker, setShowEmblemPicker] = useState(false);
+  // 見た目テーマ（演出の色）。段位は強さを、テーマは色を担当する。
+  const [themeId, setThemeId] = useState(getStudyThemeId);
+  const [showTheme, setShowTheme] = useState(false);
   const [favEmblems, setFavEmblems] = useState<string[]>([]);
   useEffect(() => {
     const refresh = () => setFavEmblems(getFavoriteEmblems());
@@ -300,6 +305,13 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   const categories = useLiveQuery(() => db.studyCategories.orderBy('createdAt').filter(c => !c.deletedAt).toArray(), []) ?? [];
   const sessions = useLiveQuery(() => db.studySessions.orderBy('startTime').filter(s => !s.deletedAt).toArray(), []) ?? [];
   const earnedBadges = useLiveQuery(() => db.earnedBadges.toArray(), []) ?? [];
+
+  // テーマは別タブ／別画面から変わることもあるので、イベントで拾い直す。
+  useEffect(() => {
+    const onCh = () => setThemeId(getStudyThemeId());
+    window.addEventListener(STUDY_THEME_EVENT, onCh);
+    return () => window.removeEventListener(STUDY_THEME_EVENT, onCh);
+  }, []);
 
   // Restore timer + category on mount
   useEffect(() => {
@@ -496,8 +508,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
     const spec = fxSpecFor(tier);
     if (!spec) return { on: false, rainbow: false, chip: 'plain' as const, ambient: 0, vars: undefined };
     const p = spec.power; // 0.1（プラチナ Ⅰ）〜 1.0（キング）
-    const c = tier.color;
-    const rainbow = spec.rainbow;
+    // 色はテーマ、強さは段位。テーマが「段位カラー」または未解禁なら段位の色に戻る。
+    const look = resolveLook(tier, themeId, { metal: spec.metal, edge: spec.metalEdge, rainbow: spec.rainbow });
+    const c = look.color;
+    const rainbow = look.rainbow;
     // The ring's "spin" is done by animating the conic-gradient's own start
     // angle (var(--lv-ang1)/2), NOT by rotating the pseudo-element's box —
     // this card is a wide, short pill, and rotating that whole rectangle
@@ -523,8 +537,8 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       ambient: amb,
       vars: {
         ['--tier']: c,
-        ['--tier-metal']: spec.metal,
-        ['--tier-edge']: spec.metalEdge,
+        ['--tier-metal']: look.metal,
+        ['--tier-edge']: look.edge,
         ['--aura']: ring1,
         ['--aura2']: ring2,
         ['--aura-blur']: `${(8 + p * 13).toFixed(1)}px`,
@@ -555,8 +569,11 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
   // return の JSX ツリー内の要素にしかスコープ用の class を付けないので、
   // 変数に切り出すとスタイルが一切当たらなくなる。
   const chipCls = `lv-tier-chip ${tierFx.chip}${tierFx.rainbow ? ' king' : ''}`;
+  // 演出が付かない段（〜ゴールド）でもテーマの色は効かせたいので、tierFx 側の
+  // 計算とは別にここでも解決しておく。
+  const accent = resolveLook(levelInfo.tier, themeId, null).color;
   const chipStyle = tierFx.chip === 'plain'
-    ? { color: levelInfo.tier.color, borderColor: levelInfo.tier.color + '66', background: levelInfo.tier.color + '1a' }
+    ? { color: accent, borderColor: accent + '66', background: accent + '1a' }
     : undefined;
 
   // Favorite-emblem showcase: keep the user's chosen order, but only show ones
@@ -647,20 +664,26 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           {/* Prominent level banner. エフェクトが付く段(Tier 9〜)では、カード自体が
               ティア色のオーラをまとって脈打つ — 段が上がるほど強くなる。 */}
           <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`}>
-            <button className={`lv-hero${tierFx.on ? ' glowing' : ''}`} onClick={() => setView('total')} style={{ borderColor: levelInfo.tier.color + '77' }}>
-              <div className="lv-hero-icon" style={{ background: levelInfo.tier.color + '22', borderColor: levelInfo.tier.color + '66' }}>
+            <button className={`lv-hero${tierFx.on ? ' glowing' : ''}`} onClick={() => setView('total')} style={{ borderColor: accent + '77' }}>
+              <div className="lv-hero-icon" style={{ background: accent + '22', borderColor: accent + '66' }}>
                 <LevelIcon tier={levelInfo.tier} size={76} />
               </div>
               <div className="lv-hero-body">
                 <div className="lv-hero-top">
-                  <span className="lv-hero-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                  <span className="lv-hero-num" style={{ color: accent }}>Lv {levelInfo.level}</span>
                   <span className={chipCls} style={chipStyle}>{tierName(levelInfo.tier, t)}</span>
                   <span className="lv-hero-next">{t('次まで {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
                 </div>
-                <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
+                <div className="lv-hero-bar"><div className="lv-hero-fill" style={{ width: `${levelInfo.pct}%`, background: accent }} /></div>
               </div>
             </button>
           </div>
+
+          {/* 見た目テーマの切り替え。段位は選べないが、光の色は選べる。 */}
+          <button className="lv-theme-btn" onClick={() => setShowTheme(true)} style={{ borderColor: accent + '66', color: accent }}>
+            <Palette size={13} />
+            <span>{t('テーマ')}: {t(themeById(themeId).name)}</span>
+          </button>
 
           {/* Favorite-emblem showcase. Nothing chosen → no decoration at all,
               just a subtle way to start (only once some badge is earned). */}
@@ -1033,20 +1056,25 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
           {/* Level card。エフェクトが付く段(Tier 9〜)では、カードが回転する
               ティア色のオーラをまとって脈打つ。 */}
           <div className={`lv-aura-wrap${tierFx.on ? ' on' : ''}${tierFx.rainbow ? ' rainbow' : ''}`}>
-            <div className={`lv-card${tierFx.on ? ' glowing' : ''}`} style={{ borderColor: levelInfo.tier.color + '77' }}>
-              <div className="lv-card-icon" style={{ background: levelInfo.tier.color + '1f', borderColor: levelInfo.tier.color + '66' }}>
+            <div className={`lv-card${tierFx.on ? ' glowing' : ''}`} style={{ borderColor: accent + '77' }}>
+              <div className="lv-card-icon" style={{ background: accent + '1f', borderColor: accent + '66' }}>
                 <LevelIcon tier={levelInfo.tier} size={104} />
               </div>
               <div className="lv-card-body">
                 <div className="lv-card-top">
-                  <span className="lv-num" style={{ color: levelInfo.tier.color }}>Lv {levelInfo.level}</span>
+                  <span className="lv-num" style={{ color: accent }}>Lv {levelInfo.level}</span>
                   <span className={chipCls} style={chipStyle}>{tierName(levelInfo.tier, t)}</span>
                 </div>
-                <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: levelInfo.tier.color }} /></div>
+                <div className="lv-bar"><div className="lv-fill" style={{ width: `${levelInfo.pct}%`, background: accent }} /></div>
                 <span className="lv-next">{t('次のレベルまであと {h}', { h: fmtHoursShort(levelInfo.remainingHours) })}</span>
               </div>
             </div>
           </div>
+
+          <button className="lv-theme-btn" onClick={() => setShowTheme(true)} style={{ borderColor: accent + '66', color: accent }}>
+            <Palette size={13} />
+            <span>{t('テーマ')}: {t(themeById(themeId).name)}</span>
+          </button>
 
           <div className="grand-card">
             <span className="grand-label">{t('合計学習時間')}</span>
@@ -1110,6 +1138,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         />
       )}
       {showProfile && <StudyProfileModal onClose={() => setShowProfile(false)} />}
+      {showTheme && <StudyThemeModal tier={levelInfo.tier} onClose={() => setShowTheme(false)} />}
 
       <style jsx>{`
         .st-container { display:flex; flex-direction:column; height:100%; background:var(--background); overflow:hidden; position:relative; }
@@ -1348,6 +1377,10 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
         }
 
         .lv-card-top { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 9px; }
+        .lv-theme-btn { align-self:flex-start; display:flex; align-items:center; gap:6px; font-family:inherit;
+          background:var(--accent); border:1.5px solid; border-radius:99px; padding:7px 14px;
+          font-size:.76rem; font-weight:800; cursor:pointer; transition:transform .12s, box-shadow .12s; }
+        .lv-theme-btn:hover { transform:translateY(-1px); box-shadow:0 4px 14px -6px currentColor; }
         .lv-hero-bar { height:9px; background:rgba(0,0,0,0.12); border-radius:99px; overflow:hidden; }
         .lv-hero-fill { height:100%; border-radius:99px; transition:width .6s ease; }
 
