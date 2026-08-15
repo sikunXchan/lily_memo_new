@@ -75,6 +75,14 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [syncMsg, setSyncMsg] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // 名前とスキンは他の端末から同期で降ってくることがある（lib/profileSync.ts）。
+  // 設定画面を開いたまま届いても表示が追いつくように、イベントで読み直す。
+  useEffect(() => {
+    const onName = () => setUserNameState(getUserName());
+    window.addEventListener('lily-username-changed', onName);
+    return () => window.removeEventListener('lily-username-changed', onName);
+  }, []);
+
   useEffect(() => {
     if (navigator.storage && navigator.storage.persisted) {
       navigator.storage.persisted().then(setIsPersisted);

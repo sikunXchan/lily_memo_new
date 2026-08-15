@@ -12,6 +12,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **手動バックアップ**: 設定画面の「バックアップをダウンロード」で JSON を書き出し、もう一方の端末で「復元ファイルをアップロード」して取り込む。
 - **ライブ同期**: コードを使った端末間同期（`src/lib/liveSync.ts`、`/api/sync/live`・`/api/sync/[code]`）。中継はするがサーバーにデータを溜め込むクラウド保存ではない。受信側のデータは送信側で上書きされる。
 
+IndexedDB ではなく localStorage に居るものは、この2経路に自動では乗らない。乗せたいものは明示的にスナップショットへ畳み込む必要がある。今そうしているのは2つ:
+- **プラン・当日のトークン消費** — `src/lib/points.ts` の `getPlanSyncState()` / `applyPlanSyncState()`。
+- **ユーザーの名前・所持スキン・装備スキン** — `src/lib/profileSync.ts` の `getProfileSyncState()` / `applyProfileSyncState()`。所持スキンは**必ず和集合**（ガチャの当たりを同期で失わせない）、名前と装備スキンは打刻（`lily_user_name_at` / `lily-character-skin-at`）の新しいほうが勝つ。書き換え側は `lily-username-changed` / `lily-skins-changed` を投げるだけにして、`profileSync` がそれを拾う — 直接 import し合うと循環参照になる。
+
 # このリポジトリで作業するエージェントへ
 
 Lily Memo は、メモ・AIアシスタント「Lily」・学習記録・演習/授業・PDFビューアを1つにまとめた学習アプリ（PWA、日本語がソース言語）。以下は実際のコードで確認済みの要点。

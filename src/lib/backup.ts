@@ -1,3 +1,4 @@
+import { applyProfileSyncState, getProfileSyncState, type ProfileSyncState } from './profileSync';
 import { db, type Folder, type Note, type SavedChat, type StudyCategory, type StudySession, type Todo, type EarnedBadge, type Diary, type LessonSession, type DiagramSet, newSyncId } from './db';
 
 function extractImages(content: string): { content: string; images: Record<string, string> } {
@@ -34,6 +35,9 @@ export interface BackupPayload {
   diaries?: Diary[];
   lessonSessions?: LessonSession[];
   diagramSets?: DiagramSet[];
+  // 名前と所持/装備スキン。Dexie ではなく localStorage 産なので、ここで
+  // 明示的に積んでおかないと端末を移したときに落ちる（lib/profileSync.ts）。
+  profile?: ProfileSyncState;
   timestamp: number;
   version?: number;
 }
@@ -157,6 +161,7 @@ export async function buildBackupJson(): Promise<string> {
     diaries,
     lessonSessions,
     diagramSets,
+    profile: getProfileSyncState(),
     timestamp: Date.now(),
     version: 1,
   };
@@ -218,6 +223,9 @@ export async function restoreBackupFromJson(jsonText: string): Promise<void> {
 
   // Diagram sets: additive MERGE by createdAt, newest updatedAt wins.
   await mergeDiagramSets(data.diagramSets ?? [], now);
+
+  // 名前と所持/装備スキン。所持は和集合、名前と装備は打刻の新しいほうが勝つ。
+  applyProfileSyncState(data.profile);
 }
 
 // Merge saved chats by `createdAt` (stable natural key across devices) without

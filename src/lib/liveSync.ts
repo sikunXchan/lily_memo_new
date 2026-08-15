@@ -2,6 +2,7 @@ import { liveQuery, type Table } from 'dexie';
 import { db, newSyncId, ensureStudySyncIds } from './db';
 import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession, DiagramSet } from './db';
 import { getPlanSyncState, applyPlanSyncState, registerPlanSyncHook, type PlanSyncState } from './points';
+import { applyProfileSyncState, getProfileSyncState, registerProfileSyncHook, type ProfileSyncState } from './profileSync';
 
 const PUSH_DEBOUNCE_MS  = 3_000;
 const POLL_INTERVAL_MS  = 30_000;
@@ -31,6 +32,8 @@ interface LiveSnapshot {
   lessonSessions:   LessonSession[];
   diagramSets:      DiagramSet[];
   planState?:       PlanSyncState;
+  // 名前と所持/装備スキン。planState と同じく localStorage 産。
+  profile?:         ProfileSyncState;
   ts: number;
 }
 
@@ -101,6 +104,7 @@ async function buildSnapshot(): Promise<LiveSnapshot> {
     savedChats: savedChats.map(stripSavedChatForSync),
     todos, earnedBadges, problemSets, diaries, lessonSessions, diagramSets,
     planState: getPlanSyncState(),
+    profile: getProfileSyncState(),
     ts: Date.now(),
   };
 }
@@ -219,6 +223,8 @@ function schedulePush() {
 // plan unlock or a spent message schedules a push the same way a note edit
 // does. A no-op call (schedulePush() bails out when sync is disabled).
 registerPlanSyncHook(() => schedulePush());
+// 名前・スキンも同じく localStorage 産なので、変更を拾って push を予約する。
+registerProfileSyncHook(() => schedulePush());
 
 // Fire a pending debounced push immediately (page being hidden/closed).
 function flushPendingPush() {
@@ -234,6 +240,9 @@ async function mergeSnapshot(remote: LiveSnapshot) {
   try {
     // ── Plan + today's token usage (see lib/points.ts for the merge rules).
     applyPlanSyncState(remote.planState);
+
+    // ── 名前・スキン（lib/profileSync.ts のマージ規則を参照）。
+    applyProfileSyncState(remote.profile);
 
     // ── Folders: syncId-based, newer updatedAt wins (tombstones carry a bumped
     // updatedAt so deletions propagate). parentId is resolved in a second pass
