@@ -100,3 +100,8 @@ export const CHARACTER_SKINS_BY_RARITY: CharacterSkin[] =
   [...CHARACTER_SKINS].sort((a, b) => RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity]);
 
 export const CHARACTER_SKIN_STORAGE_KEY = 'lily-character-skin'; // '' = default look
+// 付け替えた時刻。端末間で新しいほうを勝たせるために使う（lib/profileSync.ts）。
+export const CHARACTER_SKIN_AT_KEY = 'lily-character-skin-at';
+// 所持スキンや装備スキンが変わったときに飛ぶイベント。表示の更新と、
+// 同期への push 予約の両方に使われる。
+export const SKINS_CHANGED_EVENT = 'lily-skins-changed';

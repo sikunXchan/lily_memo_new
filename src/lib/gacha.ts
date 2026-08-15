@@ -4,7 +4,7 @@
 // doesn't already own, weighted by rarity. Once every skin is owned the
 // gacha is blocked entirely — there's nothing left to give.
 import { getPlan, todayStr, type Plan } from './points';
-import { CHARACTER_SKINS, type SkinRarity } from './characterSkins';
+import { CHARACTER_SKINS, SKINS_CHANGED_EVENT, type SkinRarity } from './characterSkins';
 import { SKINS_STORAGE_KEY as LEGACY_UNLOCK_KEY } from './themes';
 
 export const PLAN_GACHA_PULLS: Record<Plan, number> = {
@@ -59,10 +59,13 @@ export function isAllSkinsOwned(): boolean {
   return CHARACTER_SKINS.every(s => owned.has(s.id));
 }
 
-function ownSkin(id: string): void {
+export function ownSkin(id: string): void {
   const owned = new Set(getOwnedSkinIds());
+  if (owned.has(id)) return; // 既に持っている — push を無駄に起こさない
   owned.add(id);
   localStorage.setItem(KEY_OWNED, JSON.stringify([...owned]));
+  // 当たったスキンは他の端末にも渡る（マージは常に和集合）。
+  window.dispatchEvent(new Event(SKINS_CHANGED_EVENT));
 }
 
 export function getGachaPullLimit(): number {

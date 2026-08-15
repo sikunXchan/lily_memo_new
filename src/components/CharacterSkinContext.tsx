@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { CHARACTER_SKINS, CHARACTER_SKIN_STORAGE_KEY, SKIN_BASE_PATH, AVATAR_FRAME_SCALE } from '@/lib/characterSkins';
+import { CHARACTER_SKINS, CHARACTER_SKIN_AT_KEY, CHARACTER_SKIN_STORAGE_KEY, SKIN_BASE_PATH, SKINS_CHANGED_EVENT, AVATAR_FRAME_SCALE } from '@/lib/characterSkins';
 import { getOwnedSkinIds } from '@/lib/gacha';
 
 interface CharacterSkinContextValue {
@@ -42,16 +42,24 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
     setOwnedSkinIds(getOwnedSkinIds());
   }, []);
 
-  useEffect(() => {
+  // マウント時に読み込み、以後は SKINS_CHANGED_EVENT で読み直す。ガチャの
+  // 当たりだけでなく、他の端末から同期で降ってきた所持スキン・装備スキンも
+  // このイベントで飛んでくる（lib/profileSync.ts）。
+  const reloadFromStorage = useCallback(() => {
     try {
       const saved = localStorage.getItem(CHARACTER_SKIN_STORAGE_KEY) || '';
-      if (saved && CHARACTER_SKINS.some(s => s.id === saved)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setSkinIdState(saved);
-      }
+      if (saved && CHARACTER_SKINS.some(s => s.id === saved)) setSkinIdState(saved);
+      else if (!saved) setSkinIdState('');
     } catch { /* localStorage unavailable */ }
     refreshOwnedSkins();
   }, [refreshOwnedSkins]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    reloadFromStorage();
+    window.addEventListener(SKINS_CHANGED_EVENT, reloadFromStorage);
+    return () => window.removeEventListener(SKINS_CHANGED_EVENT, reloadFromStorage);
+  }, [reloadFromStorage]);
 
   // If a skin somehow becomes unowned (shouldn't normally happen since
   // gacha wins are permanent), don't leave a broken/inaccessible skin selected.
@@ -62,7 +70,12 @@ export function CharacterSkinProvider({ children }: { children: React.ReactNode 
   const setSkinId = useCallback((id: string) => {
     if (id && (!CHARACTER_SKINS.some(s => s.id === id) || !ownedSkinIds.includes(id))) return;
     setSkinIdState(id);
-    try { localStorage.setItem(CHARACTER_SKIN_STORAGE_KEY, id); } catch { /* unavailable */ }
+    try {
+      localStorage.setItem(CHARACTER_SKIN_STORAGE_KEY, id);
+      // 付け替えた時刻。端末間では新しいほうを勝たせる（lib/profileSync.ts）。
+      localStorage.setItem(CHARACTER_SKIN_AT_KEY, String(Date.now()));
+    } catch { /* unavailable */ }
+    window.dispatchEvent(new Event(SKINS_CHANGED_EVENT));
   }, [ownedSkinIds]);
 
   const avatarSrc = useCallback((fallback: string) => {

@@ -24,7 +24,10 @@ export function getEffectiveApiKey(): string {
   return localStorage.getItem('lily_gemini_api_key') || '';
 }
 
-const USER_NAME_KEY = 'lily_user_name';
+export const USER_NAME_KEY = 'lily_user_name';
+// 名前を最後に変えた時刻。端末間で新しいほうを勝たせるために使う
+// （lib/profileSync.ts）。
+export const USER_NAME_AT_KEY = 'lily_user_name_at';
 
 export function getUserName(): string {
   if (typeof window === 'undefined') return '';
@@ -36,5 +39,7 @@ export function setUserName(name: string): void {
   const trimmed = name.trim();
   if (trimmed) localStorage.setItem(USER_NAME_KEY, trimmed);
   else localStorage.removeItem(USER_NAME_KEY);
+  localStorage.setItem(USER_NAME_AT_KEY, String(Date.now()));
+  // このイベントは表示の更新と、同期への push 予約の両方を兼ねる。
   window.dispatchEvent(new Event('lily-username-changed'));
 }
