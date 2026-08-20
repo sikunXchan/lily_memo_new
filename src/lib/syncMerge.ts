@@ -30,6 +30,11 @@ export interface SyncSnapshot {
   problemSets?: Rec[];
   diaries?: Rec[];
   lessonSessions?: Rec[];
+  diagramSets?: Rec[];
+  // テーブルではない同期物（localStorage 産）。planState はプラン・当日の
+  // トークン消費、profile は名前と所持/装備スキン。
+  planState?: Rec;
+  profile?: Rec;
   ts?: number;
   [k: string]: unknown;
 }
@@ -108,12 +113,45 @@ function mergeBadges(base: Rec[], incoming: Rec[]): Rec[] {
   return [...map.values()];
 }
 
+// 名前と所持/装備スキン（クライアント側は lib/profileSync.ts）。
+// 所持スキンは必ず和集合 — ここで片方に寄せると、もう一方の端末でしか
+// 当てていないスキンが同期のたびに消える。名前と装備スキンは打刻の新しい
+// ほうが勝つ（クライアントのマージ規則と同じ）。
+function mergeProfile(base: Rec | undefined, incoming: Rec | undefined): Rec | undefined {
+  if (!base) return incoming;
+  if (!incoming) return base;
+
+  const owned = new Set<string>();
+  for (const src of [base, incoming]) {
+    const list = Array.isArray(src.ownedSkinIds) ? src.ownedSkinIds : [];
+    for (const id of list) if (typeof id === 'string') owned.add(id);
+  }
+
+  const nameSrc = num(incoming.userNameAt) > num(base.userNameAt) ? incoming : base;
+  const skinSrc = num(incoming.skinAt)     > num(base.skinAt)     ? incoming : base;
+
+  return {
+    userName:     str(nameSrc.userName) ?? '',
+    userNameAt:   num(nameSrc.userNameAt),
+    skinId:       str(skinSrc.skinId) ?? '',
+    skinAt:       num(skinSrc.skinAt),
+    ownedSkinIds: [...owned],
+  };
+}
+
 // Merge an incoming device snapshot into the stored one. Returns the reconciled
 // snapshot to persist. Either argument may be partial/empty.
 export function mergeSnapshots(base: SyncSnapshot, incoming: SyncSnapshot): SyncSnapshot {
   const b = base ?? {};
   const i = incoming ?? {};
   return {
+    // まず両方を丸ごと持ち越してから、テーブルごとのマージ結果で上書きする。
+    // 以前はここで列挙したフィールドだけを組み立てて返していたため、書き忘れた
+    // ものがサーバー側で毎回消えていた（planState / profile / diagramSets が
+    // それで一度も相手に届いていなかった）。今後フィールドが増えても、最低限
+    // 「新しい側で上書き」の形では通る。
+    ...b,
+    ...i,
     notes: mergeLWW(b.notes ?? [], i.notes ?? [], r => str(r.syncId), r => num(r.updatedAt)),
     folders: mergeLWW(b.folders ?? [], i.folders ?? [], r => str(r.syncId), r => num(r.updatedAt)),
     studySessions: mergeLWW(
@@ -154,6 +192,13 @@ export function mergeSnapshots(base: SyncSnapshot, incoming: SyncSnapshot): Sync
       r => (r.createdAt != null ? String(r.createdAt) : null),
       r => num(r.updatedAt) || num(r.createdAt),
     ),
+    // Diagram sets: keyed by createdAt, updatedAt が版クロック（クライアントと同じ）。
+    diagramSets: mergeLWW(
+      b.diagramSets ?? [], i.diagramSets ?? [],
+      r => (r.createdAt != null ? String(r.createdAt) : null),
+      r => num(r.updatedAt) || num(r.createdAt),
+    ),
+    profile: mergeProfile(b.profile, i.profile),
     exams: mergeUnion(b.exams ?? [], i.exams ?? [], r => `${str(r.name) ?? ''}|${str(r.examDate) ?? ''}`),
     scheduleDays: mergeUnion(b.scheduleDays ?? [], i.scheduleDays ?? [], r => str(r.date)),
     earnedBadges: mergeBadges(b.earnedBadges ?? [], i.earnedBadges ?? []),
