@@ -1338,7 +1338,7 @@ function InsertableBlockCard({
       )}
 
       <style jsx>{`
-        .insertable-block { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+        .insertable-block { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 2px; }
         .block-header { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .block-type-badge { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); border-radius: 20px; padding: 3px 10px; font-size: 0.78rem; font-weight: 700; }
         .block-visual { margin-bottom: 10px; }
@@ -1770,7 +1770,7 @@ function LilyBubble({
           font-size: 0.9rem; line-height: 1.65; color: var(--foreground); word-break: break-word;
           box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
         }
-        .inline-block-wrap { margin: 8px 0; }
+        .inline-block-wrap { margin: 2px 0; }
         .inline-block-wrap:first-child { margin-top: 0; }
         .inline-block-wrap:last-child { margin-bottom: 0; }
         .msg-actions { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
