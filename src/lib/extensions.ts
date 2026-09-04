@@ -1,6 +1,9 @@
-import { Node, mergeAttributes, nodeInputRule } from '@tiptap/core';
+import { Node, mergeAttributes, nodeInputRule, markInputRule, markPasteRule } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import dynamic from 'next/dynamic';
+import { TextStyle } from '@tiptap/extension-text-style';
+import Highlight from '@tiptap/extension-highlight';
+import { TEXT_COLOR_BY_KEY, HIGHLIGHT_COLOR_BY_KEY } from './memoColors';
 
 const MermaidComponent = dynamic(() => import('@/components/MermaidComponent'), { ssr: false });
 const ChartComponent = dynamic(() => import('@/components/ChartComponent'), { ssr: false });
@@ -274,3 +277,48 @@ export const MathBlockExtension = Node.create({
     ];
   },
 });
+
+// Live typing versions of the memo's color syntax ({red:…} for text color,
+// ==…== / =={green}…== for the marker) — the same syntax markdownToTiptap.ts
+// converts in bulk when Lily writes a memo, so a word colored while typing
+// looks identical to one Lily colored. Both extend the mark tiptap already
+// registers under that name (rather than adding a second competing
+// extension) so `editor.isActive('highlight'/'textStyle', …)` and the
+// toolbar's own setColor/setHighlight calls keep working unchanged.
+const textColorInputRegex = /\{([a-z]+):([^{}\n]+)\}$/;
+export const MarkdownTextStyle = TextStyle.extend({
+  addInputRules() {
+    return [
+      markInputRule({
+        find: textColorInputRegex,
+        type: this.type,
+        getAttributes: match => {
+          const color = TEXT_COLOR_BY_KEY[match[1]];
+          return color ? { color } : false;
+        },
+      }),
+    ];
+  },
+});
+
+// `==text==` (no prefix) defaults to yellow — the same default the toolbar's
+// marker button applies — instead of tiptap's stock rule, which leaves the
+// mark's `color` attribute unset and so renders with no visible background.
+const highlightInputRegex = /(?:^|\s)==(?:\{([a-z]+)\})?([^=\n]+)==$/;
+const highlightPasteRegex = /(?:^|\s)==(?:\{([a-z]+)\})?([^=\n]+)==/g;
+const highlightAttrsFromMatch = (match: RegExpMatchArray) => {
+  const color = HIGHLIGHT_COLOR_BY_KEY[match[1] || 'yellow'];
+  return color ? { color } : false;
+};
+export const MarkdownHighlight = Highlight.extend({
+  addInputRules() {
+    return [
+      markInputRule({ find: highlightInputRegex, type: this.type, getAttributes: highlightAttrsFromMatch }),
+    ];
+  },
+  addPasteRules() {
+    return [
+      markPasteRule({ find: highlightPasteRegex, type: this.type, getAttributes: highlightAttrsFromMatch }),
+    ];
+  },
+}).configure({ multicolor: true });
