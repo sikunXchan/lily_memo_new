@@ -7,14 +7,12 @@ import type { ChainedCommands } from '@tiptap/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
-import { ResizableImageExtension } from '@/lib/extensions';
+import { ResizableImageExtension, MarkdownTextStyle, MarkdownHighlight } from '@/lib/extensions';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
-import Highlight from '@tiptap/extension-highlight';
 import { common, createLowlight } from 'lowlight';
 import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react';
 import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING, softDeleteNote } from '@/lib/db';
@@ -24,7 +22,7 @@ import {
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
   Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2,
-  Baseline, Highlighter,
+  Baseline, Highlighter, HelpCircle,
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
@@ -150,6 +148,7 @@ export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = f
   const [searchMatchCount, setSearchMatchCount] = useState(0);
   const [showInsertMenu, setShowInsertMenu] = useState(false);
   const [showColorMenu, setShowColorMenu] = useState(false);
+  const [showMdHelp, setShowMdHelp] = useState(false);
   // The selection at the moment the color sheet opens. Opening the sheet
   // moves DOM focus to a toolbar button outside the editor, and by the time
   // a swatch is tapped, ProseMirror's selection has been observed to drift
@@ -213,9 +212,9 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       CustomTaskItem.configure({ nested: true }),
       ResizableImageExtension,
       Link,
-      TextStyle,
+      MarkdownTextStyle,
       Color,
-      Highlight.configure({ multicolor: true }),
+      MarkdownHighlight,
       Placeholder.configure({ placeholder: t('アイデアを書き留めましょう...') }),
       InMemoSearchExtension,
       NoteLinkExtension,
@@ -811,6 +810,41 @@ const searchInputRef = useRef<HTMLInputElement>(null);
                   document.body
                 )}
                 <div className="header-divider" />
+                <button
+                  className={`btn-tool${showMdHelp ? ' active' : ''}`}
+                  onClick={() => setShowMdHelp(v => !v)}
+                  title={t('Markdown記法ヘルプ')}
+                >
+                  <HelpCircle size={18} />
+                </button>
+                {showMdHelp && typeof document !== 'undefined' && createPortal(
+                  <div className="insert-sheet-backdrop" onClick={() => setShowMdHelp(false)}>
+                    <div className="insert-sheet md-help-sheet" onClick={e => e.stopPropagation()}>
+                      <div className="insert-sheet-handle" />
+                      <div className="insert-sheet-title">{t('Markdown記法ヘルプ')}</div>
+                      <p className="md-help-intro">{t('入力するとその場で自動的に書式に変わります')}</p>
+                      <div className="md-help-list">
+                        <div className="md-help-row"><code>#</code><span>{t('見出し（#の数で大きさが変わる）')}</span></div>
+                        <div className="md-help-row"><code>**{t('太字')}**</code><span>{t('太字')}</span></div>
+                        <div className="md-help-row"><code>*{t('斜体')}*</code><span>{t('斜体')}</span></div>
+                        <div className="md-help-row"><code>~~{t('取り消し線')}~~</code><span>{t('取り消し線')}</span></div>
+                        <div className="md-help-row"><code>{'- '}</code><span>{t('箇条書き')}</span></div>
+                        <div className="md-help-row"><code>{'1. '}</code><span>{t('番号付きリスト')}</span></div>
+                        <div className="md-help-row"><code>{'[] '}</code><span>{t('チェックリスト')}</span></div>
+                        <div className="md-help-row"><code>{'> '}</code><span>{t('引用')}</span></div>
+                        <div className="md-help-row"><code>---</code><span>{t('区切り線')}</span></div>
+                        <div className="md-help-row"><code>`code`</code><span>{t('インラインコード')}</span></div>
+                        <div className="md-help-row"><code>```</code><span>{t('コードブロック')}</span></div>
+                        <div className="md-help-row"><code>$x$</code><span>{t('数式（インライン）')}</span></div>
+                        <div className="md-help-row"><code>$$x$$</code><span>{t('数式（ブロック表示）')}</span></div>
+                        <div className="md-help-row"><code>=={t('文字')}==</code><span>{t('マーカー')}（{t('黄')}）</span></div>
+                        <div className="md-help-row"><code>=={'{'}green{'}'}{t('文字')}==</code><span>{t('マーカー（色指定: green/blue/pink/purple）')}</span></div>
+                        <div className="md-help-row"><code>{'{'}red:{t('文字')}{'}'}</code><span>{t('文字色（red/orange/green/blue/purple）')}</span></div>
+                      </div>
+                    </div>
+                  </div>,
+                  document.body
+                )}
               </>
             )}
 
@@ -1370,6 +1404,24 @@ const searchInputRef = useRef<HTMLInputElement>(null);
         }
         .insert-sheet-item:hover, .insert-sheet-item:active { background: color-mix(in srgb, var(--primary) 12%, transparent); border-color: var(--primary); color: var(--primary); }
         .insert-math-glyph { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; font-size: 17px; font-weight: 800; font-style: italic; font-family: var(--font-latin, serif); line-height: 1; }
+
+        /* ===== Markdown記法ヘルプシート ===== */
+        .md-help-sheet { max-height: 78vh; overflow-y: auto; }
+        .md-help-intro { font-size: 0.78rem; color: var(--fg-muted, #888); margin: -8px 0 14px; }
+        .md-help-list { display: flex; flex-direction: column; gap: 2px; }
+        .md-help-row {
+          display: flex; align-items: center; gap: 12px;
+          padding: 9px 4px; border-bottom: 1px solid var(--border);
+        }
+        .md-help-row:last-child { border-bottom: none; }
+        .md-help-row code {
+          flex: 0 0 auto; min-width: 92px;
+          background: var(--accent); border: 1px solid var(--border);
+          border-radius: 6px; padding: 3px 8px;
+          font-size: 0.78rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          color: var(--primary); white-space: pre;
+        }
+        .md-help-row span { font-size: 0.82rem; color: var(--foreground); }
 
         /* ===== 文字色・マーカー選択シート ===== */
         .color-sheet-section { margin-bottom: 18px; }
