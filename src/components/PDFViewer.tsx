@@ -15,6 +15,7 @@ import { pdfPagesToMarkdown } from '@/lib/pdfToMarkdown';
 import { downloadTextFile } from '@/lib/fileGen';
 import { db, newSyncId } from '@/lib/db';
 import { useT } from '@/lib/i18n';
+import ImageAssetExtractor from './ImageAssetExtractor';
 
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -974,6 +975,8 @@ export default function PDFViewer({ embedded = false, onSwitchTab }: PDFViewerPr
             </>
           )}
         </div>
+
+        <ImageAssetExtractor />
       </div>
 
       <style jsx>{`
