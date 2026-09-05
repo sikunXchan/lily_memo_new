@@ -638,6 +638,7 @@ const EN: Record<string, string> = {
   "切り出す（{n}個）": "Extract ({n})",
   "切り出し中...": "Extracting...",
   "切り出した画像（{n}枚）": "Extracted images ({n})",
+  "作成済みの範囲はドラッグで移動できます": "Drag an existing box to move it",
   "落書きをすべて消去しますか？": "Erase the entire sketch?",
   "消しゴム": "Eraser",
   "色 {c}": "Color {c}",

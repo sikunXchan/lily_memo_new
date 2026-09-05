@@ -18,6 +18,10 @@ export default function ImageAssetExtractor() {
   const [fileBaseName, setFileBaseName] = useState('asset');
   const [rects, setRects] = useState<Rect[]>([]);
   const [drawing, setDrawing] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  // Set while an existing rect is being dragged to a new position. offsetX/Y
+  // is the pointer's position relative to the rect's own top-left corner at
+  // drag start, so the rect doesn't jump to re-center under the pointer.
+  const [moving, setMoving] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null);
   // Kept as raw text (not number) so the field can be freely cleared and
   // retyped — clamping this on every keystroke used to snap an emptied
   // field straight back to "1", which then ate the next digit typed
@@ -30,6 +34,7 @@ export default function ImageAssetExtractor() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgElRef = useRef<HTMLImageElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const extractedRef = useRef<ExtractedAsset[]>([]);
   extractedRef.current = extracted;
 
@@ -68,12 +73,38 @@ export default function ImageAssetExtractor() {
     const p = relPos(e);
     setDrawing({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
   };
+  // Pointerdown on an already-drawn rect starts moving it instead of drawing
+  // a new one — stopPropagation keeps the overlay's onPointerDown above from
+  // also firing and starting a fresh selection underneath it.
+  const onRectPointerDown = (e: React.PointerEvent<HTMLDivElement>, r: Rect) => {
+    if ((e.target as HTMLElement).closest('.iae-rect-del')) return;
+    e.stopPropagation();
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    overlay.setPointerCapture(e.pointerId);
+    const bounds = overlay.getBoundingClientRect();
+    const px = (e.clientX - bounds.left) / bounds.width;
+    const py = (e.clientY - bounds.top) / bounds.height;
+    setMoving({ id: r.id, offsetX: px - r.x, offsetY: py - r.y });
+  };
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (moving) {
+      const p = relPos(e);
+      setRects(prev => prev.map(r => (r.id === moving.id
+        ? {
+          ...r,
+          x: Math.min(Math.max(p.x - moving.offsetX, 0), 1 - r.w),
+          y: Math.min(Math.max(p.y - moving.offsetY, 0), 1 - r.h),
+        }
+        : r)));
+      return;
+    }
     if (!drawing) return;
     const p = relPos(e);
     setDrawing(d => (d ? { ...d, x1: p.x, y1: p.y } : d));
   };
   const finishDrawing = () => {
+    if (moving) { setMoving(null); return; }
     if (!drawing) return;
     const x = Math.min(drawing.x0, drawing.x1);
     const y = Math.min(drawing.y0, drawing.y1);
@@ -177,7 +208,10 @@ export default function ImageAssetExtractor() {
       ) : (
         <>
           <div className="iae-toolbar">
-            <span className="iae-hint">{t('ドラッグして切り出したい範囲を囲んでください')}</span>
+            <div className="iae-hints">
+              <span className="iae-hint">{t('ドラッグして切り出したい範囲を囲んでください')}</span>
+              <span className="iae-hint">{t('作成済みの範囲はドラッグで移動できます')}</span>
+            </div>
             <button className="iae-icon-btn" onClick={resetImage} title={t('画像を閉じる')}><X size={14} /></button>
           </div>
 
@@ -185,14 +219,16 @@ export default function ImageAssetExtractor() {
             <img ref={imgElRef} src={imgSrc} alt="" className="iae-img" draggable={false} />
             <div
               className="iae-overlay"
+              ref={overlayRef}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={finishDrawing}
               onPointerCancel={finishDrawing}
             >
               {rects.map((r, i) => (
-                <div key={r.id} className="iae-rect"
-                  style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }}>
+                <div key={r.id} className={`iae-rect${moving?.id === r.id ? ' moving' : ''}`}
+                  style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }}
+                  onPointerDown={e => onRectPointerDown(e, r)}>
                   <span className="iae-rect-num">{i + 1}</span>
                   <button className="iae-rect-del" onPointerDown={e => e.stopPropagation()}
                     onClick={() => removeRect(r.id)}><X size={10} /></button>
@@ -281,7 +317,8 @@ export default function ImageAssetExtractor() {
           cursor:pointer; transition:background 0.15s; width:fit-content;
         }
         .btn-add-photos:hover { background:var(--border); }
-        .iae-toolbar { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .iae-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+        .iae-hints { display:flex; flex-direction:column; gap:2px; }
         .iae-hint { font-size:0.78rem; color:#888; }
         .iae-icon-btn {
           width:28px; height:28px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
@@ -300,9 +337,10 @@ export default function ImageAssetExtractor() {
         .iae-rect {
           position:absolute; border:2px solid var(--primary);
           background:color-mix(in srgb, var(--primary) 18%, transparent);
-          box-sizing:border-box;
+          box-sizing:border-box; cursor:move; touch-action:none;
         }
-        .iae-rect.drawing { border-style:dashed; pointer-events:none; }
+        .iae-rect.moving { background:color-mix(in srgb, var(--primary) 30%, transparent); z-index:1; }
+        .iae-rect.drawing { border-style:dashed; pointer-events:none; cursor:crosshair; }
         .iae-rect-num {
           position:absolute; top:2px; left:2px;
           background:var(--primary); color:#fff; font-size:0.65rem; font-weight:700;
