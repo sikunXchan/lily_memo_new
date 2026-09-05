@@ -18,8 +18,12 @@ export default function ImageAssetExtractor() {
   const [fileBaseName, setFileBaseName] = useState('asset');
   const [rects, setRects] = useState<Rect[]>([]);
   const [drawing, setDrawing] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
-  const [gridRows, setGridRows] = useState(2);
-  const [gridCols, setGridCols] = useState(2);
+  // Kept as raw text (not number) so the field can be freely cleared and
+  // retyped — clamping this on every keystroke used to snap an emptied
+  // field straight back to "1", which then ate the next digit typed
+  // (e.g. clearing "2" and typing "6" produced "16" -> clamped to "12").
+  const [gridRows, setGridRows] = useState('2');
+  const [gridCols, setGridCols] = useState('2');
   const [extracted, setExtracted] = useState<ExtractedAsset[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
@@ -83,9 +87,13 @@ export default function ImageAssetExtractor() {
   const removeRect = (id: string) => setRects(prev => prev.filter(r => r.id !== id));
   const clearRects = () => setRects([]);
 
+  const clampGrid = (v: string) => Math.max(1, Math.min(12, parseInt(v, 10) || 1));
+
   const applyGrid = () => {
-    const rows = Math.max(1, Math.min(12, gridRows));
-    const cols = Math.max(1, Math.min(12, gridCols));
+    const rows = clampGrid(gridRows);
+    const cols = clampGrid(gridCols);
+    setGridRows(String(rows));
+    setGridCols(String(cols));
     const next: Rect[] = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -197,10 +205,12 @@ export default function ImageAssetExtractor() {
           <div className="iae-grid-row">
             <Grid3x3 size={14} className="iae-grid-icon" />
             <input type="number" className="iae-num-input" min={1} max={12} value={gridRows}
-              onChange={e => setGridRows(Math.max(1, Math.min(12, parseInt(e.target.value) || 1)))} />
+              onChange={e => setGridRows(e.target.value)}
+              onBlur={() => setGridRows(String(clampGrid(gridRows)))} />
             <span className="iae-grid-label">{t('行')}</span>
             <input type="number" className="iae-num-input" min={1} max={12} value={gridCols}
-              onChange={e => setGridCols(Math.max(1, Math.min(12, parseInt(e.target.value) || 1)))} />
+              onChange={e => setGridCols(e.target.value)}
+              onBlur={() => setGridCols(String(clampGrid(gridCols)))} />
             <span className="iae-grid-label">{t('列')}</span>
             <button className="iae-small-btn" onClick={applyGrid}>{t('グリッドで自動分割')}</button>
           </div>
