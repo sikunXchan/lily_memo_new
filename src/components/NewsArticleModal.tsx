@@ -6,6 +6,7 @@ import {
   Loader2, NotebookPen, Check,
 } from 'lucide-react';
 import NewsInteractiveText from './NewsInteractiveText';
+import NewsSentenceText from './NewsSentenceText';
 import { db, newSyncId } from '@/lib/db';
 import { markdownToTiptapHtml } from '@/lib/markdownToTiptap';
 import { explainNewsArticle, type NewsExplanation } from '@/lib/newsExplain';
@@ -129,7 +130,7 @@ export default function NewsArticleModal({
           </div>
 
           <p className="news-reader-snippet">
-            <NewsInteractiveText text={article.snippet} onWordSelected={onWordSelected} highlightWords={highlightWords} />
+            <NewsSentenceText text={article.snippet} onWordSelected={onWordSelected} highlightWords={highlightWords} />
           </p>
 
           <div className="news-reader-tools">
