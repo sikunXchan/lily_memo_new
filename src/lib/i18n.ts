@@ -667,6 +667,8 @@ const EN: Record<string, string> = {
   "単語帳から削除": "Remove from wordbook",
   "意味を調べています...": "Looking up the meaning...",
   "この単語の意味を見つけられませんでした。": "Couldn't find a definition for this word.",
+  "この文を翻訳": "Translate this sentence",
+  "この文の翻訳を取得できませんでした": "Couldn't translate this sentence",
   "技術的な文脈": "Tech context",
   "ニュース記事の単語をタップすると、ここに保存されます": "Tap a word in a news article to save it here",
   "タップして意味を見る": "Tap to reveal the meaning",
