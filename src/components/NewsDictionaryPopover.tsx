@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Volume2, Bookmark, BookmarkCheck, X, Code2, Loader2 } from 'lucide-react';
+import { Volume2, Bookmark, BookmarkCheck, X, Loader2 } from 'lucide-react';
 import { lookupDictionary, fetchOnlineDefinition, type DictionaryEntry } from '@/lib/newsDictionary';
 import { useT } from '@/lib/i18n';
 
@@ -95,12 +95,6 @@ export default function NewsDictionaryPopover({ word, onClose, isSaved, onToggle
           ) : (
             <>
               {data?.meaning && <p className="news-pop-meaning">{data.meaning}</p>}
-              {data?.techContext && (
-                <div className="news-pop-tech">
-                  <div className="news-pop-tech-label"><Code2 size={12} />{t('技術的な文脈')}</div>
-                  <p>{data.techContext}</p>
-                </div>
-              )}
               {data?.example && <p className="news-pop-example">&ldquo;{data.example}&rdquo;</p>}
             </>
           )}
@@ -138,12 +132,6 @@ export default function NewsDictionaryPopover({ word, onClose, isSaved, onToggle
         .news-pop-loading { display: flex; align-items: center; gap: 8px; color: #888; font-size: 0.85rem; padding: 12px 0; }
         .news-pop-notfound { color: #888; font-size: 0.85rem; padding: 12px 0; }
         .news-pop-meaning { font-size: 1rem; font-weight: 700; color: var(--foreground); margin: 0; }
-        .news-pop-tech {
-          background: var(--accent); border-radius: 10px; padding: 10px 12px;
-          font-size: 0.82rem; color: var(--foreground);
-        }
-        .news-pop-tech-label { display: flex; align-items: center; gap: 5px; font-size: 0.72rem; font-weight: 700; color: var(--primary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
-        .news-pop-tech p { margin: 0; }
         .news-pop-example { font-size: 0.82rem; color: #888; font-style: italic; margin: 0; }
       `}</style>
     </div>

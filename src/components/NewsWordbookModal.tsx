@@ -97,7 +97,7 @@ export default function NewsWordbookModal({ onClose }: NewsWordbookModalProps) {
               </div>
               <div className="nwb-flashcard-face nwb-flashcard-back">
                 <span className="nwb-flashcard-meaning">{current.meaning}</span>
-                {current.techContext && <p className="nwb-flashcard-context">{current.techContext}</p>}
+                {current.example && <p className="nwb-flashcard-context">&ldquo;{current.example}&rdquo;</p>}
               </div>
             </div>
             <div className="nwb-cards-nav">

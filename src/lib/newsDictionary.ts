@@ -140,6 +140,7 @@ export const techDictionary: Record<string, DictionaryEntry> = {
   'notably': { word: 'notably', phonetic: '/ˈnəʊ.tə.bli/', partOfSpeech: 'adverb', meaning: '特に、顕著に', techContext: '特筆すべき点を強調する際に使う。', example: 'Performance improved, notably on mobile devices.' },
   'remarkably': { word: 'remarkably', phonetic: '/rɪˈmɑː.kə.bli/', partOfSpeech: 'adverb', meaning: '著しく、驚くほど', techContext: '予想以上の変化や結果を強調する副詞。', example: 'The new model runs remarkably fast on edge devices.' },
   'meticulous': { word: 'meticulous', phonetic: '/məˈtɪk.jʊ.ləs/', partOfSpeech: 'adjective', meaning: '細心の、几帳面な', techContext: '細部まで注意深く配慮する様子。', example: 'Meticulous code review catches subtle bugs early.' },
+  'spectacular': { word: 'spectacular', phonetic: '/spekˈtæk.jʊ.lər/', partOfSpeech: 'adjective', meaning: '壮観な、目を見張るような、劇的な', techContext: '性能向上や結果の大きさを強調する際に使われる形容詞。', example: 'The new caching layer delivered a spectacular improvement in load times.' },
 };
 
 export function cleanWord(raw: string | null | undefined): string {
