@@ -113,7 +113,14 @@ function decodeHtmlEntities(input: string): string {
 function stripHtml(html: string): string {
   return decodeHtmlEntities(
     html
-      .replace(/<\/(p|div|li|h[1-6]|blockquote|pre)>/gi, '\n\n')
+      // Multi-line code blocks (dev.to posts are full of them) read as
+      // nonsense prose once tags are stripped — fragments like
+      // "body, sig, secret);" get tokenized as "sentences" and each one
+      // ends up wrapped in a translate button. Code isn't useful English
+      // reading material anyway, so drop the whole block rather than
+      // flatten it into the article text.
+      .replace(/<pre[\s\S]*?<\/pre>/gi, '\n\n')
+      .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, '\n\n')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<[^>]+>/g, ''),
   )
