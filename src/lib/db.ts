@@ -258,6 +258,43 @@ export interface DiagramSet {
   deletedAt?: number;        // tombstone for sync; UI filters these out
 }
 
+// ニュースタブの単語帳。記事の単語を長押し/タップして辞書を引いた際に保存する。
+// IndexedDB に置くことで手動バックアップとライブ同期に自動で乗る（メモ・学習
+// 記録と同じ仕組み）。
+export interface NewsWord {
+  id?: number;
+  syncId: string;
+  word: string;
+  phonetic?: string;
+  partOfSpeech?: string;
+  meaning: string;
+  techContext?: string;
+  example?: string;
+  mastered: boolean;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
+// ニュースタブの「あとで読む」。記事はRSSの再取得のたびに入れ替わるため、
+// 記事本文のスナップショットをそのまま保存する（articleId は記事リンクの
+// 決定的なハッシュ — 同じ記事を複数端末で保存しても同じ id になる）。
+export interface NewsSavedArticle {
+  id?: number;
+  syncId: string;
+  articleId: string;
+  title: string;
+  link: string;
+  source: string;
+  category: string;
+  imageUrl?: string;
+  snippet: string;
+  pubDate?: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
 export class LilyDatabase extends Dexie {
   folders!: Table<Folder>;
   notes!: Table<Note>;
@@ -275,6 +312,8 @@ export class LilyDatabase extends Dexie {
   diaries!: Table<Diary>;
   lessonSessions!: Table<LessonSession>;
   diagramSets!: Table<DiagramSet>;
+  newsWordbook!: Table<NewsWord>;
+  newsSaved!: Table<NewsSavedArticle>;
 
   constructor() {
     super('LilyDatabase');
@@ -436,6 +475,12 @@ export class LilyDatabase extends Dexie {
         if (!c.updatedAt) c.updatedAt = c.createdAt ?? Date.now();
       });
     });
+    // v27: ニュースタブ（単語帳・あとで読む）。日記/落書きタブの廃止に伴う
+    // 4.0の目玉として、newsアプリから移植したTech英語学習機能を追加。
+    this.version(27).stores({
+      newsWordbook: '++id, syncId, word, mastered, createdAt, updatedAt, deletedAt',
+      newsSaved: '++id, syncId, articleId, category, createdAt, updatedAt, deletedAt',
+    });
   }
 }
 
@@ -518,5 +563,15 @@ export async function softDeleteProblemSet(id: number): Promise<void> {
 export async function softDeleteDiagramSet(id: number): Promise<void> {
   const t = Date.now();
   await db.diagramSets.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteNewsWord(id: number): Promise<void> {
+  const t = Date.now();
+  await db.newsWordbook.update(id, { deletedAt: t, updatedAt: t });
+}
+
+export async function softDeleteNewsSaved(id: number): Promise<void> {
+  const t = Date.now();
+  await db.newsSaved.update(id, { deletedAt: t, updatedAt: t });
 }
 

@@ -125,7 +125,7 @@ interface ClarifyQuestion {
 
 interface AIChatProps {
   onOpenSettings: () => void;
-  onSwitchTab?: (tab: 'memos' | 'sketch' | 'pdf' | 'settings' | 'study') => void;
+  onSwitchTab?: (tab: 'memos' | 'news' | 'pdf' | 'settings' | 'study') => void;
   onNoteCreated?: (noteId: number) => void;
   initialContext?: string;
   onContextConsumed?: () => void;

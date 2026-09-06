@@ -260,7 +260,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             <h3>{t('あなたの名前')}</h3>
           </div>
           <div className="section-content">
-            <p className="desc">{t('名前を設定すると、Lilyがチャット・日記・授業であなたの名前で呼びかけてくれます。')}</p>
+            <p className="desc">{t('名前を設定すると、Lilyがチャット・授業であなたの名前で呼びかけてくれます。')}</p>
             <div className="api-key-wrap">
               <input
                 type="text"

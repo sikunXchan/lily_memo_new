@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Play, Square, Plus, Trash2, BarChart2, Timer, ArrowLeft,
-  Book, FileText, Brush, Sparkles, Settings as SettingsIcon, GraduationCap,
+  Book, FileText, Newspaper, Sparkles, Settings as SettingsIcon, GraduationCap,
   Flame, X, ChevronLeft, ChevronRight, Zap, Pencil, Check, Palette,
 } from 'lucide-react';
 import { db, newSyncId, softDeleteSession, softDeleteCategory } from '@/lib/db';
@@ -1117,7 +1117,7 @@ export default function StudyTracker({ onSwitchTab, onOpenSettings, onOpenFocus 
       {onSwitchTab && (
         <nav className="st-bottom-nav">
           <button className="snav-item" onClick={() => onSwitchTab('memos')}><Book size={22}/><span>{t('メモ')}</span></button>
-          <button className="snav-item" onClick={() => onSwitchTab('sketch')}><Brush size={22}/><span>{t('落書き')}</span></button>
+          <button className="snav-item" onClick={() => onSwitchTab('news')}><Newspaper size={22}/><span>{t('ニュース')}</span></button>
           <button className="snav-item" onClick={() => onSwitchTab('pdf')}><FileText size={22}/><span>PDF</span></button>
           <button className="snav-item" onClick={() => onSwitchTab('ai')}><Sparkles size={22}/><span>AI</span></button>
           <button className="snav-item active"><GraduationCap size={22}/><span>{t('学習')}</span></button>
