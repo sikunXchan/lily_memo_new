@@ -2,7 +2,7 @@
 
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, newSyncId, softDeleteNotes, softDeleteFolder } from '@/lib/db';
-import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Search, Settings, List, Sparkles, Pencil, Brush, Trash2, ArrowLeft, X, Notebook } from 'lucide-react';
+import { FolderIcon, FileText, Plus, ChevronRight, ChevronDown, FolderPlus, Palette, Search, Settings, List, Sparkles, Pencil, Newspaper, Trash2, ArrowLeft, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Image from 'next/image';
@@ -18,9 +18,8 @@ interface SidebarProps {
   onSelectNote: (id: number) => void;
   onOpenSettings: () => void;
   onOpenPDF?: () => void;
-  onOpenSketch?: () => void;
   onOpenAI?: () => void;
-  onOpenDiary?: () => void;
+  onOpenNews?: () => void;
   onOpenSearch?: () => void;
   isMobileOpen: boolean;
   onToggleMobile: () => void;
@@ -48,7 +47,7 @@ interface DeletingFolderState {
 }
 
 export default function Sidebar({
-  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenSketch, onOpenAI, onOpenDiary, onOpenSearch,
+  activeNoteId, onSelectNote, onOpenSettings, onOpenPDF, onOpenAI, onOpenNews, onOpenSearch,
   isMobileOpen, onToggleMobile, onActiveNoteDeleted, onBackToHome,
   viewModeProp, onViewModeChangeProp, highlightFolderReq,
 }: SidebarProps) {
@@ -202,7 +201,7 @@ export default function Sidebar({
               </button>
             )}
             <Image src="/logo.png" alt="Lily Memo Logo" width={36} height={36} className="logo-img" />
-            <h1 className="title">Lily Memo 3.0</h1>
+            <h1 className="title">Lily Memo 4.0</h1>
           </div>
         </div>
 
@@ -332,16 +331,10 @@ export default function Sidebar({
               <span>Lily</span>
             </button>
           )}
-          {onOpenSketch && (
-            <button className="btn-settings" onClick={onOpenSketch}>
-              <Brush size={18} />
-              <span>{t('落書き')}</span>
-            </button>
-          )}
-          {onOpenDiary && (
-            <button className="btn-settings" onClick={onOpenDiary}>
-              <Notebook size={18} />
-              <span>{t('日記')}</span>
+          {onOpenNews && (
+            <button className="btn-settings" onClick={onOpenNews}>
+              <Newspaper size={18} />
+              <span>{t('ニュース')}</span>
             </button>
           )}
           {onOpenPDF && (

@@ -21,14 +21,13 @@ const StudyTracker = dynamic(() => import('@/components/StudyTracker'), { ssr: f
 const InstanceSikun = dynamic(() => import('@/components/InstanceSikun'), { ssr: false });
 const FocusMode = dynamic(() => import('@/components/FocusMode'), { ssr: false });
 const MemoTreeScreen = dynamic(() => import('@/components/MemoTreeScreen'), { ssr: false });
-const DiaryScreen = dynamic(() => import('@/components/DiaryScreen'), { ssr: false });
 const TodoScreen = dynamic(() => import('@/components/TodoScreen'), { ssr: false });
 const TrophyRoom = dynamic(() => import('@/components/TrophyRoom'), { ssr: false });
 const PracticeScreen = dynamic(() => import('@/components/PracticeScreen'), { ssr: false });
-const SketchTab = dynamic(() => import('@/components/SketchTab'), { ssr: false });
+const NewsScreen = dynamic(() => import('@/components/NewsScreen'), { ssr: false });
 const AnnouncementModal = dynamic(() => import('@/components/AnnouncementModal'), { ssr: false });
 const InstallPrompt = dynamic(() => import('@/components/InstallPrompt'), { ssr: false });
-type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'diary' | 'todo' | 'practice' | 'sketch';
+type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'todo' | 'practice' | 'news';
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
@@ -172,7 +171,7 @@ export default function Home() {
           onOpenSettings={openSettings}
           onOpenPDF={openPDF}
           onOpenAI={openAI}
-          onOpenDiary={() => { setActiveTab('diary'); setActiveNoteId(undefined); }}
+          onOpenNews={() => { setActiveTab('news'); setActiveNoteId(undefined); }}
           onOpenSearch={() => setShowSearch(true)}
           isMobileOpen={false}
           onToggleMobile={() => {}}
@@ -206,10 +205,6 @@ export default function Home() {
                     onNavigate={handleMobileNavigate}
                   />
                 )}
-                {/* 日記タブ: カレンダー表示の日記 */}
-                {activeTab === 'diary' && (
-                  <DiaryScreen onGoBack={goHome} />
-                )}
                 {/* ToDo screen */}
                 {isMobile && activeTab === 'todo' && (
                   <TodoScreen onGoBack={goHome} />
@@ -218,9 +213,9 @@ export default function Home() {
                 {isMobile && activeTab === 'practice' && (
                   <PracticeScreen onGoBack={goHome} onOpenAI={openAIWithContext} />
                 )}
-                {/* Sketch / 落書き screen */}
-                {isMobile && activeTab === 'sketch' && (
-                  <SketchTab onClose={goHome} />
+                {/* News / ニュース screen */}
+                {activeTab === 'news' && (
+                  <NewsScreen onGoBack={goHome} onSwitchTab={(tab) => { setActiveTab(tab as TabType); setActiveNoteId(undefined); }} />
                 )}
                 {/* Mobile memo tree */}
                 {isMobile && activeTab === 'memos' && mobilePage === 'notes' && (
