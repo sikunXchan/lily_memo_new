@@ -74,6 +74,21 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// dev.to's topic-tag feeds (ai / react / cloud / devops / career) are a
+// global platform, not an English-only one — the "ai" tag in particular
+// regularly pulls in posts written in Chinese, Korean, or Japanese. Since
+// this tab exists for English tech-reading practice, skip any title that's
+// mostly non-Latin script rather than presenting it as English content.
+// CJK Unified Ideographs (+ Ext-A, Compat) covers Chinese hanzi and Japanese
+// kanji; Hangul Syllables covers Korean; Hiragana/Katakana covers the rest
+// of Japanese.
+const NON_LATIN_SCRIPT = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF\uAC00-\uD7A3\u3040-\u30FF]/g;
+function isMostlyNonLatinScript(title: string): boolean {
+  const matches = title.match(NON_LATIN_SCRIPT);
+  if (!matches) return false;
+  return matches.length / title.length > 0.15;
+}
+
 async function fetchFeed(feed: typeof NEWS_FEEDS[number]): Promise<NewsArticle[]> {
   try {
     const res = await fetch(feed.url, {
@@ -85,8 +100,11 @@ async function fetchFeed(feed: typeof NEWS_FEEDS[number]): Promise<NewsArticle[]
     if (!res.ok) return [];
     const xml = await res.text();
     const parsed = await parser.parseString(xml);
-    return (parsed.items ?? []).slice(0, 8).map((item): NewsArticle | null => {
+    // Pull more than the final cap since some items get filtered out below,
+    // so a feed with a few non-English posts doesn't come up short.
+    return (parsed.items ?? []).slice(0, 16).map((item): NewsArticle | null => {
       if (!item.title || !item.link) return null;
+      if (isMostlyNonLatinScript(item.title)) return null;
       const snippetSource = item.contentSnippet || stripHtml(item['content:encoded'] || item.content || '');
       return {
         id: idFromLink(item.link),
@@ -98,7 +116,7 @@ async function fetchFeed(feed: typeof NEWS_FEEDS[number]): Promise<NewsArticle[]
         snippet: snippetSource.slice(0, 400),
         pubDate: item.isoDate || item.pubDate || '',
       };
-    }).filter((a): a is NewsArticle => a !== null);
+    }).filter((a): a is NewsArticle => a !== null).slice(0, 8);
   } catch {
     return [];
   }
