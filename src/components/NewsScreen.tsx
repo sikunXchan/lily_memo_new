@@ -50,6 +50,10 @@ export default function NewsScreen({ onGoBack }: NewsScreenProps) {
   const savedArticles = useLiveQuery(() => db.newsSaved.filter(s => !s.deletedAt).toArray(), []) ?? [];
   const savedIds = new Set(savedArticles.map(s => s.articleId));
 
+  // `t` (from useT()) is a new function identity on every render, so it must
+  // NOT be a dependency here: including it re-creates `load` every render,
+  // which re-fires the effect below, which sets state, which re-renders —
+  // an infinite fetch loop that shows up as constant flicker/freezing.
   const load = useCallback(async (cat: string) => {
     setLoading(true);
     setError('');
@@ -63,7 +67,8 @@ export default function NewsScreen({ onGoBack }: NewsScreenProps) {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { void load(category); }, [category, load]);
 
