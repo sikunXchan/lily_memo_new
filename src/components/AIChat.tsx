@@ -1552,6 +1552,32 @@ function stripBlockMarkers(text: string): string {
   return text.replace(LBLK_RE, '\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Re-inflate LBLK markers into real content before a past message is resent
+// to Gemini as conversation history. Left as bare "LBLK:<uuid>" tokens (as
+// stored in message.text so LilyBubble can render blocks inline), every past
+// turn that included a qa/table/diagram block turns into opaque noise in the
+// next request's context — the model can no longer see what format or content
+// it actually produced last time, so it has nothing reliable to stay
+// consistent with (or deliberately change) on the next turn. qa/table blocks
+// get their real content back since that's what later "make it a different
+// format" / "don't repeat questions" requests depend on; other block types
+// (diagrams, memo edits, files) get just their label to avoid ballooning the
+// history with large specs the model doesn't need again.
+function expandBlocksForHistory(m: ChatMessage): string {
+  const blocks = m.extractedBlocks;
+  if (!blocks || blocks.length === 0) return m.text;
+  const byId = new Map(blocks.map(b => [b.id, b]));
+  return m.text.replace(LBLK_RE, (_full, id: string) => {
+    const b = byId.get(id);
+    if (!b) return '\n\n';
+    if (b.type === 'qa' || b.type === 'table') {
+      const code = b.rawCode.length > 4000 ? `${b.rawCode.slice(0, 4000)}\n…(以下省略)` : b.rawCode;
+      return `\n\n\`\`\`${b.type}\n${code}\n\`\`\`\n\n`;
+    }
+    return `\n\n[${b.previewLabel}]\n\n`;
+  });
+}
+
 // Rich-text signal palette: black (ink) for body text, blue for structure
 // (headings/links/lists), and a distinct hue per callout type (note/tip/
 // important/warning/caution) so each is recognizable at a glance — this is
@@ -2553,7 +2579,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       const modeDirective = TONES.find(mo => mo.id === activeMode)?.directive;
       const lastIdx = recentMsgs.length - 1;
       const history: ChatTurn[] = recentMsgs.map((m, idx) => {
-        let msgText = m.text;
+        let msgText = expandBlocksForHistory(m);
         if (idx === lastIdx && m.role === 'user') {
           // Prepend practice context (invisible to user, seen by Gemini)
           if (ctxPrefix) msgText = `[演習コンテキスト]\n${ctxPrefix}\n\n---\n\n${msgText}`;
@@ -2752,7 +2778,7 @@ export default function AIChat({ onOpenSettings, onSwitchTab, onNoteCreated, ini
       (acc, m, idx) => (m.role === 'user' && m.attachments?.length ? idx : acc), -1
     );
     const history: ChatTurn[] = recentMsgs.map((m, idx) => {
-      const turn: ChatTurn = { role: m.role === 'user' ? 'user' : 'model', text: m.text };
+      const turn: ChatTurn = { role: m.role === 'user' ? 'user' : 'model', text: expandBlocksForHistory(m) };
       if (idx === lastUserIdx && m.attachments?.length) {
         turn.attachments = m.attachments.map<ChatAttachment>(a => ({
           mimeType: a.mimeType,
