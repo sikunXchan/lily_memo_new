@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import type { TutorNote } from '@/components/TutorReview';
 import Sidebar from '@/components/Sidebar';
 import { initLiveSync, stopLiveSync } from '@/lib/liveSync';
 import { applyAppLang } from '@/lib/appLang';
@@ -31,6 +32,7 @@ type TabType = 'memos' | 'pdf' | 'settings' | 'ai' | 'study' | 'todo' | 'practic
 
 export default function Home() {
   const [activeNoteId, setActiveNoteId] = useState<number | undefined>();
+  const [tutorNote, setTutorNote] = useState<TutorNote | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('memos');
   const [showSearch, setShowSearch] = useState(false);
   const [sidebarViewMode, setSidebarViewMode] = useState<'tree' | 'graph'>('tree');
@@ -185,7 +187,9 @@ export default function Home() {
       <main className="main-view">
         {activeNoteId ? (
           <NoteEditor
+            key={activeNoteId}
             noteId={activeNoteId}
+            onTutorNoteChange={setTutorNote}
             onClose={() => setActiveNoteId(undefined)}
             onSelectNote={handleSelectNote}
           />
@@ -268,6 +272,7 @@ export default function Home() {
       {sikunEnabled && !showFocusMode && (
         <InstanceSikun
           activeNoteId={activeNoteId}
+          reviewNote={tutorNote?.id === activeNoteId ? tutorNote : null}
           prevNoteId={recentNotes.find(id => id !== activeNoteId)}
           onOpenNote={(id) => { setActiveNoteId(id); setActiveTab('memos'); }}
           isPdfTab={activeTab === 'pdf' && !activeNoteId}
