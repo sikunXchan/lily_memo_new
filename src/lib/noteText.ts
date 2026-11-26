@@ -12,7 +12,7 @@ function fallbackStrip(html: string): string {
     .trim();
 }
 
-export function noteHtmlToText(html: string): string {
+export function noteHtmlToText(html: string, excludeChecked = false): string {
   if (!html) return '';
   if (typeof window === 'undefined' || typeof DOMParser === 'undefined') {
     return fallbackStrip(html);
@@ -24,6 +24,8 @@ export function noteHtmlToText(html: string): string {
   } catch {
     return fallbackStrip(html);
   }
+
+  if (excludeChecked) doc.querySelectorAll('li[data-type="taskItem"][data-checked="true"]').forEach(el => el.remove());
 
   doc.querySelectorAll('div[data-type="mermaid"]').forEach(el => {
     const code = el.getAttribute('content') || '';
@@ -48,6 +50,9 @@ export function noteHtmlToText(html: string): string {
     } catch {
       pairs = [];
     }
+    if (!Array.isArray(pairs)) pairs = [];
+    pairs = pairs.filter(p => p && typeof p.q === 'string' && (!excludeChecked || !p.checked));
+    if (!pairs.length) { el.remove(); return; }
     const txt = pairs
       .map((p, i) => `Q${i + 1}: ${p.q} [${p.checked ? '✓ 済' : '未'}]\nA${i + 1}: ${p.a}`)
       .join('\n');

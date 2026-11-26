@@ -1,0 +1,35 @@
+.dialog {
+  --wash: color-mix(in srgb, var(--primary) 14%, var(--background));
+  --button: color-mix(in srgb, var(--primary) 52%, #342537);
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  margin: auto; padding: 0; overflow: auto;
+  color: var(--foreground); background: var(--background);
+  border: 1px solid var(--border); border-radius: 20px;
+  box-shadow: 0 16px 64px #22182840;
+}
+.dialog::backdrop { background: #251a2a66; backdrop-filter: blur(3px); }
+.sheet, .sheet form { display: grid; gap: 16px; }
+.sheet { padding: clamp(16px, 5vw, 26px); }
+.sheet header, .sheet label, .actions { display: flex; align-items: center; gap: 10px; }
+.sheet h2 { font-size: 1.12rem; margin: 0; }
+.sheet header div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.avatar { width: 46px; height: 46px; flex-shrink: 0; border-radius: 14px; background: var(--wash) center / contain no-repeat url('/sikun-book-read.png'); }
+.sheet button, .sheet input { font: inherit; color: inherit; }
+.sheet button { min-height: 44px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--border); border-radius: 10px; background: var(--background); }
+.sheet button:hover, .answer { background: var(--wash); }
+.sheet button:disabled { cursor: wait; opacity: .6; }
+.sheet .primary { background: var(--button); color: white; }
+.sheet .close { display: grid; place-items: center; border: 0; }
+.sheet label { min-height: 44px; cursor: pointer; }
+.sheet input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--button); }
+.sheet input[type=number] { width: 7rem; padding: 10px; border: 1px solid var(--border); background: var(--background); border-radius: 8px; }
+.sheet :is(input, button):focus-visible { outline: 3px solid var(--button); outline-offset: 2px; }
+.card { padding: 18px; border: 1px solid var(--border); border-radius: 14px; overflow-wrap: anywhere; line-height: 1.6; }
+.card p { margin: 8px 0; }
+.answer { border-radius: 8px; padding: 6px 12px; }
+.actions { flex-wrap: wrap; }
+.menu { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.menu button { text-align: start; }
+.clock { display: block; font-size: 2.4rem; font-variant-numeric: tabular-nums; }

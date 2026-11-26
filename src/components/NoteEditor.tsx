@@ -26,6 +26,7 @@ import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
+import type { TutorNote } from './TutorReview';
 import HandwritingCanvas from './HandwritingCanvas';
 
 import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension, HandwritingExtension, MathInlineExtension, MathBlockExtension } from '@/lib/extensions';
@@ -123,6 +124,7 @@ const CustomTaskItem = TaskItem.extend({
 });
 
 interface NoteEditorProps {
+  onTutorNoteChange?: (note: TutorNote | null) => void;
   noteId: number;
   onClose?: () => void;
   onSelectNote?: (id: number) => void;
@@ -132,7 +134,7 @@ interface NoteEditorProps {
   embedded?: boolean;
 }
 
-export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = false }: NoteEditorProps) {
+export default function NoteEditor({ noteId, onClose, onSelectNote, onTutorNoteChange, embedded = false }: NoteEditorProps) {
   const t = useT();
   const [note, setNote] = useState<Note | null>(null);
   const [hwDoc, setHwDoc] = useState<HandwritingDoc>(EMPTY_HANDWRITING);
@@ -227,19 +229,21 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       scrollMargin: 24,
       scrollThreshold: 24,
     },
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor, transaction }) => {
       if (noteIdRef.current && !isLoadingContentRef.current) {
         const currentNoteId = noteIdRef.current;
         const content = editor.getHTML();
         setIsSaving(true);
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-        saveTimeoutRef.current = setTimeout(async () => {
+        const persist = async () => {
           try {
             await db.notes.update(currentNoteId, { content, updatedAt: Date.now() });
           } finally {
             setIsSaving(false);
           }
-        }, 800);
+        };
+        if (transaction.getMeta('saveTutorReview')) void persist();
+        else saveTimeoutRef.current = setTimeout(persist, 800);
       }
     },
   });
@@ -682,6 +686,15 @@ const searchInputRef = useRef<HTMLInputElement>(null);
 
 
 
+
+  const loadedId = note?.id;
+  const title = note?.title;
+  const noteType = note?.type;
+  useEffect(() => {
+    if (!editor || loadedId !== noteId || noteType === 'handwriting') return;
+    onTutorNoteChange?.({ id: noteId, title: title || '', editor });
+    return () => onTutorNoteChange?.(null);
+  }, [editor, loadedId, title, noteType, noteId, onTutorNoteChange]);
 
   if (!editor) return null;
   const isHandwriting = note?.type === 'handwriting';
