@@ -25,6 +25,8 @@ export interface Note {
   updatedAt: number;
   type?: NoteType;
   deletedAt?: number;
+  /** shown at the top of the memo list (syncs like any other field) */
+  pinned?: boolean;
 }
 
 export function newSyncId(): string {

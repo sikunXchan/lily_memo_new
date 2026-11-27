@@ -16,6 +16,20 @@ import { getAppLang, type AppLang } from './appLang';
 
 // English translations keyed by the original Japanese UI string.
 const EN: Record<string, string> = {
+  // ── Memo list ──
+  "手書きメモ": "Handwritten note",
+  "ピン留めを外す": "Unpin",
+  "並び順": "Sort order",
+  "更新順": "Updated",
+  "作成順": "Created",
+  "名前順": "Name",
+  // ── Memo editor format bar ──
+  "見出し": "Heading",
+  "やり直す": "Redo",
+  "記法ヘルプ": "Syntax help",
+  "書式": "Formatting",
+  "インデント": "Indent",
+  "インデントを戻す": "Outdent",
   // ── sikun quiz / timer ──
   "答えを表示": "Show the answer",
   "済": "Done",

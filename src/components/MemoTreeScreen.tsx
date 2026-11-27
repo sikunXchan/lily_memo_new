@@ -1,14 +1,60 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  ArrowLeft, Plus, Search, ChevronRight, Folder, FileText, FolderPlus, Check, X, Pencil,
+  ArrowLeft, Plus, Search, ChevronRight, Folder, FolderPlus, Check, X, Pencil, Pin,
 } from 'lucide-react';
 import { db, newSyncId } from '@/lib/db';
 import type { Folder as FolderType, Note } from '@/lib/db';
 import { useT, translate } from '@/lib/i18n';
+import { getAppLang } from '@/lib/appLang';
 import { useCharacterSkin, AmbientOverlay } from './CharacterSkinContext';
+
+type SortKey = 'updated' | 'created' | 'title';
+const SORT_KEY = 'lily_memo_list_sort';
+
+function loadSort(): SortKey {
+  try {
+    const v = localStorage.getItem(SORT_KEY);
+    return v === 'created' || v === 'title' ? v : 'updated';
+  } catch { return 'updated'; }
+}
+
+/** First words of the body, as plain text, for the list row. */
+function preview(html: string): string {
+  return (html || '')
+    .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<div[^>]*data-type="(?:mermaid|chart|geometry|handwriting)"[^>]*>[\s\S]*?<\/div>/gi, ' ')
+    .replace(/<\/(p|li|h[1-6]|div|tr)>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+function shortDate(ms: number): string {
+  const d = new Date(ms);
+  const now = new Date();
+  const en = getAppLang() === 'en';
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString(en ? 'en-US' : 'ja-JP', { hour: '2-digit', minute: '2-digit' });
+  }
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return en ? 'Yesterday' : '昨日';
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function sortNotes(list: Note[], key: SortKey): Note[] {
+  const out = [...list];
+  if (key === 'title') out.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ja'));
+  else if (key === 'created') out.sort((a, b) => b.createdAt - a.createdAt);
+  else out.sort((a, b) => b.updatedAt - a.updatedAt);
+  // pinned first, keeping the chosen order inside each group
+  return [...out.filter(n => n.pinned), ...out.filter(n => !n.pinned)];
+}
 
 interface MemoTreeScreenProps {
   onSelectNote: (id: number) => void;
@@ -22,6 +68,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [sort, setSort] = useState<SortKey>(loadSort);
 
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -30,13 +77,50 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const folders = useLiveQuery<FolderType[]>(() => db.folders.filter(f => !f.deletedAt).toArray()) ?? [];
-  const notes = useLiveQuery<Note[]>(() => {
+  const rawNotes = useLiveQuery<Note[]>(() => {
     const base = db.notes.filter(n => !n.deletedAt);
-    if (!searchQuery) return base.sortBy('updatedAt').then(l => l.reverse());
+    if (!searchQuery) return base.toArray();
     const q = searchQuery.toLowerCase();
-    return base.filter(n => n.title.toLowerCase().includes(q) || (n.content ?? '').toLowerCase().includes(q))
-      .sortBy('updatedAt').then(l => l.reverse());
-  }, [searchQuery]) ?? [];
+    return base.filter(n => n.title.toLowerCase().includes(q) || (n.content ?? '').toLowerCase().includes(q)).toArray();
+  }, [searchQuery]);
+  const notes = useMemo(() => sortNotes(rawNotes ?? [], sort), [rawNotes, sort]);
+
+  const changeSort = (k: SortKey) => {
+    setSort(k);
+    try { localStorage.setItem(SORT_KEY, k); } catch { /* ignore */ }
+  };
+
+  const togglePin = useCallback(async (n: Note) => {
+    if (n.id == null) return;
+    // updatedAt moves so the pin syncs (sync is last-write-wins per note).
+    await db.notes.update(n.id, { pinned: !n.pinned, updatedAt: Date.now() });
+  }, []);
+
+  const renderRow = (n: Note, inFolder?: boolean) => {
+    const pv = preview(n.content);
+    return (
+      <div key={`${inFolder ? 'f' : n.pinned ? 'p' : 'l'}${n.id}`} className={`mt-row${inFolder ? ' in-folder' : ''}`}>
+        <button className="mt-row-main" onClick={() => onSelectNote(n.id!)}>
+          <span className="mt-row-top">
+            <span className="mt-note-title">{n.title || t('無題のメモ')}</span>
+            <span className="mt-date">{shortDate(sort === 'created' ? n.createdAt : n.updatedAt)}</span>
+          </span>
+          {n.type === 'handwriting'
+            ? <span className="mt-preview">{t('手書きメモ')}</span>
+            : pv && <span className="mt-preview">{pv}</span>}
+        </button>
+        <button
+          className={`mt-pin${n.pinned ? ' on' : ''}`}
+          onClick={() => void togglePin(n)}
+          aria-pressed={!!n.pinned}
+          aria-label={n.pinned ? t('ピン留めを外す') : t('ピン留め')}
+          title={n.pinned ? t('ピン留めを外す') : t('ピン留め')}
+        >
+          <Pin size={15} fill={n.pinned ? 'currentColor' : 'none'} />
+        </button>
+      </div>
+    );
+  };
 
   const createNote = useCallback(async (folderId?: number) => {
     const t = Date.now();
@@ -84,7 +168,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
 
   const looseNotes = searchQuery
     ? notes
-    : notes.filter(n => !n.folderId);
+    : notes.filter(n => !n.folderId && !n.pinned);
 
   return (
     <div
@@ -144,10 +228,23 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
         </div>
       )}
 
+      {/* Sort */}
+      <div className="mt-sortbar" role="group" aria-label={t('並び順')}>
+        {([['updated', t('更新順')], ['created', t('作成順')], ['title', t('名前順')]] as [SortKey, string][]).map(([k, label]) => (
+          <button key={k} className={`mt-sort${sort === k ? ' on' : ''}`} aria-pressed={sort === k} onClick={() => changeSort(k)}>{label}</button>
+        ))}
+      </div>
+
       {/* Tree */}
       <div className="mt-scroll">
+        {!searchQuery && notes.some(n => n.pinned) && (
+          <>
+            <span className="mt-section-label"><Pin size={11} /> {t('ピン留め')}</span>
+            {notes.filter(n => n.pinned).map(n => renderRow(n))}
+          </>
+        )}
         {!searchQuery && folders.map((f) => {
-          const folderNotes = notes.filter(n => n.folderId === f.id);
+          const folderNotes = notes.filter(n => n.folderId === f.id && !n.pinned);
           const expanded = !!expandedFolders[f.id!];
           return (
             <div key={f.id} className="mt-folder-card">
@@ -186,12 +283,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
               )}
               {expanded && (
                 <div className="mt-folder-notes">
-                  {folderNotes.map(n => (
-                    <button key={n.id} className="mt-note-row" onClick={() => onSelectNote(n.id!)}>
-                      <FileText size={14} color="#cab9bf" />
-                      <span className="mt-note-title">{n.title || t('無題のメモ')}</span>
-                    </button>
-                  ))}
+                  {folderNotes.map(n => renderRow(n, true))}
                   <button className="mt-note-row mt-add-note" onClick={() => void createNote(f.id)}>
                     <Plus size={14} color="#ff8da1" />
                     <span>{t('メモを追加')}</span>
@@ -205,12 +297,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
         {looseNotes.length > 0 && !searchQuery && (
           <span className="mt-section-label">{t('フォルダなし')}</span>
         )}
-        {looseNotes.map(n => (
-          <button key={n.id} className="mt-loose-row" onClick={() => onSelectNote(n.id!)}>
-            <FileText size={15} color="#cab9bf" />
-            <span className="mt-note-title">{n.title || t('無題のメモ')}</span>
-          </button>
-        ))}
+        {looseNotes.map(n => renderRow(n))}
 
         {searchQuery && notes.length === 0 && (
           <div className="mt-empty">{t('「{q}」は見つかりません', { q: searchQuery })}</div>
@@ -362,6 +449,7 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
         }
         .mt-add-note span { color: #ff8da1; font-size: .82rem; font-weight: 600; }
         .mt-section-label {
+          display: inline-flex !important; align-items: center; gap: 4px;
           font-size: .68rem; font-weight: 700; color: #fff;
           letter-spacing: .08em; text-transform: uppercase;
           background: rgba(30,30,25,.32);
@@ -370,6 +458,15 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           align-self: flex-start; margin-top: 2px;
           flex-shrink: 0;
         }
+        .mt-sortbar {
+          display: flex; gap: 6px; padding: 8px 14px 0; flex-shrink: 0;
+        }
+        .mt-sort {
+          height: 30px; padding: 0 12px; border-radius: 999px;
+          border: 1px solid #ffe0e8; background: rgba(255,255,255,.75);
+          color: #8a7d80; font-size: .76rem; font-weight: 700; font-family: inherit;
+        }
+        .mt-sort.on { background: #ff8da1; border-color: #ff8da1; color: #fff; }
         .mt-loose-row {
           display: flex; align-items: center; gap: 10px;
           width: 100%; padding: 10px 13px;
@@ -392,6 +489,45 @@ export default function MemoTreeScreen({ onSelectNote, onGoBack, onOpenSearch }:
           padding: 10px 20px; font-size: .88rem; font-weight: 700;
           cursor: pointer; font-family: inherit;
         }
+      `}</style>
+      {/* rows are built by renderRow(), outside styled-jsx's scoping */}
+      <style jsx global>{`
+        .mt-row {
+          display: flex; align-items: stretch;
+          background: rgba(255,253,246,.9);
+          backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+          border-radius: 13px;
+          box-shadow: 0 2px 10px rgba(30,35,25,.08);
+          flex-shrink: 0;
+        }
+        .mt-row.in-folder {
+          background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none;
+          box-shadow: none; border-radius: 0;
+          border-top: 1px solid rgba(0,0,0,.05);
+        }
+        .mt-row-main {
+          flex: 1; min-width: 0;
+          display: flex; flex-direction: column; gap: 3px;
+          padding: 11px 4px 11px 14px;
+          background: none; border: none; border-radius: 13px;
+          text-align: left; font-family: inherit; cursor: pointer;
+        }
+        .mt-row.in-folder .mt-row-main { padding-left: 0; }
+        .mt-row-main:active { background: rgba(255,182,193,.12); }
+        .mt-row-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+        .mt-row .mt-note-title { font-size: .9rem; font-weight: 700; color: #3d3438; }
+        .mt-date { flex-shrink: 0; font-size: .72rem; color: #9a8d90; font-variant-numeric: tabular-nums; }
+        .mt-preview {
+          font-size: .78rem; color: #8a7d80; line-height: 1.45;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .mt-pin {
+          width: 44px; flex-shrink: 0;
+          display: grid; place-items: center;
+          background: none; border: none; border-radius: 13px;
+          color: #d6c9cd; cursor: pointer;
+        }
+        .mt-pin.on { color: #ff8da1; }
       `}</style>
     </div>
   );
