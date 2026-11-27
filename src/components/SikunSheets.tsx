@@ -1,10 +1,11 @@
 'use client';
 
-// sikun's full-size sheets: the unified note quiz (flashcards) and the
-// adjustable focus timer. Opened from sikun's long-press radial menu (see InstanceSikun).
+// sikun's quiz (ring-bound word cards, red-sheet answer, 済 stamp) and focus
+// timer (kitchen-timer dial). Opened from sikun's long-press radial menu.
+// Design: Claude Design canvas "sikun 問題・タイマー".
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { X, Check, Sparkles, RotateCcw, Play, Pause, Square, Plus, Minus, ChevronLeft, Eye, BookmarkPlus } from 'lucide-react';
+import { X, RotateCcw, Play, Pause, Plus, Minus, PenLine, ArrowRight } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -23,8 +24,8 @@ function lsSet(key: string, value: string) {
   try { localStorage.setItem(key, value); } catch { /* ignore */ }
 }
 
-export function SikunSheet({ title, subtitle, onClose, footer, children }: {
-  title: string; subtitle?: string; onClose: () => void; footer?: ReactNode; children: ReactNode;
+export function SikunSheet({ title, subtitle, onClose, children }: {
+  title: string; subtitle?: string; onClose: () => void; children: ReactNode;
 }) {
   const t = useT();
   useEffect(() => {
@@ -34,17 +35,16 @@ export function SikunSheet({ title, subtitle, onClose, footer, children }: {
   }, [onClose]);
   return (
     <div className={s.backdrop} onPointerDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={s.sheet} role="dialog" aria-modal="true" aria-label={title}>
+      <section className={s.sheet} role="dialog" aria-modal="true" aria-label={title}>
         <div className={s.head}>
           <div className={s.headText}>
             <h2>{title}</h2>
             {subtitle && <small>{subtitle}</small>}
           </div>
-          <button className={s.iconBtn} onClick={onClose} aria-label={t('閉じる')}><X size={18} /></button>
+          <button className={s.close} onClick={onClose} aria-label={t('閉じる')}><X size={18} /></button>
         </div>
-        <div className={s.body}>{children}</div>
-        {footer && <div className={s.footer}>{footer}</div>}
-      </div>
+        {children}
+      </section>
     </div>
   );
 }
@@ -52,18 +52,18 @@ export function SikunSheet({ title, subtitle, onClose, footer, children }: {
 // ───────────────────────── Quiz ─────────────────────────
 
 interface Card extends QuizPair {
-  /** set when the question lives in the note (so it can be ticked) */
+  /** set when the question lives in the note (so it can be stamped) */
   block?: number;
   index?: number;
   ai?: boolean;
 }
 
-type Filter = 'unchecked' | 'all';
 type Result = 'known' | 'again';
-const FILTER_KEY = 'lily_sikun_quiz_filter';
+const SKIP_KEY = 'lily_sikun_quiz_skip_checked';
 
 const cardKey = (c: Card) => (c.block !== undefined ? `${c.block}:${c.index}` : `ai:${c.q}`);
 const stripP = (html: string) => html.replace(/^\s*<p>([\s\S]*?)<\/p>\s*$/, '$1');
+const pad2 = (n: number) => String(n).padStart(2, '0');
 
 export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean; onClose: () => void }) {
   const t = useT();
@@ -72,7 +72,7 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
   const [deck, setDeck] = useState<Card[]>([]);
   const [pos, setPos] = useState(0);
   const [revealed, setRevealed] = useState(false);
-  const [filter, setFilter] = useState<Filter>(() => (lsGet(FILTER_KEY) === 'all' ? 'all' : 'unchecked'));
+  const [skipChecked, setSkipChecked] = useState(() => lsGet(SKIP_KEY) !== '0');
   const [results, setResults] = useState<Record<string, Result>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -92,24 +92,23 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
     setError('');
   };
 
-  const load = useCallback(async (f: Filter) => {
+  const load = useCallback(async (skip: boolean) => {
     const { html, title } = await readNoteHtml(noteId);
     if (!alive.current) return;
     const items: Card[] = extractQuizItems(html);
     setTitle(title);
     setAll(items);
-    setDeck(shuffle(f === 'unchecked' ? items.filter(c => !c.checked) : items));
+    setDeck(shuffle(skip ? items.filter(c => !c.checked) : items));
     setPos(0);
     setRevealed(false);
     setResults({});
     setError('');
   }, [noteId]);
 
-  useEffect(() => { void load(filter); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(skipChecked); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const card = deck[pos] as Card | undefined;
   const total = all?.length ?? 0;
-  const uncheckedTotal = all?.filter(c => !c.checked).length ?? 0;
 
   const patchCard = (at: number, patch: Partial<Card>) =>
     setDeck(d => d.map((c, i) => (i === at ? { ...c, ...patch } : c)));
@@ -122,7 +121,7 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
     if (!ok) {
       patchCard(at, { checked: !checked });
       setError(t('メモの問題が変更されたため、チェックできませんでした。もう一度読み込みます。'));
-      void load(filter);
+      void load(skipChecked);
       return false;
     }
     setAll(list => list?.map(x => (x.block === c.block && x.index === c.index ? { ...x, checked } : x)) ?? list);
@@ -158,7 +157,7 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
     setError('');
     try {
       const { html, title } = await readNoteHtml(noteId);
-      const body = noteHtmlToText(html, filter === 'unchecked');
+      const body = noteHtmlToText(html, skipChecked);
       if (!body.trim()) throw new Error(t('出題できる本文がありません。'));
       const avoid = [...(all ?? []).map(c => c.q), ...askedAi.current].slice(-40);
       const system = en
@@ -185,7 +184,7 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
 
   const unsavedAi = !!card?.ai && card.block === undefined;
 
-  // Keyboard: Space/Enter = show answer · 1 = again · 2 = got it · ← = back
+  // Keyboard: Space/Enter = show answer · 1 = まだ · 2 = 覚えた · ← = back
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey || !card) return;
@@ -199,145 +198,139 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const switchFilter = (f: Filter) => {
-    if (f === filter || !all) return;
-    setFilter(f);
-    lsSet(FILTER_KEY, f);
-    startDeck(f === 'unchecked' ? all.filter(c => !c.checked) : all);
+  const toggleSkip = (v: boolean) => {
+    setSkipChecked(v);
+    lsSet(SKIP_KEY, v ? '1' : '0');
+    if (all) startDeck(v ? all.filter(c => !c.checked) : all);
   };
 
   const knownN = Object.values(results).filter(r => r === 'known').length;
   const againCards = deck.filter(c => results[cardKey(c)] === 'again');
 
-  // ── footer: always exactly the next step ──
-  let footer: ReactNode = null;
-  if (card) {
-    if (!revealed) {
-      footer = (
-        <button className={`${s.btn} ${s.primary}`} onClick={() => setRevealed(true)}>
-          <Eye size={18} />{t('答えを見る')}<span className={s.kbd}>Space</span>
-        </button>
-      );
-    } else if (unsavedAi) {
-      footer = (
-        <div className={s.row}>
-          <button className={s.btn} onClick={advance}>{t('スキップ')}<span className={s.kbd}>1</span></button>
-          <button className={`${s.btn} ${s.primary}`} onClick={() => void saveAi()}>
-            <BookmarkPlus size={18} />{t('メモに追加')}<span className={s.kbd}>2</span>
-          </button>
-        </div>
-      );
-    } else {
-      footer = (
-        <div className={s.row}>
-          <button className={s.btn} onClick={() => void answer('again')}>
-            <RotateCcw size={17} />{t('もう一度')}<span className={s.kbd}>1</span>
-          </button>
-          <button className={`${s.btn} ${s.success}`} onClick={() => void answer('known')}>
-            <Check size={18} strokeWidth={3} />{t('覚えた')}<span className={s.kbd}>2</span>
-          </button>
-        </div>
-      );
-    }
-  }
+  const aiLink = (
+    <button className={s.textLink} disabled={busy || all === null} onClick={() => void generate()}>
+      <PenLine size={15} />{busy ? t('問題を作成中…') : t('本文から1枚つくってもらう')}
+    </button>
+  );
 
   return (
-    <SikunSheet title={t('問題')} subtitle={title || t('無題')} onClose={onClose} footer={footer}>
-      {all && total > 0 && (
-        <div className={s.segment} role="group" aria-label={t('出題範囲')}>
-          <button aria-pressed={filter === 'unchecked'} onClick={() => switchFilter('unchecked')}>
-            {t('未チェック')}<span className={s.count}>{uncheckedTotal}</span>
-          </button>
-          <button aria-pressed={filter === 'all'} onClick={() => switchFilter('all')}>
-            {t('すべて')}<span className={s.count}>{total}</span>
-          </button>
-        </div>
-      )}
-
+    <SikunSheet title={t('問題')} subtitle={title || t('無題')} onClose={onClose}>
       {all === null ? (
-        <p className={`${s.muted} ${s.center}`}>{t('読み込み中…')}</p>
+        <p className={s.note}>{t('読み込み中…')}</p>
       ) : card ? (
         <>
-          <div className={s.progressRow}>
-            <button className={s.iconBtn} onClick={back} disabled={pos === 0} aria-label={t('前の問題')}>
-              <ChevronLeft size={18} />
-            </button>
-            <div className={s.bar}><span style={{ width: `${(pos / deck.length) * 100}%` }} /></div>
-            <span className={s.progressText}>{pos + 1} / {deck.length}</span>
+          <div className={s.meta}>
+            <label className={s.filter}>
+              <input type="checkbox" checked={skipChecked} onChange={e => toggleSkip(e.target.checked)} />
+              {t('済みのカードは出さない')}
+            </label>
+            <span className={s.count}>{pos + 1} <span>/ {deck.length}</span></span>
           </div>
+          <div className={s.bar}><span style={{ width: `${(pos / deck.length) * 100}%` }} /></div>
 
-          <div
-            className={`${s.card} ${card.checked ? s.cardChecked : ''}`}
-            key={`${pos}-${card.q}`}
-            role="button"
-            tabIndex={0}
-            aria-label={revealed ? undefined : t('タップで答えを表示')}
-            onClick={() => setRevealed(true)}
-          >
-            <div className={s.cardTop}>
-              <span className={`${s.tag} ${card.ai ? s.tagAi : ''}`}>
-                {card.ai ? t('AI・本文から') : t('メモの問題')}
-              </span>
-              {card.block !== undefined && (
-                <button
-                  className={s.checkToggle}
-                  aria-pressed={!!card.checked}
-                  onClick={e => { e.stopPropagation(); void writeCheck(card, pos, !card.checked); }}
-                  title={t('メモのチェックボックスと連動します')}
-                >
-                  <span className={s.checkCircle}>{card.checked && <Check size={11} strokeWidth={3.5} />}</span>
-                  {card.checked ? t('チェック済み') : t('チェック')}
-                </button>
-              )}
-            </div>
-
-            <div className={s.question} dangerouslySetInnerHTML={{ __html: renderRich(card.q) }} />
-            {Array.isArray(card.opts) && card.opts.length > 0 && (
-              <ol type="A" className={s.opts}>
-                {card.opts.map((o, i) => <li key={i} dangerouslySetInnerHTML={{ __html: stripP(renderRich(o)) }} />)}
-              </ol>
-            )}
-
-            {revealed ? (
-              <div className={s.answer}>
-                <span className={s.answerLabel}>{t('答え')}</span>
-                <div dangerouslySetInnerHTML={{ __html: renderRich(card.a || t('答えは未入力です')) }} />
+          <div className={s.stack}>
+            {deck.length - pos > 2 && <div className={s.under1} aria-hidden />}
+            {deck.length - pos > 1 && <div className={s.under2} aria-hidden />}
+            <div
+              className={s.card}
+              key={`${pos}-${card.q}`}
+              role="button"
+              tabIndex={0}
+              aria-label={revealed ? undefined : t('タップで答えを表示')}
+              onClick={() => setRevealed(true)}
+            >
+              <span className={s.ring} aria-hidden />
+              <span className={s.hole} aria-hidden />
+              <div className={s.cardTop}>
+                <span className={s.no}>
+                  No.{pad2(pos + 1)}
+                  {card.ai && <span className={s.tagAi}>{t('AIがつくった問題')}</span>}
+                </span>
+                {card.block !== undefined && (
+                  <button
+                    className={s.stamp}
+                    aria-pressed={!!card.checked}
+                    aria-label={card.checked ? t('済を外す') : t('済にする')}
+                    title={t('メモのチェックボックスと連動します')}
+                    onClick={e => { e.stopPropagation(); void writeCheck(card, pos, !card.checked); }}
+                  >済</button>
+                )}
               </div>
-            ) : (
-              <span className={s.hint}><Eye size={14} />{t('タップで答えを表示')}</span>
-            )}
+
+              <div className={s.question} dangerouslySetInnerHTML={{ __html: renderRich(card.q) }} />
+              {Array.isArray(card.opts) && card.opts.length > 0 && (
+                <ol type="A" className={s.opts}>
+                  {card.opts.map((o, i) => <li key={i} dangerouslySetInnerHTML={{ __html: stripP(renderRich(o)) }} />)}
+                </ol>
+              )}
+
+              <div className={s.answerZone}>
+                <div className={s.answer} aria-hidden={!revealed}>
+                  <span className={s.answerLabel}>{t('答え')}</span>
+                  <div className={s.answerText} dangerouslySetInnerHTML={{ __html: renderRich(card.a || t('答えは未入力です')) }} />
+                </div>
+                <div className={`${s.redSheet} ${revealed ? s.redSheetOff : ''}`} aria-hidden>
+                  {!revealed && <>{t('シートをずらして答えを見る')}<ArrowRight size={16} strokeWidth={2.2} /></>}
+                </div>
+              </div>
+            </div>
           </div>
+
+          {!revealed ? (
+            <button className={s.ink} onClick={() => setRevealed(true)}>
+              {t('答えを見る')}<span className={s.kbd}>Space</span>
+            </button>
+          ) : unsavedAi ? (
+            <div className={s.pair}>
+              <button className={s.outline} onClick={advance}>{t('スキップ')}<span className={s.kbd}>1</span></button>
+              <button className={s.ink} onClick={() => void saveAi()}>{t('メモに追加')}<span className={s.kbd}>2</span></button>
+            </div>
+          ) : (
+            <div className={s.pair}>
+              <button className={s.outline} onClick={() => void answer('again')}>
+                <RotateCcw size={17} strokeWidth={2.2} />{t('まだ')}<span className={s.kbd}>1</span>
+              </button>
+              <button className={s.stampBtn} onClick={() => void answer('known')}>
+                <span className={s.stampMini} aria-hidden>済</span>{t('覚えた')}<span className={s.kbd}>2</span>
+              </button>
+            </div>
+          )}
+          {aiLink}
         </>
       ) : deck.length > 0 ? (
-        <div className={s.done}>
-          <div className={s.doneEmoji}>🎉</div>
-          <p className={s.doneTitle}>{t('{n}問おつかれさま！', { n: deck.length })}</p>
-          <div className={s.stats}>
-            <div className={`${s.stat} ${s.statGood}`}><strong>{knownN}</strong><span>{t('覚えた')}</span></div>
-            <div className={`${s.stat} ${s.statAgain}`}><strong>{againCards.length}</strong><span>{t('もう一度')}</span></div>
+        <>
+          <div className={s.bar}><span style={{ width: '100%' }} /></div>
+          <div className={s.done}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/sikun-character.png" alt="" />
+            <p className={s.doneTitle}>{t('{n}枚、おわり！', { n: deck.length })}</p>
+            {knownN > 0 && <p className={s.doneSub}>{t('覚えたカードはメモにも「済」がつきました')}</p>}
           </div>
-          <div className={s.row} style={{ width: '100%', marginTop: 6 }}>
-            {againCards.length > 0 && (
-              <button className={`${s.btn} ${s.primary}`} onClick={() => startDeck(againCards)}>
-                <RotateCcw size={17} />{t('もう一度の{n}問', { n: againCards.length })}
-              </button>
-            )}
-            <button className={s.btn} onClick={() => void load(filter)}>{t('最初から')}</button>
+          <div className={s.results}>
+            <div className={s.result}>
+              <span>{t('覚えた')}</span><strong>{knownN}</strong>
+              {knownN > 0 && <i className={s.resultStamp} aria-hidden>済</i>}
+            </div>
+            <div className={s.result}><span>{t('まだ')}</span><strong>{againCards.length}</strong></div>
           </div>
-        </div>
+          {againCards.length > 0 && (
+            <button className={s.ink} onClick={() => startDeck(againCards)}>{t('まだの{n}枚をもう一度', { n: againCards.length })}</button>
+          )}
+          <button className={againCards.length > 0 ? s.outline : s.ink} onClick={() => void load(skipChecked)}>{t('最初から')}</button>
+          {aiLink}
+        </>
       ) : (
-        <div className={s.done}>
-          <div className={s.doneEmoji}>{total > 0 ? '✅' : '📄'}</div>
-          <p className={s.doneTitle}>{total > 0 ? t('すべてチェック済みです') : t('このメモにはまだ問題がありません')}</p>
-          <p className={s.muted}>
-            {total > 0 ? t('「すべて」に切り替えると全部の問題を解けます。') : t('AIがメモの本文から問題を作れます。')}
-          </p>
-        </div>
+        <>
+          <div className={s.done}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/sikun-character.png" alt="" />
+            <p className={s.doneTitle}>{total > 0 ? t('ぜんぶ「済」です') : t('このメモにはまだ問題がありません')}</p>
+            <p className={s.doneSub}>{total > 0 ? t('済みのカードもやり直せます。') : t('メモの本文から1枚ずつつくれます。')}</p>
+          </div>
+          {total > 0 && <button className={s.ink} onClick={() => toggleSkip(false)}>{t('済みのカードもやる')}</button>}
+          {aiLink}
+        </>
       )}
-
-      <button className={s.link} disabled={busy || all === null} onClick={() => void generate()}>
-        <Sparkles size={15} />{busy ? t('問題を作成中…') : t('AIで本文から1問出題')}
-      </button>
       {error && <p className={s.error} role="alert">{error}</p>}
     </SikunSheet>
   );
@@ -346,7 +339,7 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
 // ───────────────────────── Timer ─────────────────────────
 
 const MIN_KEY = 'lily_sikun_timer_minutes';
-const PRESETS = [5, 10, 15, 25, 30, 45, 60, 90, 120];
+const PRESETS = [5, 10, 15, 25, 30, 45, 60, 90];
 export const TIMER_MAX_MIN = 600;
 
 function fmt(ms: number): string {
@@ -357,8 +350,26 @@ function fmt(ms: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
-export function TimerSheet({ runningMs, pausedMs, totalMs, endAt, onStart, onPause, onResume, onStop, onAdd, onClose }: {
-  runningMs: number | null; pausedMs: number | null; totalMs: number; endAt: number | null;
+/** Kitchen-timer face: a 60-minute dial with the time left as a wedge. */
+function Dial({ minutes, paused, children }: { minutes: number; paused?: boolean; children: ReactNode }) {
+  const deg = Math.max(0, Math.min(360, (minutes / 60) * 360));
+  return (
+    <div className={`${s.dial} ${paused ? s.paused : ''}`}>
+      <div className={s.face} />
+      <div className={s.wedge} style={{ background: `conic-gradient(var(--primary, #e08394) 0deg ${deg}deg, transparent ${deg}deg 360deg)` }} />
+      <div className={s.ticks} />
+      <div className={s.ticksMajor} />
+      <span className={s.num} style={{ left: 111, top: 30 }}>0</span>
+      <span className={s.num} style={{ left: 196, top: 116 }}>15</span>
+      <span className={s.num} style={{ left: 111, top: 202 }}>30</span>
+      <span className={s.num} style={{ left: 26, top: 116 }}>45</span>
+      {children}
+    </div>
+  );
+}
+
+export function TimerSheet({ runningMs, pausedMs, endAt, onStart, onPause, onResume, onStop, onAdd, onClose }: {
+  runningMs: number | null; pausedMs: number | null; totalMs?: number; endAt: number | null;
   onStart: (min: number) => void; onPause: () => void; onResume: () => void; onStop: () => void;
   onAdd: (min: number) => void; onClose: () => void;
 }) {
@@ -374,101 +385,82 @@ export function TimerSheet({ runningMs, pausedMs, totalMs, endAt, onStart, onPau
   const stepDown = () => setMinutes(String(clamp(value <= 5 ? value - 1 : value <= 60 ? value - 5 : value - 10)));
   const stepUp = () => setMinutes(String(clamp(!valid ? 5 : value < 5 ? value + 1 : value < 60 ? value + 5 : value + 10)));
 
-  const remain = pausedMs ?? runningMs ?? 0;
-  const R = 92;
-  const C = 2 * Math.PI * R;
-  const frac = active
-    ? (totalMs > 0 ? Math.max(0, Math.min(1, remain / totalMs)) : 1)
-    : (valid ? Math.min(1, value / 60) : 0); // setup: the ring shows the length on a 60-min face
-  const endsAt = runningMs !== null && endAt ? new Date(endAt) : null;
-
   const start = () => {
     if (!valid) return;
     lsSet(MIN_KEY, String(value));
     onStart(value);
   };
 
-  const ring = (center: ReactNode) => (
-    <div className={`${s.ringWrap} ${pausedMs !== null ? s.ringPaused : ''}`}>
-      <svg viewBox="0 0 210 210" aria-hidden>
-        <circle className={s.ringTrack} cx="105" cy="105" r={R} fill="none" strokeWidth="12" />
-        <circle className={s.ringFill} cx="105" cy="105" r={R} fill="none" strokeWidth="12" strokeLinecap="round"
-          strokeDasharray={C} strokeDashoffset={C * (1 - frac)} />
-      </svg>
-      <div className={s.ringCenter}>{center}</div>
-    </div>
-  );
-
   if (active) {
+    const remain = pausedMs ?? runningMs ?? 0;
+    const endsAt = runningMs !== null && endAt ? new Date(endAt) : null;
     return (
       <SikunSheet
         title={t('集中タイマー')}
         subtitle={pausedMs !== null ? t('一時停止中') : endsAt
-          ? t('{time} に終了', { time: endsAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
-          : t('集中しよう！')}
+          ? t('{time} に終わります', { time: endsAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
+          : undefined}
         onClose={onClose}
-        footer={
-          <div className={s.row}>
-            <button className={s.btn} onClick={onStop}><Square size={15} />{t('終了')}</button>
-            {pausedMs !== null ? (
-              <button className={`${s.btn} ${s.primary}`} onClick={onResume}><Play size={17} />{t('再開')}</button>
-            ) : (
-              <button className={`${s.btn} ${s.primary}`} onClick={onPause}><Pause size={17} />{t('一時停止')}</button>
-            )}
-          </div>
-        }
       >
-        <div className={s.dial}>
-          {ring(<>
-            <strong className={s.clock} role="timer">{fmt(remain)}</strong>
-            <span className={s.ringUnit}>{pausedMs !== null ? t('一時停止中') : t('残り')}</span>
-          </>)}
+        <div className={s.dialRow}>
+          <Dial minutes={remain / 60000} paused={pausedMs !== null}>
+            <div className={`${s.knob} ${s.knobWide}`}>
+              <strong className={s.clock} role="timer">{fmt(remain)}</strong>
+              <small>{pausedMs !== null ? t('一時停止中') : t('のこり')}</small>
+            </div>
+          </Dial>
         </div>
-        <div className={s.chips}>
+        <div className={`${s.ruler} ${s.rulerStrong}`}>
+          <span>{t('延長')}</span>
           {[1, 5, 10, 15].map(n => (
-            <button key={n} className={s.chip} onClick={() => onAdd(n)}>+{t('{n}分', { n })}</button>
+            <button key={n} onClick={() => onAdd(n)} aria-label={t('{n}分延長', { n })}>+{n}</button>
           ))}
+        </div>
+        <div className={s.pair}>
+          <button className={s.outline} onClick={onStop}>{t('やめる')}</button>
+          {pausedMs !== null ? (
+            <button className={s.ink} onClick={onResume}><Play size={16} fill="currentColor" />{t('再開')}</button>
+          ) : (
+            <button className={s.ink} onClick={onPause}><Pause size={16} fill="currentColor" />{t('一時停止')}</button>
+          )}
         </div>
       </SikunSheet>
     );
   }
 
   return (
-    <SikunSheet
-      title={t('集中タイマー')}
-      subtitle={t('時間を決めてスタート')}
-      onClose={onClose}
-      footer={
-        <button className={`${s.btn} ${s.primary}`} disabled={!valid} onClick={start}>
-          <Play size={17} />{valid ? t('{n}分 スタート', { n: value }) : t('スタート')}
+    <SikunSheet title={t('集中タイマー')} subtitle={t('何分やる？')} onClose={onClose}>
+      <div className={s.dialRow}>
+        <button className={s.round} aria-label={t('減らす')} disabled={!valid || value <= 1} onClick={stepDown}>
+          <Minus size={18} strokeWidth={2.4} />
         </button>
-      }
-    >
-      <div className={s.dial}>
-        <button type="button" className={s.stepBtn} aria-label={t('減らす')} disabled={!valid || value <= 1} onClick={stepDown}>
-          <Minus size={20} />
-        </button>
-        {ring(<>
-          <input
-            className={s.minInput} type="number" inputMode="numeric" min={1} max={TIMER_MAX_MIN} step={1}
-            value={minutes} onChange={e => setMinutes(e.target.value)} aria-label={t('時間（分）')}
-            onKeyDown={e => { if (e.key === 'Enter') start(); }}
-          />
-          <span className={s.ringUnit}>{t('分')}</span>
-        </>)}
-        <button type="button" className={s.stepBtn} aria-label={t('増やす')} disabled={valid && value >= TIMER_MAX_MIN} onClick={stepUp}>
-          <Plus size={20} />
+        <Dial minutes={valid ? value : 0}>
+          <div className={s.knob}>
+            <input
+              className={s.minInput} type="number" inputMode="numeric" min={1} max={TIMER_MAX_MIN} step={1}
+              value={minutes} onChange={e => setMinutes(e.target.value)} aria-label={t('時間（分）')}
+              onKeyDown={e => { if (e.key === 'Enter') start(); }}
+            />
+            <small>{t('分')}</small>
+          </div>
+        </Dial>
+        <button className={s.round} aria-label={t('増やす')} disabled={valid && value >= TIMER_MAX_MIN} onClick={stepUp}>
+          <Plus size={18} strokeWidth={2.4} />
         </button>
       </div>
-      <div className={s.chips}>
+      <div className={s.ruler}>
         {PRESETS.map(n => (
-          <button type="button" key={n} className={`${s.chip} ${valid && value === n ? s.chipOn : ''}`}
-            aria-pressed={valid && value === n} onClick={() => setMinutes(String(n))}>
-            {t('{n}分', { n })}
+          <button key={n} aria-pressed={valid && value === n} onClick={() => setMinutes(String(n))} aria-label={t('{n}分', { n })}>
+            {n}
           </button>
         ))}
       </div>
-      {!valid && <p className={s.error}>{t('1〜{max}分で指定してね', { max: TIMER_MAX_MIN })}</p>}
+      <p className={valid ? s.note : s.error}>
+        {valid ? t('真ん中の数字をタップすると直接入力できます（1〜600分）') : t('1〜{max}分で指定してね', { max: TIMER_MAX_MIN })}
+      </p>
+      <button className={s.ink} disabled={!valid} onClick={start}>
+        <Play size={16} fill="currentColor" />{valid ? t('{n}分 はじめる', { n: value }) : t('はじめる')}
+      </button>
     </SikunSheet>
   );
 }
