@@ -18,7 +18,6 @@ import { getAppLang, type AppLang } from './appLang';
 const EN: Record<string, string> = {
   // ── sikun quiz / timer ──
   "答えを表示": "Show the answer",
-  "タップで答えを表示": "Tap to show the answer",
   "済": "Done",
   "タップで済を外す（メモのチェックも外れます）": "Tap to un-mark (unchecks it in the note too)",
   "1〜{max}分で指定してね": "Pick 1–{max} minutes",

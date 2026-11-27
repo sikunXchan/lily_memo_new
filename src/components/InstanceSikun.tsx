@@ -12,7 +12,7 @@ import {
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
-import { QuizSheet, TimerSheet, formatTimer } from './SikunSheets';
+import { QuizSheet, TimerSheet, formatTimer, type QuizCardContext } from './SikunSheets';
 import 'katex/dist/katex.min.css';
 
 interface InstanceSikunProps {
@@ -210,6 +210,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const [timerEndAt, setTimerEndAt] = useState<number | null>(null);
   const [radialOpen, setRadialOpen] = useState(false);
   const [quizNoteId, setQuizNoteId] = useState<number | null>(null);
+  // The card on screen in the quiz, so questions to sikun (selected text or
+  // typed) are answered in that context — without spoiling a hidden answer.
+  const quizCardRef = useRef<QuizCardContext | null>(null);
+  const quizOpen = quizNoteId !== null;
   const [timerOpen, setTimerOpen] = useState(false);
 
   const lastTapAt = useRef<number>(0);
@@ -442,7 +446,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         if (selectionBadgeTimer.current) window.clearTimeout(selectionBadgeTimer.current);
         setSelectionBadge(false);
         setSelectedText('');
-        void sendQuickAction(`次の文を短く解説してくれ:\n${selectedText.slice(0, 500)}`);
+        void sendQuickAction(quizOpen
+          ? (en ? `Briefly explain what this means (it appears in the quiz card I'm working on):\n${selectedText.slice(0, 500)}`
+                : `いま解いている問題に出てくる次の部分の意味を短く教えて:\n${selectedText.slice(0, 500)}`)
+          : `次の文を短く解説してくれ:\n${selectedText.slice(0, 500)}`);
         return;
       }
 
@@ -660,7 +667,11 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
 
     try {
       const baseSystem = sikunBaseSystem(en);
-      const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote;
+      const qc = quizOpen ? quizCardRef.current : null;
+      const quizNote = !qc ? '' : en
+        ? `\n\n# The quiz card the user is working on right now\nQ: ${qc.q}\n${qc.revealed ? `A: ${qc.a}` : 'The user has NOT seen the answer yet. Explain words or grammar, but never reveal or hint at the answer itself.'}`
+        : `\n\n# ユーザーがいま解いている問題カード\n問題: ${qc.q}\n${qc.revealed ? `答え: ${qc.a}` : 'ユーザーはまだ答えを見ていない。単語や文法の意味は説明してよいが、答えそのものやヒントになることは絶対に言わない。'}`;
+      const systemPrompt = baseSystem + noteContext + pdfNote + heavyNote + quizNote;
       const modelList = ['gemini-3.1-flash-lite'];
       // sikun never searches — it answers from its own knowledge or tells the
       // user to ask Lily in the AI tab (see the system prompt's search rule).
@@ -779,7 +790,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     <>
       <div
         className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'typing' : ''} ${bookFrame !== null ? 'book' : ''}`}
-        style={{ left: pos.x, top: pos.y, zIndex: radialOpen ? 10002 : undefined }}
+        style={{ left: pos.x, top: pos.y, zIndex: quizOpen ? 10005 : radialOpen ? 10002 : undefined }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -820,7 +831,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       )}
 
       {quizNoteId !== null && (
-        <QuizSheet key={quizNoteId} noteId={quizNoteId} en={en} onClose={() => setQuizNoteId(null)} />
+        <QuizSheet key={quizNoteId} noteId={quizNoteId} en={en} onCardChange={c => { quizCardRef.current = c; }} onClose={() => { quizCardRef.current = null; setQuizNoteId(null); }} />
       )}
 
       {timerOpen && (
@@ -847,7 +858,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       </div>
 
       {!loading && bubbleVisible && lastReply && (
-        <div className="sikun-bubble" style={bubbleStyle} role="status">
+        <div className="sikun-bubble" style={{ ...bubbleStyle, zIndex: quizOpen ? 10005 : undefined }} role="status">
           <button className="sikun-bubble-close" onClick={() => setBubbleVisible(false)} aria-label={en ? 'Close' : '閉じる'}>
             <X size={12} />
           </button>
@@ -856,7 +867,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       )}
 
       {mode === 'input' && (
-        <div className="sikun-input-row" style={inputStyle}>
+        <div className="sikun-input-row" style={{ ...inputStyle, zIndex: quizOpen ? 10005 : undefined }}>
           <input
             ref={inputRef}
             className="sikun-input"

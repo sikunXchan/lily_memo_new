@@ -5,7 +5,7 @@
 // Design: Claude Design canvas "sikun 問題・タイマー".
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { X, Play, Pause, Plus, Minus, PenLine, ArrowRight, Eye, EyeOff, Check } from 'lucide-react';
+import { X, Play, Pause, Plus, Minus, PenLine, ArrowRight, EyeOff, Check } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -64,7 +64,13 @@ const SKIP_KEY = 'lily_sikun_quiz_skip_checked';
 const cardKey = (c: Card) => (c.block !== undefined ? `${c.block}:${c.index}` : `ai:${c.q}`);
 const stripP = (html: string) => html.replace(/^\s*<p>([\s\S]*?)<\/p>\s*$/, '$1');
 
-export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean; onClose: () => void }) {
+export interface QuizCardContext { q: string; a: string; revealed: boolean }
+
+export function QuizSheet({ noteId, en, onClose, onCardChange }: {
+  noteId: number; en: boolean; onClose: () => void;
+  /** the card on screen, so sikun can answer questions about it */
+  onCardChange?: (card: QuizCardContext | null) => void;
+}) {
   const t = useT();
   const [title, setTitle] = useState('');
   const [all, setAll] = useState<Card[] | null>(null); // every question in the note
@@ -108,6 +114,10 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
 
   const card = deck[pos] as Card | undefined;
   const total = all?.length ?? 0;
+
+  useEffect(() => {
+    onCardChange?.(card ? { q: card.q, a: card.a, revealed } : null);
+  }, [card, revealed, onCardChange]);
 
   const patchCard = (at: number, patch: Partial<Card>) =>
     setDeck(d => d.map((c, i) => (i === at ? { ...c, ...patch } : c)));
@@ -270,7 +280,7 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
                 <span className={`${s.redSheet} ${revealed ? s.redSheetOff : ''}`} aria-hidden>
                   {revealed
                     ? <span className={s.hideTab}><EyeOff size={15} strokeWidth={2.2} />{t('隠す')}</span>
-                    : <><Eye size={17} strokeWidth={2.2} />{t('タップで答えを表示')}<span className={s.kbd}>Space</span></>}
+                    : <>{t('答えを見る')} ▶<span className={s.kbd}>Space</span></>}
                 </span>
               </div>
           </div>
