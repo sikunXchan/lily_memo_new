@@ -5,7 +5,7 @@
 // Design: Claude Design canvas "sikun 問題・タイマー".
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { X, RotateCcw, Play, Pause, Plus, Minus, PenLine, ArrowRight } from 'lucide-react';
+import { X, Play, Pause, Plus, Minus, PenLine, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -184,14 +184,18 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
 
   const unsavedAi = !!card?.ai && card.block === undefined;
 
-  // Keyboard: Space/Enter = show answer · 1 = まだ · 2 = 覚えた · ← = back
+  // 次へ = not learned yet (no extra "まだ" tap needed); 覚えた = stamp 済.
+  const next = () => { if (unsavedAi) advance(); else void answer('again'); };
+  const known = () => { if (unsavedAi) void saveAi(); else void answer('known'); };
+
+  // Keyboard: Space = show/hide answer · → or 1 = 次へ · 2 = 覚えた · ← = back
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey || !card) return;
       const onButton = e.target instanceof HTMLButtonElement;
-      if (!revealed && (e.key === ' ' || e.key === 'Enter') && !onButton) { e.preventDefault(); setRevealed(true); }
-      else if (revealed && e.key === '1') { e.preventDefault(); if (unsavedAi) advance(); else void answer('again'); }
-      else if (revealed && e.key === '2') { e.preventDefault(); if (unsavedAi) void saveAi(); else void answer('known'); }
+      if (e.key === ' ' && !onButton) { e.preventDefault(); setRevealed(r => !r); }
+      else if (e.key === '1' || e.key === 'ArrowRight') { e.preventDefault(); next(); }
+      else if (e.key === '2') { e.preventDefault(); known(); }
       else if (e.key === 'ArrowLeft') back();
     };
     window.addEventListener('keydown', onKey);
@@ -231,14 +235,7 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
           <div className={s.stack}>
             {deck.length - pos > 2 && <div className={s.under1} aria-hidden />}
             {deck.length - pos > 1 && <div className={s.under2} aria-hidden />}
-            <div
-              className={s.card}
-              key={`${pos}-${card.q}`}
-              role="button"
-              tabIndex={0}
-              aria-label={revealed ? undefined : t('タップで答えを表示')}
-              onClick={() => setRevealed(true)}
-            >
+            <div className={s.card} key={`${pos}-${card.q}`}>
               <span className={s.ring} aria-hidden />
               <span className={s.hole} aria-hidden />
               <div className={s.cardTop}>
@@ -252,7 +249,7 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
                     aria-pressed={!!card.checked}
                     aria-label={card.checked ? t('済を外す') : t('済にする')}
                     title={t('メモのチェックボックスと連動します')}
-                    onClick={e => { e.stopPropagation(); void writeCheck(card, pos, !card.checked); }}
+                    onClick={() => void writeCheck(card, pos, !card.checked)}
                   >済</button>
                 )}
               </div>
@@ -264,37 +261,40 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
                 </ol>
               )}
 
-              <div className={s.answerZone}>
+              <div
+                className={s.answerZone}
+                role="button"
+                tabIndex={0}
+                aria-pressed={revealed}
+                aria-label={revealed ? undefined : t('答えを表示')}
+                onClick={() => setRevealed(r => !r)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setRevealed(r => !r); } }}
+              >
                 <div className={s.answer} aria-hidden={!revealed}>
                   <span className={s.answerLabel}>{t('答え')}</span>
                   <div className={s.answerText} dangerouslySetInnerHTML={{ __html: renderRich(card.a || t('答えは未入力です')) }} />
                 </div>
-                <div className={`${s.redSheet} ${revealed ? s.redSheetOff : ''}`} aria-hidden>
-                  {!revealed && <>{t('シートをずらして答えを見る')}<ArrowRight size={16} strokeWidth={2.2} /></>}
-                </div>
+                <span className={`${s.redSheet} ${revealed ? s.redSheetOff : ''}`} aria-hidden>
+                  {revealed
+                    ? <span className={s.hideTab}><EyeOff size={15} strokeWidth={2.2} />{t('隠す')}</span>
+                    : <><Eye size={17} strokeWidth={2.2} />{t('タップで答え')}<span className={s.kbd}>Space</span></>}
+                </span>
               </div>
             </div>
           </div>
 
-          {!revealed ? (
-            <button className={s.ink} onClick={() => setRevealed(true)}>
-              {t('答えを見る')}<span className={s.kbd}>Space</span>
+          <div className={s.pair}>
+            <button className={s.outline} onClick={next}>
+              {t('次へ')}<ArrowRight size={17} strokeWidth={2.2} /><span className={s.kbd}>1</span>
             </button>
-          ) : unsavedAi ? (
-            <div className={s.pair}>
-              <button className={s.outline} onClick={advance}>{t('スキップ')}<span className={s.kbd}>1</span></button>
-              <button className={s.ink} onClick={() => void saveAi()}>{t('メモに追加')}<span className={s.kbd}>2</span></button>
-            </div>
-          ) : (
-            <div className={s.pair}>
-              <button className={s.outline} onClick={() => void answer('again')}>
-                <RotateCcw size={17} strokeWidth={2.2} />{t('まだ')}<span className={s.kbd}>1</span>
-              </button>
-              <button className={s.stampBtn} onClick={() => void answer('known')}>
+            {unsavedAi ? (
+              <button className={s.ink} onClick={known}>{t('メモに追加')}<span className={s.kbd}>2</span></button>
+            ) : (
+              <button className={s.stampBtn} onClick={known}>
                 <span className={s.stampMini} aria-hidden>済</span>{t('覚えた')}<span className={s.kbd}>2</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
           {aiLink}
         </>
       ) : deck.length > 0 ? (
