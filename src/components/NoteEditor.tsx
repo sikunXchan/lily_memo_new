@@ -17,7 +17,7 @@ import { common, createLowlight } from 'lowlight';
 import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react';
 import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING, softDeleteNote } from '@/lib/db';
 import {
-  ArrowLeft, Trash2, Type,
+  ArrowLeft, Trash2,
   BarChart3, Binary,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
