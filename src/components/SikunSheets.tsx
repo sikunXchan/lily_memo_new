@@ -5,7 +5,7 @@
 // Design: Claude Design canvas "sikun 問題・タイマー".
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { X, Play, Pause, Plus, Minus, PenLine, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { X, Play, Pause, Plus, Minus, PenLine, ArrowRight, EyeOff, Check } from 'lucide-react';
 import { useT } from '@/lib/i18n';
 import { renderRich } from '@/lib/richText';
 import { noteHtmlToText } from '@/lib/noteText';
@@ -63,9 +63,14 @@ const SKIP_KEY = 'lily_sikun_quiz_skip_checked';
 
 const cardKey = (c: Card) => (c.block !== undefined ? `${c.block}:${c.index}` : `ai:${c.q}`);
 const stripP = (html: string) => html.replace(/^\s*<p>([\s\S]*?)<\/p>\s*$/, '$1');
-const pad2 = (n: number) => String(n).padStart(2, '0');
 
-export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean; onClose: () => void }) {
+export interface QuizCardContext { q: string; a: string; revealed: boolean }
+
+export function QuizSheet({ noteId, en, onClose, onCardChange }: {
+  noteId: number; en: boolean; onClose: () => void;
+  /** the card on screen, so sikun can answer questions about it */
+  onCardChange?: (card: QuizCardContext | null) => void;
+}) {
   const t = useT();
   const [title, setTitle] = useState('');
   const [all, setAll] = useState<Card[] | null>(null); // every question in the note
@@ -109,6 +114,10 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
 
   const card = deck[pos] as Card | undefined;
   const total = all?.length ?? 0;
+
+  useEffect(() => {
+    onCardChange?.(card ? { q: card.q, a: card.a, revealed } : null);
+  }, [card, revealed, onCardChange]);
 
   const patchCard = (at: number, patch: Partial<Card>) =>
     setDeck(d => d.map((c, i) => (i === at ? { ...c, ...patch } : c)));
@@ -188,14 +197,14 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
   const next = () => { if (unsavedAi) advance(); else void answer('again'); };
   const known = () => { if (unsavedAi) void saveAi(); else void answer('known'); };
 
-  // Keyboard: Space = show/hide answer · → or 1 = 次へ · 2 = 覚えた · ← = back
+  // Keyboard: Space = show/hide answer · 1 = 覚えた · 2 or → = 次へ · ← = back
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey || !card) return;
       const onButton = e.target instanceof HTMLButtonElement;
       if (e.key === ' ' && !onButton) { e.preventDefault(); setRevealed(r => !r); }
-      else if (e.key === '1' || e.key === 'ArrowRight') { e.preventDefault(); next(); }
-      else if (e.key === '2') { e.preventDefault(); known(); }
+      else if (e.key === '2' || e.key === 'ArrowRight') { e.preventDefault(); next(); }
+      else if (e.key === '1') { e.preventDefault(); known(); }
       else if (e.key === 'ArrowLeft') back();
     };
     window.addEventListener('keydown', onKey);
@@ -232,27 +241,21 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
           </div>
           <div className={s.bar}><span style={{ width: `${(pos / deck.length) * 100}%` }} /></div>
 
-          <div className={s.stack}>
-            {deck.length - pos > 2 && <div className={s.under1} aria-hidden />}
-            {deck.length - pos > 1 && <div className={s.under2} aria-hidden />}
-            <div className={s.card} key={`${pos}-${card.q}`}>
-              <span className={s.ring} aria-hidden />
-              <span className={s.hole} aria-hidden />
-              <div className={s.cardTop}>
-                <span className={s.no}>
-                  No.{pad2(pos + 1)}
-                  {card.ai && <span className={s.tagAi}>{t('AIがつくった問題')}</span>}
-                </span>
-                {card.block !== undefined && (
+          <div className={s.card} key={`${pos}-${card.q}`}>
+              {(card.ai || card.checked) && <div className={s.cardTop}>
+                {card.ai && <span className={s.tagAi}>{t('AIがつくった問題')}</span>}
+                {/* Already 済 (shown when 済 cards aren't skipped): tap to undo. */}
+                {card.block !== undefined && card.checked && (
                   <button
                     className={s.stamp}
-                    aria-pressed={!!card.checked}
-                    aria-label={card.checked ? t('済を外す') : t('済にする')}
-                    title={t('メモのチェックボックスと連動します')}
-                    onClick={() => void writeCheck(card, pos, !card.checked)}
-                  >済</button>
+                    aria-pressed
+                    title={t('タップで済を外す（メモのチェックも外れます）')}
+                    onClick={() => void writeCheck(card, pos, false)}
+                  >
+                    <Check size={14} strokeWidth={3} />{t('済')}
+                  </button>
                 )}
-              </div>
+              </div>}
 
               <div className={s.question} dangerouslySetInnerHTML={{ __html: renderRich(card.q) }} />
               {Array.isArray(card.opts) && card.opts.length > 0 && (
@@ -277,23 +280,22 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
                 <span className={`${s.redSheet} ${revealed ? s.redSheetOff : ''}`} aria-hidden>
                   {revealed
                     ? <span className={s.hideTab}><EyeOff size={15} strokeWidth={2.2} />{t('隠す')}</span>
-                    : <><Eye size={17} strokeWidth={2.2} />{t('タップで答え')}<span className={s.kbd}>Space</span></>}
+                    : <>{t('答えを見る')} ▶<span className={s.kbd}>Space</span></>}
                 </span>
               </div>
-            </div>
           </div>
 
           <div className={s.pair}>
-            <button className={s.outline} onClick={next}>
-              {t('次へ')}<ArrowRight size={17} strokeWidth={2.2} /><span className={s.kbd}>1</span>
-            </button>
             {unsavedAi ? (
-              <button className={s.ink} onClick={known}>{t('メモに追加')}<span className={s.kbd}>2</span></button>
+              <button className={s.ink} onClick={known}>{t('メモに追加')}<span className={s.kbd}>1</span></button>
             ) : (
               <button className={s.stampBtn} onClick={known}>
-                <span className={s.stampMini} aria-hidden>済</span>{t('覚えた')}<span className={s.kbd}>2</span>
+                <Check size={18} strokeWidth={3} />{t('覚えた')}<span className={s.kbd}>1</span>
               </button>
             )}
+            <button className={s.outline} onClick={next}>
+              {t('次へ')}<ArrowRight size={17} strokeWidth={2.2} /><span className={s.kbd}>2</span>
+            </button>
           </div>
           {aiLink}
         </>
@@ -309,7 +311,6 @@ export function QuizSheet({ noteId, en, onClose }: { noteId: number; en: boolean
           <div className={s.results}>
             <div className={s.result}>
               <span>{t('覚えた')}</span><strong>{knownN}</strong>
-              {knownN > 0 && <i className={s.resultStamp} aria-hidden>済</i>}
             </div>
             <div className={s.result}><span>{t('まだ')}</span><strong>{againCards.length}</strong></div>
           </div>
