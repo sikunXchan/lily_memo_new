@@ -12,7 +12,9 @@ function fallbackStrip(html: string): string {
     .trim();
 }
 
-export function noteHtmlToText(html: string): string {
+// excludeChecked: drop Q&A pairs and task items the user has already ticked
+// (used by sikun's quiz so it only asks about what is still unlearned).
+export function noteHtmlToText(html: string, excludeChecked = false): string {
   if (!html) return '';
   if (typeof window === 'undefined' || typeof DOMParser === 'undefined') {
     return fallbackStrip(html);
@@ -23,6 +25,10 @@ export function noteHtmlToText(html: string): string {
     doc = new DOMParser().parseFromString(html, 'text/html');
   } catch {
     return fallbackStrip(html);
+  }
+
+  if (excludeChecked) {
+    doc.querySelectorAll('li[data-type="taskItem"][data-checked="true"]').forEach(el => el.remove());
   }
 
   doc.querySelectorAll('div[data-type="mermaid"]').forEach(el => {
@@ -48,6 +54,9 @@ export function noteHtmlToText(html: string): string {
     } catch {
       pairs = [];
     }
+    if (!Array.isArray(pairs)) pairs = [];
+    if (excludeChecked) pairs = pairs.filter(p => p && !p.checked);
+    if (pairs.length === 0) { el.remove(); return; }
     const txt = pairs
       .map((p, i) => `Q${i + 1}: ${p.q} [${p.checked ? '✓ 済' : '未'}]\nA${i + 1}: ${p.a}`)
       .join('\n');
