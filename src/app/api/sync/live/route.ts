@@ -1,7 +1,8 @@
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { mergeSnapshots, type SyncSnapshot } from '@/lib/syncMerge';
+import { mergeSnapshots, snapshotsEqual, type SyncSnapshot } from '@/lib/syncMerge';
+import { packForStore, unpackFromStore } from '@/lib/syncStore';
 
 let _redis: Redis | null = null;
 function getRedis(): Redis {
@@ -57,22 +58,37 @@ export async function POST(req: NextRequest) {
 
   // Read stored snapshot and merge.
   let base: SyncSnapshot = {};
+  let baseTs = 0;
   try {
-    const raw = await getRedis().get<string>(dataKey);
-    if (raw) base = (typeof raw === 'string' ? JSON.parse(raw) : raw) as SyncSnapshot;
+    const stored = unpackFromStore<SyncSnapshot & { ts?: number }>(await getRedis().get(dataKey));
+    if (stored) {
+      baseTs = Number(stored.ts) || 0;
+      const { ts: _drop, ...rest } = stored; // eslint-disable-line @typescript-eslint/no-unused-vars
+      base = rest as SyncSnapshot;
+    }
   } catch { /* corrupt or missing — start from incoming only */ }
 
   const merged = mergeSnapshots(base, incoming);
-  const ts = Date.now();
-  const payload = JSON.stringify({ ...merged, ts });
+  // Did the stored copy hold anything this device doesn't have? If not, the
+  // device needn't download the snapshot it just pushed (that self-download
+  // used to double the bandwidth of every sync).
+  const upToDate = snapshotsEqual(merged, mergeSnapshots({}, incoming));
 
-  // Write merged snapshot and timestamp.
+  // Nothing new for the server → skip the (full-size) write entirely.
+  if (baseTs && snapshotsEqual(merged, mergeSnapshots({}, base))) {
+    // Refresh the TTL only (no data transfer) so an active key never expires.
+    await Promise.all([getRedis().expire(dataKey, TTL_S), getRedis().expire(tsKey, TTL_S)]);
+    return NextResponse.json({ ok: true, ts: baseTs, upToDate });
+  }
+
+  const ts = Date.now();
+  // Stored gzip-compressed (see syncStore.ts) to cut Upstash bandwidth.
   await Promise.all([
-    getRedis().set(dataKey, payload, { ex: TTL_S }),
+    getRedis().set(dataKey, packForStore({ ...merged, ts }), { ex: TTL_S }),
     getRedis().set(tsKey, ts,      { ex: TTL_S }),
   ]);
 
-  return NextResponse.json({ ok: true, ts });
+  return NextResponse.json({ ok: true, ts, upToDate });
 }
 
 // GET /api/sync/live?key=...&since=... — poll for newer snapshot
@@ -86,9 +102,8 @@ export async function GET(req: NextRequest) {
   const ts = await getRedis().get<number>(`lily:live:${key}:ts`);
   if (!ts || ts <= since) return NextResponse.json({ changed: false });
 
-  const raw = await getRedis().get<string>(`lily:live:${key}:data`);
-  if (!raw) return NextResponse.json({ changed: false });
+  const snapshot = unpackFromStore<SyncSnapshot>(await getRedis().get(`lily:live:${key}:data`));
+  if (!snapshot) return NextResponse.json({ changed: false });
 
-  const snapshot = typeof raw === 'string' ? JSON.parse(raw) : raw;
   return NextResponse.json({ changed: true, ts, snapshot });
 }

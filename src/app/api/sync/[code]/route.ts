@@ -1,6 +1,7 @@
 import { Redis } from '@upstash/redis';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { packForStore, unpackJsonFromStore } from '@/lib/syncStore';
 
 let _redis: Redis | null = null;
 function getRedis(): Redis {
@@ -34,7 +35,8 @@ export async function POST(
   const body = await req.text();
   if (body.length > MAX_SIZE) return NextResponse.json({ error: 'payload too large' }, { status: 413 });
 
-  await getRedis().set(`sync:${code}`, body, { ex: TTL_S });
+  // gzip-compressed in Redis to cut Upstash bandwidth (see syncStore.ts)
+  await getRedis().set(`sync:${code}`, packForStore(body), { ex: TTL_S });
   return NextResponse.json({ ok: true });
 }
 
@@ -45,10 +47,10 @@ export async function GET(
   const { code: rawCode } = await params;
   const code = sanitizeCode(rawCode);
 
-  const data = await getRedis().get<string>(`sync:${code}`);
+  const data = unpackJsonFromStore(await getRedis().get(`sync:${code}`));
   if (!data) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-  return new NextResponse(typeof data === 'string' ? data : JSON.stringify(data), {
+  return new NextResponse(data, {
     headers: { 'Content-Type': 'application/json' },
   });
 }
