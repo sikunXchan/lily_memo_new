@@ -16,31 +16,6 @@ import { getAppLang, type AppLang } from './appLang';
 
 // English translations keyed by the original Japanese UI string.
 const EN: Record<string, string> = {
-  "sikunの学習メニュー": "Study with sikun",
-  "メモの復習": "Review this note",
-  "今回の復習が終わりました": "Review complete",
-  "もう一度復習する": "Review again",
-  "このメモにはまだ問題がありません": "This note has no questions yet",
-  "未チェックの問題はありません": "All questions are checked",
-  "チェック済みを除外": "Exclude checked questions",
-  "この問題にチェック": "Mark this question as checked",
-  "復習を終える": "Finish review",
-  "次の問題": "Next question",
-  "作成中…": "Creating\u2026",
-  "AIで本文から1問追加": "Add a question from this note with AI",
-  "答えは未入力です": "No answer entered yet",
-  "設定で Gemini API キーを登録してください。": "Add a Gemini API key in Settings.",
-  "出題できる本文がありません。": "No eligible text for a question.",
-  "問題を作成できませんでした。": "Could not generate a question.",
-  "同じ問題がすでにあります。": "This question already exists.",
-  "{n} / {total} 問": "Question {n} of {total}",
-  "学習タイマー": "Study timer",
-  "時間（分）": "Duration (minutes)",
-  "{n}分": "{n} min",
-  "タイマーを開始": "Start timer",
-  "残り時間": "Remaining time",
-  "一時停止中": "Paused",
-
   // ── Bubble home / navigation ──
   'メモ': 'Memos',
   '落書き': 'Sketch',

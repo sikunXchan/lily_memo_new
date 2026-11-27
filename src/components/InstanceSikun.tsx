@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Send, MoreHorizontal } from 'lucide-react';
+import { X, Send } from 'lucide-react';
 import { db } from '@/lib/db';
 import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat, type ChatTurn } from '@/lib/gemini';
@@ -12,13 +12,9 @@ import {
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
-import { TutorPanel, TutorReview, type TutorNote } from './TutorReview';
-import styles from './TutorPanel.module.css';
-import { useT } from '@/lib/i18n';
 import 'katex/dist/katex.min.css';
 
 interface InstanceSikunProps {
-  reviewNote: TutorNote | null;
   activeNoteId?: number;
   prevNoteId?: number;
   onOpenNote?: (id: number) => void;
@@ -190,8 +186,7 @@ function clampPos(p: Pos): Pos {
   };
 }
 
-export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, onOpenNote, isPdfTab }: InstanceSikunProps) {
-  const t = useT();
+export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, isPdfTab }: InstanceSikunProps) {
   const en = getAppLang() === 'en';
   const [pos, setPos] = useState<Pos>(() => {
     const saved = loadPos();
@@ -213,9 +208,8 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
   const [selectedText, setSelectedText] = useState('');
   const [pomodoroMs, setPomodoroMs] = useState<number | null>(null);
   const [pausedMs, setPausedMs] = useState<number | null>(null);
-  const [reviewId, setReviewId] = useState<number | null>(null);
-  const [timerOpen, setTimerOpen] = useState(false);
-  const [minutes, setMinutes] = useState('30');
+  const [pendingAnswer, setPendingAnswer] = useState<string>('');
+  const [quizMode, setQuizMode] = useState(false);
   const [radialOpen, setRadialOpen] = useState(false);
 
   const lastTapAt = useRef<number>(0);
@@ -329,13 +323,13 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
       const remaining = pomodoroEndRef.current - Date.now();
       if (remaining <= 0) {
         if (pomodoroRef.current) { window.clearInterval(pomodoroRef.current); pomodoroRef.current = null; }
-        setPomodoroMs(null);
+        setPomodoroMs(0);
         setLastReply(en
           ? `${pomodoroMinRef.current} minutes are up! Nice work — take a short break.`
           : `${pomodoroMinRef.current}分経ったよ！お疲れさま、少し休もう。`);
         setBubbleVisible(true);
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        setTimerOpen(false);
+        window.setTimeout(() => setPomodoroMs(null), 4000);
       } else {
         setPomodoroMs(remaining);
       }
@@ -376,6 +370,8 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
         setRadialOpen(true);
         setMode('closed');
         setBubbleVisible(false);
+        setQuizMode(false);
+        setPendingAnswer('');
         if (navigator.vibrate) navigator.vibrate(10);
       }
     }, LONG_PRESS_MS);
@@ -466,6 +462,8 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
 
   const jumpToPrevNote = useCallback(() => {
     setRadialOpen(false);
+    setQuizMode(false);
+    setPendingAnswer('');
     if (prevNoteId !== undefined && onOpenNote) {
       onOpenNote(prevNoteId);
       setLastReply(en ? 'Opened your last note.' : 'さっきのメモを開いたよ。');
@@ -476,9 +474,107 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
     }
   }, [prevNoteId, onOpenNote, en]);
 
+  // Random Q&A from the currently open memo (reads its full content)
+  const randomQA = useCallback(async () => {
+    setRadialOpen(false);
+    if (activeNoteId === undefined) {
+      setLastReply(en ? 'Open a note first.' : 'メモを開いてからにしてね。');
+      setBubbleVisible(true);
+      return;
+    }
+    try {
+      const note = await db.notes.get(activeNoteId);
+      const pairs: { q: string; a: string }[] = [];
+      if (note?.content) {
+        const matches = [...note.content.matchAll(/data-pairs="([^"]*)"/g)];
+        for (const m of matches) {
+          try {
+            const decoded = m[1].replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&amp;/g, '&');
+            const arr = JSON.parse(decoded);
+            if (Array.isArray(arr)) {
+              pairs.push(...arr.map((p: { q: string; a: string }) => ({ q: p.q, a: p.a })));
+            }
+          } catch { /* skip malformed */ }
+        }
+      }
+      if (pairs.length === 0) {
+        setLastReply(en ? 'No Q&A found in this note.' : 'このメモにQ&Aが見つからないよ。');
+        setBubbleVisible(true);
+        return;
+      }
+      const item = pairs[Math.floor(Math.random() * pairs.length)];
+      setLastReply(`Q: ${item.q}`);
+      setPendingAnswer(item.a);
+      setQuizMode(true);
+      setBubbleVisible(true);
+    } catch {
+      setLastReply(en ? 'Failed to load the Q&A.' : 'Q&Aの取得に失敗しちゃった。');
+      setBubbleVisible(true);
+    }
+  }, [activeNoteId, en]);
+
+  // Generate a study question from the full note content using AI
+  const doFullTextQuiz = useCallback(async () => {
+    setRadialOpen(false);
+    if (activeNoteId === undefined) {
+      setLastReply(en ? 'Open a note first.' : 'メモを開いてからにしてね。');
+      setBubbleVisible(true);
+      return;
+    }
+    const apiKey = getEffectiveApiKey();
+    if (!apiKey) {
+      setLastReply(en ? 'Save your Gemini API key in Settings.' : '設定で Gemini API キーを保存してくれ');
+      setBubbleVisible(true);
+      return;
+    }
+    setLoading(true);
+    setBubbleVisible(false);
+    setLastReply('');
+    setQuizMode(false);
+    setPendingAnswer('');
+    try {
+      const note = await db.notes.get(activeNoteId);
+      if (!note) throw new Error(en ? 'note not found' : 'メモが見つからない');
+      const plain = noteHtmlToText(note.content || '');
+      const noteCtx = en
+        ? `\n\n# The note the user currently has open\nTitle: ${note.title || 'Untitled'}\nFull text: ${plain}`
+        : `\n\n# 現在ユーザーが開いているメモ\nタイトル: ${note.title || '無題'}\n本文全文: ${plain}`;
+      const systemPrompt = sikunBaseSystem(en) + noteCtx;
+      const turns: ChatTurn[] = [{
+        role: 'user',
+        text: en
+          ? 'Create exactly one question from this whole note. Output in the format "Q: question\nA: answer", in English.'
+          : 'このメモ全体の内容から1問だけ出して。「Q: 問題\nA: 答え」の形式で出力してね。',
+      }];
+      const reply = await streamSikunlilyChat(
+        turns, systemPrompt, apiKey, 0, {},
+        ['gemini-3.1-flash-lite'],
+        false,
+      );
+      const qm = reply.match(/Q[：:]\s*(.+)/);
+      const am = reply.match(/A[：:]\s*(.+)/);
+      if (qm && am) {
+        setLastReply(`Q: ${qm[1].trim()}`);
+        setPendingAnswer(am[1].trim());
+        setQuizMode(true);
+      } else {
+        setLastReply(reply.trim() || (en ? "Couldn't make a question." : '問題を作れなかったよ。'));
+      }
+      setBubbleVisible(true);
+      setMode('closed');
+    } catch (err) {
+      setLastReply(`${en ? 'Error' : 'エラー'}: ${err instanceof Error ? err.message : (en ? 'failed' : '失敗')}`);
+      setBubbleVisible(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeNoteId, en]);
+
   // Show last 5 memo titles
   const showRecentMemos = useCallback(async () => {
     setRadialOpen(false);
+    setQuizMode(false);
+    setPendingAnswer('');
     try {
       const notes = await db.notes.orderBy('updatedAt').reverse().limit(5).toArray();
       if (notes.length === 0) {
@@ -558,6 +654,8 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
     setLoading(true);
     setBubbleVisible(false);
     setLastReply('');
+    setQuizMode(false);
+    setPendingAnswer('');
 
     const userMsg: SikunMessage = { id: `u${Date.now()}`, role: 'user', text, ts: Date.now() };
     const nextHistory = capSikunHistory([...history, userMsg]);
@@ -676,12 +774,12 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
   } else if (activeNoteId !== undefined) {
     // Memo open → memo actions (full content)
     radialItems.push({ key: 'sum', emoji: '📝', label: en ? 'Summary' : '要約', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Summarize this note clearly without missing the key points.' : 'このメモの内容を、要点を漏らさず分かりやすく要約して。', { fullNote: true, heavy: true }); } });
-    if (reviewNote) radialItems.push({ key: 'review', emoji: '📖', label: t('メモの復習'), run: () => { setRadialOpen(false); setReviewId(reviewNote.id); } });
+    radialItems.push({ key: 'todo', emoji: '✅', label: 'ToDo', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Extract the to-do items from this note as a bullet list. If there are none, say "No to-dos here".' : 'このメモから「やること(ToDo)」を箇条書きで抜き出して。無ければ「ToDoは無さそう」と答えて。', { fullNote: true }); } });
+    radialItems.push({ key: 'qa', emoji: '🎲', label: en ? 'Random Q' : 'ランダム問題', run: () => void randomQA() });
+    radialItems.push({ key: 'fullq', emoji: '🔍', label: en ? 'Quiz me' : '全文問題', run: () => void doFullTextQuiz() });
   }
   radialItems.push({ key: 'rec',  emoji: '📋', label: en ? 'Recent notes' : '最近のメモ',  run: () => void showRecentMemos() });
-  if (activeNoteId !== undefined) {
-    radialItems.push({ key: 'timer', emoji: '⏱', label: t('学習タイマー'), run: () => { setRadialOpen(false); setTimerOpen(true); } });
-  } else if (pomodoroMs !== null) {
+  if (pomodoroMs !== null) {
     radialItems.push({ key: 'pause', emoji: '⏸', label: en ? 'Pause' : '一時停止', run: () => { setRadialOpen(false); pausePomodoro(); setLastReply(en ? 'Timer paused. Say "resume" to continue.' : 'タイマーを一時停止したよ。「再開」で続けられる。'); setBubbleVisible(true); } });
     radialItems.push({ key: 'stop', emoji: '⏹', label: en ? 'Stop' : '終了', run: () => { setRadialOpen(false); cancelPomodoro(); setLastReply(en ? 'Timer stopped.' : 'タイマーを終了したよ。'); setBubbleVisible(true); } });
   } else if (pausedMs !== null) {
@@ -749,52 +847,7 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
         )}
       </div>
 
-      {activeNoteId !== undefined && (
-        <button className="sikun-tools" style={{ left: pos.x + ICON_SIZE - 34, top: pos.y }}
-          aria-label={t('sikunの学習メニュー')} title={t('sikunの学習メニュー')}
-          onClick={() => { setBubbleVisible(false); closeInput(); setRadialOpen(true); }}><MoreHorizontal size={18} /></button>
-      )}
-      {radialOpen && activeNoteId !== undefined && (
-        <TutorPanel title={t('sikunの学習メニュー')} onClose={() => setRadialOpen(false)}>
-          <div className={styles.menu}>
-            {radialItems.map(item => <button key={item.key} onClick={item.run}>
-              <span aria-hidden>{item.emoji} </span>{item.label}
-            </button>)}
-          </div>
-        </TutorPanel>
-      )}
-      {reviewNote && reviewNote.id === reviewId && (
-        <TutorReview key={reviewId} note={reviewNote} onClose={() => setReviewId(null)} />
-      )}
-      {timerOpen && activeNoteId !== undefined && (
-        <TutorPanel title={t('学習タイマー')} onClose={() => setTimerOpen(false)}>
-          {pausedMs === null && pomodoroMs === null ? (
-            <form onSubmit={e => {
-              e.preventDefault();
-              const value = Number(minutes);
-              if (Number.isInteger(value) && value >= 1 && value <= 1440) startPomodoro(value);
-            }}>
-              <label>{t('時間（分）')}<input type="number" inputMode="numeric" step={1} min={1} max={1440}
-                required value={minutes} onChange={e => setMinutes(e.target.value)} /></label>
-              <div className={styles.actions}>{[15, 30, 60].map(n => <button key={n} type="button"
-                onClick={() => setMinutes(String(n))}>{t('{n}分', { n })}</button>)}</div>
-              <button className={styles.primary} type="submit">{t('タイマーを開始')}</button>
-            </form>
-          ) : <>
-            <div className={styles.card}>
-              <small>{pausedMs !== null ? t('一時停止中') : t('残り時間')}</small>
-              <strong role="timer" className={styles.clock}>{formatMs(pausedMs ?? pomodoroMs ?? 0)}</strong>
-            </div>
-            <div className={styles.actions}>
-              <button className={styles.primary} onClick={pausedMs !== null ? resumePomodoro : pausePomodoro}>
-                {pausedMs !== null ? t('再開') : t('一時停止')}
-              </button>
-              <button onClick={cancelPomodoro}>{t('終了')}</button>
-            </div>
-          </>}
-        </TutorPanel>
-      )}
-      {radialOpen && activeNoteId === undefined && (
+      {radialOpen && (
         <>
           <div className="sikun-radial-backdrop" onPointerDown={() => setRadialOpen(false)} />
           {radialItems.map((it, i) => (
@@ -816,10 +869,30 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
 
       {!loading && bubbleVisible && lastReply && (
         <div className="sikun-bubble" style={bubbleStyle} role="status">
-          <button className="sikun-bubble-close" onClick={() => setBubbleVisible(false)} aria-label={en ? 'Close' : '閉じる'}>
+          <button className="sikun-bubble-close" onClick={() => { setBubbleVisible(false); setPendingAnswer(''); setQuizMode(false); }} aria-label={en ? 'Close' : '閉じる'}>
             <X size={12} />
           </button>
           <div className="sikun-bubble-text" dangerouslySetInnerHTML={{ __html: renderRich(lastReply) }} />
+          {(pendingAnswer || quizMode) && (
+            <div className="sikun-quiz-actions">
+              {pendingAnswer && (
+                <button
+                  className="sikun-answer-btn"
+                  onClick={() => { setLastReply(`A: ${pendingAnswer}`); setPendingAnswer(''); }}
+                >
+                  {en ? 'Show answer' : '答えを見る'}
+                </button>
+              )}
+              {quizMode && (
+                <button
+                  className="sikun-answer-btn outline"
+                  onClick={() => void randomQA()}
+                >
+                  {en ? 'Next question →' : '次の問題 →'}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -962,10 +1035,26 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
           background: var(--accent, #eee); color: var(--fg-muted, #666);
           display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
         }
-        .sikun-tools {
-          position: fixed; z-index: 10002; width: 34px; height: 34px; border-radius: 50%;
-          display: grid; place-items: center; cursor: pointer; color: var(--foreground);
-          background: var(--background); border: 1px solid var(--border); box-shadow: 0 2px 8px #0002;
+        .sikun-quiz-actions {
+          display: flex;
+          gap: 6px;
+          margin-top: 8px;
+        }
+        .sikun-answer-btn {
+          flex: 1;
+          padding: 6px 0;
+          background: var(--primary, #6b46c1);
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          font-size: 0.8rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .sikun-answer-btn.outline {
+          background: transparent;
+          color: var(--primary, #6b46c1);
+          border: 1.5px solid var(--primary, #6b46c1);
         }
         .sikun-input-row {
           position: fixed; display: flex; gap: 4px;
