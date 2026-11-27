@@ -124,22 +124,8 @@
   gap: 10px;
 }
 
-.stampMini {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-sizing: border-box;
-  display: grid;
-  place-items: center;
-  font-family: 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
-  font-size: 13px;
-  font-weight: 900;
-}
-
 .pair { display: flex; gap: 10px; }
-.pair > :first-child { flex: 1; }
-.pair > :last-child { flex: 1.3; }
+.pair > * { flex: 1; }
 
 .textLink {
   align-self: center;
@@ -234,68 +220,17 @@
   transition: width 0.3s ease;
 }
 
-.stack {
-  position: relative;
-  min-height: 340px;
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-}
-
-.under1, .under2 {
-  position: absolute;
+.card {
+  min-height: 240px;
   background: var(--card);
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
-}
-
-.under1 { left: 10px; right: 2px; top: 12px; bottom: 0; transform: rotate(2.2deg); }
-.under2 { left: 2px; right: 6px; top: 6px; bottom: 4px; transform: rotate(-1.4deg); }
-
-.card {
-  position: relative;
-  flex: 1;
-  margin: 0 4px 8px 0;
-  min-height: 330px;
-  background-color: var(--card);
-  background-image: repeating-linear-gradient(to bottom, transparent 0 35px, color-mix(in srgb, #7fa6cc 26%, transparent) 35px 36px);
-  background-position: 0 70px;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  box-shadow: 0 14px 28px -18px rgba(60, 40, 20, 0.45);
-  padding: 18px 20px;
+  border-radius: 14px;
+  padding: 20px 18px 18px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  cursor: pointer;
-  text-align: left;
-  animation: deal 0.26s cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-
-.card:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-
-.ring {
-  position: absolute;
-  left: 14px;
-  top: -22px;
-  width: 26px;
-  height: 40px;
-  border: 3px solid #a8a198;
-  border-bottom-color: transparent;
-  border-radius: 50% 50% 0 0;
-  box-sizing: border-box;
-  pointer-events: none;
-}
-
-.hole {
-  position: absolute;
-  left: 18px;
-  top: 14px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--paper);
-  box-shadow: inset 0 1px 2px rgba(60, 40, 20, 0.35);
+  gap: 14px;
+  animation: fade 0.15s ease-out both;
 }
 
 .cardTop {
@@ -303,62 +238,51 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-left: 28px;
-  min-height: 46px;
-}
-
-.no {
-  font-family: var(--font-latin, inherit);
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--ink-soft);
-  letter-spacing: 0.08em;
+  min-height: 36px;
 }
 
 .tagAi {
-  margin-left: 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--primary-deep, #b5485f);
-  letter-spacing: 0;
+  color: var(--ink-soft);
 }
 
+/* 済 toggle: same meaning as the note's checkbox */
 .stamp {
-  width: 48px;
-  height: 48px;
+  margin-left: auto;
+  height: 34px;
+  padding: 0 12px;
   flex: none;
-  border-radius: 50%;
-  border: 2px dashed var(--line-strong);
+  border-radius: 8px;
+  border: 1.5px solid var(--line-strong);
   background: transparent;
-  color: var(--line-strong);
-  font-family: 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
-  font-size: 21px;
-  font-weight: 900;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
-  padding: 0;
-  transition: transform 0.15s;
 }
 
 .stamp[aria-pressed='true'] {
-  border: 3px solid var(--stamp);
-  color: var(--stamp);
-  transform: rotate(-12deg);
-  opacity: 0.9;
-  animation: stampIn 0.22s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+  border-color: var(--stamp);
+  background: var(--stamp);
+  color: #fff;
 }
 
 .question {
-  margin: 28px 0 0;
-  font-size: 21px;
-  font-weight: 800;
-  line-height: 1.7;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.65;
   overflow-wrap: anywhere;
 }
 
 .question :global(p) { margin: 0; }
 
 .opts {
-  margin: 8px 0 0;
+  margin: 0;
   padding-left: 1.5em;
   font-size: 15px;
   line-height: 1.9;
@@ -369,14 +293,9 @@
   position: relative;
   display: block;
   width: 100%;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  padding: 0;
+  min-height: 64px;
+  border-radius: 10px;
   overflow: hidden;
-  border-radius: 6px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -384,63 +303,57 @@
 .answerZone:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
 .answer {
-  min-height: 60px;
-  padding: 8px 52px 8px 4px;
+  padding: 10px 56px 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  border-radius: 10px;
+  background: var(--well);
 }
 
 .answerLabel {
   font-size: 11px;
   font-weight: 700;
   color: var(--ink-soft);
-  letter-spacing: 0.1em;
 }
 
 .answerText {
   font-size: 17px;
   font-weight: 700;
   line-height: 1.6;
-  color: var(--stamp);
   overflow-wrap: anywhere;
 }
 
 .answerText :global(p) { margin: 0; }
 
+/* Cover over the answer: tap to show; when shown it shrinks to a 隠す tab. */
 .redSheet {
   position: absolute;
   inset: 0;
-  border-radius: 6px;
-  background: var(--sheet);
-  background-image: linear-gradient(105deg, rgba(255, 255, 255, 0.16) 0 30%, transparent 30% 100%);
-  color: #fff;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--paper);
   font-size: 14px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: transform 0.32s cubic-bezier(0.3, 0.7, 0.2, 1);
+  transition: transform 0.22s ease;
 }
 
-/* Revealed: the sheet tucks to the right, leaving a "隠す" tab to cover it again. */
-.redSheetOff {
-  transform: translateX(calc(100% - 44px));
-  justify-content: flex-start;
-}
+.redSheetOff { transform: translateX(calc(100% - 48px)); justify-content: flex-start; }
 
 .hideTab {
-  width: 44px;
+  width: 48px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
   font-size: 10px;
-  letter-spacing: 0.05em;
 }
 
-.redSheet .kbd { background: rgba(255, 255, 255, 0.22); }
+.redSheet .kbd { background: rgba(127, 127, 127, 0.35); }
 
 .done {
   display: flex;
@@ -477,25 +390,6 @@
 
 .result span { font-size: 12px; font-weight: 700; color: var(--ink-soft); }
 .result strong { font-family: var(--font-latin, inherit); font-size: 40px; font-weight: 800; line-height: 1; }
-
-.resultStamp {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  border: 3px solid var(--stamp);
-  color: var(--stamp);
-  display: grid;
-  place-items: center;
-  font-family: 'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
-  font-size: 24px;
-  font-weight: 900;
-  transform: rotate(-12deg);
-  opacity: 0.88;
-  box-sizing: border-box;
-}
 
 /* ── timer ── */
 
@@ -673,11 +567,9 @@
 .rulerStrong button { color: var(--ink); font-weight: 800; }
 
 @media (prefers-reduced-motion: reduce) {
-  .backdrop, .sheet, .card, .stamp[aria-pressed='true'] { animation: none; }
+  .backdrop, .sheet, .card { animation: none; }
   .redSheet { transition: none; }
 }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
-@keyframes deal { from { opacity: 0; transform: translateX(22px) rotate(2deg); } to { opacity: 1; transform: none; } }
-@keyframes stampIn { from { transform: rotate(-12deg) scale(1.6); opacity: 0; } to { transform: rotate(-12deg) scale(1); opacity: 0.9; } }
