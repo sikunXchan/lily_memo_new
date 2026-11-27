@@ -17,12 +17,12 @@ import { common, createLowlight } from 'lowlight';
 import { useEffect, useState, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react';
 import { db, type Note, type HandwritingDoc, parseHandwriting, serializeHandwriting, EMPTY_HANDWRITING, softDeleteNote } from '@/lib/db';
 import {
-  ArrowLeft, Trash2, Type,
+  ArrowLeft, Trash2,
   BarChart3, Binary,
   GitBranch, X, Pencil, FolderInput, Check,
   Undo, Redo, Image as ImageIcon, Loader2, BookOpen, Compass,
   Search, ChevronUp, ChevronDown, SquareCheck, Plus, Table2,
-  Baseline, Highlighter, HelpCircle,
+  Baseline, Highlighter, HelpCircle, Heading, List, ListOrdered, IndentDecrease, IndentIncrease,
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
@@ -396,6 +396,31 @@ const searchInputRef = useRef<HTMLInputElement>(null);
     };
   }, [editor]);
 
+  // Keep the format bar right above the on-screen keyboard: fixed elements sit
+  // on the layout viewport, so lift the bar by however much of it the
+  // keyboard (visual viewport) covers.
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!isEditMode || !vv) { setKeyboardInset(0); return; }
+    let raf = 0;
+    const update = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const covered = window.innerHeight - (vv.height + vv.offsetTop);
+        setKeyboardInset(covered > 60 ? Math.round(covered) : 0);
+      });
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      cancelAnimationFrame(raf);
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, [isEditMode]);
+
   // --- Mobile caret-into-view (minimal) ---
   // Previous impl re-wrote a `transform: translateY(visualViewport.offsetTop)`
   // on the fixed header on every `visualViewport` scroll event (iOS fires those
@@ -420,7 +445,8 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       const header = headerRef.current;
       const vv = window.visualViewport;
       const safeTop = (header ? header.getBoundingClientRect().bottom : 60) + 8;
-      const safeBottom = (vv ? vv.height : window.innerHeight) - 12;
+      // leave room for the format bar sitting on top of the keyboard
+      const safeBottom = (vv ? vv.height : window.innerHeight) - 12 - 56;
 
       // Instant (not smooth) — smooth animations stack across keystrokes and
       // are the main source of the "jitter".
@@ -765,24 +791,93 @@ const searchInputRef = useRef<HTMLInputElement>(null);
           <div className="header-main-scroll main-toolbar">
             {isEditMode && !isHandwriting && (
               <>
-                <button className="btn-tool" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title={t('戻る')}><Undo size={18} /></button>
-                <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title={t('進む')}><Redo size={18} /></button>
-                <div className="header-divider" />
-                <button className={`btn-tool ${editor.isActive('heading', { level: 2 }) ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title={t('大見出し')}><Type size={18} /></button>
-<button className={`btn-tool ${editor.isActive('taskList') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')}><SquareCheck size={18} /></button>
-                <button className={`btn-tool ${editor.isActive('codeBlock') ? 'active' : ''}`} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title={t('コード')}><Binary size={18} /></button>
-                <button
-                  className={`btn-tool${showColorMenu ? ' active' : ''}`}
-                  // Prevent the button from taking DOM focus away from the
-                  // editor on mousedown — that's what was letting the
-                  // selection drift/collapse before the click handler below
-                  // ever runs. See the colorSelectionRef comment.
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => (showColorMenu ? setShowColorMenu(false) : openColorSheet())}
-                  title={t('文字色・マーカー')}
-                >
-                  <Baseline size={18} />
-                </button>
+                <button className="btn-tool" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title={t('元に戻す')}><Undo size={18} /></button>
+                <button className="btn-tool" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title={t('やり直す')}><Redo size={18} /></button>
+              </>
+            )}
+
+            {/* 常時表示アクション */}
+
+            <button className="btn-tool" onClick={openSearch} title={t('メモ内検索')}><Search size={18} /></button>
+            {!isEditMode && <>
+              <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title={t('フォルダ移動')}><FolderInput size={18} /></button>
+              <button className="btn-tool btn-tool-delete" onClick={deleteNote} title={t('削除')}><Trash2 size={18} /></button>
+            </>}
+
+            <div className="header-divider" />
+
+            <button
+              className={`btn-tool btn-tool-mode ${isEditMode ? 'active' : ''}`}
+              onClick={() => setIsEditMode(!isEditMode)}
+              title={isEditMode ? t('閲覧モードへ') : t('編集モードへ')}
+            >
+              {isEditMode ? (
+                <div className="mode-active-indicator">
+                  <Check size={20} strokeWidth={3} />
+                </div>
+              ) : (
+                <Pencil size={18} />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {showSearch && (
+          <div className="in-memo-searchbar">
+            <Search size={16} className="search-bar-icon" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="search-bar-input"
+              value={searchQuery}
+              onChange={e => handleSearchChange(e.target.value)}
+              placeholder={t('メモ内を検索...')}
+            />
+            <span className="search-bar-count">
+              {searchMatchCount > 0 ? `${searchCurrentIndex + 1} / ${searchMatchCount}` : t('0件')}
+            </span>
+            <button className="btn-tool" onClick={prevMatch} disabled={searchMatchCount === 0} title={t('前へ')}>
+              <ChevronUp size={16} />
+            </button>
+            <button className="btn-tool" onClick={nextMatch} disabled={searchMatchCount === 0} title={t('次へ')}>
+              <ChevronDown size={16} />
+            </button>
+            <button className="btn-tool" onClick={closeSearch} title={t('閉じる')}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        {isEditMode && editor && editor.isActive('table') && (
+          <div className="table-context-menu">
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnBefore().run()} title={t('列を左に追加')}>{t('列+左')}</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnAfter().run()} title={t('列を右に追加')}>{t('列+右')}</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowBefore().run()} title={t('行を上に追加')}>{t('行+上')}</button>
+            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowAfter().run()} title={t('行を下に追加')}>{t('行+下')}</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteRow().run()} title={t('行を削除')}>{t('行削除')}</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteColumn().run()} title={t('列を削除')}>{t('列削除')}</button>
+            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteTable().run()} title={t('表を削除')}>{t('表削除')}</button>
+          </div>
+        )}
+      </header>
+
+      {/* 書式バー: 編集中は画面下（スマホではキーボードのすぐ上）に固定。
+          よく使う書式を1タップで押せるようにする。 */}
+      {isEditMode && !isHandwriting && typeof document !== 'undefined' && createPortal(
+        <div className="format-bar" style={{ bottom: keyboardInset }} role="toolbar" aria-label={t('書式')}>
+          <div className="format-bar-scroll">
+            <button className={`fb-btn${editor.isActive('heading', { level: 2 }) ? ' active' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} title={t('見出し')} aria-label={t('見出し')}><Heading size={20} /></button>
+            <button className={`fb-btn${editor.isActive('bold') ? ' active' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().toggleBold().run()} title={t('太字')} aria-label={t('太字')}><Bold size={20} /></button>
+            <button className={`fb-btn${editor.isActive('bulletList') ? ' active' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().toggleBulletList().run()} title={t('箇条書き')} aria-label={t('箇条書き')}><List size={20} /></button>
+            <button className={`fb-btn${editor.isActive('orderedList') ? ' active' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().toggleOrderedList().run()} title={t('番号付きリスト')} aria-label={t('番号付きリスト')}><ListOrdered size={20} /></button>
+            <button className={`fb-btn${editor.isActive('taskList') ? ' active' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().toggleTaskList().run()} title={t('チェックリスト')} aria-label={t('チェックリスト')}><SquareCheck size={20} /></button>
+            <button className="fb-btn" onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().liftListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem').run()} disabled={!editor.can().liftListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem')} title={t('インデントを戻す')} aria-label={t('インデントを戻す')}><IndentDecrease size={20} /></button>
+            <button className="fb-btn" onMouseDown={e => e.preventDefault()} onClick={() => editor.chain().focus().sinkListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem').run()} disabled={!editor.can().sinkListItem(editor.isActive('taskItem') ? 'taskItem' : 'listItem')} title={t('インデント')} aria-label={t('インデント')}><IndentIncrease size={20} /></button>
+            <button className={`fb-btn${showColorMenu ? ' active' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => (showColorMenu ? setShowColorMenu(false) : openColorSheet())} title={t('文字色・マーカー')} aria-label={t('文字色・マーカー')}><Baseline size={20} /></button>
+            <button className={`fb-btn${showInsertMenu ? ' active' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => setShowInsertMenu(p => !p)} title={t('挿入')} aria-label={t('挿入')}><Plus size={20} /></button>
+          </div>
+        </div>,
+        document.body
+      )}
                 {showColorMenu && typeof document !== 'undefined' && createPortal(
                   <div className="insert-sheet-backdrop" onClick={() => setShowColorMenu(false)}>
                     <div className="insert-sheet" onClick={e => e.stopPropagation()}>
@@ -842,14 +937,6 @@ const searchInputRef = useRef<HTMLInputElement>(null);
                   </div>,
                   document.body
                 )}
-                <div className="header-divider" />
-                <button
-                  className={`btn-tool${showInsertMenu ? ' active' : ''}`}
-                  onClick={() => setShowInsertMenu(p => !p)}
-                  title={t('挿入')}
-                >
-                  <Plus size={18} />
-                </button>
                 {showInsertMenu && typeof document !== 'undefined' && createPortal(
                   <div className="insert-sheet-backdrop" onClick={() => setShowInsertMenu(false)}>
                     <div className="insert-sheet" onClick={e => e.stopPropagation()}>
@@ -864,19 +951,13 @@ const searchInputRef = useRef<HTMLInputElement>(null);
                         <button className="insert-sheet-item" onClick={() => { insertTable(); setShowInsertMenu(false); }}><Table2 size={22} /><span>{t('表')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertMath(); setShowInsertMenu(false); }}><span className="insert-math-glyph" aria-hidden>√x</span><span>{t('数式')}</span></button>
                         <button className="insert-sheet-item" onClick={() => { insertHandwriting(); setShowInsertMenu(false); }}><Pencil size={22} /><span>{t('手書き')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { editor.chain().focus().toggleCodeBlock().run(); setShowInsertMenu(false); }}><Binary size={22} /><span>{t('コード')}</span></button>
+                        <button className="insert-sheet-item" onClick={() => { setShowInsertMenu(false); setShowMdHelp(true); }}><HelpCircle size={22} /><span>{t('記法ヘルプ')}</span></button>
                       </div>
                     </div>
                   </div>,
                   document.body
                 )}
-                <div className="header-divider" />
-                <button
-                  className={`btn-tool${showMdHelp ? ' active' : ''}`}
-                  onClick={() => setShowMdHelp(v => !v)}
-                  title={t('Markdown記法ヘルプ')}
-                >
-                  <HelpCircle size={18} />
-                </button>
                 {showMdHelp && typeof document !== 'undefined' && createPortal(
                   <div className="insert-sheet-backdrop" onClick={() => setShowMdHelp(false)}>
                     <div className="insert-sheet md-help-sheet" onClick={e => e.stopPropagation()}>
@@ -905,70 +986,6 @@ const searchInputRef = useRef<HTMLInputElement>(null);
                   </div>,
                   document.body
                 )}
-              </>
-            )}
-
-            {/* 常時表示アクション */}
-
-            <button className="btn-tool" onClick={openSearch} title={t('メモ内検索')}><Search size={18} /></button>
-            <button className="btn-tool" onClick={() => setShowFolderPicker(true)} title={t('フォルダ移動')}><FolderInput size={18} /></button>
-            <button className="btn-tool btn-tool-delete" onClick={deleteNote} title={t('削除')}><Trash2 size={18} /></button>
-
-            <div className="header-divider" />
-
-            <button
-              className={`btn-tool btn-tool-mode ${isEditMode ? 'active' : ''}`}
-              onClick={() => setIsEditMode(!isEditMode)}
-              title={isEditMode ? t('閲覧モードへ') : t('編集モードへ')}
-            >
-              {isEditMode ? (
-                <div className="mode-active-indicator">
-                  <Check size={20} strokeWidth={3} />
-                </div>
-              ) : (
-                <Pencil size={18} />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {showSearch && (
-          <div className="in-memo-searchbar">
-            <Search size={16} className="search-bar-icon" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              className="search-bar-input"
-              value={searchQuery}
-              onChange={e => handleSearchChange(e.target.value)}
-              placeholder={t('メモ内を検索...')}
-            />
-            <span className="search-bar-count">
-              {searchMatchCount > 0 ? `${searchCurrentIndex + 1} / ${searchMatchCount}` : t('0件')}
-            </span>
-            <button className="btn-tool" onClick={prevMatch} disabled={searchMatchCount === 0} title={t('前へ')}>
-              <ChevronUp size={16} />
-            </button>
-            <button className="btn-tool" onClick={nextMatch} disabled={searchMatchCount === 0} title={t('次へ')}>
-              <ChevronDown size={16} />
-            </button>
-            <button className="btn-tool" onClick={closeSearch} title={t('閉じる')}>
-              <X size={16} />
-            </button>
-          </div>
-        )}
-        {isEditMode && editor && editor.isActive('table') && (
-          <div className="table-context-menu">
-            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnBefore().run()} title={t('列を左に追加')}>{t('列+左')}</button>
-            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addColumnAfter().run()} title={t('列を右に追加')}>{t('列+右')}</button>
-            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowBefore().run()} title={t('行を上に追加')}>{t('行+上')}</button>
-            <button className="btn-table-ctx" onClick={() => editor.chain().focus().addRowAfter().run()} title={t('行を下に追加')}>{t('行+下')}</button>
-            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteRow().run()} title={t('行を削除')}>{t('行削除')}</button>
-            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteColumn().run()} title={t('列を削除')}>{t('列削除')}</button>
-            <button className="btn-table-ctx btn-table-ctx-danger" onClick={() => editor.chain().focus().deleteTable().run()} title={t('表を削除')}>{t('表削除')}</button>
-          </div>
-        )}
-      </header>
 
       <div className="editor-content-wrapper" ref={scrollerRef}>
         <div className="editor-scroller" ref={scrollerInnerRef}>
@@ -1597,6 +1614,76 @@ const searchInputRef = useRef<HTMLInputElement>(null);
           margin: 0 auto;
           color: var(--foreground);
         }
+
+        /* ===== Format bar (edit mode) ===== */
+        .format-bar {
+          position: fixed;
+          left: 50%;
+          transform: translateX(-50%);
+          margin-bottom: 14px;
+          z-index: 2500;
+          max-width: calc(100vw - 24px);
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+          padding: 4px;
+        }
+        .format-bar-scroll {
+          display: flex;
+          gap: 2px;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .format-bar-scroll::-webkit-scrollbar { display: none; }
+        .fb-btn {
+          flex: none;
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          border: none;
+          background: transparent;
+          color: var(--foreground);
+          display: grid;
+          place-items: center;
+          padding: 0;
+        }
+        .fb-btn:active { transform: scale(0.92); }
+        .fb-btn.active { background: color-mix(in srgb, var(--primary) 18%, transparent); color: var(--primary); }
+        .fb-btn:disabled { opacity: 0.3; }
+        @media (max-width: 768px) {
+          .format-bar {
+            left: 0;
+            right: 0;
+            transform: none;
+            margin: 0;
+            max-width: none;
+            border-radius: 0;
+            border-width: 1px 0 0;
+            box-shadow: none;
+            padding: 2px 4px calc(2px + env(safe-area-inset-bottom));
+          }
+          .format-bar-scroll { justify-content: space-between; }
+          .fb-btn { width: 40px; }
+        }
+        .editor-container[data-edit-mode="true"] .editor-scroller { padding-bottom: 96px; }
+
+        /* ===== Bullet / numbered lists =====
+           globals.css zeroes padding on *, which pushed the markers off the
+           left edge — give lists their indent and markers back. */
+        .ProseMirror ul:not([data-type="taskList"]),
+        .ProseMirror ol {
+          padding-left: 1.4em;
+          margin: 0.3em 0;
+        }
+        .ProseMirror ul:not([data-type="taskList"]) { list-style: disc; }
+        .ProseMirror ul:not([data-type="taskList"]) ul:not([data-type="taskList"]) { list-style: circle; }
+        .ProseMirror ul:not([data-type="taskList"]) ul:not([data-type="taskList"]) ul:not([data-type="taskList"]) { list-style: square; }
+        .ProseMirror ol { list-style: decimal; }
+        .ProseMirror ol ol { list-style: lower-alpha; }
+        .ProseMirror li { margin: 0.15em 0; }
+        .ProseMirror li::marker { color: var(--primary); font-weight: 700; }
+        .ProseMirror li > p { margin: 0; }
 
         /* ===== Task List ===== */
         ul[data-type="taskList"] { list-style: none; padding: 0; }
