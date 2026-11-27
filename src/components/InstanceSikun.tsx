@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Send, FileText, Layers, Languages, ScrollText, HelpCircle, Timer, History, Undo2, MessageSquare, Pause } from 'lucide-react';
+import { X, Send } from 'lucide-react';
 import { db } from '@/lib/db';
 import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat, type ChatTurn } from '@/lib/gemini';
@@ -13,8 +13,6 @@ import {
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
 import { QuizSheet, TimerSheet, formatTimer } from './SikunSheets';
-import { readNoteHtml, extractQuizItems } from '@/lib/noteQuiz';
-import sheet from './SikunSheet.module.css';
 import 'katex/dist/katex.min.css';
 
 interface InstanceSikunProps {
@@ -210,7 +208,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const [pausedMs, setPausedMs] = useState<number | null>(null);
   const [timerTotalMs, setTimerTotalMs] = useState(0);
   const [timerEndAt, setTimerEndAt] = useState<number | null>(null);
-  const [openQuizCount, setOpenQuizCount] = useState<number | null>(null);
+  const [radialOpen, setRadialOpen] = useState(false);
   const [quizNoteId, setQuizNoteId] = useState<number | null>(null);
   const [timerOpen, setTimerOpen] = useState(false);
 
@@ -228,24 +226,9 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   const longPressed = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Panel open → focus the chat box on desktop only (on phones the keyboard
-  // would cover the action tiles).
   useEffect(() => {
-    if (mode !== 'input') return;
-    if (window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) {
-      setTimeout(() => inputRef.current?.focus(), 30);
-    }
+    if (mode === 'input') setTimeout(() => inputRef.current?.focus(), 30);
   }, [mode]);
-
-  // Panel open on a memo → count the questions still unchecked for the badge.
-  useEffect(() => {
-    if (mode !== 'input' || activeNoteId === undefined || isPdfTab) return;
-    let cancelled = false;
-    void readNoteHtml(activeNoteId).then(({ html }) => {
-      if (!cancelled) setOpenQuizCount(extractQuizItems(html).filter(c => !c.checked).length);
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [mode, activeNoteId, isPdfTab]);
 
   useEffect(() => {
     const handleResize = () => setPos(p => clampPos(p));
@@ -403,7 +386,8 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     longPressTimer.current = window.setTimeout(() => {
       if (!moved.current) {
         longPressed.current = true;
-        setMode('input');
+        setRadialOpen(true);
+        setMode('closed');
         setBubbleVisible(false);
         if (navigator.vibrate) navigator.vibrate(10);
       }
@@ -476,8 +460,10 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         return;
       }
 
-      // Regular tap → open the panel (actions + chat)
-      if (mode === 'closed') {
+      // Regular tap
+      if (lastReply && !bubbleVisible && mode === 'closed') {
+        setBubbleVisible(true);
+      } else if (mode === 'closed') {
         setMode('input');
         setBubbleVisible(false);
       } else {
@@ -492,7 +478,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
   };
 
   const jumpToPrevNote = useCallback(() => {
-    closeInput();
+    setRadialOpen(false);
     if (prevNoteId !== undefined && onOpenNote) {
       onOpenNote(prevNoteId);
       setLastReply(en ? 'Opened your last note.' : 'さっきのメモを開いたよ。');
@@ -501,11 +487,11 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       setLastReply(en ? 'No note to go back to yet.' : '戻れるメモがまだ無いよ。');
       setBubbleVisible(true);
     }
-  }, [prevNoteId, onOpenNote, en, closeInput]);
+  }, [prevNoteId, onOpenNote, en]);
 
   // Unified quiz (memo Q&A + AI questions from the full text) in a sheet
   const openQuiz = useCallback(() => {
-    closeInput();
+    setRadialOpen(false);
     if (activeNoteId === undefined) {
       setLastReply(en ? 'Open a note first.' : 'メモを開いてからにしてね。');
       setBubbleVisible(true);
@@ -513,7 +499,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     }
     setBubbleVisible(false);
     setQuizNoteId(activeNoteId);
-  }, [activeNoteId, en, closeInput]);
+  }, [activeNoteId, en]);
 
   // Close the quiz when the user moves to another note.
   useEffect(() => {
@@ -522,7 +508,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
 
   // Show last 5 memo titles
   const showRecentMemos = useCallback(async () => {
-    closeInput();
+    setRadialOpen(false);
     try {
       const notes = await db.notes.orderBy('updatedAt').reverse().limit(5).toArray();
       if (notes.length === 0) {
@@ -535,7 +521,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
       setLastReply(en ? 'Failed to load.' : '取得に失敗しちゃった。');
       setBubbleVisible(true);
     }
-  }, [en, closeInput]);
+  }, [en]);
 
   const sendMessage = () => {
     const text = input.trim();
@@ -707,33 +693,48 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
     ? { right: winW - pos.x + 8, top: pos.y }
     : { left: pos.x + ICON_SIZE + 8, top: pos.y };
 
-  // Tap panel — context-aware action tiles + chat box
-  type Tile = { key: string; icon: React.ReactNode; label: string; hot?: boolean; badge?: number | null; run: () => void };
-  const close = closeInput;
-  const tiles: Tile[] = [];
+  const inputStyle: React.CSSProperties = bubbleOnLeft
+    ? { right: winW - pos.x + 8, top: pos.y + ICON_SIZE + 6 }
+    : { left: pos.x + ICON_SIZE + 8, top: pos.y + ICON_SIZE + 6 };
+
+  // Radial menu items — context aware
+  const close = () => setRadialOpen(false);
+  const radialItems: { key: string; emoji: string; label: string; hot?: boolean; run: () => void }[] = [];
   if (isPdfTab) {
     // PDF tab → analyze the current page or the whole document
-    tiles.push({ key: 'pdfx', icon: <FileText size={18} />, label: en ? 'Explain page' : 'ページ解説', hot: true, run: () => { close(); void sendQuickAction(en ? 'Explain the content of this PDF page clearly, in a way a beginner can follow.' : 'このPDFページの内容を、初学者にも分かるよう丁寧に解説して。', { attachPdf: true, heavy: true }); } });
-    tiles.push({ key: 'pdfall', icon: <Layers size={18} />, label: en ? 'Explain all' : '全文解説', run: () => { close(); void sendQuickAction(en ? 'Explain the whole PDF carefully, with section structure and key points.' : 'このPDF全体の内容を、章立て・ポイントを押さえて丁寧に解説して。', { attachPdfAll: true, heavy: true }); } });
-    tiles.push({ key: 'pdft', icon: <Languages size={18} />, label: en ? 'Translate' : '翻訳', run: () => { close(); void sendQuickAction(en ? 'Translate this PDF page into English.' : 'このPDFページを日本語に翻訳して。', { attachPdf: true }); } });
+    radialItems.push({ key: 'pdfx', emoji: '📄', label: en ? 'Explain page' : 'ページ解説', run: () => { close(); void sendQuickAction(en ? 'Explain the content of this PDF page clearly, in a way a beginner can follow.' : 'このPDFページの内容を、初学者にも分かるよう丁寧に解説して。', { attachPdf: true, heavy: true }); } });
+    radialItems.push({ key: 'pdfall', emoji: '📚', label: en ? 'Explain all' : 'PDF全文解説', run: () => { close(); void sendQuickAction(en ? 'Explain the whole PDF carefully, with section structure and key points.' : 'このPDF全体の内容を、章立て・ポイントを押さえて丁寧に解説して。', { attachPdfAll: true, heavy: true }); } });
+    radialItems.push({ key: 'pdft', emoji: '🔤', label: en ? 'Translate' : '翻訳', run: () => { close(); void sendQuickAction(en ? 'Translate this PDF page into English.' : 'このPDFページを日本語に翻訳して。', { attachPdf: true }); } });
   } else if (activeNoteId !== undefined) {
-    // Memo open → quiz + summary (full content)
-    tiles.push({ key: 'quiz', icon: <HelpCircle size={18} />, label: en ? 'Quiz' : '問題', hot: true, badge: openQuizCount, run: openQuiz });
-    tiles.push({ key: 'sum', icon: <ScrollText size={18} />, label: en ? 'Summary' : '要約', run: () => { close(); void sendQuickAction(en ? 'Summarize this note clearly without missing the key points.' : 'このメモの内容を、要点を漏らさず分かりやすく要約して。', { fullNote: true, heavy: true }); } });
+    // Memo open → memo actions (full content)
+    radialItems.push({ key: 'sum', emoji: '📝', label: en ? 'Summary' : '要約', run: () => { close(); void sendQuickAction(en ? 'Summarize this note clearly without missing the key points.' : 'このメモの内容を、要点を漏らさず分かりやすく要約して。', { fullNote: true, heavy: true }); } });
+    radialItems.push({ key: 'quiz', emoji: '🎯', label: en ? 'Quiz' : '問題', run: openQuiz });
   }
+  radialItems.push({ key: 'rec',  emoji: '📋', label: en ? 'Recent notes' : '最近のメモ',  run: () => void showRecentMemos() });
   const timerActive = pomodoroMs !== null || pausedMs !== null;
-  const openTimer = () => { close(); setBubbleVisible(false); setTimerOpen(true); };
-  tiles.push({ key: 'timer', icon: <Timer size={18} />, label: en ? 'Timer' : 'タイマー', run: openTimer });
-  if (tiles.length < 3) {
-    tiles.push({ key: 'rec', icon: <History size={18} />, label: en ? 'Recent' : '最近のメモ', run: () => void showRecentMemos() });
-  }
+  radialItems.push({
+    key: 'timer', emoji: pausedMs !== null ? '⏸' : '⏱', hot: timerActive,
+    label: timerActive ? formatMs(pausedMs ?? pomodoroMs ?? 0) : (en ? 'Timer' : 'タイマー'),
+    run: () => { close(); setBubbleVisible(false); setTimerOpen(true); },
+  });
+  radialItems.push({ key: 'prev', emoji: '⏮', label: en ? 'Prev note' : '前のメモ', run: jumpToPrevNote });
 
-  const PANEL_W = 300;
-  const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
-  const panelH = 230;
-  const panelStyle: React.CSSProperties = {
-    left: Math.max(8, Math.min(bubbleOnLeft ? pos.x - PANEL_W - 10 : pos.x + ICON_SIZE + 10, winW - PANEL_W - 8)),
-    top: Math.max(8, Math.min(pos.y, winH - panelH - 8)),
+  const iconCx = pos.x + ICON_SIZE / 2;
+  const iconCy = pos.y + ICON_SIZE / 2;
+  const baseAngle = bubbleOnLeft ? 180 : 0;
+  // Widen the arc and push out the radius as the item count grows so the
+  // 56px buttons never overlap.
+  const span = radialItems.length > 1 ? Math.min(220, radialItems.length * 36) : 0;
+  const minRadius = ICON_SIZE / 2 + 54;
+  const neededRadius = radialItems.length > 1
+    ? (radialItems.length * 60) / (span * Math.PI / 180)
+    : minRadius;
+  const radius = Math.min(140, Math.max(minRadius, neededRadius));
+  const radialPos = (i: number): React.CSSProperties => {
+    const n = radialItems.length;
+    const deg = baseAngle - span / 2 + (n > 1 ? span * (i / (n - 1)) : 0);
+    const rad = (deg * Math.PI) / 180;
+    return { left: iconCx + radius * Math.cos(rad) - 28, top: iconCy + radius * Math.sin(rad) - 28 };
   };
 
   const currentIcon = loading
@@ -756,7 +757,7 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           setDragging(false);
         }}
         aria-label="sikun"
-        title={en ? 'Tap for menu & chat / Drag to move' : 'タップでメニュー・質問 / ドラッグで移動'}
+        title={en ? 'Tap to chat / Drag to move / Long-press for menu' : 'タップで話す / ドラッグで移動 / 長押しでメニュー'}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={currentIcon} alt="sikun" draggable={false} />
@@ -774,65 +775,15 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         )}
       </div>
 
-      {mode === 'input' && (
+      {radialOpen && (
         <>
-          <div className={sheet.panelBackdrop} onPointerDown={close} />
-          <div className={sheet.panel} style={panelStyle} role="dialog" aria-label="sikun">
-            <div className={sheet.panelHead}>
-              <span className={sheet.panelTitle}>
-                {isPdfTab ? 'PDF' : activeNoteId !== undefined ? (en ? 'THIS NOTE' : 'このメモ') : 'SIKUN'}
-              </span>
-              {timerActive && (
-                <button className={`${sheet.timerPill} ${pausedMs !== null ? sheet.timerPillPaused : ''}`} onClick={openTimer}>
-                  {pausedMs !== null ? <Pause size={12} /> : <Timer size={12} />}
-                  {formatMs(pausedMs ?? pomodoroMs ?? 0)}
-                </button>
-              )}
-            </div>
-            <div className={sheet.tiles}>
-              {tiles.map(it => (
-                <button key={it.key} className={`${sheet.tile} ${it.hot ? sheet.tileHot : ''}`} onClick={it.run}>
-                  <span className={sheet.tileIcon}>{it.icon}</span>
-                  <span>{it.label}</span>
-                  {!!it.badge && <span className={sheet.badge}>{it.badge}</span>}
-                </button>
-              ))}
-            </div>
-            <div className={sheet.links}>
-              {lastReply && (
-                <button className={sheet.linkChip} onClick={() => { close(); setBubbleVisible(true); }}>
-                  <MessageSquare size={13} />{en ? 'Last reply' : '直前の返事'}
-                </button>
-              )}
-              {tiles.every(t => t.key !== 'rec') && (
-                <button className={sheet.linkChip} onClick={() => void showRecentMemos()}>
-                  <History size={13} />{en ? 'Recent notes' : '最近のメモ'}
-                </button>
-              )}
-              {prevNoteId !== undefined && (
-                <button className={sheet.linkChip} onClick={jumpToPrevNote}>
-                  <Undo2 size={13} />{en ? 'Prev note' : '前のメモ'}
-                </button>
-              )}
-            </div>
-            <div className={sheet.chat}>
-              <input
-                ref={inputRef}
-                placeholder={timeOfDayPlaceholder()}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void sendMessage(); }
-                  if (e.key === 'Escape') closeInput();
-                }}
-                disabled={loading}
-                aria-label={en ? 'Ask sikun' : 'sikunに質問'}
-              />
-              <button className={sheet.send} onClick={() => void sendMessage()} disabled={!input.trim() || loading} aria-label={en ? 'Send' : '送信'}>
-                <Send size={16} />
-              </button>
-            </div>
-          </div>
+          <div className="sikun-radial-backdrop" onPointerDown={close} />
+          {radialItems.map((it, i) => (
+            <button key={it.key} className={`sikun-radial-item ${it.hot ? 'hot' : ''}`} style={radialPos(i)} onClick={it.run}>
+              <span className="sikun-radial-emoji">{it.emoji}</span>
+              <span className="sikun-radial-label">{it.label}</span>
+            </button>
+          ))}
         </>
       )}
 
@@ -869,6 +820,26 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
             <X size={12} />
           </button>
           <div className="sikun-bubble-text" dangerouslySetInnerHTML={{ __html: renderRich(lastReply) }} />
+        </div>
+      )}
+
+      {mode === 'input' && (
+        <div className="sikun-input-row" style={inputStyle}>
+          <input
+            ref={inputRef}
+            className="sikun-input"
+            placeholder={timeOfDayPlaceholder()}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void sendMessage(); }
+              if (e.key === 'Escape') closeInput();
+            }}
+            disabled={loading}
+          />
+          <button className="sikun-send" onClick={() => void sendMessage()} disabled={!input.trim() || loading} aria-label={en ? 'Send' : '送信'}>
+            <Send size={14} />
+          </button>
         </div>
       )}
 
@@ -947,6 +918,28 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
         .sikun-preload {
           position: fixed; width: 0; height: 0; overflow: hidden; opacity: 0; pointer-events: none;
         }
+        .sikun-radial-backdrop {
+          position: fixed; inset: 0; z-index: 10001;
+        }
+        .sikun-radial-item {
+          position: fixed;
+          width: 56px; height: 56px;
+          border-radius: 50%;
+          border: 1px solid var(--border, rgba(0,0,0,0.1));
+          background: var(--background, #fff);
+          box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 1px; cursor: pointer; z-index: 10002;
+          animation: sikun-radial-pop 0.18s ease-out both;
+        }
+        @keyframes sikun-radial-pop {
+          from { opacity: 0; transform: scale(0.4); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        .sikun-radial-item.hot { border-color: var(--primary, #e08394); }
+        .sikun-radial-item.hot .sikun-radial-label { color: var(--primary-deep, var(--primary, #c25c70)); font-variant-numeric: tabular-nums; }
+        .sikun-radial-emoji { font-size: 19px; line-height: 1; }
+        .sikun-radial-label { font-size: 0.58rem; font-weight: 700; color: var(--fg-muted, #555); line-height: 1; }
         .sikun-bubble {
           position: fixed;
           width: ${BUBBLE_W}px; max-width: calc(100vw - 24px); max-height: min(60vh, 420px); overflow-y: auto;
@@ -971,6 +964,25 @@ export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, is
           background: var(--accent, #eee); color: var(--fg-muted, #666);
           display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
         }
+        .sikun-input-row {
+          position: fixed; display: flex; gap: 4px;
+          width: ${BUBBLE_W}px; max-width: calc(100vw - 24px); z-index: 10002;
+        }
+        .sikun-input {
+          flex: 1; padding: 8px 10px; border-radius: 18px;
+          border: 1px solid var(--border, rgba(0,0,0,0.18));
+          background: var(--background, #fff); color: var(--foreground, #222);
+          font-family: inherit; font-size: 0.86rem; outline: none;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .sikun-input:focus { border-color: var(--primary, #6b46c1); }
+        .sikun-send {
+          width: 32px; height: 32px; border-radius: 50%;
+          background: var(--primary, #6b46c1); color: white; border: none;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        .sikun-send:disabled { opacity: 0.4; cursor: default; }
       `}</style>
     </>
   );

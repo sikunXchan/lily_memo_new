@@ -1,4 +1,4 @@
-/* sikun's panel, quiz sheet and timer sheet.
+/* sikun's quiz sheet and timer sheet (centred cards).
    Built on the theme tokens from src/lib/themes.ts (--surface, --surface-alt,
    --fg-muted, --primary-foreground…) so it follows every app theme.
    Desktop: floating card. Phone (≤640px): bottom sheet. */
@@ -28,8 +28,6 @@
   overflow: hidden;
   animation: rise 0.22s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
-
-.grabber { display: none; }
 
 .head {
   display: flex;
@@ -543,226 +541,16 @@
 
 .center { text-align: center; }
 
-/* ── tap panel (actions + chat) ── */
-
-.panelBackdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 10001;
-}
-
-.panel {
-  position: fixed;
-  z-index: 10003;
-  width: 300px;
-  padding: 14px;
-  border-radius: 22px;
-  background: var(--surface, var(--background, #fff));
-  color: var(--foreground, #2c2620);
-  box-shadow: 0 20px 50px -12px rgba(30, 20, 10, 0.35), 0 0 0 1px var(--border, rgba(0, 0, 0, 0.06));
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  animation: rise 0.18s cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-
-.panelHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 2px;
-}
-
-.panelTitle {
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  color: var(--fg-muted, #8a7d6d);
-}
-
-.timerPill {
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: none;
-  background: var(--primary, #e08394);
-  color: var(--primary-foreground, #fff);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
-.timerPillPaused { background: var(--fg-faint, #bfb2a0); color: #fff; }
-
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.tile {
-  position: relative;
-  min-height: 78px;
-  border-radius: 16px;
-  border: none;
-  background: var(--surface-alt, var(--accent, #f3ede0));
-  color: var(--foreground, #2c2620);
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 700;
-  line-height: 1.25;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 10px 4px;
-  cursor: pointer;
-  text-align: center;
-  transition: transform 0.08s, filter 0.15s;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.tile:hover { filter: brightness(0.97); }
-.tile:active { transform: scale(0.95); }
-
-.tileIcon {
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  display: grid;
-  place-items: center;
-  background: var(--surface, #fff);
-  color: var(--primary-deep, var(--primary-dark, #c25c70));
-}
-
-.tileHot .tileIcon {
-  background: var(--primary, #e08394);
-  color: var(--primary-foreground, #fff);
-}
-
-.badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--primary, #e08394);
-  color: var(--primary-foreground, #fff);
-  font-size: 0.68rem;
-  font-weight: 800;
-  display: grid;
-  place-items: center;
-}
-
-.links {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.linkChip {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
-  background: transparent;
-  color: var(--fg-muted, #8a7d6d);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
-.linkChip:hover { color: var(--foreground, #2c2620); }
-
-.chat {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 4px 4px 14px;
-  border-radius: 16px;
-  background: var(--surface-alt, var(--accent, #f3ede0));
-  border: 1.5px solid transparent;
-  transition: border-color 0.15s;
-}
-
-.chat:focus-within { border-color: var(--primary, #e08394); }
-
-.chat input {
-  flex: 1;
-  min-width: 0;
-  height: 40px;
-  border: none;
-  background: transparent;
-  color: var(--foreground, #2c2620);
-  font: inherit;
-  font-size: 0.9rem;
-  outline: none;
-}
-
-.send {
-  width: 38px;
-  height: 38px;
-  flex: none;
-  border-radius: 12px;
-  border: none;
-  background: var(--primary, #e08394);
-  color: var(--primary-foreground, #fff);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.send:disabled { opacity: 0.35; cursor: default; }
-
 @media (max-width: 640px) {
-  .backdrop { align-items: flex-end; padding: 0; }
-  .sheet {
-    --pad: 18px;
-    width: 100%;
-    max-height: 92vh;
-    border-radius: 26px 26px 0 0;
-    padding-bottom: env(safe-area-inset-bottom);
-    animation: slideUp 0.26s cubic-bezier(0.2, 0.8, 0.3, 1) both;
-  }
-  .grabber {
-    display: block;
-    width: 40px;
-    height: 5px;
-    border-radius: 999px;
-    background: var(--border-strong, var(--border, #d8cbb3));
-    margin: 8px auto 0;
-  }
-  .head { padding-top: 8px; }
-  .panel {
-    left: 8px !important;
-    right: 8px !important;
-    top: auto !important;
-    bottom: calc(8px + env(safe-area-inset-bottom)) !important;
-    width: auto;
-    animation: slideUp 0.24s cubic-bezier(0.2, 0.8, 0.3, 1) both;
-  }
-  .panelBackdrop { background: rgba(20, 14, 10, 0.25); }
-  .tiles { grid-template-columns: repeat(3, 1fr); }
+  /* Phones: still a centred card (no slide-up sheet), just wider. */
+  .backdrop { padding: 12px; }
+  .sheet { --pad: 16px; width: 100%; max-height: calc(100dvh - 24px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .backdrop, .sheet, .card, .panel, .answer { animation: none; }
+  .backdrop, .sheet, .card, .answer { animation: none; }
 }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes cardIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
-@keyframes slideUp { from { transform: translateY(100%); } to { transform: none; } }

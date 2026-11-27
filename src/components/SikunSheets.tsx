@@ -1,7 +1,7 @@
 'use client';
 
 // sikun's full-size sheets: the unified note quiz (flashcards) and the
-// adjustable focus timer. Opened from sikun's tap panel (see InstanceSikun).
+// adjustable focus timer. Opened from sikun's long-press radial menu (see InstanceSikun).
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { X, Check, Sparkles, RotateCcw, Play, Pause, Square, Plus, Minus, ChevronLeft, Eye, BookmarkPlus } from 'lucide-react';
@@ -35,7 +35,6 @@ export function SikunSheet({ title, subtitle, onClose, footer, children }: {
   return (
     <div className={s.backdrop} onPointerDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={s.sheet} role="dialog" aria-modal="true" aria-label={title}>
-        <div className={s.grabber} aria-hidden />
         <div className={s.head}>
           <div className={s.headText}>
             <h2>{title}</h2>
