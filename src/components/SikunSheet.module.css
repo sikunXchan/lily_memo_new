@@ -366,15 +366,26 @@
 
 .answerZone {
   margin-top: auto;
-  padding-top: 18px;
   position: relative;
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
   overflow: hidden;
   border-radius: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
+
+.answerZone:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
 .answer {
   min-height: 60px;
-  padding: 8px 4px;
+  padding: 8px 52px 8px 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -399,24 +410,37 @@
 
 .redSheet {
   position: absolute;
-  top: 18px;
-  bottom: 0;
-  left: 0;
-  width: 100%;
+  inset: 0;
   border-radius: 6px;
   background: var(--sheet);
   background-image: linear-gradient(105deg, rgba(255, 255, 255, 0.16) 0 30%, transparent 30% 100%);
   color: #fff;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: transform 0.38s cubic-bezier(0.3, 0.7, 0.2, 1);
+  transition: transform 0.32s cubic-bezier(0.3, 0.7, 0.2, 1);
 }
 
-.redSheetOff { transform: translateX(86%); }
+/* Revealed: the sheet tucks to the right, leaving a "隠す" tab to cover it again. */
+.redSheetOff {
+  transform: translateX(calc(100% - 44px));
+  justify-content: flex-start;
+}
+
+.hideTab {
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.redSheet .kbd { background: rgba(255, 255, 255, 0.22); }
 
 .done {
   display: flex;

@@ -17,6 +17,7 @@ import { getAppLang, type AppLang } from './appLang';
 // English translations keyed by the original Japanese UI string.
 const EN: Record<string, string> = {
   // ── sikun quiz / timer ──
+  "答えを表示": "Show the answer",
   "1〜{max}分で指定してね": "Pick 1–{max} minutes",
   "{n}分": "{n} min",
   "{n}分 はじめる": "Start {n} min",
@@ -30,9 +31,6 @@ const EN: Record<string, string> = {
   "まだ": "Not yet",
   "まだの{n}枚をもう一度": "Retry the {n} not-yet cards",
   "やめる": "Stop",
-  "シートをずらして答えを見る": "Slide the sheet to see the answer",
-  "スキップ": "Skip",
-  "タップで答えを表示": "Tap to show the answer",
   "メモに保存できませんでした。": "Couldn't save to the note.",
   "メモのチェックボックスと連動します": "Synced with the note's checkbox",
   "メモの問題が変更されたため、チェックできませんでした。もう一度読み込みます。": "The note's questions changed, so this couldn't be checked. Reloading.",
