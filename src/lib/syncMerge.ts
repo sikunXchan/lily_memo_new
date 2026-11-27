@@ -204,3 +204,37 @@ export function mergeSnapshots(base: SyncSnapshot, incoming: SyncSnapshot): Sync
     earnedBadges: mergeBadges(b.earnedBadges ?? [], i.earnedBadges ?? []),
   };
 }
+
+// Order-independent JSON for comparing records.
+function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
+  if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o).filter(k => o[k] !== undefined).sort()
+      .map(k => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v) ?? 'null';
+}
+
+// True when two snapshots hold the same data, ignoring `ts`, key order and the
+// order of records inside each table. Used by the sync API to skip writes that
+// change nothing and to tell a device it already has everything it pushed.
+export function snapshotsEqual(a: SyncSnapshot, b: SyncSnapshot): boolean {
+  const A = (a ?? {}) as Record<string, unknown>;
+  const B = (b ?? {}) as Record<string, unknown>;
+  const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+  keys.delete('ts');
+  for (const k of keys) {
+    const x = A[k];
+    const y = B[k];
+    if (Array.isArray(x) || Array.isArray(y)) {
+      const xs = (Array.isArray(x) ? x : []).map(stableStringify).sort();
+      const ys = (Array.isArray(y) ? y : []).map(stableStringify).sort();
+      if (xs.length !== ys.length) return false;
+      for (let i = 0; i < xs.length; i++) if (xs[i] !== ys[i]) return false;
+    } else if (stableStringify(x) !== stableStringify(y)) {
+      return false;
+    }
+  }
+  return true;
+}

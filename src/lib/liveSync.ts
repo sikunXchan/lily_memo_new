@@ -4,7 +4,10 @@ import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, Save
 import { getPlanSyncState, applyPlanSyncState, registerPlanSyncHook, type PlanSyncState } from './points';
 import { applyProfileSyncState, getProfileSyncState, registerProfileSyncHook, type ProfileSyncState } from './profileSync';
 
-const PUSH_DEBOUNCE_MS  = 3_000;
+// Wait for a pause in editing before pushing: every push moves the whole
+// snapshot through Upstash, so pushing on each short pause while typing a note
+// burned a lot of bandwidth. Pending pushes still flush when the app is hidden.
+const PUSH_DEBOUNCE_MS  = 8_000;
 const POLL_INTERVAL_MS  = 30_000;
 const MERGE_SUPPRESS_MS = 5_000;  // suppress push triggers right after a merge
 const MAX_PUSH_BYTES    = 7.5 * 1024 * 1024;
@@ -193,9 +196,19 @@ async function push() {
     });
     if (!res.ok) throw new Error(`push failed: ${res.status}`);
     _pushFailures = 0;
+    const out = await res.json().catch(() => ({})) as { ts?: number; upToDate?: boolean };
+    if (out.upToDate && typeof out.ts === 'number') {
+      // The server had nothing we lack: mark ourselves current instead of
+      // downloading the snapshot we just uploaded.
+      if (out.ts > _lastSyncTs) {
+        _lastSyncTs = out.ts;
+        localStorage.setItem('lily_livesync_ts', String(_lastSyncTs));
+      }
+      return;
+    }
     // The server MERGES our push into the stored snapshot, so it may now hold
     // records from another device that we don't have yet. Pull them promptly
-    // instead of waiting for the next 30s poll tick.
+    // instead of waiting for the next poll tick.
     setTimeout(() => void poll(), 1_500);
   } catch {
     // Network/server error — retry with exponential backoff so changes made
@@ -541,8 +554,11 @@ async function mergeSnapshot(remote: LiveSnapshot) {
 }
 
 // ── Poll Redis for remote changes ────────────────────────────────
-async function poll() {
+async function poll(force = false) {
   if (!_key || _isPolling) return;
+  // Background tabs/apps don't need to check every 30s; we re-poll the moment
+  // the app becomes visible again (see onVisibilityChange).
+  if (!force && typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
   _isPolling = true;
   try {
     const res = await fetch(
