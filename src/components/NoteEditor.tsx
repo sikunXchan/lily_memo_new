@@ -26,7 +26,6 @@ import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
 } from 'lucide-react';
 import CodeBlockComponent from './CodeBlockComponent';
-import type { TutorNote } from './TutorReview';
 import HandwritingCanvas from './HandwritingCanvas';
 
 import { MermaidExtension, ChartExtension, QAExtension, GeometryExtension, HandwritingExtension, MathInlineExtension, MathBlockExtension } from '@/lib/extensions';
@@ -38,6 +37,7 @@ import { InMemoSearchExtension, searchPluginKey } from '@/lib/inMemoSearch';
 import { TEXT_COLORS, HIGHLIGHT_COLORS } from '@/lib/memoColors';
 import { NoteLinkExtension } from '@/lib/noteLinkExtension';
 import { noteHtmlToText } from '@/lib/noteText';
+import { NOTE_HTML_EVENT, QA_CHECK_EVENT, QA_APPEND_EVENT, type NoteHtmlDetail, type QaCheckDetail, type QaAppendDetail } from '@/lib/noteQuiz';
 import { getEffectiveApiKey } from '@/lib/appLang';
 import { useT, translate } from '@/lib/i18n';
 
@@ -124,7 +124,6 @@ const CustomTaskItem = TaskItem.extend({
 });
 
 interface NoteEditorProps {
-  onTutorNoteChange?: (note: TutorNote | null) => void;
   noteId: number;
   onClose?: () => void;
   onSelectNote?: (id: number) => void;
@@ -134,7 +133,7 @@ interface NoteEditorProps {
   embedded?: boolean;
 }
 
-export default function NoteEditor({ noteId, onClose, onSelectNote, onTutorNoteChange, embedded = false }: NoteEditorProps) {
+export default function NoteEditor({ noteId, onClose, onSelectNote, embedded = false }: NoteEditorProps) {
   const t = useT();
   const [note, setNote] = useState<Note | null>(null);
   const [hwDoc, setHwDoc] = useState<HandwritingDoc>(EMPTY_HANDWRITING);
@@ -229,21 +228,19 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       scrollMargin: 24,
       scrollThreshold: 24,
     },
-    onUpdate: ({ editor, transaction }) => {
+    onUpdate: ({ editor }) => {
       if (noteIdRef.current && !isLoadingContentRef.current) {
         const currentNoteId = noteIdRef.current;
         const content = editor.getHTML();
         setIsSaving(true);
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-        const persist = async () => {
+        saveTimeoutRef.current = setTimeout(async () => {
           try {
             await db.notes.update(currentNoteId, { content, updatedAt: Date.now() });
           } finally {
             setIsSaving(false);
           }
-        };
-        if (transaction.getMeta('saveTutorReview')) void persist();
-        else saveTimeoutRef.current = setTimeout(persist, 800);
+        }, 800);
       }
     },
   });
@@ -265,6 +262,65 @@ const searchInputRef = useRef<HTMLInputElement>(null);
     };
     window.addEventListener('qa-checkbox-toggled', handler);
     return () => window.removeEventListener('qa-checkbox-toggled', handler);
+  }, [editor]);
+
+  // sikun の「問題」モードとの橋渡し。開いているメモはエディタが内容を持って
+  // いるので、読み取り・チェック・問題の追加はここで直接エディタに反映する
+  // （DBだけ書き換えると次の自動保存で上書きされてしまう）。
+  useEffect(() => {
+    if (!editor) return;
+    const isMine = (id: number) =>
+      noteIdRef.current === id && !isLoadingContentRef.current && !editor.isDestroyed;
+    const saveNow = () => {
+      const id = noteIdRef.current;
+      if (!id) return;
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      setIsSaving(true);
+      void db.notes.update(id, { content: editor.getHTML(), updatedAt: Date.now() })
+        .finally(() => setIsSaving(false));
+    };
+    const qaNodes = () => {
+      const found: { pos: number; node: import('@tiptap/pm/model').Node }[] = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'qa') { found.push({ pos, node }); return false; }
+        return true;
+      });
+      return found;
+    };
+    const onHtml = (e: Event) => {
+      const d = (e as CustomEvent<NoteHtmlDetail>).detail;
+      if (isMine(d.noteId)) d.html = editor.getHTML();
+    };
+    const onCheck = (e: Event) => {
+      const d = (e as CustomEvent<QaCheckDetail>).detail;
+      if (!isMine(d.noteId)) return;
+      const target = qaNodes()[d.block];
+      const pairs = target && Array.isArray(target.node.attrs.pairs) ? target.node.attrs.pairs as { q: string; checked?: boolean }[] : null;
+      if (!target || !pairs || pairs[d.index]?.q !== d.q) { d.handled = false; return; }
+      const next = pairs.map((p, i) => (i === d.index ? { ...p, checked: d.checked } : p));
+      editor.view.dispatch(editor.state.tr.setNodeMarkup(target.pos, undefined, { ...target.node.attrs, pairs: next }));
+      saveNow();
+      d.handled = true;
+    };
+    const onAppend = (e: Event) => {
+      const d = (e as CustomEvent<QaAppendDetail>).detail;
+      if (!isMine(d.noteId)) return;
+      const block = qaNodes().length;
+      const node = editor.schema.nodes.qa.create({ kind: 'qa', pairs: [d.pair] });
+      editor.view.dispatch(editor.state.tr.insert(editor.state.doc.content.size, node));
+      saveNow();
+      d.handled = true;
+      d.block = block;
+      d.index = 0;
+    };
+    window.addEventListener(NOTE_HTML_EVENT, onHtml);
+    window.addEventListener(QA_CHECK_EVENT, onCheck);
+    window.addEventListener(QA_APPEND_EVENT, onAppend);
+    return () => {
+      window.removeEventListener(NOTE_HTML_EVENT, onHtml);
+      window.removeEventListener(QA_CHECK_EVENT, onCheck);
+      window.removeEventListener(QA_APPEND_EVENT, onAppend);
+    };
   }, [editor]);
 
   // 編集モード↔閲覧モード切替でエディタのeditableを制御
@@ -686,15 +742,6 @@ const searchInputRef = useRef<HTMLInputElement>(null);
 
 
 
-
-  const loadedId = note?.id;
-  const title = note?.title;
-  const noteType = note?.type;
-  useEffect(() => {
-    if (!editor || loadedId !== noteId || noteType === 'handwriting') return;
-    onTutorNoteChange?.({ id: noteId, title: title || '', editor });
-    return () => onTutorNoteChange?.(null);
-  }, [editor, loadedId, title, noteType, noteId, onTutorNoteChange]);
 
   if (!editor) return null;
   const isHandwriting = note?.type === 'handwriting';

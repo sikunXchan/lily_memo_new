@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Send, MoreHorizontal } from 'lucide-react';
+import { X, Send } from 'lucide-react';
 import { db } from '@/lib/db';
 import { noteHtmlToText } from '@/lib/noteText';
 import { streamSikunlilyChat, type ChatTurn } from '@/lib/gemini';
@@ -12,13 +12,10 @@ import {
 } from '@/lib/sikunHistory';
 import { getEffectiveApiKey, getAppLang } from '@/lib/appLang';
 import { renderRich } from '@/lib/richText';
-import { TutorPanel, TutorReview, type TutorNote } from './TutorReview';
-import styles from './TutorPanel.module.css';
-import { useT } from '@/lib/i18n';
+import { QuizSheet, TimerSheet, formatTimer } from './SikunSheets';
 import 'katex/dist/katex.min.css';
 
 interface InstanceSikunProps {
-  reviewNote: TutorNote | null;
   activeNoteId?: number;
   prevNoteId?: number;
   onOpenNote?: (id: number) => void;
@@ -91,17 +88,14 @@ function timeOfDayPlaceholder(): string {
   return '夜更かし？短めに答えるよ';
 }
 
-function formatMs(ms: number): string {
-  const s = Math.max(0, Math.ceil(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
+const formatMs = formatTimer;
 
 const INSTANCE_SIKUN_SYSTEM = `あなたは「sikun」、画面上に常駐するフローティング・キャラクター。
 sikunlilyの軽量版で、ユーザーが作業中にちらっと質問する用途専用だ。
 
 # 役割
 - 短い質問への即答（1〜3文）
-- アクティブメモの内容に対する質問への回答・要約・ToDo（やること）抽出
+- アクティブメモの内容に対する質問への回答・要約
 - 画像で渡されたPDFページの内容を読み取って、説明・要約・翻訳する
 - 選択された文章の解説
 - 直接的な事実回答や言い換え
@@ -135,7 +129,7 @@ You're the lightweight version of sikunlily, made for quick questions while the 
 
 # Role
 - Instant answers to short questions (1-3 sentences)
-- Answering, summarizing, and pulling to-dos from the active note
+- Answering questions about and summarizing the active note
 - Reading PDF page images passed to you and explaining / summarizing / translating them
 - Explaining a selected sentence
 - Direct factual answers and rephrasing
@@ -190,8 +184,7 @@ function clampPos(p: Pos): Pos {
   };
 }
 
-export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, onOpenNote, isPdfTab }: InstanceSikunProps) {
-  const t = useT();
+export default function InstanceSikun({ activeNoteId, prevNoteId, onOpenNote, isPdfTab }: InstanceSikunProps) {
   const en = getAppLang() === 'en';
   const [pos, setPos] = useState<Pos>(() => {
     const saved = loadPos();
@@ -213,10 +206,11 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
   const [selectedText, setSelectedText] = useState('');
   const [pomodoroMs, setPomodoroMs] = useState<number | null>(null);
   const [pausedMs, setPausedMs] = useState<number | null>(null);
-  const [reviewId, setReviewId] = useState<number | null>(null);
-  const [timerOpen, setTimerOpen] = useState(false);
-  const [minutes, setMinutes] = useState('30');
+  const [timerTotalMs, setTimerTotalMs] = useState(0);
+  const [timerEndAt, setTimerEndAt] = useState<number | null>(null);
   const [radialOpen, setRadialOpen] = useState(false);
+  const [quizNoteId, setQuizNoteId] = useState<number | null>(null);
+  const [timerOpen, setTimerOpen] = useState(false);
 
   const lastTapAt = useRef<number>(0);
   // Track the last noteId we showed the book animation for
@@ -229,6 +223,7 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
   const pointerStart = useRef<{ x: number; y: number; ox: number; oy: number; ts: number } | null>(null);
   const moved = useRef(false);
   const longPressTimer = useRef<number | null>(null);
+  const longPressed = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -323,19 +318,20 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
   const runTimer = useCallback((remainingMs: number) => {
     if (pomodoroRef.current) window.clearInterval(pomodoroRef.current);
     pomodoroEndRef.current = Date.now() + remainingMs;
+    setTimerEndAt(pomodoroEndRef.current);
     setPausedMs(null);
     setPomodoroMs(remainingMs);
     pomodoroRef.current = window.setInterval(() => {
       const remaining = pomodoroEndRef.current - Date.now();
       if (remaining <= 0) {
         if (pomodoroRef.current) { window.clearInterval(pomodoroRef.current); pomodoroRef.current = null; }
-        setPomodoroMs(null);
+        setPomodoroMs(0);
         setLastReply(en
           ? `${pomodoroMinRef.current} minutes are up! Nice work — take a short break.`
           : `${pomodoroMinRef.current}分経ったよ！お疲れさま、少し休もう。`);
         setBubbleVisible(true);
         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        setTimerOpen(false);
+        window.setTimeout(() => setPomodoroMs(null), 4000);
       } else {
         setPomodoroMs(remaining);
       }
@@ -344,8 +340,23 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
 
   const startPomodoro = useCallback((minutes: number) => {
     pomodoroMinRef.current = minutes;
+    setTimerTotalMs(minutes * 60 * 1000);
     runTimer(minutes * 60 * 1000);
   }, [runTimer]);
+
+  // Extend a running or paused timer.
+  const addPomodoro = useCallback((minutes: number) => {
+    const extra = minutes * 60 * 1000;
+    pomodoroMinRef.current += minutes;
+    setTimerTotalMs(t => t + extra);
+    if (pomodoroRef.current) {
+      pomodoroEndRef.current += extra;
+      setTimerEndAt(pomodoroEndRef.current);
+      setPomodoroMs(pomodoroEndRef.current - Date.now());
+    } else {
+      setPausedMs(p => (p !== null ? p + extra : p));
+    }
+  }, []);
 
   // Pause keeps the remaining time so it can be resumed later.
   const pausePomodoro = useCallback(() => {
@@ -371,8 +382,10 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
     pointerStart.current = { x: e.clientX, y: e.clientY, ox: pos.x, oy: pos.y, ts: Date.now() };
     moved.current = false;
     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressed.current = false;
     longPressTimer.current = window.setTimeout(() => {
       if (!moved.current) {
+        longPressed.current = true;
         setRadialOpen(true);
         setMode('closed');
         setBubbleVisible(false);
@@ -388,7 +401,7 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
     if (Math.abs(dx) > TAP_MAX_MOVE || Math.abs(dy) > TAP_MAX_MOVE) {
       if (!moved.current) {
         moved.current = true;
-        if (!radialOpen) {
+        if (!longPressed.current) {
           if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
           setDragging(true);
         }
@@ -421,7 +434,7 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
       persistPos(snapped);
       return;
     }
-    if (radialOpen) return;
+    if (longPressed.current) { longPressed.current = false; return; }
     if (elapsed <= TAP_MAX_MS && !moved.current) {
 
       // Tapping while selection badge is active → explain selected text (memo)
@@ -475,6 +488,23 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
       setBubbleVisible(true);
     }
   }, [prevNoteId, onOpenNote, en]);
+
+  // Unified quiz (memo Q&A + AI questions from the full text) in a sheet
+  const openQuiz = useCallback(() => {
+    setRadialOpen(false);
+    if (activeNoteId === undefined) {
+      setLastReply(en ? 'Open a note first.' : 'メモを開いてからにしてね。');
+      setBubbleVisible(true);
+      return;
+    }
+    setBubbleVisible(false);
+    setQuizNoteId(activeNoteId);
+  }, [activeNoteId, en]);
+
+  // Close the quiz when the user moves to another note.
+  useEffect(() => {
+    setQuizNoteId(id => (id !== null && id !== activeNoteId ? null : id));
+  }, [activeNoteId]);
 
   // Show last 5 memo titles
   const showRecentMemos = useCallback(async () => {
@@ -564,7 +594,7 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
     setHistory(nextHistory);
 
     // On-demand note fetch — only when user actually sends a message.
-    // 要約/ToDo/解説は全文、通常チャットは先頭800文字。
+    // 要約/解説は全文、通常チャットは先頭800文字。
     let noteContext = '';
     if (activeNoteId !== undefined) {
       try {
@@ -662,53 +692,81 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
   const bubbleStyle: React.CSSProperties = bubbleOnLeft
     ? { right: winW - pos.x + 8, top: pos.y }
     : { left: pos.x + ICON_SIZE + 8, top: pos.y };
+
   const inputStyle: React.CSSProperties = bubbleOnLeft
     ? { right: winW - pos.x + 8, top: pos.y + ICON_SIZE + 6 }
     : { left: pos.x + ICON_SIZE + 8, top: pos.y + ICON_SIZE + 6 };
 
-  // Radial menu items — context aware
-  const radialItems: { key: string; emoji: string; label: string; run: () => void }[] = [];
+  // Radial menu items — context aware. Listed bottom → top along the arc;
+  // the main action (問題 / ページ解説) sits in the middle, filled with ink.
+  const close = () => setRadialOpen(false);
+  const ico = (d: React.ReactNode) => (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{d}</svg>
+  );
+  const ICONS = {
+    recent: ico(<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></>),
+    doc: ico(<><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v5h6" /><path d="M16 13H8" /><path d="M16 17H8" /></>),
+    cards: ico(<><rect x="3" y="7" width="14" height="14" rx="2" /><path d="M7 3h12a2 2 0 0 1 2 2v12" /><circle cx="7" cy="11" r="1.2" /></>),
+    timer: ico(<><line x1="10" x2="14" y1="2" y2="2" /><line x1="12" x2="15" y1="14" y2="11" /><circle cx="12" cy="14" r="8" /></>),
+    pause: ico(<><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></>),
+    prev: ico(<><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></>),
+    books: ico(<><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></>),
+    lang: ico(<><path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" /><path d="m22 22-5-10-5 10" /><path d="M14 18h6" /></>),
+  };
+  type RadialItem = { key: string; icon: React.ReactNode; label: string; main?: boolean; live?: boolean; run: () => void };
+  const radialItems: RadialItem[] = [];
+  radialItems.push({ key: 'rec', icon: ICONS.recent, label: en ? 'Recent' : '最近のメモ', run: () => void showRecentMemos() });
   if (isPdfTab) {
     // PDF tab → analyze the current page or the whole document
-    radialItems.push({ key: 'pdfx', emoji: '📄', label: en ? 'Explain page' : 'ページ解説', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Explain the content of this PDF page clearly, in a way a beginner can follow.' : 'このPDFページの内容を、初学者にも分かるよう丁寧に解説して。', { attachPdf: true, heavy: true }); } });
-    radialItems.push({ key: 'pdfall', emoji: '📚', label: en ? 'Explain all' : 'PDF全文解説', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Explain the whole PDF carefully, with section structure and key points.' : 'このPDF全体の内容を、章立て・ポイントを押さえて丁寧に解説して。', { attachPdfAll: true, heavy: true }); } });
-    radialItems.push({ key: 'pdft', emoji: '🔤', label: en ? 'Translate' : '翻訳', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Translate this PDF page into English.' : 'このPDFページを日本語に翻訳して。', { attachPdf: true }); } });
+    radialItems.push({ key: 'pdfall', icon: ICONS.books, label: en ? 'Explain all' : '全文解説', run: () => { close(); void sendQuickAction(en ? 'Explain the whole PDF carefully, with section structure and key points.' : 'このPDF全体の内容を、章立て・ポイントを押さえて丁寧に解説して。', { attachPdfAll: true, heavy: true }); } });
+    radialItems.push({ key: 'pdfx', icon: ICONS.doc, label: en ? 'Explain' : 'ページ解説', main: true, run: () => { close(); void sendQuickAction(en ? 'Explain the content of this PDF page clearly, in a way a beginner can follow.' : 'このPDFページの内容を、初学者にも分かるよう丁寧に解説して。', { attachPdf: true, heavy: true }); } });
+    radialItems.push({ key: 'pdft', icon: ICONS.lang, label: en ? 'Translate' : '翻訳', run: () => { close(); void sendQuickAction(en ? 'Translate this PDF page into English.' : 'このPDFページを日本語に翻訳して。', { attachPdf: true }); } });
   } else if (activeNoteId !== undefined) {
     // Memo open → memo actions (full content)
-    radialItems.push({ key: 'sum', emoji: '📝', label: en ? 'Summary' : '要約', run: () => { setRadialOpen(false); void sendQuickAction(en ? 'Summarize this note clearly without missing the key points.' : 'このメモの内容を、要点を漏らさず分かりやすく要約して。', { fullNote: true, heavy: true }); } });
-    if (reviewNote) radialItems.push({ key: 'review', emoji: '📖', label: t('メモの復習'), run: () => { setRadialOpen(false); setReviewId(reviewNote.id); } });
+    radialItems.push({ key: 'sum', icon: ICONS.doc, label: en ? 'Summary' : '要約', run: () => { close(); void sendQuickAction(en ? 'Summarize this note clearly without missing the key points.' : 'このメモの内容を、要点を漏らさず分かりやすく要約して。', { fullNote: true, heavy: true }); } });
+    radialItems.push({ key: 'quiz', icon: ICONS.cards, label: en ? 'Quiz' : '問題', main: true, run: openQuiz });
   }
-  radialItems.push({ key: 'rec',  emoji: '📋', label: en ? 'Recent notes' : '最近のメモ',  run: () => void showRecentMemos() });
-  if (activeNoteId !== undefined) {
-    radialItems.push({ key: 'timer', emoji: '⏱', label: t('学習タイマー'), run: () => { setRadialOpen(false); setTimerOpen(true); } });
-  } else if (pomodoroMs !== null) {
-    radialItems.push({ key: 'pause', emoji: '⏸', label: en ? 'Pause' : '一時停止', run: () => { setRadialOpen(false); pausePomodoro(); setLastReply(en ? 'Timer paused. Say "resume" to continue.' : 'タイマーを一時停止したよ。「再開」で続けられる。'); setBubbleVisible(true); } });
-    radialItems.push({ key: 'stop', emoji: '⏹', label: en ? 'Stop' : '終了', run: () => { setRadialOpen(false); cancelPomodoro(); setLastReply(en ? 'Timer stopped.' : 'タイマーを終了したよ。'); setBubbleVisible(true); } });
-  } else if (pausedMs !== null) {
-    radialItems.push({ key: 'resume', emoji: '▶', label: en ? 'Resume' : '再開', run: () => { setRadialOpen(false); resumePomodoro(); setLastReply(en ? 'Timer resumed!' : 'タイマーを再開したよ！'); setBubbleVisible(true); } });
-    radialItems.push({ key: 'stop', emoji: '⏹', label: en ? 'Stop' : '終了', run: () => { setRadialOpen(false); cancelPomodoro(); setLastReply(en ? 'Timer stopped.' : 'タイマーを終了したよ。'); setBubbleVisible(true); } });
-  } else {
-    radialItems.push({ key: 'p30', emoji: '⏱', label: en ? '30 min' : '30分', run: () => { setRadialOpen(false); startPomodoro(30); setLastReply(en ? 'Started a 30-minute timer! Let\'s focus.' : '30分のタイマーを開始したよ！集中しよう。'); setBubbleVisible(true); } });
-    radialItems.push({ key: 'p60', emoji: '⏰', label: en ? '60 min' : '60分', run: () => { setRadialOpen(false); startPomodoro(60); setLastReply(en ? 'Started a 60-minute timer! Let\'s focus.' : '60分のタイマーを開始したよ！集中しよう。'); setBubbleVisible(true); } });
-  }
-  radialItems.push({ key: 'prev', emoji: '⏮', label: en ? 'Prev note' : '前のメモ', run: jumpToPrevNote });
+  const timerActive = pomodoroMs !== null || pausedMs !== null;
+  radialItems.push({
+    key: 'timer', icon: pausedMs !== null ? ICONS.pause : ICONS.timer, live: timerActive,
+    label: timerActive ? formatMs(pausedMs ?? pomodoroMs ?? 0) : (en ? 'Timer' : 'タイマー'),
+    run: () => { close(); setBubbleVisible(false); setTimerOpen(true); },
+  });
+  radialItems.push({ key: 'prev', icon: ICONS.prev, label: en ? 'Prev note' : '前のメモ', run: jumpToPrevNote });
 
   const iconCx = pos.x + ICON_SIZE / 2;
   const iconCy = pos.y + ICON_SIZE / 2;
   const baseAngle = bubbleOnLeft ? 180 : 0;
-  // Widen the arc and push out the radius as the item count grows so the
-  // 56px buttons never overlap.
-  const span = radialItems.length > 1 ? Math.min(220, radialItems.length * 36) : 0;
-  const minRadius = ICON_SIZE / 2 + 54;
+  // Fan the buttons around sikun; widen the arc and push out the radius as
+  // the item count grows so they never overlap.
+  const span = radialItems.length > 1 ? Math.min(220, radialItems.length * 37.5) : 0;
+  const minRadius = ICON_SIZE / 2 + 74;
   const neededRadius = radialItems.length > 1
-    ? (radialItems.length * 60) / (span * Math.PI / 180)
+    ? (radialItems.length * 66) / (span * Math.PI / 180)
     : minRadius;
-  const radius = Math.min(140, Math.max(minRadius, neededRadius));
-  const radialPos = (i: number): React.CSSProperties => {
+  const radius = Math.min(150, Math.max(minRadius, neededRadius));
+  const winHr = typeof window !== 'undefined' ? window.innerHeight : 800;
+  const arc = radialItems.map((it, i) => {
     const n = radialItems.length;
-    const deg = baseAngle - span / 2 + (n > 1 ? span * (i / (n - 1)) : 0);
+    // sikun on the left → keep the list reading top-to-bottom the same way
+    const k = bubbleOnLeft ? i : n - 1 - i;
+    const deg = baseAngle - span / 2 + (n > 1 ? span * (k / (n - 1)) : 0);
     const rad = (deg * Math.PI) / 180;
-    return { left: iconCx + radius * Math.cos(rad) - 28, top: iconCy + radius * Math.sin(rad) - 28 };
+    const half = it.main ? 34 : 30;
+    return { k, x: iconCx + radius * Math.cos(rad) - half, y: iconCy + radius * Math.sin(rad) - half, size: half * 2 };
+  });
+  // Keep the whole fan on screen: slide it down/up (not squash it) when
+  // sikun sits near the top or bottom edge.
+  const minY = Math.min(...arc.map(a => a.y));
+  const maxY = Math.max(...arc.map(a => a.y + a.size));
+  const shiftY = minY < 8 ? 8 - minY : maxY > winHr - 8 ? winHr - 8 - maxY : 0;
+  const radialPos = (i: number): React.CSSProperties => {
+    const a = arc[i];
+    return {
+      left: Math.max(4, Math.min(a.x, winW - a.size - 4)),
+      top: a.y + shiftY,
+      animationDelay: `${Math.abs(a.k - (radialItems.length - 1) / 2) * 28}ms`,
+    };
   };
 
   const currentIcon = loading
@@ -721,7 +779,7 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
     <>
       <div
         className={`sikun-icon ${dragging ? 'dragging' : ''} ${loading ? 'typing' : ''} ${bookFrame !== null ? 'book' : ''}`}
-        style={{ left: pos.x, top: pos.y }}
+        style={{ left: pos.x, top: pos.y, zIndex: radialOpen ? 10002 : undefined }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -749,61 +807,35 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
         )}
       </div>
 
-      {activeNoteId !== undefined && (
-        <button className="sikun-tools" style={{ left: pos.x + ICON_SIZE - 34, top: pos.y }}
-          aria-label={t('sikunの学習メニュー')} title={t('sikunの学習メニュー')}
-          onClick={() => { setBubbleVisible(false); closeInput(); setRadialOpen(true); }}><MoreHorizontal size={18} /></button>
-      )}
-      {radialOpen && activeNoteId !== undefined && (
-        <TutorPanel title={t('sikunの学習メニュー')} onClose={() => setRadialOpen(false)}>
-          <div className={styles.menu}>
-            {radialItems.map(item => <button key={item.key} onClick={item.run}>
-              <span aria-hidden>{item.emoji} </span>{item.label}
-            </button>)}
-          </div>
-        </TutorPanel>
-      )}
-      {reviewNote && reviewNote.id === reviewId && (
-        <TutorReview key={reviewId} note={reviewNote} onClose={() => setReviewId(null)} />
-      )}
-      {timerOpen && activeNoteId !== undefined && (
-        <TutorPanel title={t('学習タイマー')} onClose={() => setTimerOpen(false)}>
-          {pausedMs === null && pomodoroMs === null ? (
-            <form onSubmit={e => {
-              e.preventDefault();
-              const value = Number(minutes);
-              if (Number.isInteger(value) && value >= 1 && value <= 1440) startPomodoro(value);
-            }}>
-              <label>{t('時間（分）')}<input type="number" inputMode="numeric" step={1} min={1} max={1440}
-                required value={minutes} onChange={e => setMinutes(e.target.value)} /></label>
-              <div className={styles.actions}>{[15, 30, 60].map(n => <button key={n} type="button"
-                onClick={() => setMinutes(String(n))}>{t('{n}分', { n })}</button>)}</div>
-              <button className={styles.primary} type="submit">{t('タイマーを開始')}</button>
-            </form>
-          ) : <>
-            <div className={styles.card}>
-              <small>{pausedMs !== null ? t('一時停止中') : t('残り時間')}</small>
-              <strong role="timer" className={styles.clock}>{formatMs(pausedMs ?? pomodoroMs ?? 0)}</strong>
-            </div>
-            <div className={styles.actions}>
-              <button className={styles.primary} onClick={pausedMs !== null ? resumePomodoro : pausePomodoro}>
-                {pausedMs !== null ? t('再開') : t('一時停止')}
-              </button>
-              <button onClick={cancelPomodoro}>{t('終了')}</button>
-            </div>
-          </>}
-        </TutorPanel>
-      )}
-      {radialOpen && activeNoteId === undefined && (
+      {radialOpen && (
         <>
-          <div className="sikun-radial-backdrop" onPointerDown={() => setRadialOpen(false)} />
+          <div className="sikun-radial-backdrop" onPointerDown={close} />
           {radialItems.map((it, i) => (
-            <button key={it.key} className="sikun-radial-item" style={radialPos(i)} onClick={it.run}>
-              <span className="sikun-radial-emoji">{it.emoji}</span>
+            <button key={it.key} className={`sikun-radial-item${it.main ? ' main' : ''}${it.live ? ' live' : ''}`} style={radialPos(i)} onClick={it.run}>
+              {it.icon}
               <span className="sikun-radial-label">{it.label}</span>
             </button>
           ))}
         </>
+      )}
+
+      {quizNoteId !== null && (
+        <QuizSheet key={quizNoteId} noteId={quizNoteId} en={en} onClose={() => setQuizNoteId(null)} />
+      )}
+
+      {timerOpen && (
+        <TimerSheet
+          runningMs={pomodoroMs}
+          pausedMs={pausedMs}
+          totalMs={timerTotalMs}
+          endAt={timerEndAt}
+          onStart={min => { startPomodoro(min); setLastReply(en ? `Started a ${min}-minute timer! Let's focus.` : `${min}分のタイマーを開始したよ！集中しよう。`); setTimerOpen(false); setBubbleVisible(true); }}
+          onPause={pausePomodoro}
+          onResume={resumePomodoro}
+          onStop={() => { cancelPomodoro(); setTimerOpen(false); setLastReply(en ? 'Timer stopped.' : 'タイマーを終了したよ。'); setBubbleVisible(true); }}
+          onAdd={addPomodoro}
+          onClose={() => setTimerOpen(false)}
+        />
       )}
 
       {/* Preload all frames */}
@@ -920,24 +952,40 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
         }
         .sikun-radial-backdrop {
           position: fixed; inset: 0; z-index: 10001;
+          background: color-mix(in srgb, var(--background, #faf6ee) 74%, transparent);
+          animation: sikun-fade 0.16s ease-out both;
         }
+        @keyframes sikun-fade { from { opacity: 0; } to { opacity: 1; } }
         .sikun-radial-item {
           position: fixed;
-          width: 56px; height: 56px;
+          width: 60px; height: 60px; padding: 0;
           border-radius: 50%;
-          border: 1px solid var(--border, rgba(0,0,0,0.1));
-          background: var(--background, #fff);
-          box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+          border: 1.5px solid var(--border-strong, #e3d8c4);
+          background: var(--surface, #fff);
+          color: var(--primary-deep, var(--primary-dark, #b5485f));
+          box-shadow: 0 6px 16px -6px rgba(60, 40, 20, 0.35);
           display: flex; flex-direction: column; align-items: center; justify-content: center;
-          gap: 1px; cursor: pointer; z-index: 10002;
-          animation: sikun-radial-pop 0.18s ease-out both;
+          gap: 3px; cursor: pointer; z-index: 10002; font-family: inherit;
+          animation: sikun-radial-pop 0.2s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+          -webkit-tap-highlight-color: transparent;
         }
+        .sikun-radial-item:active { transform: scale(0.94); }
+        .sikun-radial-item.main {
+          width: 68px; height: 68px; border: none;
+          background: var(--foreground, #2c2620); color: var(--background, #faf6ee);
+          box-shadow: 0 8px 20px -6px rgba(44, 38, 32, 0.55);
+        }
+        .sikun-radial-item.live { border-color: var(--foreground, #2c2620); }
         @keyframes sikun-radial-pop {
           from { opacity: 0; transform: scale(0.4); }
           to   { opacity: 1; transform: scale(1); }
         }
-        .sikun-radial-emoji { font-size: 19px; line-height: 1; }
-        .sikun-radial-label { font-size: 0.58rem; font-weight: 700; color: var(--fg-muted, #555); line-height: 1; }
+        .sikun-radial-label {
+          font-size: 10px; font-weight: 700; line-height: 1;
+          color: var(--foreground, #2c2620); white-space: nowrap;
+        }
+        .sikun-radial-item.main .sikun-radial-label { font-size: 11px; color: inherit; }
+        .sikun-radial-item.live .sikun-radial-label { font-variant-numeric: tabular-nums; font-weight: 800; }
         .sikun-bubble {
           position: fixed;
           width: ${BUBBLE_W}px; max-width: calc(100vw - 24px); max-height: min(60vh, 420px); overflow-y: auto;
@@ -961,11 +1009,6 @@ export default function InstanceSikun({ reviewNote, activeNoteId, prevNoteId, on
           width: 20px; height: 20px; border-radius: 50%; border: none;
           background: var(--accent, #eee); color: var(--fg-muted, #666);
           display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
-        }
-        .sikun-tools {
-          position: fixed; z-index: 10002; width: 34px; height: 34px; border-radius: 50%;
-          display: grid; place-items: center; cursor: pointer; color: var(--foreground);
-          background: var(--background); border: 1px solid var(--border); box-shadow: 0 2px 8px #0002;
         }
         .sikun-input-row {
           position: fixed; display: flex; gap: 4px;
