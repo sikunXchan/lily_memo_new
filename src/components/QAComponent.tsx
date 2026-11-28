@@ -20,6 +20,7 @@ interface QAPair {
   a: string;
   opts?: string[];
   checked?: boolean;
+  checkedAt?: number;
 }
 
 function parseNumberedText(text: string): string[] {
@@ -720,7 +721,8 @@ export default function QAComponent({ node: { attrs }, updateAttributes, deleteN
               revealAll={revealAll}
               onToggleChecked={() => {
                 const next = pairs.map((p, j) =>
-                  j === i ? { ...p, checked: !p.checked } : p
+                  // checkedAt lets sync keep the newest tick per question (lib/qaSync.ts)
+                  j === i ? { ...p, checked: !p.checked, checkedAt: Date.now() } : p
                 );
                 updateAttributes({ pairs: next });
                 window.dispatchEvent(new CustomEvent('qa-checkbox-toggled'));

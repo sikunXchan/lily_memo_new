@@ -5,6 +5,8 @@ import { useEditor, EditorContent, ReactNodeViewRenderer } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import type { ChainedCommands } from '@tiptap/core';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { liveQuery } from 'dexie';
+import { collectQaChecks, makeQaKeyer, isNewerCheck } from '@/lib/qaSync';
 import StarterKit from '@tiptap/starter-kit';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import { ResizableImageExtension, MarkdownTextStyle, MarkdownHighlight } from '@/lib/extensions';
@@ -228,7 +230,10 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       scrollMargin: 24,
       scrollThreshold: 24,
     },
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor, transaction }) => {
+      // ✓ applied from a synced copy: the DB already has it — saving here would
+      // write this editor's (possibly older) body text over the synced one.
+      if (transaction.getMeta('fromSync')) return;
       if (noteIdRef.current && !isLoadingContentRef.current) {
         const currentNoteId = noteIdRef.current;
         const content = editor.getHTML();
@@ -297,7 +302,7 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       const target = qaNodes()[d.block];
       const pairs = target && Array.isArray(target.node.attrs.pairs) ? target.node.attrs.pairs as { q: string; checked?: boolean }[] : null;
       if (!target || !pairs || pairs[d.index]?.q !== d.q) { d.handled = false; return; }
-      const next = pairs.map((p, i) => (i === d.index ? { ...p, checked: d.checked } : p));
+      const next = pairs.map((p, i) => (i === d.index ? { ...p, checked: d.checked, checkedAt: Date.now() } : p));
       editor.view.dispatch(editor.state.tr.setNodeMarkup(target.pos, undefined, { ...target.node.attrs, pairs: next }));
       saveNow();
       d.handled = true;
@@ -322,6 +327,37 @@ const searchInputRef = useRef<HTMLInputElement>(null);
       window.removeEventListener(QA_APPEND_EVENT, onAppend);
     };
   }, [editor]);
+
+  // 同期で届いた Q&A の ✓ を、開いているエディタにも反映する。
+  // エディタは開いた時点の本文を持ち続けるので、そのままだと他の端末で付けた ✓
+  // が見えず、次の保存で古い状態に戻してしまう。本文全体は差し替えず（入力中の
+  // カーソルを壊さないため）、QA ブロックの ✓ だけを「新しい方が勝つ」で重ねる。
+  useEffect(() => {
+    if (!editor) return;
+    const sub = liveQuery(() => db.notes.get(noteId)).subscribe(rec => {
+      if (!rec?.content || editor.isDestroyed || isLoadingContentRef.current) return;
+      if (noteIdRef.current !== noteId || !rec.content.includes('data-pairs')) return;
+      const incoming = collectQaChecks(rec.content);
+      if (incoming.size === 0) return;
+      const key = makeQaKeyer();
+      const tr = editor.state.tr;
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name !== 'qa') return true;
+        const pairs = Array.isArray(node.attrs.pairs) ? node.attrs.pairs as { q?: string; checked?: boolean; checkedAt?: number }[] : [];
+        let changed = false;
+        const next = pairs.map(p => {
+          const o = incoming.get(key(p?.q));
+          if (!p || !isNewerCheck(o, p)) return p;
+          changed = true;
+          return { ...p, checked: o.checked, checkedAt: o.checkedAt };
+        });
+        if (changed) tr.setNodeMarkup(pos, undefined, { ...node.attrs, pairs: next });
+        return false;
+      });
+      if (tr.docChanged) editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta('fromSync', true));
+    });
+    return () => sub.unsubscribe();
+  }, [editor, noteId]);
 
   // 編集モード↔閲覧モード切替でエディタのeditableを制御
   // setEditable(true)するとTipTapがcontenteditable要素にフォーカスしてiOSキーボードが出るため

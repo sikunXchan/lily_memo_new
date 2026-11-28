@@ -3,6 +3,7 @@ import { db, newSyncId, ensureStudySyncIds } from './db';
 import type { Note, Folder, StudySession, StudyCategory, Exam, ScheduleDay, SavedChat, Todo, EarnedBadge, ProblemSet, Diary, LessonSession, DiagramSet } from './db';
 import { getPlanSyncState, applyPlanSyncState, registerPlanSyncHook, type PlanSyncState } from './points';
 import { applyProfileSyncState, getProfileSyncState, registerProfileSyncHook, type ProfileSyncState } from './profileSync';
+import { overlayQaChecks } from './qaSync';
 
 // Wait for a pause in editing before pushing: every push moves the whole
 // snapshot through Upstash, so pushing on each short pause while typing a note
@@ -303,7 +304,15 @@ async function mergeSnapshot(remote: LiveSnapshot) {
       if (!local) {
         await db.notes.add({ ...rest, folderId, syncId: r.syncId || newSyncId() });
       } else if ((r.updatedAt ?? 0) > (local.updatedAt ?? 0)) {
-        await db.notes.update(local.id!, { ...rest, folderId });
+        // Remote wins, but keep any Q&A ✓ we toggled more recently here.
+        const content = overlayQaChecks(rest.content ?? '', local.content);
+        await db.notes.update(local.id!, { ...rest, content, folderId });
+      } else {
+        // Ours wins, but take any Q&A ✓ the other device toggled more recently.
+        // updatedAt stays: the write hook still schedules a push, and the
+        // server merges the ticks the same way.
+        const content = overlayQaChecks(local.content ?? '', r.content);
+        if (content !== local.content) await db.notes.update(local.id!, { content });
       }
     }
 

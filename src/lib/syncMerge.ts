@@ -15,6 +15,7 @@
 // Loose record shape — the route only forwards JSON, it doesn't need the exact
 // Dexie interfaces (and importing db.ts here would boot a Dexie instance on the
 // server, which has no indexedDB).
+import { overlayQaChecks } from './qaSync';
 type Rec = Record<string, unknown>;
 
 export interface SyncSnapshot {
@@ -89,6 +90,29 @@ function mergeLWW(
   return [...map.values()];
 }
 
+// Notes: last-write-wins per note, but the Q&A ✓ boxes inside are merged per
+// question (newer checkedAt wins) so a tick made on another device isn't lost
+// just because this device saved the note later. See lib/qaSync.ts.
+function mergeNotes(base: Rec[], incoming: Rec[]): Rec[] {
+  const map = new Map<string, Rec>();
+  for (const r of base) {
+    const k = str(r.syncId);
+    if (k != null) map.set(k, r);
+  }
+  for (const r of incoming) {
+    const k = str(r.syncId);
+    if (k == null) continue;
+    const cur = map.get(k);
+    if (!cur) { map.set(k, r); continue; }
+    const [win, lose] = num(r.updatedAt) >= num(cur.updatedAt) ? [r, cur] : [cur, r];
+    const wc = typeof win.content === 'string' ? win.content : '';
+    const lc = typeof lose.content === 'string' ? lose.content : '';
+    const content = overlayQaChecks(wc, lc);
+    map.set(k, content === wc ? win : { ...win, content });
+  }
+  return [...map.values()];
+}
+
 // Additive union for immutable / version-less records: keep the first seen.
 function mergeUnion(base: Rec[], incoming: Rec[], keyOf: (r: Rec) => string | null): Rec[] {
   const map = new Map<string, Rec>();
@@ -152,7 +176,7 @@ export function mergeSnapshots(base: SyncSnapshot, incoming: SyncSnapshot): Sync
     // 「新しい側で上書き」の形では通る。
     ...b,
     ...i,
-    notes: mergeLWW(b.notes ?? [], i.notes ?? [], r => str(r.syncId), r => num(r.updatedAt)),
+    notes: mergeNotes(b.notes ?? [], i.notes ?? []),
     folders: mergeLWW(b.folders ?? [], i.folders ?? [], r => str(r.syncId), r => num(r.updatedAt)),
     studySessions: mergeLWW(
       b.studySessions ?? [], i.studySessions ?? [],

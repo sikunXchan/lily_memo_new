@@ -11,7 +11,7 @@
 
 import { db } from './db';
 
-export interface QuizPair { q: string; a: string; opts?: string[]; checked?: boolean }
+export interface QuizPair { q: string; a: string; opts?: string[]; checked?: boolean; checkedAt?: number }
 
 export interface QuizItem extends QuizPair {
   /** index of the Q&A block in document order */
@@ -88,7 +88,7 @@ export async function setQuizChecked(noteId: number, item: QuizItem, checked: bo
   if (!el) return false;
   const pairs = parsePairs(el.getAttribute('data-pairs'));
   if (pairs[item.index]?.q !== item.q) return false;
-  pairs[item.index] = { ...pairs[item.index], checked };
+  pairs[item.index] = { ...pairs[item.index], checked, checkedAt: Date.now() };
   el.setAttribute('data-pairs', JSON.stringify(pairs));
   await db.notes.update(noteId, { content: serialize(doc), updatedAt: Date.now() });
   return true;
